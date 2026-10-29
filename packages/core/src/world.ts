@@ -1,0 +1,149 @@
+/**
+ * The world is the whole game. It is plain data, it is serialisable, and it is
+ * never mutated by a tick: the simulation hands back a new one.
+ *
+ * Money is always integer cents. There is no float anywhere in this file, and
+ * there must never be: an economy that drifts by a hundredth per tick cannot be
+ * replayed or audited.
+ */
+
+export type GoodId = 'cloth' | 'wool' | 'grain';
+export type SeatId = 'maire' | 'prevot' | 'echevin-north' | 'echevin-south' | 'tresorier';
+
+/** Seats in the order they come up for election, and the order screens show them. */
+export const SEATS: readonly SeatId[] = ['maire', 'prevot', 'echevin-north', 'echevin-south', 'tresorier'];
+
+/** AI or HUMAN. The simulation does not care which: only who control decides. */
+export type Controller = 'ai' | 'human';
+
+export interface Workshop {
+  good: GoodId;
+  level: number;
+  workers: number;
+}
+
+export interface House {
+  id: string;
+  name: string;
+  controller: Controller;
+  treasuryCents: number;
+  favour: number;
+  prestige: number;
+  workshops: Workshop[];
+  stock: Partial<Record<GoodId, number>>;
+}
+
+export interface Law {
+  id: string;
+  title: string;
+  sponsorHouseId: string;
+  enactedWeek: number;
+}
+
+export interface World {
+  /** Stamped so a saved world can be refused rather than silently misread. */
+  formatVersion: number;
+  /** The ruleset that produced this world. A catch-up across versions is a bug. */
+  rulesetVersion: number;
+  seed: number;
+  rng: number;
+  week: number;
+  year: number;
+  houses: Record<string, House>;
+  seats: Record<SeatId, { houseId: string | null }>;
+  laws: Law[];
+  market: Record<GoodId, number>;
+  /** Votes bought this week, cleared after the election. */
+  campaigns: Record<string, number>;
+}
+
+export const RULES = {
+  version: 1,
+  electionPeriodWeeks: 4,
+  priceFloorCents: 100,
+  priceCeilCents: 5000,
+  priceDriftCents: 30,
+  outputPerLevel: 2,
+  wagePerWorkerCents: 120,
+  campaignFavourCost: 5,
+  campaignVoteBonus: 2,
+} as const;
+
+export const START_YEAR = 1401;
+export const WEEKS_PER_YEAR = 52;
+
+export function createWorld(seed: number): World {
+  return {
+    formatVersion: 1,
+    rulesetVersion: RULES.version,
+    seed,
+    rng: seed,
+    week: 1,
+    year: START_YEAR,
+    houses: {
+      brigue: {
+        id: 'brigue',
+        name: 'Brigue',
+        controller: 'human',
+        treasuryCents: 117340,
+        favour: 50,
+        prestige: 50,
+        workshops: [{ good: 'cloth', level: 2, workers: 2 }],
+        stock: {},
+      },
+      caron: {
+        id: 'caron',
+        name: 'Caron',
+        controller: 'ai',
+        treasuryCents: 240000,
+        favour: 60,
+        prestige: 65,
+        workshops: [{ good: 'cloth', level: 3, workers: 3 }],
+        stock: {},
+      },
+      vandermeersch: {
+        id: 'vandermeersch',
+        name: 'Vandermeersch',
+        controller: 'ai',
+        treasuryCents: 180000,
+        favour: 70,
+        prestige: 58,
+        workshops: [{ good: 'wool', level: 2, workers: 1 }],
+        stock: {},
+      },
+      herse: {
+        id: 'herse',
+        name: 'de Herse',
+        controller: 'ai',
+        treasuryCents: 150000,
+        favour: 40,
+        prestige: 45,
+        workshops: [{ good: 'grain', level: 2, workers: 2 }],
+        stock: {},
+      },
+    },
+    seats: {
+      maire: { houseId: 'herse' },
+      prevot: { houseId: 'vandermeersch' },
+      'echevin-north': { houseId: 'caron' },
+      'echevin-south': { houseId: null },
+      tresorier: { houseId: null },
+    },
+    laws: [
+      {
+        id: 'ban-foreign-wool',
+        title: 'Ban sur la laine étrangère',
+        sponsorHouseId: 'vandermeersch',
+        enactedWeek: 1,
+      },
+      {
+        id: 'cloth-tax-1',
+        title: 'Taxe du drap, 1 denier',
+        sponsorHouseId: 'caron',
+        enactedWeek: 1,
+      },
+    ],
+    market: { cloth: 1240, wool: 380, grain: 260 },
+    campaigns: {},
+  };
+}
