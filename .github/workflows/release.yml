@@ -8,52 +8,64 @@ permissions:
   contents: read
 
 # One run at a time on main. A run waiting behind the running one is replaced by a newer push: only
-# the latest commit is tested and published, and it contains the others.
+# the latest commit is tested, published and deployed, and it contains the others.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # The checks and tests run here on `main`, so that nothing is published before they pass. A called
-  # workflow sees this workflow's name in `github.workflow`, so their concurrency groups carry their
-  # own name to stay distinct from this one. The quick check goes first, so a failure does not leave
-  # the long job running.
+  # The checks and tests run here on `main`, so nothing is published or deployed before they pass.
+  # A called workflow sees this workflow's name in `github.workflow`, so their concurrency groups
+  # carry their own name to stay distinct from this one. The quick check goes first, so a failure
+  # does not leave the long job running.
   check:
     uses: ./.github/workflows/check.yml
   tests:
     needs: check
     uses: ./.github/workflows/test.yml
 
-  # Builds the image and pushes it to GitHub Container Registry. It is the only artifact this
-  # repository publishes: what runs it is not its business.
+  # Builds the image once (workflow `image`) and pushes it to GitHub Container Registry. A pull
+  # request builds the same image without pushing it, so a broken Dockerfile fails there instead.
   container:
     needs: [check, tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    uses: ./.github/workflows/image.yml
+    with:
+      push: true
+    # The called workflow pushes to the registry; it declares the same permissions, which a callee
+    # cannot raise.
     permissions:
       contents: read
       packages: write
+
+  # Rolls the pushed image out by its digest. The manifests are applied from outside this
+  # repository. The job waits for the namespace variable, so a fork or a repository without a
+  # cluster publishes its image without failing.
+  deploy:
+    needs: container
+    if: vars.K8S_NAMESPACE != ''
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      KUBECONFIG_DATA: ${{ secrets.KUBECONFIG }}
+      # The namespace is the gate: without it the job is skipped, so a fork publishes its image.
+      NAMESPACE: ${{ vars.K8S_NAMESPACE }}
+      # The names in the cluster default to the ones here, and a variable overrides each of them.
+      DEPLOYMENT: ${{ vars.K8S_DEPLOYMENT || 'brigue' }}
+      CONTAINER: ${{ vars.K8S_CONTAINER || 'web' }}
+      IMAGE: ghcr.io/${{ github.repository }}@${{ needs.container.outputs.digest }}
     steps:
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Write the kubeconfig
+        run: |
+          (umask 077 && printf '%s' "$KUBECONFIG_DATA" > "$RUNNER_TEMP/kubeconfig")
+          echo "KUBECONFIG=$RUNNER_TEMP/kubeconfig" >> "$GITHUB_ENV"
 
-      - uses: docker/setup-buildx-action@v4
-
-      - id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha
-
-      - uses: docker/build-push-action@v7
-        with:
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      # A rollout that is not ready in time is undone, and the log says whether the previous
+      # version came back before the job fails.
+      - name: Roll out
+        run: |
+          kubectl -n "$NAMESPACE" set image "deployment/$DEPLOYMENT" "$CONTAINER=${IMAGE,,}"
+          if ! kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=5m; then
+            kubectl -n "$NAMESPACE" rollout undo "deployment/$DEPLOYMENT"
+            kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=5m || true
+            exit 1
+          fi

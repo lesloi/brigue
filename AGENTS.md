@@ -41,8 +41,8 @@ an entry only for a choice that is costly to reverse and whose reason the code d
 ## Working
 
 - `main` stays green: `check`, `tests` and `vuln` run on every pull request, plus an image build
-  that pushes nothing; `release.yml` repeats the first two on `main` and pushes the image to GHCR
-  only once they pass.
+  that pushes nothing; `release.yml` repeats the first two on `main`, then pushes the image to GHCR
+  and rolls it out to the cluster, only once they pass.
 - After a change: `pnpm format`, then `pnpm check` (formatting, lint, types).
 - Before committing: `pnpm test` and `pnpm build`, unless already run since the last change.
 - Run `pnpm install` after a pull, merge or rebase that changes dependencies.
