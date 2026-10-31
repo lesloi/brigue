@@ -1,0 +1,30 @@
+name: Check
+
+# On `main` the workflow runs inside `release.yml`, which publishes only once it has passed.
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Formatting, lint and types: quick, so a failure comes before the tests and the image.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      # Node 26 ships no Corepack; this action reads the pnpm version pinned in package.json.
+      - uses: pnpm/setup@v3
+        with:
+          install: false
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check

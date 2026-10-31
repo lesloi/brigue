@@ -1,0 +1,52 @@
+name: Tests
+
+# On `main` the workflow runs inside `release.yml`, which publishes only once it has passed.
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The Postgres store is only real against Postgres: the row lock, the jsonb round-trip and the
+  # transaction boundaries cannot be faked by the in-memory store. The service is why this job is
+  # separate from `check.yml`: without it the store tests would skip and prove nothing.
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: brigue
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/brigue
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+      - uses: pnpm/setup@v3
+        with:
+          install: false
+          cache: true
+      - run: pnpm install --frozen-lockfile
+      # Both this step and the test's own setup apply the migrations; doing it here as well
+      # exercises the command a deploy actually runs.
+      - run: pnpm --filter @brigue/server migrate
+      - run: pnpm test
+      # The build is the check that the service worker and the manifest are produced.
+      - run: pnpm run build

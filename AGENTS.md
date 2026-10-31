@@ -40,9 +40,8 @@ an entry only for a choice that is costly to reverse and whose reason the code d
 
 ## Working
 
-- `main` stays green: GitHub Actions runs `pnpm check`, `pnpm test` and `pnpm build` on every pull
-  request and every push to `main`; the Postgres tests run in their own job against a service,
-  and a third builds the image for every event and pushes it to GHCR from `main` only.
+- `main` stays green: `check`, `tests` and `vuln` run on every pull request; `release.yml` repeats
+  the first two on `main` and pushes the image to GHCR only once they pass.
 - After a change: `pnpm format`, then `pnpm check` (formatting, lint, types).
 - Before committing: `pnpm test` and `pnpm build`, unless already run since the last change.
 - Run `pnpm install` after a pull, merge or rebase that changes dependencies.
