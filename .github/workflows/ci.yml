@@ -68,8 +68,7 @@ jobs:
 
   # The image is what gets deployed: nothing else checks that the Dockerfile
   # builds, that Node runs the TypeScript it ships, or that the probes answer
-  # through it. What runs the image (cluster manifests, database, migrations)
-  # belongs to lesloi/brigue-k8s.
+  # through it.
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 15

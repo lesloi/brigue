@@ -23,8 +23,8 @@ Early. The simulation core runs and is covered by tests. The server issues a
 token, serves the world with catch-up, and accepts one action per week. The PWA
 has its shell and the Ville screen: it renders the projection and the events of
 the last week, and sends a market intent. The other screens are still to come.
-One image carries the API and the built client; the cluster manifests live in
-[lesloi/brigue-k8s](https://github.com/lesloi/brigue-k8s).
+One image carries the API and the built client: one process, one port, one
+origin.
 
 ## Stack
 
@@ -60,15 +60,13 @@ On an Android phone, `adb reverse tcp:5173 tcp:5173` and open
 and the install prompt work without a certificate. `pnpm build` produces the
 installable files in `apps/web/dist`.
 
-In production one image serves the API and the built client:
+One image serves the API and the built client:
 
 ```sh
 docker build -t brigue:dev .
 ```
 
-What runs it — the deployment, the service, the ingress, the database and the migration Job —
-lives in [lesloi/brigue-k8s](https://github.com/lesloi/brigue-k8s), which also states the
-contract the image has to meet. Nothing cluster-shaped belongs in this repository.
+It carries the built client at `WEB_ROOT`, and needs `DATABASE_URL` to start.
 
 `pnpm test` runs the Postgres integration tests when `DATABASE_URL` is set, and
 skips them otherwise.

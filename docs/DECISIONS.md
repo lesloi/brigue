@@ -113,10 +113,8 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 
 - **Migrations can be checked without being applied.** `migrate --check` exits non-zero while the
   image carries a migration `schema_migrations` does not have, and `applyMigrations` takes a
-  Postgres advisory lock before touching anything, table included. That is the hook the cluster
-  uses to keep a new pod out of service until the schema matches its image; the rule that
-  arranges it lives with the manifests, in
-  [lesloi/brigue-k8s](https://github.com/lesloi/brigue-k8s).
+  Postgres advisory lock before touching anything, table included. That is the hook a deploy
+  uses to hold back a new instance until the schema matches its image.
 
 - **Readiness asks the database; liveness does not.** `/readyz` runs one `SELECT 1` and fails
   while it cannot; `/healthz` touches nothing. Wired the other way, a database outage would
