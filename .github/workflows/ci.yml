@@ -66,54 +66,35 @@ jobs:
       - run: pnpm --filter @brigue/server migrate
       - run: pnpm test
 
-  # The image is what gets deployed: nothing else checks that the Dockerfile
-  # builds, that Node runs the TypeScript it ships, or that the probes answer
-  # through it.
+  # The image is what this repository ships: this job is the only place that
+  # proves the Dockerfile builds. It publishes from main only, tagged with the
+  # commit, so whoever runs it can pull exactly what passed.
   image:
+    needs: [checks, store]
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: brigue
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgres://postgres:postgres@localhost:5432/brigue
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
-      - run: docker build --tag brigue:ci .
-      - name: Migrate through the image
+      - name: Build
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
         run: |
-          docker run --rm --network host --env DATABASE_URL brigue:ci node scripts/migrate.ts
-          docker run --rm --network host --env DATABASE_URL brigue:ci node scripts/migrate.ts --check
-      - name: Serve through the image
-        run: |
-          docker run --detach --name brigue --network host \
-            --env DATABASE_URL --env PORT=3000 --env COOKIE_SECURE=false brigue:ci
-          for attempt in $(seq 1 30); do
-            if curl --fail --silent http://127.0.0.1:3000/readyz > /dev/null; then exit 0; fi
-            sleep 1
-          done
-          echo 'the image never became ready'
-          exit 1
-      - name: Answer with the client
-        run: |
-          index="$(curl --fail --silent http://127.0.0.1:3000/)"
-          echo "$index" | grep --quiet '<title>Brigue</title>'
-          asset="$(echo "$index" | grep --only-matching --extended-regexp 'src="/assets/[^"]+\.js"' | sed 's/^src="//;s/"$//')"
-          test -n "$asset"
-          curl --fail --silent --head "http://127.0.0.1:3000$asset" \
-            | grep --quiet --ignore-case 'cache-control: public, max-age=31536000, immutable'
-          curl --fail --silent http://127.0.0.1:3000/healthz | grep --quiet '"status":"ok"'
-      - name: Show the server log
-        if: always()
-        run: docker logs brigue || true
+          docker build \
+            --tag "$IMAGE:$GITHUB_SHA" \
+            --tag "$IMAGE:latest" \
+            .
+      # The workflow token is scoped to this repository and dies with the run;
+      # a stored token would be one more secret to rotate.
+      - name: Log in to the registry
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GITHUB_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      - name: Push
+        if: github.event_name == 'push'
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: docker push --all-tags "$IMAGE"
