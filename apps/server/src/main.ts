@@ -20,6 +20,8 @@ const server = createApp({
   store,
   worlds,
   logger,
+  ready: () => store.ping(),
+  webRoot: config.webRoot,
   secureCookies: config.secureCookies,
   trustProxy: config.trustProxy,
 });

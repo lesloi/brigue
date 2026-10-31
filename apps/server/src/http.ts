@@ -12,6 +12,7 @@ import { projectWorld } from './projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
 import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
 import { authenticate, issueToken } from './session.ts';
+import { assertWebRoot, serveStatic } from './static.ts';
 import {
   DuplicateActionError,
   FIRST_HOUSE_ID,
@@ -34,6 +35,14 @@ export interface AppDeps {
   store: PlayerStore;
   worlds: WorldStore;
   logger: Logger;
+  /**
+   * Readiness: what a readiness probe asks before it sends traffic here. Wired
+   * to a database ping in production. Liveness is not this and must never
+   * touch it.
+   */
+  ready: () => Promise<void>;
+  /** Directory of the built client. Unset in development, where Vite serves it. */
+  webRoot?: string;
   now?: () => number;
   secureCookies?: boolean;
   trustProxy?: boolean;
@@ -45,6 +54,10 @@ export function createApp(deps: AppDeps): Server {
   const now = deps.now ?? Date.now;
   const secureCookies = deps.secureCookies ?? true;
   const trustProxy = deps.trustProxy ?? false;
+
+  if (deps.webRoot !== undefined) {
+    assertWebRoot(deps.webRoot);
+  }
   const limiter =
     deps.limiter ??
     createRateLimiter(deps.sessionAttemptsPerMinute ?? SESSION_ATTEMPTS_PER_MINUTE, RATE_LIMIT_WINDOW_MS);
@@ -86,6 +99,22 @@ export function createApp(deps: AppDeps): Server {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname;
 
     switch (path) {
+      case '/healthz':
+        if (!isReadable(request)) {
+          methodNotAllowed(response, 'GET, HEAD');
+          return;
+        }
+        sendJson(response, 200, { status: 'ok' });
+        return;
+
+      case '/readyz':
+        if (!isReadable(request)) {
+          methodNotAllowed(response, 'GET, HEAD');
+          return;
+        }
+        await readiness(response);
+        return;
+
       case '/api/session':
         switch (request.method) {
           case 'POST':
@@ -119,7 +148,28 @@ export function createApp(deps: AppDeps): Server {
         return;
 
       default:
+        // Everything that is not the API and not a probe is the client, when
+        // one was mounted. In development Vite serves it, so this stays a 404.
+        if (deps.webRoot !== undefined && !path.startsWith('/api')) {
+          if (!isReadable(request)) {
+            methodNotAllowed(response, 'GET, HEAD');
+            return;
+          }
+          serveStatic(deps.webRoot, path, request, response);
+          return;
+        }
         sendJson(response, 404, { error: 'not_found' });
+    }
+  }
+
+  async function readiness(response: ServerResponse): Promise<void> {
+    try {
+      await deps.ready();
+      sendJson(response, 200, { status: 'ok' });
+    } catch {
+      // Never the error itself: a refused connection is all a probe needs, and
+      // and the message may quote the credentials inside DATABASE_URL.
+      sendJson(response, 503, { status: 'unavailable' });
     }
   }
 
@@ -421,6 +471,10 @@ type ActionOutcome =
   | { kind: 'future'; currentWeek: number }
   | { kind: 'duplicate' }
   | { kind: 'appended'; stored: StoredAction };
+
+function isReadable(request: IncomingMessage): boolean {
+  return request.method === 'GET' || request.method === 'HEAD';
+}
 
 function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
   if (trustProxy) {

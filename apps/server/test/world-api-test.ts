@@ -53,7 +53,7 @@ async function start(options: { world?: World; at?: number } = {}): Promise<Harn
   const worlds = new MemoryWorldStore();
   const logs: string[] = [];
   const logger = createLogger((line) => logs.push(line));
-  const server = createApp({ store, worlds, logger, now: () => clock.now });
+  const server = createApp({ store, worlds, logger, ready: async () => {}, now: () => clock.now });
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;

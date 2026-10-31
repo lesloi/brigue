@@ -28,7 +28,7 @@ async function start(options: Partial<AppDeps> = {}): Promise<Harness> {
   const worlds = new MemoryWorldStore();
   const logs: string[] = [];
   const logger = createLogger((line) => logs.push(line));
-  const server = createApp({ store, worlds, logger, ...options });
+  const server = createApp({ store, worlds, logger, ready: async () => {}, ...options });
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;
