@@ -42,7 +42,6 @@ ENV NODE_ENV=production \
     WEB_ROOT=/app/web
 COPY --from=runtime-deps /app/node_modules node_modules
 COPY --from=runtime-deps /app/apps/server/node_modules apps/server/node_modules
-COPY --from=runtime-deps /app/apps/web/node_modules apps/web/node_modules
 COPY --from=build /app/apps/web/dist web
 COPY apps/server/src apps/server/src
 COPY apps/server/scripts apps/server/scripts
