@@ -19,8 +19,9 @@
 
 ## Status
 
-Early. The simulation core runs and is covered by tests; the server and the client are next.
-Nothing is playable yet.
+Early. The simulation core runs and is covered by tests. The server now binds a
+token to a house; the rest of the API and the client are next. Nothing is
+playable yet.
 
 ## Stack
 
@@ -35,6 +36,20 @@ pnpm install
 pnpm test
 pnpm check
 ```
+
+The server needs Postgres:
+
+```sh
+export DATABASE_URL=postgres://localhost/brigue
+pnpm --filter @brigue/server migrate
+pnpm --filter @brigue/server dev
+```
+
+`COOKIE_SECURE=false` is for local HTTP only; `TRUST_PROXY=true` only when the
+server really sits behind the ingress, because it trusts `X-Forwarded-For` for
+the login rate limit. Get that wrong either way: without it behind the ingress,
+every player shares one bucket and the town gets rate limited; with it set
+without an ingress, a client can pick its own bucket.
 
 ## Documents
 

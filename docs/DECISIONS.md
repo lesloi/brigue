@@ -32,7 +32,8 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
   holds the token hash, the world, the house and a revocation date. The binding is not part of
   the world because the world is versioned, replayed and hashed; a login is not a game rule, and
   a format change must never be able to lock a player out. Authorisation is checked once, at the
-  edge, before the world is loaded.
+  edge, before the world is loaded. One live token per house for now, enforced by a partial
+  unique index; the release that allows several tokens per house lifts it and adds a revoke-all.
 
 ## State
 
