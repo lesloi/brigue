@@ -108,14 +108,16 @@ describe('countdownText', () => {
   const start = Date.parse('2026-01-01T00:00:00.000Z');
 
   it('shows minutes and seconds under an hour', () => {
-    expect(countdownText(new Date(start + 90_000).toISOString(), start)).toBe('tick 1:30');
+    expect(countdownText(new Date(start + 90_000).toISOString(), start)).toBe('semaine dans 1:30');
   });
 
   it('switches to hours and minutes above an hour', () => {
-    expect(countdownText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe('tick 2 h 05');
+    expect(countdownText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe(
+      'semaine dans 2 h 05',
+    );
   });
 
   it('does not go negative', () => {
-    expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('à l’instant');
+    expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('semaine imminente');
   });
 });

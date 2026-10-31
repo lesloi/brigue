@@ -304,6 +304,10 @@ button:disabled {
   border-bottom: 0;
 }
 
+.row.empty {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .th {
   width: 46px;
   height: 46px;

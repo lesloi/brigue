@@ -20,7 +20,7 @@ export interface WorldProjection {
     laws: Law[];
     market: Record<GoodId, number>;
   };
-  /** The instant the current week ends, so the client can show the next tick. */
+  /** The instant the current week ends, so the client can show the next week. */
   nextTickAt: string;
 }
 

@@ -43,7 +43,7 @@ export function villeTemplate(data: WorldResponse): string {
         <div class="card">
           ${
             house.workshops.length === 0
-              ? `<div class="row"><div class="nm"><b>Aucun atelier</b><p>La maison n'a pas encore de quoi produire.</p></div></div>`
+              ? `<div class="row empty"><div class="nm"><b>Aucun atelier</b><p>La maison n'a pas encore de quoi produire.</p></div></div>`
               : house.workshops.map((workshop) => workshopRow(workshop, world)).join('')
           }
           ${
@@ -52,7 +52,7 @@ export function villeTemplate(data: WorldResponse): string {
               : ''
           }
           <div class="buy">
-            <div><b>Acheter de la laine</b><p>${esc(formatCents(world.town.market.wool))} écus l'unité &middot; appliqué au prochain tick</p></div>
+            <div><b>Acheter de la laine</b><p>${esc(formatCents(world.town.market.wool))} écus l'unité &middot; appliqué à la prochaine semaine</p></div>
             <button class="btn" id="buy-wool" type="button">10 laines</button>
           </div>
         </div>
@@ -64,7 +64,7 @@ export function villeTemplate(data: WorldResponse): string {
         <div class="card">
           ${
             events.length === 0
-              ? `<div class="row"><div class="nm"><b>Rien au registre</b><p>Aucun événement pour cette semaine.</p></div></div>`
+              ? `<div class="row empty"><div class="nm"><b>Rien au registre</b><p>Aucun événement pour cette semaine.</p></div></div>`
               : events
                   .map((event) => {
                     const line = eventLine(event, house.id, nameOf);
@@ -80,7 +80,7 @@ export function villeTemplate(data: WorldResponse): string {
         <div class="card">
           ${
             world.town.laws.length === 0
-              ? `<div class="row"><div class="nm"><b>Aucune loi</b><p>La ville se gouverne encore par l'usage.</p></div></div>`
+              ? `<div class="row empty"><div class="nm"><b>Aucune loi</b><p>La ville se gouverne encore par l'usage.</p></div></div>`
               : world.town.laws
                   .map(
                     (law) =>
@@ -117,7 +117,7 @@ export function countdownText(nextTickAt: string, now: number): string {
   const remaining = new Date(nextTickAt).getTime() - now;
 
   if (!Number.isFinite(remaining) || remaining <= 0) {
-    return 'à l’instant';
+    return 'semaine imminente';
   }
 
   const totalSeconds = Math.floor(remaining / 1000);
@@ -126,10 +126,10 @@ export function countdownText(nextTickAt: string, now: number): string {
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `tick ${hours} h ${String(minutes).padStart(2, '0')}`;
+    return `semaine dans ${hours} h ${String(minutes).padStart(2, '0')}`;
   }
 
-  return `tick ${minutes}:${String(seconds).padStart(2, '0')}`;
+  return `semaine dans ${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function workshopRow(
