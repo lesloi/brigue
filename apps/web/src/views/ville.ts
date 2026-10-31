@@ -37,6 +37,8 @@ export function villeTemplate(data: WorldResponse): string {
       <div class="c">${resourceIcon('favour')}<span class="v">${esc(formatCount(house.favour))}</span><span class="l">faveur</span></div>
     </section>
 
+    ${data.dev === true ? devBar() : ''}
+
     <div class="body">
       <section class="sec" aria-labelledby="house-title">
         <div class="h"><b id="house-title">Ta maison</b><span>${esc(house.workshops.length)} atelier${house.workshops.length > 1 ? 's' : ''}</span></div>
@@ -104,6 +106,14 @@ export function villeTemplate(data: WorldResponse): string {
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 </div>`;
+}
+
+/**
+ * Local development only: the server sets `dev` on the payload it serves when
+ * it was started with DEV_ADVANCE. The button has no place in production.
+ */
+function devBar(): string {
+  return `<div class="dev"><button id="advance-week" type="button" title="Mode développement : simule une heure">Semaine suivante</button></div>`;
 }
 
 export function houseName(world: WorldResponse['world']): (houseId: string) => string {

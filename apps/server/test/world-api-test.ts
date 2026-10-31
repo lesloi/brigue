@@ -39,6 +39,7 @@ interface WorldBody {
     refusals: Record<string, number>;
   };
   stateHash: string;
+  dev?: boolean;
 }
 
 const running: Array<() => Promise<void>> = [];
@@ -47,13 +48,20 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((close) => close()));
 });
 
-async function start(options: { world?: World; at?: number } = {}): Promise<Harness> {
+async function start(options: { world?: World; at?: number; devAdvance?: boolean } = {}): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
   const worlds = new MemoryWorldStore();
   const logs: string[] = [];
   const logger = createLogger((line) => logs.push(line));
-  const server = createApp({ store, worlds, logger, ready: async () => {}, now: () => clock.now });
+  const server = createApp({
+    store,
+    worlds,
+    logger,
+    ready: async () => {},
+    now: () => clock.now,
+    devAdvance: options.devAdvance,
+  });
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;
@@ -378,5 +386,123 @@ describe('POST /api/actions', () => {
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'invalid_action' });
     }
+  });
+});
+
+describe('POST /api/dev/advance', () => {
+  function postAdvance(harness: Harness, init: RequestInit = {}): Promise<Response> {
+    return fetch(`${harness.url}/api/dev/advance`, {
+      method: 'POST',
+      headers: { Cookie: harness.cookie },
+      ...init,
+    });
+  }
+
+  it('does not exist unless the server was started for development', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const response = await postAdvance(harness);
+
+    // Assert
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'not_found' });
+  });
+
+  it('advertises development in the world payload only when it is on', async () => {
+    // Arrange
+    const regular = await start();
+    const development = await start({ devAdvance: true });
+
+    // Act
+    const plainBody = await worldBody(regular);
+    const devBody = await worldBody(development);
+
+    // Assert
+    expect(plainBody.dev).toBeUndefined();
+    expect(devBody.dev).toBe(true);
+    // Same world, same clock: the flag must not reach the hash.
+    expect(devBody.stateHash).toBe(plainBody.stateHash);
+  });
+
+  it('plays exactly one week and leaves the next natural tick an hour away', async () => {
+    // Arrange
+    const harness = await start({ devAdvance: true });
+    const before = await worldBody(harness);
+
+    // Act
+    const response = await postAdvance(harness);
+    const after = (await response.json()) as WorldBody;
+
+    // Assert
+    expect(response.status).toBe(200);
+    expect(after.world.week).toBe(before.world.week + 1);
+    expect(new Date(after.world.nextTickAt).getTime()).toBe(harness.clock.now + HOUR);
+    expect(after.dev).toBe(true);
+  });
+
+  it('does not advance again on a plain read, and the hashes agree', async () => {
+    // Arrange
+    const harness = await start({ devAdvance: true });
+    const advanced = (await (await postAdvance(harness)).json()) as WorldBody;
+
+    // Act
+    const read = await worldBody(harness);
+
+    // Assert
+    expect(read.world.week).toBe(advanced.world.week);
+    expect(read.stateHash).toBe(advanced.stateHash);
+  });
+
+  it('applies the action queued for the week it plays', async () => {
+    // Arrange
+    const harness = await start({ devAdvance: true });
+    const before = await worldBody(harness);
+    await postAction(harness, buyWool(ID_A, before.world.week, 10));
+
+    // Act
+    const advanced = (await (await postAdvance(harness)).json()) as WorldBody;
+
+    // Assert
+    expect(advanced.events).toContainEqual(
+      expect.objectContaining({ type: 'market.bought', houseId: 'brigue', units: 10 }),
+    );
+  });
+
+  it('advances twice in a row', async () => {
+    // Arrange
+    const harness = await start({ devAdvance: true });
+    const before = await worldBody(harness);
+
+    // Act
+    await postAdvance(harness);
+    const second = (await (await postAdvance(harness)).json()) as WorldBody;
+
+    // Assert
+    expect(second.world.week).toBe(before.world.week + 2);
+  });
+
+  it('refuses without a session', async () => {
+    // Arrange
+    const harness = await start({ devAdvance: true });
+
+    // Act
+    const response = await fetch(`${harness.url}/api/dev/advance`, { method: 'POST' });
+
+    // Assert
+    expect(response.status).toBe(401);
+  });
+
+  it('refuses anything but POST', async () => {
+    // Arrange
+    const harness = await start({ devAdvance: true });
+
+    // Act
+    const response = await fetch(`${harness.url}/api/dev/advance`, { headers: { Cookie: harness.cookie } });
+
+    // Assert
+    expect(response.status).toBe(405);
+    expect(response.headers.get('allow')).toBe('POST');
   });
 });

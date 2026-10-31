@@ -1,4 +1,13 @@
-import { ApiError, hasSession, joinTown, readWorld, resumeTown, sendAction, type WorldResponse } from './api.ts';
+import {
+  ApiError,
+  advanceWeek,
+  hasSession,
+  joinTown,
+  readWorld,
+  resumeTown,
+  sendAction,
+  type WorldResponse,
+} from './api.ts';
 import { actionErrorText, readErrorText } from './format.ts';
 import './styles.css';
 import { failureTemplate, lostHouseTemplate, tokenDialogTemplate } from './views/gate.ts';
@@ -56,10 +65,14 @@ async function load(): Promise<void> {
 }
 
 function paint(data: WorldResponse): void {
+  // A repaint replaces the countdown's node: its interval must not outlive it,
+  // and paint is now reached from the dev advance as well as from a read.
+  stopCountdown();
   root.innerHTML = villeTemplate(data);
 
   document.querySelector('#refresh')?.addEventListener('click', () => void refresh());
   document.querySelector('#buy-wool')?.addEventListener('click', () => void buyWool());
+  document.querySelector('#advance-week')?.addEventListener('click', () => void advanceOneWeek());
   startCountdown(data.world.nextTickAt);
 }
 
@@ -104,6 +117,39 @@ async function buyWool(): Promise<void> {
   } finally {
     if (button) {
       button.disabled = false;
+    }
+  }
+}
+
+async function advanceOneWeek(): Promise<void> {
+  // A repaint replaces the DOM, and the token dialog lives in it: same guard as
+  // a refresh.
+  if (document.querySelector('#token-overlay') !== null) {
+    return;
+  }
+
+  const button = document.querySelector<HTMLButtonElement>('#advance-week');
+  if (button) {
+    button.disabled = true;
+  }
+
+  try {
+    const data = await advanceWeek();
+    // The whole payload changed: `current` is what the next action is queued for.
+    current = data;
+    paint(data);
+    showToast(`Semaine ${data.world.week}, comme si une heure était passée.`);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      void boot();
+      return;
+    }
+    showToast(readMessageFor(error), true);
+  } finally {
+    // On success `paint` already put a fresh, enabled button in place.
+    const live = document.querySelector<HTMLButtonElement>('#advance-week');
+    if (live) {
+      live.disabled = false;
     }
   }
 }

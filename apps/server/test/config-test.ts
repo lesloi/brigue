@@ -30,4 +30,10 @@ describe('the config', () => {
     expect(() => loadConfig({ DATABASE_URL: 'x', PORT: '0' })).toThrow(/PORT/);
     expect(() => loadConfig({ DATABASE_URL: 'x', PORT: 'seventy' })).toThrow(/PORT/);
   });
+
+  it('only exposes the development advance when explicitly asked', () => {
+    expect(loadConfig({ DATABASE_URL: 'x' }).devAdvance).toBe(false);
+    expect(loadConfig({ DATABASE_URL: 'x', DEV_ADVANCE: 'true' }).devAdvance).toBe(true);
+    expect(loadConfig({ DATABASE_URL: 'x', DEV_ADVANCE: '1' }).devAdvance).toBe(false);
+  });
 });
