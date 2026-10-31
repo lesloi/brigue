@@ -20,8 +20,9 @@
 ## Status
 
 Early. The simulation core runs and is covered by tests. The server issues a
-token, serves the world with catch-up, and accepts one action per week; the
-client is next. Nothing is playable yet.
+token, serves the world with catch-up, and accepts one action per week. The PWA
+has its shell and the Ville screen: it renders the projection and the events of
+the last week, and sends a market intent. The other screens are still to come.
 
 ## Stack
 
@@ -35,6 +36,7 @@ client is next. Nothing is playable yet.
 pnpm install
 pnpm test
 pnpm check
+pnpm build
 ```
 
 The server needs Postgres:
@@ -44,6 +46,17 @@ export DATABASE_URL=postgres://localhost/brigue
 pnpm --filter @brigue/server migrate
 pnpm --filter @brigue/server dev
 ```
+
+The PWA runs beside it, and Vite proxies `/api` to `http://localhost:3000`:
+
+```sh
+pnpm --filter @brigue/web dev
+```
+
+On an Android phone, `adb reverse tcp:5173 tcp:5173` and open
+`http://localhost:5173`: localhost is a secure context, so the service worker
+and the install prompt work without a certificate. `pnpm build` produces the
+installable files in `apps/web/dist`.
 
 `pnpm test` runs the Postgres integration tests when `DATABASE_URL` is set, and
 skips them otherwise.
