@@ -45,6 +45,9 @@ pnpm --filter @brigue/server migrate
 pnpm --filter @brigue/server dev
 ```
 
+`pnpm test` runs the Postgres integration tests when `DATABASE_URL` is set, and
+skips them otherwise.
+
 `COOKIE_SECURE=false` is for local HTTP only; `TRUST_PROXY=true` only when the
 server really sits behind the ingress, because it trusts `X-Forwarded-For` for
 the login rate limit. Get that wrong either way: without it behind the ingress,
