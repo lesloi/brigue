@@ -71,18 +71,27 @@ export const RULES = {
   wagePerWorkerCents: 120,
   campaignFavourCost: 5,
   campaignVoteBonus: 2,
-  /** One game week lasts one real hour: a year is about two days of wall clock. */
-  minutesPerWeek: 60,
-  /** A player back after a long absence is caught up, not skipped. */
-  maxCatchUpWeeks: 520,
+  /**
+   * What a workshop eats per unit it makes; wool and grain come out of nothing.
+   * A recipe is a rule, not content: changing one changes the economy, so it
+   * lives here and moves the version with everything else.
+   */
+  recipes: {
+    cloth: { input: 'wool', perUnit: 1 },
+    wool: null,
+    grain: null,
+  } satisfies Record<GoodId, { input: GoodId; perUnit: number } | null>,
 } as const;
 
-/** What a workshop eats per unit it makes. Wool and grain come out of nothing. */
-export const RECIPES: Record<GoodId, { input: GoodId; perUnit: number } | null> = {
-  cloth: { input: 'wool', perUnit: 1 },
-  wool: null,
-  grain: null,
-};
+/**
+ * Wall-clock policy, not a simulation rule: how long a week lasts, and how far a
+ * returning player is caught up. Read by the server; changing it must not refuse
+ * an existing world.
+ */
+export const PACING = {
+  minutesPerWeek: 60,
+  maxCatchUpWeeks: 520,
+} as const;
 
 export const START_YEAR = 1401;
 export const WEEKS_PER_YEAR = 52;
@@ -148,20 +157,7 @@ export function createWorld(seed: number): World {
       'echevin-south': { houseId: null },
       tresorier: { houseId: null },
     },
-    laws: [
-      {
-        id: 'ban-foreign-wool',
-        title: 'Ban sur la laine étrangère',
-        sponsorHouseId: 'vandermeersch',
-        enactedWeek: 1,
-      },
-      {
-        id: 'cloth-tax-1',
-        title: 'Taxe du drap, 1 denier',
-        sponsorHouseId: 'caron',
-        enactedWeek: 1,
-      },
-    ],
+    laws: [],
     market: { cloth: 1240, wool: 380, grain: 260 },
     campaigns: {},
   };

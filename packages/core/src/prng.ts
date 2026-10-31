@@ -10,8 +10,9 @@
 export const MINSTD_MODULUS = 2147483647;
 
 export function advance(state: number): number {
-  // MINSTD has a fixed point at zero: a world seeded with 0 would draw 0 forever.
-  const safe = state % MINSTD_MODULUS === 0 ? 1 : state % MINSTD_MODULUS;
+  // MINSTD has a fixed point at zero, and `%` keeps the sign of a negative seed:
+  // a world seeded with 0 or -5 would draw 0 (or negative states) forever.
+  const safe = ((state % MINSTD_MODULUS) + MINSTD_MODULUS) % MINSTD_MODULUS || 1;
 
   return (safe * 48271) % MINSTD_MODULUS;
 }

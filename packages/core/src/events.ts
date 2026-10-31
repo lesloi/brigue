@@ -12,12 +12,17 @@ export type Action =
   | { type: 'council.campaign'; houseId: string; seatId: SeatId };
 
 export type RefusalReason =
-  'unknown_house' | 'unknown_seat' | 'invalid_quantity' | 'insufficient_funds' | 'insufficient_favour';
+  | 'unknown_action'
+  | 'unknown_house'
+  | 'unknown_seat'
+  | 'invalid_quantity'
+  | 'insufficient_funds'
+  | 'insufficient_favour';
 
 export type Event =
   | {
       type: 'action.refused';
-      action: Action['type'];
+      action: Action['type'] | 'unknown';
       houseId: string;
       reason: RefusalReason;
     }
@@ -38,7 +43,7 @@ export type Event =
       priceCents: number;
       revenueCents: number;
     }
-  | { type: 'workshop.idle'; houseId: string; good: GoodId; missingUnits: number }
+  | { type: 'workshop.idle'; houseId: string; good: GoodId; input: GoodId; missingUnits: number }
   | { type: 'house.wages_paid'; houseId: string; amountCents: number }
   | { type: 'house.penniless'; houseId: string; shortfallCents: number }
   | { type: 'house.debt_repaid'; houseId: string; amountCents: number }

@@ -72,6 +72,20 @@ describe('the simulation core', () => {
     expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_house' });
   });
 
+  it('refuses an action type it does not know, instead of skipping it', () => {
+    const malformed = { type: 'market.invent', houseId: 'brigue', good: 'wool' } as unknown as Action;
+    const { events } = tick(createWorld(SEED), [malformed]);
+
+    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_action', houseId: 'unknown' });
+  });
+
+  it('clears the output at the market instead of counting it twice', () => {
+    const { world } = tick(createWorld(SEED));
+
+    expect(world.houses.brigue.stock.cloth).toBeUndefined();
+    expect(world.houses.brigue.stock.wool).toBe(4);
+  });
+
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
     const first = play(createWorld(SEED), 3);
 
@@ -79,6 +93,7 @@ describe('the simulation core', () => {
       type: 'workshop.idle',
       houseId: 'brigue',
       good: 'cloth',
+      input: 'wool',
       missingUnits: 4,
     });
 

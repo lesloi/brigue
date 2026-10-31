@@ -50,7 +50,9 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 - **One writer per world.** Catch-up turns a read into a write, so two requests for the same world
   could each replay the same weeks and lose one of them. The row is locked for the duration
   (`SELECT … FOR UPDATE`), actions carry a client-generated UUID with a unique constraint (a
-  retried request is refused, not applied twice), and actions are applied in insertion order.
+  retried request is refused, not applied twice), and each action carries the week it was queued
+  for: the server applies a week's actions in the order they were received, then ticks once.
+  "Insertion order" alone is only well defined inside one week.
 
 ## Simulation
 
@@ -65,6 +67,15 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 
 - **Money is integer cents.** No float anywhere: the economy must replay exactly, and a drift of
   a hundredth per tick is invisible until it is catastrophic.
+
+- **The market clears what a workshop makes, at the week's price.** There is no finished-goods
+  stock: producing and selling are one act, and the decision is what to produce and how much raw
+  material to buy. Holding cloth for a better week would be a second mechanic, and crediting both
+  the goods and the coin would count the output twice.
+
+- **Pacing is not a rule.** How long a week lasts and how far a returning player is caught up
+  (`PACING`) are read by the server and must not bump `rulesetVersion`; a recipe, by contrast, is
+  a rule and lives in `RULES`, because changing one changes the economy.
 
 - **A refusal is an event, never a throw.** The server replays stored actions weeks later; one
   poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase

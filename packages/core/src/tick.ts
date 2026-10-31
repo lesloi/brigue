@@ -1,6 +1,6 @@
 import { drawBelow } from './prng.ts';
 import type { Action, Event, RefusalReason } from './events.ts';
-import { FORMAT_VERSION, RECIPES, RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type World } from './world.ts';
+import { FORMAT_VERSION, RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type World } from './world.ts';
 
 export interface TickResult {
   world: World;
@@ -37,8 +37,15 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
   const next = structuredClone(world);
   const events: Event[] = [];
 
-  for (const action of actions) {
-    applyAction(next, action, events);
+  for (const candidate of actions as readonly unknown[]) {
+    // A stored action can be anything: it went through a database and a JSON
+    // parser. An unknown one is refused, never skipped, and never thrown.
+    if (!isKnownAction(candidate)) {
+      events.push({ type: 'action.refused', action: 'unknown', houseId: 'unknown', reason: 'unknown_action' });
+      continue;
+    }
+
+    applyAction(next, candidate, events);
   }
 
   driftPrices(next, events);
@@ -54,8 +61,23 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
   return { world: next, events };
 }
 
-function refuse(events: Event[], action: Action, houseId: string, reason: RefusalReason): void {
-  events.push({ type: 'action.refused', action: action.type, houseId, reason });
+function isKnownAction(value: unknown): value is Action {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const type = (value as { type?: unknown }).type;
+
+  return type === 'market.buy' || type === 'council.campaign';
+}
+
+function refuse(events: Event[], action: Action, houseId: unknown, reason: RefusalReason): void {
+  events.push({
+    type: 'action.refused',
+    action: action.type,
+    houseId: typeof houseId === 'string' && houseId.length > 0 ? houseId : 'unknown',
+    reason,
+  });
 }
 
 function applyAction(world: World, action: Action, events: Event[]): void {
@@ -141,12 +163,18 @@ function runWorkshops(world: World, events: Event[]): void {
       workers += workshop.workers;
 
       const wanted = workshop.level * RULES.outputPerLevel;
-      const recipe = RECIPES[workshop.good];
+      const recipe = RULES.recipes[workshop.good];
       const available = recipe ? (house.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
       const units = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
 
       if (recipe && units < wanted) {
-        events.push({ type: 'workshop.idle', houseId: house.id, good: workshop.good, missingUnits: wanted - units });
+        events.push({
+          type: 'workshop.idle',
+          houseId: house.id,
+          good: workshop.good,
+          input: recipe.input,
+          missingUnits: wanted - units,
+        });
       }
       if (units === 0) {
         continue;
@@ -156,9 +184,11 @@ function runWorkshops(world: World, events: Event[]): void {
         house.stock[recipe.input] = available - units * recipe.perUnit;
       }
 
+      // The market clears what the workshop makes, at the week's price: holding
+      // finished cloth for a better week is not a mechanic yet, and crediting
+      // both the goods and the coin would count the output twice.
       const priceCents = world.market[workshop.good];
       const revenueCents = units * priceCents;
-      house.stock[workshop.good] = (house.stock[workshop.good] ?? 0) + units;
       house.treasuryCents += revenueCents;
 
       events.push({

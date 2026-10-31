@@ -6,7 +6,7 @@ export { tick, WorldVersionError, type TickResult } from './tick.ts';
 export {
   createWorld,
   FORMAT_VERSION,
-  RECIPES,
+  PACING,
   RULES,
   SEATS,
   START_YEAR,
