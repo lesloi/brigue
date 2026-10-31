@@ -90,7 +90,10 @@ export const RULES = {
  */
 export const PACING = {
   minutesPerWeek: 60,
-  maxCatchUpWeeks: 520,
+  // A month is 720 hours; 744 covers any calendar month. Beyond that, a read
+  // simulates the cap and lets the wall clock jump over the rest rather than
+  // replaying an unbounded backlog.
+  maxCatchUpWeeks: 744,
 } as const;
 
 export const START_YEAR = 1401;

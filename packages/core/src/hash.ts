@@ -8,5 +8,14 @@ import type { World } from './world.ts';
  * module is the single place that has to move to WebCrypto.
  */
 export function stateHash(world: World): string {
-  return createHash('sha256').update(canonicalJson(world), 'utf8').digest('hex');
+  return hashJson(world);
+}
+
+/**
+ * The same hash over anything canonical-JSON can hold. The API hashes the
+ * projection it returns rather than the world, because the world hash includes
+ * the seed and would hand a patient client the town's whole future.
+ */
+export function hashJson(value: unknown): string {
+  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
 }

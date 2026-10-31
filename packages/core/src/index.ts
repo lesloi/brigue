@@ -1,6 +1,6 @@
 export { canonicalJson } from './canonical.ts';
 export type { Action, Event, RefusalReason } from './events.ts';
-export { stateHash } from './hash.ts';
+export { hashJson, stateHash } from './hash.ts';
 export { advance, drawBelow, MINSTD_MODULUS } from './prng.ts';
 export { tick, WorldVersionError, type TickResult } from './tick.ts';
 export {

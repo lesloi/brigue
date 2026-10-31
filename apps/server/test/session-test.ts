@@ -1,15 +1,19 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { createWorld, RULES } from '@brigue/core';
+
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp, type AppDeps } from '../src/http.ts';
 import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
+import { MemoryWorldStore } from '../src/worlds.ts';
 
 interface Harness {
   url: string;
   store: MemoryPlayerStore;
+  worlds: MemoryWorldStore;
   logs: string[];
 }
 
@@ -21,9 +25,10 @@ afterEach(async () => {
 
 async function start(options: Partial<AppDeps> = {}): Promise<Harness> {
   const store = new MemoryPlayerStore();
+  const worlds = new MemoryWorldStore();
   const logs: string[] = [];
   const logger = createLogger((line) => logs.push(line));
-  const server = createApp({ store, logger, ...options });
+  const server = createApp({ store, worlds, logger, ...options });
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as AddressInfo;
@@ -34,11 +39,11 @@ async function start(options: Partial<AppDeps> = {}): Promise<Harness> {
       }),
   );
 
-  return { url: `http://127.0.0.1:${address.port}`, store, logs };
+  return { url: `http://127.0.0.1:${address.port}`, store, worlds, logs };
 }
 
 function login(harness: Harness, token: string, ip?: string): Promise<Response> {
-  return fetch(`${harness.url}/session`, {
+  return fetch(`${harness.url}/api/session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -94,19 +99,23 @@ describe('the token endpoint', () => {
     const harness = await start();
     const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
 
-    const response = await fetch(`${harness.url}/session?token=${encodeURIComponent(token)}`, {
+    // The house is taken, so a join cannot succeed. A 200 would mean the
+    // query-string token was used as an identity.
+    const response = await fetch(`${harness.url}/api/session?token=${encodeURIComponent(token)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
     });
 
-    expect(response.status).toBe(401);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'no_free_house' });
+    expect(cookieOf(response)).toBeUndefined();
   });
 
   it('refuses a malformed body without opening a session', async () => {
     const harness = await start();
 
-    const response = await fetch(`${harness.url}/session`, {
+    const response = await fetch(`${harness.url}/api/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: 'not json',
@@ -148,13 +157,65 @@ describe('the token endpoint', () => {
   });
 });
 
+describe('joining the town', () => {
+  it('issues a token for the first human house and creates the world', async () => {
+    const harness = await start();
+
+    const response = await fetch(`${harness.url}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    const body = (await response.json()) as { token: string; worldId: string; houseId: string };
+
+    expect(response.status).toBe(201);
+    expect(body.worldId).toBe('saint-aubin');
+    expect(body.houseId).toBe('brigue');
+    expect(body.token).toMatch(/^bgk_[A-Za-z0-9_-]{43}$/);
+    expect(cookieOf(response)).toContain('HttpOnly');
+    expect(await harness.worlds.withWorld('saint-aubin', async (session) => session.snapshot.world.week)).toBe(1);
+
+    // The issued token is the identity: it logs in on the next visit.
+    const again = await login(harness, body.token);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toEqual({ worldId: 'saint-aubin', houseId: 'brigue' });
+  });
+
+  it('refuses a second token for a house that already has one', async () => {
+    const harness = await start();
+    await issueToken(harness.store, 'saint-aubin', 'brigue');
+
+    const response = await fetch(`${harness.url}/api/session`, { method: 'POST' });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'no_free_house' });
+    expect(cookieOf(response)).toBeUndefined();
+  });
+
+  it('refuses to hand out a token for a world the current rules cannot read', async () => {
+    const harness = await start();
+    await harness.worlds.createIfAbsent(
+      'saint-aubin',
+      { ...createWorld(7), rulesetVersion: RULES.version + 1 },
+      new Date(),
+      new Date(),
+    );
+
+    const response = await fetch(`${harness.url}/api/session`, { method: 'POST' });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: 'world_version', rulesetVersion: RULES.version + 1 });
+    expect(cookieOf(response)).toBeUndefined();
+  });
+});
+
 describe('the session cookie', () => {
   it('reads the house back from the cookie alone', async () => {
     const harness = await start();
     const { token } = await issueToken(harness.store, 'saint-aubin', 'herse');
     const opened = await login(harness, token);
 
-    const response = await fetch(`${harness.url}/session`, {
+    const response = await fetch(`${harness.url}/api/session`, {
       headers: { Cookie: cookiePair(opened) },
     });
 
@@ -165,7 +226,7 @@ describe('the session cookie', () => {
   it('clears a dead cookie instead of replaying it', async () => {
     const harness = await start();
 
-    const response = await fetch(`${harness.url}/session`, {
+    const response = await fetch(`${harness.url}/api/session`, {
       headers: { Cookie: `${SESSION_COOKIE}=bgk_${'x'.repeat(43)}` },
     });
 
@@ -178,11 +239,11 @@ describe('the session cookie', () => {
     const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
     const opened = await login(harness, token);
 
-    const closed = await fetch(`${harness.url}/session`, {
+    const closed = await fetch(`${harness.url}/api/session`, {
       method: 'DELETE',
       headers: { Cookie: cookiePair(opened) },
     });
-    const after = await fetch(`${harness.url}/session`, {
+    const after = await fetch(`${harness.url}/api/session`, {
       headers: { Cookie: cookiePair(opened) },
     });
 

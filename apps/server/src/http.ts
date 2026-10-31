@@ -1,17 +1,38 @@
+import { randomInt } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
-import { authenticate } from './session.ts';
+import { createWorld, FORMAT_VERSION, hashJson, PACING, RULES, WorldVersionError } from '@brigue/core';
+
+import { parseActionSubmission, withHouse } from './actions.ts';
+import { catchUp, WEEK_MS, type CatchUpResult } from './catch-up.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
-import type { PlayerStore } from './players.ts';
+import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
+import { projectWorld } from './projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
+import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
+import { authenticate, issueToken } from './session.ts';
+import {
+  DuplicateActionError,
+  FIRST_HOUSE_ID,
+  UnknownWorldError,
+  WORLD_ID,
+  type StoredAction,
+  type WorldStore,
+} from './worlds.ts';
 
-const MAX_BODY_BYTES = 4 * 1024;
 const SESSION_ATTEMPTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+/**
+ * The action may target the week being played, or the next one when an hour
+ * boundary fell between the client's read and its POST. Further ahead is a
+ * client clock that cannot be reconciled with this town.
+ */
+const QUEUE_AHEAD_WEEKS = 1;
 
 export interface AppDeps {
   store: PlayerStore;
+  worlds: WorldStore;
   logger: Logger;
   now?: () => number;
   secureCookies?: boolean;
@@ -19,8 +40,6 @@ export interface AppDeps {
   limiter?: RateLimiter;
   sessionAttemptsPerMinute?: number;
 }
-
-class BodyTooLargeError extends Error {}
 
 export function createApp(deps: AppDeps): Server {
   const now = deps.now ?? Date.now;
@@ -32,6 +51,24 @@ export function createApp(deps: AppDeps): Server {
 
   return createServer((request, response) => {
     handle(request, response).catch((error: unknown) => {
+      // A wrong version is a refusal the client can act on, and it must never
+      // reach a replay: catch-up checks it before the first tick.
+      if (error instanceof WorldVersionError) {
+        deps.logger.warn('world.version_refused', {
+          formatVersion: error.formatVersion,
+          rulesetVersion: error.rulesetVersion,
+        });
+        sendJson(response, 409, versionRefusal(error));
+        return;
+      }
+
+      if (error instanceof UnknownWorldError) {
+        // A token whose world vanished: broken state, and nothing to catch up.
+        deps.logger.warn('world.unknown', { method: request.method });
+        sendJson(response, 404, { error: 'unknown_world' });
+        return;
+      }
+
       // Never the URL: a token put in a query string must not reach the log.
       deps.logger.warn('http.error', {
         method: request.method,
@@ -48,24 +85,41 @@ export function createApp(deps: AppDeps): Server {
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname;
 
-    if (path !== '/session') {
-      sendJson(response, 404, { error: 'not_found' });
-      return;
-    }
+    switch (path) {
+      case '/api/session':
+        switch (request.method) {
+          case 'POST':
+            await openSession(request, response);
+            return;
+          case 'GET':
+            await readSession(request, response);
+            return;
+          case 'DELETE':
+            await closeSession(request, response);
+            return;
+          default:
+            methodNotAllowed(response, 'GET, POST, DELETE');
+            return;
+        }
 
-    switch (request.method) {
-      case 'POST':
-        await openSession(request, response);
+      case '/api/world':
+        if (request.method !== 'GET') {
+          methodNotAllowed(response, 'GET');
+          return;
+        }
+        await readWorld(request, response);
         return;
-      case 'GET':
-        await readSession(request, response);
+
+      case '/api/actions':
+        if (request.method !== 'POST') {
+          methodNotAllowed(response, 'POST');
+          return;
+        }
+        await appendAction(request, response);
         return;
-      case 'DELETE':
-        await closeSession(request, response);
-        return;
+
       default:
-        response.writeHead(405, { Allow: 'GET, POST, DELETE', 'Cache-Control': 'no-store' });
-        response.end();
+        sendJson(response, 404, { error: 'not_found' });
     }
   }
 
@@ -83,22 +137,35 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    let body: unknown;
-    try {
-      body = await readJson(request);
-    } catch (error) {
-      if (error instanceof BodyTooLargeError) {
-        sendJson(response, 413, { error: 'body_too_large' });
-        return;
-      }
+    const read = await readBody(request, response);
+    if (!read.ok) {
+      return;
+    }
+    const body = read.body;
+
+    if (body !== undefined && body !== null && (typeof body !== 'object' || Array.isArray(body))) {
       sendJson(response, 400, { error: 'invalid_json' });
       return;
     }
 
-    const token = tokenFrom(body);
+    const candidate = (body as { token?: unknown } | null | undefined)?.token;
+    if (candidate !== undefined) {
+      if (typeof candidate !== 'string') {
+        sendJson(response, 400, { error: 'invalid_token' });
+        return;
+      }
+
+      await resumeSession(response, ip, candidate);
+      return;
+    }
+
+    await joinTown(response, ip);
+  }
+
+  async function resumeSession(response: ServerResponse, ip: string, token: string): Promise<void> {
     const player = await authenticate(deps.store, token);
 
-    if (player === null || token === undefined) {
+    if (player === null) {
       // Unknown, revoked and malformed answer the same way: a 401 and nothing.
       deps.logger.warn('session.refused', { ip });
       unauthorized(response, secureCookies, false);
@@ -114,11 +181,37 @@ export function createApp(deps: AppDeps): Server {
     );
   }
 
+  async function joinTown(response: ServerResponse, ip: string): Promise<void> {
+    const at = new Date(now());
+
+    try {
+      // One town, created by the first player; the next ones find it and only
+      // take the house binding.
+      await deps.worlds.createIfAbsent(WORLD_ID, createWorld(randomSeed()), at, at);
+      await assertWorldVersion();
+
+      const issued = await issueToken(deps.store, WORLD_ID, FIRST_HOUSE_ID, at);
+      deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId: FIRST_HOUSE_ID });
+      sendJson(
+        response,
+        201,
+        { worldId: WORLD_ID, houseId: FIRST_HOUSE_ID, token: issued.token },
+        { 'Set-Cookie': sessionCookie(issued.token, secureCookies) },
+      );
+    } catch (error) {
+      if (error instanceof HouseAlreadyBoundError) {
+        deps.logger.warn('session.no_free_house', { ip });
+        sendJson(response, 409, { error: 'no_free_house' });
+        return;
+      }
+      throw error;
+    }
+  }
+
   async function readSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const player = await authenticate(deps.store, readSessionCookie(request.headers.cookie));
+    const player = await identifiedBy(request, response);
 
     if (player === null) {
-      unauthorized(response, secureCookies, true);
       return;
     }
 
@@ -126,10 +219,9 @@ export function createApp(deps: AppDeps): Server {
   }
 
   async function closeSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const player = await authenticate(deps.store, readSessionCookie(request.headers.cookie));
+    const player = await identifiedBy(request, response);
 
     if (player === null) {
-      unauthorized(response, secureCookies, true);
       return;
     }
 
@@ -142,7 +234,193 @@ export function createApp(deps: AppDeps): Server {
     });
     response.end();
   }
+
+  async function readWorld(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+
+    const at = new Date(now());
+    const caught = await catchUpTown(player.worldId, at);
+
+    if (caught.summary.skippedWeeks > 0) {
+      deps.logger.warn('world.catch_up_capped', {
+        worldId: player.worldId,
+        skippedWeeks: caught.summary.skippedWeeks,
+      });
+    }
+    deps.logger.info('world.read', {
+      worldId: player.worldId,
+      houseId: player.houseId,
+      week: caught.world.week,
+      weeksPlayed: caught.summary.weeksPlayed,
+      skippedWeeks: caught.summary.skippedWeeks,
+    });
+
+    const projection = projectWorld(caught.world, player.houseId, caught.weekStartedAt);
+
+    sendJson(response, 200, {
+      world: projection,
+      events: caught.events,
+      summary: caught.summary,
+      // The projected state, not the world: hashing the world would reveal the
+      // seed and with it every future the town has not lived yet.
+      stateHash: hashJson(projection),
+    });
+  }
+
+  async function appendAction(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+
+    const read = await readBody(request, response);
+    if (!read.ok) {
+      return;
+    }
+
+    const submission = parseActionSubmission(read.body);
+    if (!submission.ok) {
+      sendJson(response, 400, { error: submission.error });
+      return;
+    }
+
+    const at = new Date(now());
+    let outcome: ActionOutcome;
+    try {
+      outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
+        const { world, weekStartedAt } = session.snapshot;
+        if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
+          throw new WorldVersionError(world);
+        }
+
+        // The action names a week, not a house: the house is the session's.
+        // A week that already ticked can never be replayed, and the town clock
+        // is the upper bound for a week that has not begun yet.
+        const elapsed = Math.max(0, Math.floor((at.getTime() - weekStartedAt.getTime()) / WEEK_MS));
+        // Where a catch-up read would land: the cap bounds how many weeks it
+        // will actually play, and skipping does not advance the town's week.
+        const currentWeek = world.week + Math.min(elapsed, PACING.maxCatchUpWeeks);
+
+        if (submission.week < world.week) {
+          return { kind: 'stale' as const, currentWeek };
+        }
+        if (submission.week > currentWeek + QUEUE_AHEAD_WEEKS) {
+          return { kind: 'future' as const, currentWeek };
+        }
+        if ((await session.findAction(submission.id)) !== null) {
+          return { kind: 'duplicate' as const };
+        }
+
+        const stored: StoredAction = {
+          id: submission.id,
+          houseId: player.houseId,
+          week: submission.week,
+          action: withHouse(submission.intent, player.houseId),
+          receivedAt: at,
+        };
+        await session.append(stored);
+
+        return { kind: 'appended' as const, stored };
+      });
+    } catch (error) {
+      // The primary key caught an id another week already used; the pre-check
+      // above covers the common path, this covers a race from another world.
+      if (error instanceof DuplicateActionError) {
+        sendJson(response, 409, { error: 'duplicate_action' });
+        return;
+      }
+      throw error;
+    }
+
+    switch (outcome.kind) {
+      case 'stale':
+        sendJson(response, 409, { error: 'stale_week', currentWeek: outcome.currentWeek });
+        return;
+      case 'future':
+        sendJson(response, 409, { error: 'future_week', currentWeek: outcome.currentWeek });
+        return;
+      case 'duplicate':
+        sendJson(response, 409, { error: 'duplicate_action' });
+        return;
+      case 'appended':
+        deps.logger.info('action.appended', {
+          worldId: player.worldId,
+          houseId: player.houseId,
+          week: outcome.stored.week,
+          action: outcome.stored.action.type,
+        });
+        sendJson(response, 201, {
+          id: outcome.stored.id,
+          week: outcome.stored.week,
+          houseId: outcome.stored.houseId,
+        });
+    }
+  }
+
+  function catchUpTown(worldId: string, at: Date): Promise<CatchUpResult> {
+    return deps.worlds.withWorld(worldId, async (session) => {
+      const caught = await catchUp({
+        world: session.snapshot.world,
+        weekStartedAt: session.snapshot.weekStartedAt,
+        lastEvents: session.snapshot.lastEvents,
+        now: at,
+        actionsFor: (week) => session.actionsFor(week),
+      });
+
+      if (caught.summary.weeksPlayed > 0 || caught.summary.skippedWeeks > 0) {
+        await session.save(caught.world, caught.weekStartedAt, caught.events, at);
+      }
+
+      return caught;
+    });
+  }
+
+  async function assertWorldVersion(): Promise<void> {
+    await deps.worlds.withWorld(WORLD_ID, async (session) => {
+      const world = session.snapshot.world;
+
+      if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
+        throw new WorldVersionError(world);
+      }
+    });
+  }
+
+  async function identifiedBy(request: IncomingMessage, response: ServerResponse): Promise<Player | null> {
+    const player = await authenticate(deps.store, readSessionCookie(request.headers.cookie));
+
+    if (player === null) {
+      unauthorized(response, secureCookies, true);
+    }
+
+    return player;
+  }
+
+  async function readBody(request: IncomingMessage, response: ServerResponse): Promise<BodyRead> {
+    try {
+      return { ok: true, body: await readJson(request) };
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        sendJson(response, 413, { error: 'body_too_large' });
+        return { ok: false };
+      }
+      sendJson(response, 400, { error: 'invalid_json' });
+      return { ok: false };
+    }
+  }
 }
+
+type BodyRead = { ok: true; body: unknown } | { ok: false };
+
+type ActionOutcome =
+  | { kind: 'stale'; currentWeek: number }
+  | { kind: 'future'; currentWeek: number }
+  | { kind: 'duplicate' }
+  | { kind: 'appended'; stored: StoredAction };
 
 function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
   if (trustProxy) {
@@ -159,51 +437,15 @@ function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
   return request.socket.remoteAddress ?? 'unknown';
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
-    size += buffer.length;
-    if (size > MAX_BODY_BYTES) {
-      throw new BodyTooLargeError();
-    }
-    chunks.push(buffer);
-  }
-
-  if (size === 0) {
-    return undefined;
-  }
-
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+function randomSeed(): number {
+  return randomInt(1, 2_147_483_646);
 }
 
-function tokenFrom(body: unknown): string | undefined {
-  if (body === null || typeof body !== 'object') {
-    return undefined;
-  }
-
-  const value = (body as { token?: unknown }).token;
-
-  return typeof value === 'string' ? value : undefined;
-}
-
-function unauthorized(response: ServerResponse, secure: boolean, clearCookie: boolean): void {
-  const headers: Record<string, string> = { 'Cache-Control': 'no-store' };
-  if (clearCookie) {
-    headers['Set-Cookie'] = clearedSessionCookie(secure);
-  }
-
-  response.writeHead(401, headers);
-  response.end();
-}
-
-function sendJson(response: ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}): void {
-  response.writeHead(status, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Cache-Control': 'no-store',
-    ...headers,
-  });
-  response.end(JSON.stringify(body));
+function versionRefusal(error: WorldVersionError): Record<string, unknown> {
+  return {
+    error: 'world_version',
+    formatVersion: error.formatVersion,
+    rulesetVersion: error.rulesetVersion,
+    expected: { formatVersion: FORMAT_VERSION, rulesetVersion: RULES.version },
+  };
 }

@@ -45,15 +45,22 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 - **The world catches up on read; there is no scheduler.** `tick` is pure, so the server computes
   the weeks elapsed since the last visit when a player asks for the world. A cron would add a
   component to watch and would not change what the player sees. The contract: one game week per
-  real hour, capped at 520 weeks per read, with the events of the last week returned and the rest
-  summarised as counters. Revisit when a shared season must move while nobody is looking.
+  real hour, capped at 744 weeks per read (a full month), with the events of the last week
+  returned and the rest summarised as counters. Beyond the cap the wall clock jumps over the
+  remaining weeks: they were never simulated, the town only counts the weeks it lived, and the
+  summary says how many were skipped. Without that jump a long absence would leave a backlog
+  that every immediate read keeps ticking, so two reads with no time passing would disagree.
+  Revisit when a shared season must move while nobody is looking.
 
 - **One writer per world.** Catch-up turns a read into a write, so two requests for the same world
   could each replay the same weeks and lose one of them. The row is locked for the duration
   (`SELECT … FOR UPDATE`), actions carry a client-generated UUID with a unique constraint (a
   retried request is refused, not applied twice), and each action carries the week it was queued
   for: the server applies a week's actions in the order they were received, then ticks once.
-  "Insertion order" alone is only well defined inside one week.
+  "Insertion order" alone is only well defined inside one week, so a sequence column holds it.
+  Applied actions are kept: a retry must stay detectable, and the town must stay replayable.
+  An action may name the week being played or the next one; a week that already ticked is
+  refused, and the action endpoint never catches the world up itself.
 
 ## Simulation
 
@@ -104,6 +111,11 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 - **The world is one `jsonb` column in Postgres.** One document per world, read and written whole,
   and the database is asked for nothing but durability. Revisit if a screen ever needs to query
   inside the world rather than read it.
+
+- **The state hash the API returns is the projection, not the world.** The world hash covers the
+  seed and the generator; published, it would let a client brute-force a young town's seed and
+  simulate its whole future. Two reads with no time passing still agree, because they return the
+  same projection.
 
 ## Interface
 
