@@ -139,7 +139,7 @@ function workshopRow(
   const price = world.town.market[workshop.good];
   return `<div class="row">
     <div class="th">${workshopThumb(workshop.good)}</div>
-    <div class="nm"><b>${esc(workshopName(workshop.good))}</b><p><span class="lv">niv. ${esc(workshop.level)}</span>${esc(formatCount(workshop.workers))} ouvrier${workshop.workers > 1 ? 's' : ''} &middot; ${esc(goodName(workshop.good))}</p></div>
+    <div class="nm"><b>${esc(workshopName(workshop.good))}</b><p><span class="lv">niv. ${esc(workshop.level)}</span> ${esc(formatCount(workshop.workers))} ouvrier${workshop.workers > 1 ? 's' : ''} &middot; ${esc(goodName(workshop.good))}</p></div>
     <div class="act"><span class="price"><b>${esc(formatCents(price))}</b> écus</span><span class="price-l">l'unité</span></div>
   </div>`;
 }
@@ -165,5 +165,5 @@ function navItem(kind: 'ville' | 'marche' | 'conseil' | 'greffe' | 'courrier', l
     return `<a class="nav-item on" href="/" aria-current="page">${navIcon(kind)}<span>${esc(label)}</span></a>`;
   }
 
-  return `<button class="nav-item" type="button" disabled title="À venir">${navIcon(kind)}<span>${esc(label)}</span></button>`;
+  return `<button class="nav-item" type="button" disabled title="À venir" aria-label="${esc(label)} (à venir)">${navIcon(kind)}<span>${esc(label)}</span></button>`;
 }

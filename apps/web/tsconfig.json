@@ -6,5 +6,5 @@
     "moduleResolution": "bundler",
     "types": ["vite/client"]
   },
-  "include": ["src/**/*.ts", "vite.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vite.config.ts"]
 }

@@ -70,7 +70,7 @@ export function refusalText(reason: RefusalReason): string {
   }
 }
 
-/** Server error codes, said the way the screen would say them. */
+/** Server error codes for an action, said the way the screen would say them. */
 export function actionErrorText(code: string | null): string {
   switch (code) {
     case 'stale_week':
@@ -89,5 +89,19 @@ export function actionErrorText(code: string | null): string {
       return "Cette ville n'a plus de maison libre.";
     default:
       return "L'action n'a pas pu être envoyée.";
+  }
+}
+
+/** Server error codes for a read, which is a different failure from an action. */
+export function readErrorText(code: string | null): string {
+  switch (code) {
+    case 'unknown_world':
+      return 'Cette ville a disparu.';
+    case 'world_version':
+      return "Cette ville n'est plus compatible avec le serveur.";
+    case 'not_found':
+      return "Le serveur n'a pas trouvé cette ville.";
+    default:
+      return "La ville n'a pas pu être relue.";
   }
 }

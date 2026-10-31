@@ -1,5 +1,5 @@
 import { ApiError, hasSession, joinTown, readWorld, resumeTown, sendAction, type WorldResponse } from './api.ts';
-import { actionErrorText } from './format.ts';
+import { actionErrorText, readErrorText } from './format.ts';
 import './styles.css';
 import { failureTemplate, lostHouseTemplate, tokenDialogTemplate } from './views/gate.ts';
 import { countdownText, villeTemplate } from './views/ville.ts';
@@ -34,6 +34,10 @@ async function boot(): Promise<void> {
 
     await load();
   } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      showLostHouse();
+      return;
+    }
     showFailure(error);
   }
 }
@@ -60,10 +64,20 @@ function paint(data: WorldResponse): void {
 }
 
 async function refresh(): Promise<void> {
+  // A refresh replaces the DOM, and the token dialog lives in it: never wipe a
+  // token the player has not had time to note.
+  if (document.querySelector('#token-overlay') !== null) {
+    return;
+  }
+
   try {
     await load();
   } catch (error) {
-    showToast(messageFor(error), true);
+    if (error instanceof ApiError && error.status === 401) {
+      void boot();
+      return;
+    }
+    showToast(readMessageFor(error), true);
   }
 }
 
@@ -85,7 +99,7 @@ async function buyWool(): Promise<void> {
       showToast(actionErrorText(error.code), true);
       await refresh();
     } else {
-      showToast(messageFor(error), true);
+      showToast(actionMessageFor(error), true);
     }
   } finally {
     if (button) {
@@ -119,7 +133,9 @@ function showLostHouse(): void {
         if (error) {
           error.hidden = false;
           error.textContent =
-            failure instanceof ApiError && failure.status === 401 ? "Ce jeton n'est pas reconnu." : messageFor(failure);
+            failure instanceof ApiError && failure.status === 401
+              ? "Ce jeton n'est pas reconnu."
+              : readMessageFor(failure);
         }
       })
       .finally(() => {
@@ -147,14 +163,41 @@ function showToken(token: string): void {
 
   const overlay = document.querySelector<HTMLDivElement>('#token-overlay');
   const close = () => overlay?.remove();
+  const focusables = Array.from(
+    overlay?.querySelectorAll<HTMLElement>('button, [href], input, [tabindex]:not([tabindex="-1"])') ?? [],
+  );
 
-  document.querySelector('#close-token')?.addEventListener('click', close);
+  document.querySelector<HTMLButtonElement>('#copy-token')?.focus();
+  document.querySelector<HTMLButtonElement>('#close-token')?.addEventListener('click', close);
   overlay?.addEventListener('click', (event) => {
     if (event.target === overlay) {
       close();
     }
   });
-  document.querySelector('#copy-token')?.addEventListener('click', () => {
+  overlay?.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key !== 'Tab' || focusables.length === 0) {
+      return;
+    }
+
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (first === undefined || last === undefined) {
+      return;
+    }
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  document.querySelector<HTMLButtonElement>('#copy-token')?.addEventListener('click', () => {
     void navigator.clipboard.writeText(token).then(
       () => showToast('Jeton copié.'),
       () => showToast('Impossible de copier : sélectionnez le jeton à la main.', true),
@@ -200,9 +243,20 @@ function showToast(message: string, error = false): void {
   }, 6500);
 }
 
-function messageFor(error: unknown): string {
+function actionMessageFor(error: unknown): string {
   if (error instanceof ApiError) {
     return actionErrorText(error.code);
+  }
+  if (error instanceof TypeError) {
+    return 'La ville ne répond pas. Vérifiez la connexion.';
+  }
+
+  return 'Une erreur inattendue est survenue.';
+}
+
+function readMessageFor(error: unknown): string {
+  if (error instanceof ApiError) {
+    return readErrorText(error.code);
   }
   if (error instanceof TypeError) {
     return 'La ville ne répond pas. Vérifiez la connexion.';

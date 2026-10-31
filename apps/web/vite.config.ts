@@ -9,7 +9,6 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Brigue',
         short_name: 'Brigue',
@@ -18,7 +17,6 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        orientation: 'portrait',
         background_color: '#f6f4ef',
         theme_color: '#f6f4ef',
         icons: [
