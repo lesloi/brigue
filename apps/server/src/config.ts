@@ -6,6 +6,8 @@ export interface Config {
   trustProxy: boolean;
   /** Built client to serve, when this process is the only one. Unset in development. */
   webRoot?: string;
+  /** Local development only: exposes `POST /api/dev/advance`, one week per click. */
+  devAdvance: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -30,5 +32,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     // when the peer really is that ingress: otherwise the header is spoofable.
     trustProxy: env.TRUST_PROXY === 'true',
     webRoot: env.WEB_ROOT === undefined || env.WEB_ROOT === '' ? undefined : env.WEB_ROOT,
+    devAdvance: env.DEV_ADVANCE === 'true',
   };
 }

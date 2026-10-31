@@ -19,6 +19,7 @@ import {
   UnknownWorldError,
   WORLD_ID,
   type StoredAction,
+  type WorldSession,
   type WorldStore,
 } from './worlds.ts';
 
@@ -43,6 +44,8 @@ export interface AppDeps {
   ready: () => Promise<void>;
   /** Directory of the built client. Unset in development, where Vite serves it. */
   webRoot?: string;
+  /** Local development only: exposes `POST /api/dev/advance`. Never set in production. */
+  devAdvance?: boolean;
   now?: () => number;
   secureCookies?: boolean;
   trustProxy?: boolean;
@@ -145,6 +148,20 @@ export function createApp(deps: AppDeps): Server {
           return;
         }
         await appendAction(request, response);
+        return;
+
+      case '/api/dev/advance':
+        // The route only exists when the server was started for development:
+        // in production it is indistinguishable from any unknown path.
+        if (deps.devAdvance !== true) {
+          sendJson(response, 404, { error: 'not_found' });
+          return;
+        }
+        if (request.method !== 'POST') {
+          methodNotAllowed(response, 'POST');
+          return;
+        }
+        await advanceWeek(request, response);
         return;
 
       default:
@@ -318,6 +335,38 @@ export function createApp(deps: AppDeps): Server {
       // The projected state, not the world: hashing the world would reveal the
       // seed and with it every future the town has not lived yet.
       stateHash: hashJson(projection),
+      // Outside the projection on purpose: the hash must not depend on how a
+      // deployment was started.
+      ...(deps.devAdvance === true ? { dev: true } : {}),
+    });
+  }
+
+  /**
+   * Local development only: plays the next week now instead of waiting for the
+   * hour to pass. The world clock jumps, the wall clock does not.
+   */
+  async function advanceWeek(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+
+    const caught = await advanceTown(player.worldId);
+    deps.logger.info('world.advanced', {
+      worldId: player.worldId,
+      houseId: player.houseId,
+      week: caught.world.week,
+    });
+
+    const projection = projectWorld(caught.world, player.houseId, caught.weekStartedAt);
+
+    sendJson(response, 200, {
+      world: projection,
+      events: caught.events,
+      summary: caught.summary,
+      stateHash: hashJson(projection),
+      dev: true,
     });
   }
 
@@ -414,19 +463,38 @@ export function createApp(deps: AppDeps): Server {
 
   function catchUpTown(worldId: string, at: Date): Promise<CatchUpResult> {
     return deps.worlds.withWorld(worldId, async (session) => {
-      const caught = await catchUp({
-        world: session.snapshot.world,
-        weekStartedAt: session.snapshot.weekStartedAt,
-        lastEvents: session.snapshot.lastEvents,
-        now: at,
-        actionsFor: (week) => session.actionsFor(week),
-      });
+      const caught = await playWeek(session, at);
 
       if (caught.summary.weeksPlayed > 0 || caught.summary.skippedWeeks > 0) {
         await session.save(caught.world, caught.weekStartedAt, caught.events, at);
       }
 
       return caught;
+    });
+  }
+
+  function advanceTown(worldId: string): Promise<CatchUpResult> {
+    return deps.worlds.withWorld(worldId, async (session) => {
+      // One week further than the town's own clock, whatever the wall clock
+      // says: the click is the hour.
+      const forced = new Date(session.snapshot.weekStartedAt.getTime() + WEEK_MS);
+      const caught = await playWeek(session, forced);
+      // The week was simulated, not lived. Put the next natural tick an hour
+      // from the real now, instead of stacking a backlog the test never waits for.
+      const savedAt = new Date(now());
+      await session.save(caught.world, savedAt, caught.events, savedAt);
+
+      return { ...caught, weekStartedAt: savedAt };
+    });
+  }
+
+  function playWeek(session: WorldSession, at: Date): Promise<CatchUpResult> {
+    return catchUp({
+      world: session.snapshot.world,
+      weekStartedAt: session.snapshot.weekStartedAt,
+      lastEvents: session.snapshot.lastEvents,
+      now: at,
+      actionsFor: (week) => session.actionsFor(week),
     });
   }
 

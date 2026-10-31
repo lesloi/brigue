@@ -14,6 +14,13 @@ if (!config.secureCookies) {
   });
 }
 
+if (config.devAdvance) {
+  logger.warn('config.dev_advance', {
+    // A player who can skip weeks can outrun the town: local development only.
+    detail: 'DEV_ADVANCE=true exposes POST /api/dev/advance',
+  });
+}
+
 const store = await createPgPlayerStore(config.databaseUrl);
 const worlds = await createPgWorldStore(config.databaseUrl);
 const server = createApp({
@@ -22,6 +29,7 @@ const server = createApp({
   logger,
   ready: () => store.ping(),
   webRoot: config.webRoot,
+  devAdvance: config.devAdvance,
   secureCookies: config.secureCookies,
   trustProxy: config.trustProxy,
 });

@@ -36,6 +36,8 @@ export interface WorldResponse {
   events: Event[];
   summary: CatchUpSummary;
   stateHash: string;
+  /** Set only by a server started for local development: it exposes `advanceWeek`. */
+  dev?: boolean;
 }
 
 export type ActionIntent =
@@ -86,6 +88,11 @@ export function resumeTown(token: string): Promise<{ worldId: string; houseId: s
 
 export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
+}
+
+/** Local development only: plays the next week now. The server refuses in production. */
+export function advanceWeek(): Promise<WorldResponse> {
+  return send('/api/dev/advance', { method: 'POST' });
 }
 
 export function sendAction(week: number, action: ActionIntent): Promise<{ id: string; week: number; houseId: string }> {
