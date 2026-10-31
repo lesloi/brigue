@@ -2,49 +2,49 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { canonicalJson, createWorld, stateHash, tick } from '../src/index.ts';
-import type { Action, World } from '../src/index.ts';
+import { advance, canonicalJson, createWorld, stateHash, tick, WorldVersionError } from '../src/index.ts';
+import type { Action, Event, World } from '../src/index.ts';
 
+const SEED = 20261029;
 const WEEKS = 200;
 
-/** A fixed scripted game: no randomness outside the seed, no wall clock. */
-function playthrough(seed: number): World {
-  let world = createWorld(seed);
+function play(world: World, weeks: number, actionAt?: (week: number) => Action[]): { world: World; events: Event[] } {
+  let current = world;
+  const events: Event[] = [];
 
-  for (let week = 0; week < WEEKS; week += 1) {
-    const actions: Action[] = [];
-
-    if (week === 3) {
-      actions.push({ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 5 });
-    }
-    if (week === 7) {
-      actions.push({ type: 'council.campaign', houseId: 'brigue', seatId: 'tresorier' });
-    }
-    if (week === 11) {
-      actions.push({ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 400 });
-    }
-
-    world = tick(world, actions).world;
+  for (let week = 0; week < weeks; week += 1) {
+    const result = tick(current, actionAt?.(week) ?? []);
+    current = result.world;
+    events.push(...result.events);
   }
 
-  return world;
+  return { world: current, events };
+}
+
+function scripted(week: number): Action[] {
+  if (week === 3) return [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 5 }];
+  if (week === 7) return [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }];
+  if (week === 11) return [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 400 }];
+  return [];
 }
 
 describe('the simulation core', () => {
   it('gives the same world for the same seed and the same actions', () => {
-    const first = playthrough(20261029);
-    const second = playthrough(20261029);
+    const first = play(createWorld(SEED), WEEKS, scripted);
+    const second = play(createWorld(SEED), WEEKS, scripted);
 
-    expect(stateHash(first)).toBe(stateHash(second));
-    expect(canonicalJson(first)).toBe(canonicalJson(second));
+    expect(stateHash(first.world)).toBe(stateHash(second.world));
+    expect(canonicalJson(first.world)).toBe(canonicalJson(second.world));
   });
 
   it('gives a different world for a different seed', () => {
-    expect(stateHash(playthrough(20261029))).not.toBe(stateHash(playthrough(1)));
+    expect(stateHash(play(createWorld(SEED), WEEKS, scripted).world)).not.toBe(
+      stateHash(play(createWorld(1), WEEKS, scripted).world),
+    );
   });
 
   it('never mutates the world it is given', () => {
-    const world = createWorld(20261029);
+    const world = createWorld(SEED);
     const before = canonicalJson(world);
 
     tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 2 }]);
@@ -52,40 +52,96 @@ describe('the simulation core', () => {
     expect(canonicalJson(world)).toBe(before);
   });
 
-  it('refuses an action the house cannot pay for', () => {
-    const world = createWorld(20261029);
+  it('refuses an action the house cannot pay for, and says so', () => {
+    const world = createWorld(SEED);
     const refused = tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 10_000 }]);
     const control = tick(world, []);
 
-    expect(refused.events.some((event) => event.type === 'market.bought')).toBe(false);
+    expect(refused.events).toContainEqual({
+      type: 'action.refused',
+      action: 'market.buy',
+      houseId: 'brigue',
+      reason: 'insufficient_funds',
+    });
     expect(refused.world.houses.brigue.treasuryCents).toBe(control.world.houses.brigue.treasuryCents);
   });
 
+  it('refuses an action from a house that does not exist instead of throwing', () => {
+    const { events } = tick(createWorld(SEED), [{ type: 'market.buy', houseId: 'ghost', good: 'wool', units: 1 }]);
+
+    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_house' });
+  });
+
+  it('idles a workshop with no raw material, and produces again once it is bought', () => {
+    const first = play(createWorld(SEED), 3);
+
+    expect(first.events).toContainEqual({
+      type: 'workshop.idle',
+      houseId: 'brigue',
+      good: 'cloth',
+      missingUnits: 4,
+    });
+
+    const { events } = tick(first.world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
+
+    expect(events).toContainEqual(expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'cloth' }));
+  });
+
   it('holds an election on its period and fills a seat', () => {
-    let world = createWorld(20261029);
-    const events = [];
-
-    for (let week = 0; week < 4; week += 1) {
-      const result = tick(world);
-      world = result.world;
-      events.push(...result.events);
-    }
-
+    const { world, events } = play(createWorld(SEED), 4);
     const election = events.find((event) => event.type === 'council.election_held');
 
-    expect(election).toBeDefined();
+    expect(election).toMatchObject({ type: 'council.election_held', seatId: 'maire' });
     expect(world.seats.maire.houseId).not.toBeNull();
   });
 
+  it('keeps a campaign for one seat out of another seat election', () => {
+    const control = play(createWorld(SEED), 4);
+    const campaigned = play(createWorld(SEED), 4, (week) =>
+      week === 0 ? [{ type: 'council.campaign', houseId: 'brigue', seatId: 'tresorier' }] : [],
+    );
+
+    const votesOf = (events: Event[]) => events.find((event) => event.type === 'council.election_held');
+
+    expect(votesOf(campaigned.events)).toEqual(votesOf(control.events));
+    expect(campaigned.world.campaigns.tresorier).toEqual({ brigue: 2 });
+  });
+
+  it('turns unpaid wages into a debt instead of erasing them', () => {
+    const world = createWorld(SEED);
+    world.houses.brigue.treasuryCents = 0;
+    world.houses.brigue.stock = {};
+    world.houses.brigue.workshops = [{ good: 'wool', level: 0, workers: 3 }];
+
+    const { world: after, events } = tick(world);
+
+    expect(events).toContainEqual({ type: 'house.penniless', houseId: 'brigue', shortfallCents: 360 });
+    expect(after.houses.brigue.debtCents).toBe(360);
+  });
+
+  it('refuses a world written by another ruleset', () => {
+    const world = createWorld(SEED);
+    world.rulesetVersion += 1;
+
+    expect(() => tick(world)).toThrow(WorldVersionError);
+  });
+
   it('keeps the ledger in integer cents', () => {
-    const { world } = tick(createWorld(20261029));
+    const { world } = play(createWorld(SEED), 20);
 
     for (const house of Object.values(world.houses)) {
       expect(Number.isInteger(house.treasuryCents)).toBe(true);
+      expect(Number.isInteger(house.debtCents)).toBe(true);
     }
     for (const price of Object.values(world.market)) {
       expect(Number.isInteger(price)).toBe(true);
     }
+  });
+});
+
+describe('the generator', () => {
+  it('escapes the zero fixed point', () => {
+    expect(advance(0)).toBeGreaterThan(0);
   });
 });
 

@@ -13,7 +13,7 @@ export type SeatId = 'maire' | 'prevot' | 'echevin-north' | 'echevin-south' | 't
 /** Seats in the order they come up for election, and the order screens show them. */
 export const SEATS: readonly SeatId[] = ['maire', 'prevot', 'echevin-north', 'echevin-south', 'tresorier'];
 
-/** AI or HUMAN. The simulation does not care which: only who control decides. */
+/** AI or HUMAN. The simulation does not care which: only who controls decides. */
 export type Controller = 'ai' | 'human';
 
 export interface Workshop {
@@ -27,6 +27,8 @@ export interface House {
   name: string;
   controller: Controller;
   treasuryCents: number;
+  /** Unpaid wages. The design says a debt follows the house; this is where it lives. */
+  debtCents: number;
   favour: number;
   prestige: number;
   workshops: Workshop[];
@@ -53,12 +55,14 @@ export interface World {
   seats: Record<SeatId, { houseId: string | null }>;
   laws: Law[];
   market: Record<GoodId, number>;
-  /** Votes bought this week, cleared after the election. */
-  campaigns: Record<string, number>;
+  /** Votes bought per seat, per house, cleared when that seat is elected. */
+  campaigns: Partial<Record<SeatId, Record<string, number>>>;
 }
 
+export const FORMAT_VERSION = 1;
+
 export const RULES = {
-  version: 1,
+  version: 2,
   electionPeriodWeeks: 4,
   priceFloorCents: 100,
   priceCeilCents: 5000,
@@ -67,14 +71,25 @@ export const RULES = {
   wagePerWorkerCents: 120,
   campaignFavourCost: 5,
   campaignVoteBonus: 2,
+  /** One game week lasts one real hour: a year is about two days of wall clock. */
+  minutesPerWeek: 60,
+  /** A player back after a long absence is caught up, not skipped. */
+  maxCatchUpWeeks: 520,
 } as const;
+
+/** What a workshop eats per unit it makes. Wool and grain come out of nothing. */
+export const RECIPES: Record<GoodId, { input: GoodId; perUnit: number } | null> = {
+  cloth: { input: 'wool', perUnit: 1 },
+  wool: null,
+  grain: null,
+};
 
 export const START_YEAR = 1401;
 export const WEEKS_PER_YEAR = 52;
 
 export function createWorld(seed: number): World {
   return {
-    formatVersion: 1,
+    formatVersion: FORMAT_VERSION,
     rulesetVersion: RULES.version,
     seed,
     rng: seed,
@@ -86,26 +101,29 @@ export function createWorld(seed: number): World {
         name: 'Brigue',
         controller: 'human',
         treasuryCents: 117340,
+        debtCents: 0,
         favour: 50,
         prestige: 50,
         workshops: [{ good: 'cloth', level: 2, workers: 2 }],
-        stock: {},
+        stock: { wool: 8 },
       },
       caron: {
         id: 'caron',
         name: 'Caron',
         controller: 'ai',
         treasuryCents: 240000,
+        debtCents: 0,
         favour: 60,
         prestige: 65,
         workshops: [{ good: 'cloth', level: 3, workers: 3 }],
-        stock: {},
+        stock: { wool: 40 },
       },
       vandermeersch: {
         id: 'vandermeersch',
         name: 'Vandermeersch',
         controller: 'ai',
         treasuryCents: 180000,
+        debtCents: 0,
         favour: 70,
         prestige: 58,
         workshops: [{ good: 'wool', level: 2, workers: 1 }],
@@ -116,6 +134,7 @@ export function createWorld(seed: number): World {
         name: 'de Herse',
         controller: 'ai',
         treasuryCents: 150000,
+        debtCents: 0,
         favour: 40,
         prestige: 45,
         workshops: [{ good: 'grain', level: 2, workers: 2 }],

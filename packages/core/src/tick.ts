@@ -1,10 +1,20 @@
 import { drawBelow } from './prng.ts';
-import type { Action, Event } from './events.ts';
-import { RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type World } from './world.ts';
+import type { Action, Event, RefusalReason } from './events.ts';
+import { FORMAT_VERSION, RECIPES, RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type World } from './world.ts';
 
 export interface TickResult {
   world: World;
   events: Event[];
+}
+
+export class WorldVersionError extends Error {
+  constructor(world: World) {
+    super(
+      `world of format ${world.formatVersion} and ruleset ${world.rulesetVersion} cannot be ` +
+        `read by format ${FORMAT_VERSION} and ruleset ${RULES.version}`,
+    );
+    this.name = 'WorldVersionError';
+  }
 }
 
 /**
@@ -20,6 +30,10 @@ export interface TickResult {
  * because two different orders are two different weeks.
  */
 export function tick(world: World, actions: readonly Action[] = []): TickResult {
+  if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
+    throw new WorldVersionError(world);
+  }
+
   const next = structuredClone(world);
   const events: Event[] = [];
 
@@ -40,22 +54,31 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
   return { world: next, events };
 }
 
+function refuse(events: Event[], action: Action, houseId: string, reason: RefusalReason): void {
+  events.push({ type: 'action.refused', action: action.type, houseId, reason });
+}
+
 function applyAction(world: World, action: Action, events: Event[]): void {
   const house = world.houses[action.houseId];
   if (!house) {
-    throw new Error(`unknown house ${action.houseId}`);
+    refuse(events, action, action.houseId, 'unknown_house');
+    return;
   }
 
   switch (action.type) {
     case 'market.buy': {
       if (!Number.isInteger(action.units) || action.units <= 0) {
-        throw new RangeError(`market.buy needs a positive integer, got ${action.units}`);
+        refuse(events, action, house.id, 'invalid_quantity');
+        return;
       }
+
       const priceCents = world.market[action.good];
       const totalCents = priceCents * action.units;
       if (house.treasuryCents < totalCents) {
+        refuse(events, action, house.id, 'insufficient_funds');
         return;
       }
+
       house.treasuryCents -= totalCents;
       house.stock[action.good] = (house.stock[action.good] ?? 0) + action.units;
       events.push({
@@ -71,13 +94,17 @@ function applyAction(world: World, action: Action, events: Event[]): void {
 
     case 'council.campaign': {
       if (!(action.seatId in world.seats)) {
-        throw new Error(`unknown seat ${action.seatId}`);
-      }
-      if (house.favour < RULES.campaignFavourCost) {
+        refuse(events, action, house.id, 'unknown_seat');
         return;
       }
+      if (house.favour < RULES.campaignFavourCost) {
+        refuse(events, action, house.id, 'insufficient_favour');
+        return;
+      }
+
       house.favour -= RULES.campaignFavourCost;
-      world.campaigns[house.id] = (world.campaigns[house.id] ?? 0) + RULES.campaignVoteBonus;
+      const byHouse = (world.campaigns[action.seatId] ??= {});
+      byHouse[house.id] = (byHouse[house.id] ?? 0) + RULES.campaignVoteBonus;
       events.push({
         type: 'council.campaigned',
         houseId: house.id,
@@ -111,13 +138,28 @@ function runWorkshops(world: World, events: Event[]): void {
     let workers = 0;
 
     for (const workshop of house.workshops) {
-      const units = workshop.level * RULES.outputPerLevel;
+      workers += workshop.workers;
+
+      const wanted = workshop.level * RULES.outputPerLevel;
+      const recipe = RECIPES[workshop.good];
+      const available = recipe ? (house.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
+      const units = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
+
+      if (recipe && units < wanted) {
+        events.push({ type: 'workshop.idle', houseId: house.id, good: workshop.good, missingUnits: wanted - units });
+      }
+      if (units === 0) {
+        continue;
+      }
+
+      if (recipe) {
+        house.stock[recipe.input] = available - units * recipe.perUnit;
+      }
+
       const priceCents = world.market[workshop.good];
       const revenueCents = units * priceCents;
-
       house.stock[workshop.good] = (house.stock[workshop.good] ?? 0) + units;
       house.treasuryCents += revenueCents;
-      workers += workshop.workers;
 
       events.push({
         type: 'market.sold',
@@ -129,39 +171,56 @@ function runWorkshops(world: World, events: Event[]): void {
       });
     }
 
-    const wages = workers * RULES.wagePerWorkerCents;
-    if (wages === 0) {
-      continue;
-    }
+    employeesArePaid(world, house.id, workers, events);
+  }
+}
 
-    if (house.treasuryCents >= wages) {
-      house.treasuryCents -= wages;
-      events.push({ type: 'house.wages_paid', houseId: house.id, amountCents: wages });
-    } else {
-      const shortfallCents = wages - house.treasuryCents;
-      house.treasuryCents = 0;
-      events.push({ type: 'house.penniless', houseId: house.id, shortfallCents });
+function employeesArePaid(world: World, houseId: string, workers: number, events: Event[]): void {
+  const house = world.houses[houseId];
+  const wages = workers * RULES.wagePerWorkerCents;
+
+  if (wages > 0) {
+    const paid = Math.min(house.treasuryCents, wages);
+    house.treasuryCents -= paid;
+
+    if (paid > 0) {
+      events.push({ type: 'house.wages_paid', houseId, amountCents: paid });
     }
+    if (paid < wages) {
+      const shortfallCents = wages - paid;
+      house.debtCents += shortfallCents;
+      events.push({ type: 'house.penniless', houseId, shortfallCents });
+    }
+  }
+
+  if (house.debtCents > 0 && house.treasuryCents > 0) {
+    const repaid = Math.min(house.treasuryCents, house.debtCents);
+    house.treasuryCents -= repaid;
+    house.debtCents -= repaid;
+    events.push({ type: 'house.debt_repaid', houseId, amountCents: repaid });
   }
 }
 
 function holdElection(world: World, events: Event[]): void {
   const round = world.week / RULES.electionPeriodWeeks;
   const seatId = SEATS[(round - 1) % SEATS.length];
+  const bonuses = world.campaigns[seatId] ?? {};
 
   const votes: Record<string, number> = {};
   for (const houseId of Object.keys(world.houses).sort()) {
     const [rng, roll] = drawBelow(world.rng, 5);
     world.rng = rng;
-    votes[houseId] = roll + 1 + (world.campaigns[houseId] ?? 0);
+    votes[houseId] = roll + 1 + (bonuses[houseId] ?? 0);
   }
 
+  // Highest vote wins; a tie goes to the house that comes first by id, so the
+  // result never depends on the order of the object.
   const winnerHouseId = Object.keys(votes)
     .sort()
     .reduce((best, houseId) => (votes[houseId] > votes[best] ? houseId : best));
 
   world.seats[seatId] = { houseId: winnerHouseId };
-  world.campaigns = {};
+  delete world.campaigns[seatId];
 
   events.push({ type: 'council.election_held', seatId, winnerHouseId, votes });
 }

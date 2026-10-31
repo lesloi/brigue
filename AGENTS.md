@@ -27,6 +27,8 @@ By default:
   field or changing a unit is a breaking change and needs a migration, so we do not do it.
 - A seat is held by a house whose controller is `ai` or `human`. The simulation never asks
   which: solo, multiplayer and a player who leaves are the same code.
+- A refusal is an event, never a throw: the server replays stored actions weeks later, and one
+  poisoned action must not be able to stop the town. Only a wrong world version throws.
 - The game speaks French; the code, the commits and the docs speak English.
 
 ## Decisions
