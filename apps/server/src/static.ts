@@ -67,8 +67,6 @@ export function serveStatic(
     'Content-Type': CONTENT_TYPES[extension] ?? 'application/octet-stream',
     'Content-Length': String(stats.size),
     'Cache-Control': cacheControl(relative),
-    // The extension decides the type here; the browser must not guess another.
-    'X-Content-Type-Options': 'nosniff',
   });
 
   if (request.method === 'HEAD') {
