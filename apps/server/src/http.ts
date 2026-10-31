@@ -66,6 +66,12 @@ export function createApp(deps: AppDeps): Server {
     createRateLimiter(deps.sessionAttemptsPerMinute ?? SESSION_ATTEMPTS_PER_MINUTE, RATE_LIMIT_WINDOW_MS);
 
   return createServer((request, response) => {
+    // Every answer, static or JSON, carries these two: the referrer policy is
+    // pinned instead of left to the browser's default or to whatever a future
+    // proxy adds, and the server types every response, so nothing may be sniffed.
+    response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    response.setHeader('X-Content-Type-Options', 'nosniff');
+
     handle(request, response).catch((error: unknown) => {
       // A wrong version is a refusal the client can act on, and it must never
       // reach a replay: catch-up checks it before the first tick.

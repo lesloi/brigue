@@ -115,6 +115,27 @@ describe('health probes', () => {
   });
 });
 
+describe('security headers', () => {
+  it('pins the referrer policy and the type sniffing on every answer', async () => {
+    // Arrange
+    const webRoot = await builtClient();
+    const harness = await start({ webRoot });
+
+    // Act
+    const answers = [
+      await fetch(`${harness.url}/`),
+      await fetch(`${harness.url}/healthz`),
+      await fetch(`${harness.url}/api/unknown`),
+    ];
+
+    // Assert
+    for (const answer of answers) {
+      expect(answer.headers.get('referrer-policy')).toBe('strict-origin-when-cross-origin');
+      expect(answer.headers.get('x-content-type-options')).toBe('nosniff');
+    }
+  });
+});
+
 describe('serving the built client', () => {
   it('serves the shell at the root', async () => {
     // Arrange
