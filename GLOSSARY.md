@@ -33,8 +33,11 @@ French in the data and in the interface, and the English here is only how we tal
 
 ## Money and goods
 
-- **Écu** — the coin the player counts in. Stored in the code as integer cents.
-- **Denier** — a twelfth of an écu, used for taxes and small fees.
+- **Écu** — the coin the player counts in. Stored in the code as integer cents; one écu is 100
+  cents.
+- **Denier** — a unit of account worth ten cents, used in laws and taxes. A convention of the
+  town, not a coin: it exists so a tax can be written as "one denier a piece" without introducing
+  a fraction of a cent.
 - **Halle** — the market hall, where cloth is sold and where a place must be granted.
 - **Drap** — cloth, the good of the opening trade.
 - **Laine** — wool, the raw material.

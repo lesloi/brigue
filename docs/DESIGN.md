@@ -75,4 +75,3 @@ accent colour reserved for what is dangerous. The town illustration appears once
 - How a lawsuit actually runs, and what evidence costs.
 - Whether rumours are a separate resource or only a flavour of favour.
 - What the player does during a week between two ticks beyond queuing actions.
-- How a human house is replaced by an AI without the town noticing.

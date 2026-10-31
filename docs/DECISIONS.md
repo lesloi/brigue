@@ -13,59 +13,85 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 
 - **One world with seats, not one world per player.** The town is a shared object: five seats,
   held by houses, each house controlled by an AI or a human. Solo is the same code with every
-  seat but yours on AI, and a player who leaves leaves a house behind rather than a gap. A world
-  per player would make multiplayer a rewrite instead of an assignment. Revisit only if the town
-  proves too small to hold a solo player's pace.
+  seat but yours on AI. A world per player would make multiplayer a rewrite instead of an
+  assignment. Revisit only if the town proves too small to hold a solo player's pace.
 
-## State
+- **A house whose player leaves goes back to the AI; it does not vanish.** The house keeps its
+  money, its seat, its grudges and its heir. Nothing in the interface marks it as abandoned,
+  because the town would not know. This is what keeps a small persistent town from dying at the
+  first absence, and it is free to build only if it is decided now.
 
-- **The server holds the world; the client renders it.** The client decides nothing and stores
-  nothing: no local save to version, to lose with a cleared browser, or to reconcile between two
-  devices. Revisit if the game has to be playable without a connection for long stretches.
+## Identity
 
 - **A token, not an account.** An opaque 256-bit token, stored hashed, shown once, no email, no
   recovery. The token is the whole identity, which is a fair price for zero sign-up. The
   consequence is stated in the interface: lose the token, lose the house. Revisit if the game is
   ever opened to strangers.
 
+- **The token is bound to a house, and that binding lives outside the world.** A `players` table
+  holds the token hash, the world, the house and a revocation date. The binding is not part of
+  the world because the world is versioned, replayed and hashed; a login is not a game rule, and
+  a format change must never be able to lock a player out. Authorisation is checked once, at the
+  edge, before the world is loaded.
+
+## State
+
+- **The server holds the world; the client renders it.** The client stores nothing: no local save
+  to version, to lose with a cleared browser, or to reconcile between two devices. It receives a
+  projection of the world and the events of the week, and it computes no rule. Revisit if the game
+  has to be playable offline for long stretches.
+
 - **The world catches up on read; there is no scheduler.** `tick` is pure, so the server computes
   the weeks elapsed since the last visit when a player asks for the world. A cron would add a
-  component to watch and would not change what the player sees. Revisit when a world must move
-  while nobody is looking, which is what a shared season would need.
+  component to watch and would not change what the player sees. The contract: one game week per
+  real hour, capped at 520 weeks per read, with the events of the last week returned and the rest
+  summarised as counters. Revisit when a shared season must move while nobody is looking.
+
+- **One writer per world.** Catch-up turns a read into a write, so two requests for the same world
+  could each replay the same weeks and lose one of them. The row is locked for the duration
+  (`SELECT … FOR UPDATE`), actions carry a client-generated UUID with a unique constraint (a
+  retried request is refused, not applied twice), and actions are applied in insertion order.
 
 ## Simulation
 
 - **The core is pure, deterministic and clock-free.** One seed, one world, one hash. A test
   replays 200 weeks and asserts the same state hash, and another fails if `Math.random` or
-  `Date.now` ever enters `packages/core`. Everything else in the project depends on this being
-  true: it is how a bug is reproduced, how a balance change is measured, and how the server can
-  catch a world up without trusting a clock.
+  `Date.now` ever enters `packages/core`. Everything else depends on this: it is how a bug is
+  reproduced, how a balance change is measured, and why the server can catch a world up at all.
 
-- **One tick is one game week.** Slow enough for a betrayal to be prepared, fast enough that a
-  week away does not ruin a game. A new year starts every 52 weeks.
+- **One tick is one game week; one game week is one real hour.** A game year is about two days of
+  wall clock, a month away is about three game years, and a dynasty lasts weeks of real play.
+  Slow enough for a betrayal to be prepared, fast enough that an absence does not ruin a game.
 
 - **Money is integer cents.** No float anywhere: the economy must replay exactly, and a drift of
   a hundredth per tick is invisible until it is catastrophic.
 
+- **A refusal is an event, never a throw.** The server replays stored actions weeks later; one
+  poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase
+  and a missing material all come back as `action.refused` or `workshop.idle`. Only a wrong
+  version of the world throws, and only before any replay starts.
+
 - **The shape of the world only ever grows.** A new field arrives with a default; a field is
   never renamed and a unit never changes. This is what keeps a world readable across a deploy
   without a migration, and it costs nothing at the moment of the change. `formatVersion` and
-  `rulesetVersion` are stored with the world so a mismatch is refused rather than misread.
-
-- **Events are the only thing the client reads.** A week produces a list of events; the screens
-  are a rendering of them. It keeps the interface honest, gives the journal its use for
-  debugging, and means a screen never has to recompute a rule.
+  `rulesetVersion` are stored with the world, and `tick` refuses a world it does not know.
 
 ## Stack
 
-- **TypeScript everywhere.** One language for the core, the server and the client, so the same
-  `tick` can run on a server today and in a test or a browser tomorrow. Chosen over Python, which
-  the owner knows better, because the simulation had to be able to run on a phone. Revisit if
-  profiling ever shows the simulation outgrowing Node.
+- **TypeScript everywhere.** One language for the core, the server and the client, so a rule is
+  written once and tested without a database. It was chosen over Python, which the owner knows
+  better: the deciding argument was one language and one toolchain for a solo project, not the
+  ability to run the simulation in a browser. (`stateHash` uses `node:crypto`, so the core is not
+  browser-ready today; if a client-side mode is ever wanted, that one file moves to WebCrypto.)
+  Revisit if profiling shows the simulation outgrowing Node.
 
-- **The world is one `jsonb` column in Postgres.** It is one document per world, read and written
-  whole, and the database is asked for nothing but durability. Revisit if a screen ever needs to
-  query inside the world rather than read it.
+- **One container serves both the API and the built client.** Same origin, no CORS, no second
+  deployment, no CDN. In development, two processes; in production, one image, one Deployment,
+  one Ingress, one Postgres, no CronJob and no Redis.
+
+- **The world is one `jsonb` column in Postgres.** One document per world, read and written whole,
+  and the database is asked for nothing but durability. Revisit if a screen ever needs to query
+  inside the world rather than read it.
 
 ## Interface
 
