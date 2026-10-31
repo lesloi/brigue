@@ -147,9 +147,12 @@ export function createApp(deps: AppDeps): Server {
 function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
   if (trustProxy) {
     const forwarded = request.headers['x-forwarded-for'];
-    const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim();
-    if (first) {
-      return first;
+    const raw = Array.isArray(forwarded) ? forwarded[forwarded.length - 1] : forwarded;
+    // The ingress appends the address it saw; the leftmost entries are whatever
+    // the client chose to send. Trust the rightmost one, not the client's claim.
+    const last = raw?.split(',').at(-1)?.trim();
+    if (last) {
+      return last;
     }
   }
 

@@ -133,6 +133,13 @@ describe('the token endpoint', () => {
     expect(other.status).toBe(200);
   });
 
+  it('ignores a client-chosen leftmost forwarded address', async () => {
+    const harness = await start({ trustProxy: true, sessionAttemptsPerMinute: 1 });
+
+    expect((await login(harness, 'nope', '1.2.3.4, 203.0.113.7')).status).toBe(401);
+    expect((await login(harness, 'nope', '5.6.7.8, 203.0.113.7')).status).toBe(429);
+  });
+
   it('falls back to the socket when the forwarded header is absent', async () => {
     const harness = await start({ trustProxy: true, sessionAttemptsPerMinute: 1 });
 

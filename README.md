@@ -47,7 +47,9 @@ pnpm --filter @brigue/server dev
 
 `COOKIE_SECURE=false` is for local HTTP only; `TRUST_PROXY=true` only when the
 server really sits behind the ingress, because it trusts `X-Forwarded-For` for
-the login rate limit.
+the login rate limit. Get that wrong either way: without it behind the ingress,
+every player shares one bucket and the town gets rate limited; with it set
+without an ingress, a client can pick its own bucket.
 
 ## Documents
 

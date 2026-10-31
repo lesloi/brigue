@@ -29,7 +29,7 @@ export class PgPlayerStore implements PlayerStore {
         [player.tokenHash, player.worldId, player.houseId, player.createdAt],
       );
     } catch (error) {
-      if (isUniqueViolation(error)) {
+      if (isLiveHouseViolation(error)) {
         throw new HouseAlreadyBoundError(player.worldId, player.houseId);
       }
       throw error;
@@ -83,6 +83,14 @@ function asDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-function isUniqueViolation(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === '23505';
+function isLiveHouseViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const { code, constraint } = error as { code?: unknown; constraint?: unknown };
+
+  // A duplicate token_hash is a hash collision, not a second token on the
+  // house; let it surface as the bug it is.
+  return code === '23505' && constraint === 'players_live_house';
 }
