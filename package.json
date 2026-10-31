@@ -7,6 +7,7 @@
   "scripts": {
     "format": "prettier --write .",
     "check": "prettier --check . && eslint . && pnpm -r typecheck",
+    "build": "pnpm -r --if-present build",
     "test": "vitest run",
     "coverage": "vitest run --coverage"
   },

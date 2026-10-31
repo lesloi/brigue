@@ -8,10 +8,10 @@ mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 
 - `packages/core`: the whole simulation. Pure TypeScript: no I/O, no wall clock, no global
   random. One seed in, one world out.
-- `apps/server` (to come): Node, holds the world in Postgres, serves the API, catches the
+- `apps/server`: Node, holds the world in Postgres, serves the API, catches the
   world up when a player asks for it.
-- `apps/web` (to come): a PWA, mobile first. It renders events and sends actions; it decides
-  nothing.
+- `apps/web`: a Vite PWA, mobile first. It renders the projection and the events, and sends
+  action intents; it decides nothing.
 - TypeScript everywhere, one language for the core, the server and the client. pnpm workspace.
 
 By default:
@@ -40,10 +40,10 @@ an entry only for a choice that is costly to reverse and whose reason the code d
 
 ## Working
 
-- `main` stays green: GitHub Actions runs `pnpm check` and `pnpm test` on every pull request and
-  every push to `main`, in one job; split it when a test needs a service.
+- `main` stays green: GitHub Actions runs `pnpm check`, `pnpm test` and `pnpm build` on every pull
+  request and every push to `main`, in one job; split it when a test needs a service.
 - After a change: `pnpm format`, then `pnpm check` (formatting, lint, types).
-- Before committing: `pnpm test`, unless already run since the last change.
+- Before committing: `pnpm test` and `pnpm build`, unless already run since the last change.
 - Run `pnpm install` after a pull, merge or rebase that changes dependencies.
 - Branches: `type/short-description` (`feature`, `bugfix`, `hotfix`, `release`, `chore`).
   Commits: Conventional Commits under 72 characters, without `Co-authored-by:`.
