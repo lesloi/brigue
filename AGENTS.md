@@ -40,6 +40,8 @@ an entry only for a choice that is costly to reverse and whose reason the code d
 
 ## Working
 
+- `main` stays green: GitHub Actions runs `pnpm check` and `pnpm test` on every pull request and
+  every push to `main`, in one job; split it when a test needs a service.
 - After a change: `pnpm format`, then `pnpm check` (formatting, lint, types).
 - Before committing: `pnpm test`, unless already run since the last change.
 - Run `pnpm install` after a pull, merge or rebase that changes dependencies.
