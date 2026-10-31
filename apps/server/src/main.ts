@@ -2,6 +2,7 @@ import { loadConfig } from './config.ts';
 import { createApp } from './http.ts';
 import { createLogger } from './logger.ts';
 import { createPgPlayerStore } from './pg-players.ts';
+import { createPgWorldStore } from './pg-worlds.ts';
 
 const config = loadConfig(process.env);
 const logger = createLogger((line) => process.stdout.write(`${line}\n`));
@@ -14,8 +15,10 @@ if (!config.secureCookies) {
 }
 
 const store = await createPgPlayerStore(config.databaseUrl);
+const worlds = await createPgWorldStore(config.databaseUrl);
 const server = createApp({
   store,
+  worlds,
   logger,
   secureCookies: config.secureCookies,
   trustProxy: config.trustProxy,
@@ -29,6 +32,7 @@ async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   logger.info('server.stopping', { signal });
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await store.close();
+  await worlds.close();
   process.exit(0);
 }
 

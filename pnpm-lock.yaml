@@ -193,6 +193,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@brigue/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       pg:
         specifier: ^8.23.1
         version: 8.23.1

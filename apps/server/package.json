@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@brigue/core": "workspace:*",
     "pg": "^8.23.1"
   },
   "devDependencies": {

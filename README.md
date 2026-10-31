@@ -19,9 +19,9 @@
 
 ## Status
 
-Early. The simulation core runs and is covered by tests. The server now binds a
-token to a house; the rest of the API and the client are next. Nothing is
-playable yet.
+Early. The simulation core runs and is covered by tests. The server issues a
+token, serves the world with catch-up, and accepts one action per week; the
+client is next. Nothing is playable yet.
 
 ## Stack
 

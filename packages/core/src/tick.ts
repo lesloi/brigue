@@ -8,12 +8,17 @@ export interface TickResult {
 }
 
 export class WorldVersionError extends Error {
+  readonly formatVersion: number;
+  readonly rulesetVersion: number;
+
   constructor(world: World) {
     super(
       `world of format ${world.formatVersion} and ruleset ${world.rulesetVersion} cannot be ` +
         `read by format ${FORMAT_VERSION} and ruleset ${RULES.version}`,
     );
     this.name = 'WorldVersionError';
+    this.formatVersion = world.formatVersion;
+    this.rulesetVersion = world.rulesetVersion;
   }
 }
 
