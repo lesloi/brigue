@@ -4,6 +4,8 @@ export interface Config {
   databaseUrl: string;
   secureCookies: boolean;
   trustProxy: boolean;
+  /** Built client to serve, when this process is the only one. Unset in development. */
+  webRoot?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -27,5 +29,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     // The ingress terminates TLS and forwards the client address. Set only
     // when the peer really is that ingress: otherwise the header is spoofable.
     trustProxy: env.TRUST_PROXY === 'true',
+    webRoot: env.WEB_ROOT === undefined || env.WEB_ROOT === '' ? undefined : env.WEB_ROOT,
   };
 }

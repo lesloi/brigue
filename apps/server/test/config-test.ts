@@ -20,6 +20,12 @@ describe('the config', () => {
     expect(() => loadConfig({})).toThrow(/DATABASE_URL/);
   });
 
+  it('mounts a client only when asked', () => {
+    expect(loadConfig({ DATABASE_URL: 'x' }).webRoot).toBeUndefined();
+    expect(loadConfig({ DATABASE_URL: 'x', WEB_ROOT: '' }).webRoot).toBeUndefined();
+    expect(loadConfig({ DATABASE_URL: 'x', WEB_ROOT: '/app/web' }).webRoot).toBe('/app/web');
+  });
+
   it('refuses a port it cannot listen on', () => {
     expect(() => loadConfig({ DATABASE_URL: 'x', PORT: '0' })).toThrow(/PORT/);
     expect(() => loadConfig({ DATABASE_URL: 'x', PORT: 'seventy' })).toThrow(/PORT/);

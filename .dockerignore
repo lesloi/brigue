@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+**/test
+coverage
+**/coverage
+.env
+.env.*
+!.env.example
+*.local
+.DS_Store
+docs

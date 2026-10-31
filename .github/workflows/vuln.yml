@@ -1,0 +1,27 @@
+name: Vulnerabilities
+
+# A vulnerability is published without any change to the code, so the scan also runs every week.
+on:
+  pull_request:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The image ships the production dependencies only, so that is the scope of the scan.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # pnpm ships a standalone binary, and the audit reads the lockfile only: no install, no Node.
+      - uses: pnpm/setup@v3
+        with:
+          install: false
+      - run: pnpm audit --prod --audit-level high

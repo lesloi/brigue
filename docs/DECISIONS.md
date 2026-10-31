@@ -105,8 +105,20 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
   Revisit if profiling shows the simulation outgrowing Node.
 
 - **One container serves both the API and the built client.** Same origin, no CORS, no second
-  deployment, no CDN. In development, two processes; in production, one image, one Deployment,
-  one Ingress, one Postgres, no CronJob and no Redis.
+  deployment, no CDN. In development, two processes; in production, one image that serves both,
+  with nothing between the browser and the server. The image mounts the Vite output behind
+  `WEB_ROOT` and refuses to start without its `index.html`: a client that was never built is a
+  404 on the domain that every probe would otherwise call healthy. Hashed assets are cached
+  forever, `index.html` and the service worker never.
+
+- **Migrations can be checked without being applied.** `migrate --check` exits non-zero while the
+  image carries a migration `schema_migrations` does not have, and `applyMigrations` takes a
+  Postgres advisory lock before touching anything, table included. That is the hook a deploy
+  uses to hold back a new instance until the schema matches its image.
+
+- **Readiness asks the database; liveness does not.** `/readyz` runs one `SELECT 1` and fails
+  while it cannot; `/healthz` touches nothing. Wired the other way, a database outage would
+  restart every pod and turn one problem into two.
 
 - **The world is one `jsonb` column in Postgres.** One document per world, read and written whole,
   and the database is asked for nothing but durability. Revisit if a screen ever needs to query
