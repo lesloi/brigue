@@ -83,7 +83,10 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 
 - **Pacing is not a rule.** How long a week lasts and how far a returning player is caught up
   (`PACING`) are read by the server and must not bump `rulesetVersion`; a recipe, by contrast, is
-  a rule and lives in `RULES`, because changing one changes the economy.
+  a rule and lives in `RULES`, because changing one changes the economy. An election cadence
+  belongs on the recipe's side: it decides which weeks a seat changes hands, so a world holding
+  four-week elections is not the same world as one holding twelve-week elections, and the version
+  moves with it.
 
 - **A refusal is an event, never a throw.** The server replays stored actions weeks later; one
   poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase
