@@ -72,6 +72,10 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 - **One tick is one game week; one game week is one real hour.** A game year is about two days of
   wall clock, a month away is about three game years, and a dynasty lasts weeks of real play.
   Slow enough for a betrayal to be prepared, fast enough that an absence does not ruin a game.
+  Elections follow the same measure: one seat every eight weeks, so one every eight hours, and a
+  mandate of about forty hours. At four weeks the town decided a seat every four hours, a ceremony
+  that fires while the player is asleep, which rewards being awake rather than playing well and
+  leaves no window in which a campaign can be run.
 
 - **Money is integer cents.** No float anywhere: the economy must replay exactly, and a drift of
   a hundredth per tick is invisible until it is catastrophic.
@@ -83,7 +87,10 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 
 - **Pacing is not a rule.** How long a week lasts and how far a returning player is caught up
   (`PACING`) are read by the server and must not bump `rulesetVersion`; a recipe, by contrast, is
-  a rule and lives in `RULES`, because changing one changes the economy.
+  a rule and lives in `RULES`, because changing one changes the economy. An election cadence
+  belongs on the recipe's side: it decides which weeks a seat changes hands, so a world holding
+  four-week elections is not the same world as one holding twelve-week elections, and the version
+  moves with it.
 
 - **A refusal is an event, never a throw.** The server replays stored actions weeks later; one
   poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase
