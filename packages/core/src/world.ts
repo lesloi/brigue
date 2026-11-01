@@ -62,8 +62,13 @@ export interface World {
 export const FORMAT_VERSION = 1;
 
 export const RULES = {
-  version: 2,
-  electionPeriodWeeks: 4,
+  version: 3,
+  /**
+   * Eight weeks is one seat contested every eight hours and a mandate of about forty hours.
+   * Four weeks made it every four hours: a ceremony that fires while the player sleeps, and
+   * a clock that rewards being awake over playing well.
+   */
+  electionPeriodWeeks: 8,
   priceFloorCents: 100,
   priceCeilCents: 5000,
   priceDriftCents: 30,

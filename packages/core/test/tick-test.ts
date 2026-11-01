@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { advance, canonicalJson, createWorld, stateHash, tick, WorldVersionError } from '../src/index.ts';
+import { advance, canonicalJson, createWorld, RULES, stateHash, tick, WorldVersionError } from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
 
 const SEED = 20261029;
@@ -103,7 +103,7 @@ describe('the simulation core', () => {
   });
 
   it('holds an election on its period and fills a seat', () => {
-    const { world, events } = play(createWorld(SEED), 4);
+    const { world, events } = play(createWorld(SEED), RULES.electionPeriodWeeks);
     const election = events.find((event) => event.type === 'council.election_held');
 
     expect(election).toMatchObject({ type: 'council.election_held', seatId: 'maire' });
@@ -111,8 +111,8 @@ describe('the simulation core', () => {
   });
 
   it('keeps a campaign for one seat out of another seat election', () => {
-    const control = play(createWorld(SEED), 4);
-    const campaigned = play(createWorld(SEED), 4, (week) =>
+    const control = play(createWorld(SEED), RULES.electionPeriodWeeks);
+    const campaigned = play(createWorld(SEED), RULES.electionPeriodWeeks, (week) =>
       week === 0 ? [{ type: 'council.campaign', houseId: 'brigue', seatId: 'tresorier' }] : [],
     );
 

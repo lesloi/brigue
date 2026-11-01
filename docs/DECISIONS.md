@@ -72,6 +72,10 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 - **One tick is one game week; one game week is one real hour.** A game year is about two days of
   wall clock, a month away is about three game years, and a dynasty lasts weeks of real play.
   Slow enough for a betrayal to be prepared, fast enough that an absence does not ruin a game.
+  Elections follow the same measure: one seat every eight weeks, so one every eight hours, and a
+  mandate of about forty hours. At four weeks the town decided a seat every four hours, a ceremony
+  that fires while the player is asleep, which rewards being awake rather than playing well and
+  leaves no window in which a campaign can be run.
 
 - **Money is integer cents.** No float anywhere: the economy must replay exactly, and a drift of
   a hundredth per tick is invisible until it is catastrophic.
