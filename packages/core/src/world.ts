@@ -55,6 +55,12 @@ export interface World {
   seats: Record<SeatId, { houseId: string | null }>;
   laws: Law[];
   market: Record<GoodId, number>;
+  /**
+   * What the town put on the market last week, per good: units sold minus units
+   * bought. It is what moves the prices of the week that follows, so it is
+   * stored rather than recomputed: the price you see is the town you were.
+   */
+  marketFlow: Partial<Record<GoodId, number>>;
   /** Votes bought per seat, per house, cleared when that seat is elected. */
   campaigns: Partial<Record<SeatId, Record<string, number>>>;
 }
@@ -62,7 +68,7 @@ export interface World {
 export const FORMAT_VERSION = 1;
 
 export const RULES = {
-  version: 3,
+  version: 4,
   /**
    * Eight weeks is one seat contested every eight hours and a mandate of about forty hours.
    * Four weeks made it every four hours: a ceremony that fires while the player sleeps, and
@@ -72,6 +78,26 @@ export const RULES = {
   priceFloorCents: 100,
   priceCeilCents: 5000,
   priceDriftCents: 30,
+  /**
+   * A good's price is pulled by three things every week: its own random drift,
+   * the town's imbalance on that good, and the gap back to its reference.
+   *
+   * `absorbedUnits` is the town's standing demand at the reference price: the
+   * volume it takes every week whether or not anyone makes the good. Where that
+   * demand is nil, a good nobody touches sits on its reference; where it is not,
+   * a good nobody makes climbs. `scaleUnits` is the imbalance that moves the
+   * price by a tenth of it (`pricePressureDivisor`); `priceReversionDivisor` is
+   * how many weeks the gap back to the reference takes to close. Wool has no
+   * absorption because what is made of it is bought by the workshops, which
+   * shows up as demand, not as the town's own trade.
+   */
+  market: {
+    cloth: { referenceCents: 1240, absorbedUnits: 10, scaleUnits: 10 },
+    wool: { referenceCents: 380, absorbedUnits: 0, scaleUnits: 4 },
+    grain: { referenceCents: 260, absorbedUnits: 4, scaleUnits: 4 },
+  } satisfies Record<GoodId, { referenceCents: number; absorbedUnits: number; scaleUnits: number }>,
+  pricePressureDivisor: 10,
+  priceReversionDivisor: 4,
   outputPerLevel: 2,
   wagePerWorkerCents: 120,
   campaignFavourCost: 5,
@@ -166,7 +192,12 @@ export function createWorld(seed: number): World {
       tresorier: { houseId: null },
     },
     laws: [],
-    market: { cloth: 1240, wool: 380, grain: 260 },
+    market: {
+      cloth: RULES.market.cloth.referenceCents,
+      wool: RULES.market.wool.referenceCents,
+      grain: RULES.market.grain.referenceCents,
+    },
+    marketFlow: {},
     campaigns: {},
   };
 }

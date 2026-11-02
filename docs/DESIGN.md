@@ -51,10 +51,11 @@ are the same code: the server assigns seats, and a seat given back to an AI keep
 
 ## The week
 
-One tick is one game week. A tick applies the queued actions in order, then the world moves: prices
-drift, workshops produce and sell, wages are paid, and an election is held when the week calls for
-one. The client never computes any of this; it renders the events of the week and sends action
-intents.
+One tick is one game week. A tick applies the queued actions in order, then the AI houses buy the
+input their workshops lack, then the world moves: the price of each good is pushed by what the week
+before put on the market and pulled back a quarter of the way to its reference, workshops produce
+and sell, wages are paid, and an election is held when the week calls for one. The client never
+computes any of this; it renders the events of the week and sends action intents.
 
 ## Screens
 

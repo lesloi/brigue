@@ -80,10 +80,16 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 - **Money is integer cents.** No float anywhere: the economy must replay exactly, and a drift of
   a hundredth per tick is invisible until it is catastrophic.
 
-- **The market clears what a workshop makes, at the week's price.** There is no finished-goods
-  stock: producing and selling are one act, and the decision is what to produce and how much raw
-  material to buy. Holding cloth for a better week would be a second mechanic, and crediting both
-  the goods and the coin would count the output twice.
+- **A workshop's output is sold, never stored; the town's week prices the next one.** There is no
+  finished-goods stock: producing and selling are one act. Holding cloth for a better week would be
+  a second mechanic, and crediting both the goods and the coin would count the output twice. The
+  price is not a wand either: a week's net flow (sold minus bought) pushes the next week's price
+  away from its reference, and the gap back closes a quarter a week, so a shock fades instead of
+  becoming the new normal. The lag is on purpose — the price you see is the town you were, and what
+  you do now moves the price you will sell at next week. The town also has a standing demand per
+  good (`RULES.market`), so a good nobody makes climbs and a good it takes nothing of sits on its
+  reference. Revisit when a house can hold stock across weeks, which is the same question as a
+  second mechanic.
 
 - **Pacing is not a rule.** How long a week lasts and how far a returning player is caught up
   (`PACING`) are read by the server and must not bump `rulesetVersion`; a recipe, by contrast, is
@@ -96,6 +102,16 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
   poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase
   and a missing material all come back as `action.refused` or `workshop.idle`. Only a wrong
   version of the world throws, and only before any replay starts.
+
+- **An AI house buys the input its workshops lack, and decides nothing else.** The town's other
+  houses are not puppets and not planners: each week, before the price moves and at the same price
+  as the player, one that is short of a recipe's input buys what it lacks, as far as its purse
+  goes, and no further. This is what keeps the market two-sided; without it a house runs dry and
+  idles forever, and the town's only weaver is the player. There is no margin check on purpose: a
+  guard that stops buying once the input costs more than the output makes the demand switch on and
+  off with a week of lag, and the price saws. The price is the guard. A refused purchase is not an
+  action, so it leaves no `action.refused`: the workshop simply idles. Revisit when an AI has to
+  choose _what_ to produce, which is a different decision and will need its own entry.
 
 - **The shape of the world only ever grows.** A new field arrives with a default; a field is
   never renamed and a unit never changes. This is what keeps a world readable across a deploy
