@@ -2,7 +2,7 @@ export { canonicalJson } from './canonical.ts';
 export type { Action, Event, RefusalReason } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
 export { advance, drawBelow, MINSTD_MODULUS } from './prng.ts';
-export { tick, WorldVersionError, type TickResult } from './tick.ts';
+export { tick, nextPriceCents, WorldVersionError, type PriceInput, type TickResult } from './tick.ts';
 export {
   createWorld,
   FORMAT_VERSION,

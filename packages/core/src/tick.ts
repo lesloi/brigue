@@ -1,6 +1,6 @@
 import { drawBelow } from './prng.ts';
 import type { Action, Event, RefusalReason } from './events.ts';
-import { FORMAT_VERSION, RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type World } from './world.ts';
+import { FORMAT_VERSION, RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type GoodId, type World } from './world.ts';
 
 export interface TickResult {
   world: World;
@@ -41,6 +41,9 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
 
   const next = structuredClone(world);
   const events: Event[] = [];
+  // The week's own trade, good by good: sold minus bought. It is written on the
+  // world once the week is over, because it prices the week that follows.
+  const flow: Record<GoodId, number> = { cloth: 0, wool: 0, grain: 0 };
 
   for (const candidate of actions as readonly unknown[]) {
     // A stored action can be anything: it went through a database and a JSON
@@ -50,11 +53,17 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
       continue;
     }
 
-    applyAction(next, candidate, events);
+    applyAction(next, candidate, events, flow);
   }
 
+  // The AI houses decide in the same breath as the players, at the same price:
+  // both buy before the week moves the market.
+  aiHousesBuy(next, flow, events);
+
   driftPrices(next, events);
-  runWorkshops(next, events);
+  runWorkshops(next, flow, events);
+
+  next.marketFlow = flow;
 
   if (next.week % RULES.electionPeriodWeeks === 0) {
     holdElection(next, events);
@@ -85,7 +94,7 @@ function refuse(events: Event[], action: Action, houseId: unknown, reason: Refus
   });
 }
 
-function applyAction(world: World, action: Action, events: Event[]): void {
+function applyAction(world: World, action: Action, events: Event[], flow: Record<GoodId, number>): void {
   const house = world.houses[action.houseId];
   if (!house) {
     refuse(events, action, action.houseId, 'unknown_house');
@@ -108,6 +117,7 @@ function applyAction(world: World, action: Action, events: Event[]): void {
 
       house.treasuryCents -= totalCents;
       house.stock[action.good] = (house.stock[action.good] ?? 0) + action.units;
+      flow[action.good] -= action.units;
       events.push({
         type: 'market.bought',
         houseId: house.id,
@@ -143,6 +153,104 @@ function applyAction(world: World, action: Action, events: Event[]): void {
   }
 }
 
+export interface PriceInput {
+  priceCents: number;
+  referenceCents: number;
+  /** What the town takes of that good at the reference price. */
+  absorbedUnits: number;
+  /** The imbalance that moves the price by a tenth of the reference. */
+  scaleUnits: number;
+  /**
+   * Net units the town put on the market last week: sold minus bought.
+   * Undefined when the world has no week behind it, or none for that good: the
+   * market then has no imbalance to price.
+   */
+  flowUnits?: number;
+  /** This week's random drift, already drawn. */
+  driftCents: number;
+  /** The imbalance, in scales, that moves the price by a tenth of the reference. */
+  pressureDivisor: number;
+  /** How many weeks the gap back to the reference takes to close. */
+  reversionDivisor: number;
+  floorCents: number;
+  ceilCents: number;
+}
+
+/**
+ * The rule of the price, in whole cents.
+ *
+ * A week's imbalance moves the price by a tenth of the reference per scale, and
+ * the price closes a fixed share of its gap back to the reference every week, so
+ * a shock fades instead of becoming the new normal. Both terms are integer
+ * divisions: a price is never a fraction, and the same world replays the same.
+ *
+ * Every number the rule needs comes in the input: this is the rule, and reading
+ * it should not send you to another file.
+ */
+export function nextPriceCents(input: PriceInput): number {
+  const scale = Math.max(1, input.scaleUnits);
+  const imbalance = input.flowUnits === undefined ? 0 : input.flowUnits - input.absorbedUnits;
+  const pressure = -Math.trunc((imbalance * input.referenceCents) / (input.pressureDivisor * scale));
+  const pull = Math.trunc((input.referenceCents - input.priceCents) / input.reversionDivisor);
+
+  return clamp(input.priceCents + input.driftCents + pressure + pull, input.floorCents, input.ceilCents);
+}
+
+/**
+ * The other houses are not puppets: an AI house buys the input its workshops
+ * lack, at the week's price, as far as its purse goes, and decides nothing
+ * else. It is not an action, so a house that cannot pay produces no refusal:
+ * its workshop simply idles, which `runWorkshops` reports.
+ *
+ * No margin check on purpose. A guard that stops buying once the input costs
+ * more than the output makes the AI's demand switch on and off with a one-week
+ * lag, and the price saws. The price is the guard.
+ */
+function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]): void {
+  for (const houseId of Object.keys(world.houses).sort()) {
+    const house = world.houses[houseId];
+
+    if (house.controller !== 'ai') {
+      continue;
+    }
+
+    for (const workshop of house.workshops) {
+      const recipe = RULES.recipes[workshop.good];
+
+      if (recipe === null) {
+        continue;
+      }
+
+      const wanted = workshop.level * RULES.outputPerLevel;
+      const shortfall = wanted * recipe.perUnit - (house.stock[recipe.input] ?? 0);
+
+      if (shortfall <= 0) {
+        continue;
+      }
+
+      const priceCents = world.market[recipe.input];
+      const affordable = Math.floor(house.treasuryCents / priceCents);
+      const units = Math.min(shortfall, affordable);
+
+      if (units <= 0) {
+        continue;
+      }
+
+      house.treasuryCents -= units * priceCents;
+      house.stock[recipe.input] = (house.stock[recipe.input] ?? 0) + units;
+      flow[recipe.input] -= units;
+      events.push({
+        type: 'market.bought',
+        houseId: house.id,
+        good: recipe.input,
+        units,
+        priceCents,
+        totalCents: units * priceCents,
+      });
+    }
+  }
+}
+
 function driftPrices(world: World, events: Event[]): void {
   const goods = Object.keys(world.market).sort() as Array<keyof World['market']>;
 
@@ -151,7 +259,19 @@ function driftPrices(world: World, events: Event[]): void {
     world.rng = rng;
 
     const before = world.market[good];
-    const after = clamp(before + roll - RULES.priceDriftCents, RULES.priceFloorCents, RULES.priceCeilCents);
+    const after = nextPriceCents({
+      priceCents: before,
+      referenceCents: RULES.market[good].referenceCents,
+      absorbedUnits: RULES.market[good].absorbedUnits,
+      scaleUnits: RULES.market[good].scaleUnits,
+      flowUnits: world.marketFlow[good],
+      driftCents: roll - RULES.priceDriftCents,
+      pressureDivisor: RULES.pricePressureDivisor,
+      reversionDivisor: RULES.priceReversionDivisor,
+      floorCents: RULES.priceFloorCents,
+      ceilCents: RULES.priceCeilCents,
+    });
+
     if (after !== before) {
       world.market[good] = after;
       events.push({ type: 'market.price_changed', good, before, after });
@@ -159,7 +279,7 @@ function driftPrices(world: World, events: Event[]): void {
   }
 }
 
-function runWorkshops(world: World, events: Event[]): void {
+function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
     let workers = 0;
@@ -195,6 +315,7 @@ function runWorkshops(world: World, events: Event[]): void {
       const priceCents = world.market[workshop.good];
       const revenueCents = units * priceCents;
       house.treasuryCents += revenueCents;
+      flow[workshop.good] += units;
 
       events.push({
         type: 'market.sold',
