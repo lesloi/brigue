@@ -1,7 +1,7 @@
 # Decisions
 
 Lasting choices and the reason behind each. They can be questioned: if one no longer holds,
-propose another with your arguments, then rewrite the entry. Git keeps the history.
+propose another with your arguments, then rewrite its entry. Git keeps the history.
 
 ## Product
 
@@ -11,15 +11,40 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
   wanted. Revisit if native-only capabilities (push, background work) become the point, or if
   the installed feel is not enough in daily use.
 
-- **One world with seats, not one world per player.** The town is a shared object: five seats,
-  held by houses, each house controlled by an AI or a human. Solo is the same code with every
-  seat but yours on AI. A world per player would make multiplayer a rewrite instead of an
-  assignment. Revisit only if the town proves too small to hold a solo player's pace.
+- **One world with twelve seats, not one world per player.** The town is a shared object: twelve
+  seats, held by people, each house controlled by an AI or a human. Solo is the same code with
+  every seat but yours on AI. A world per player would make multiplayer a rewrite instead of an
+  assignment. The seat is held by a **person**, not a house; that is what makes a career and a
+  succession possible. Revisit only if the town proves too small to hold a solo player's pace.
 
-- **A house whose player leaves goes back to the AI; it does not vanish.** The house keeps its
-  money, its seat, its grudges and its heir. Nothing in the interface marks it as abandoned,
-  because the town would not know. This is what keeps a small persistent town from dying at the
-  first absence, and it is free to build only if it is decided now.
+- **A house whose player leaves goes back to the AI; a human who arrives takes an AI's place.**
+  A house whose player leaves keeps its money, its seat, its grudges and its heir. Nothing in the
+  interface marks it as abandoned, because the town would not know. The reverse is deliberately
+  asymmetric: when a town is full and a human arrives, the AI house ends and the newcomer starts
+  with nothing — no money, no seat, no career. An absence must not destroy a house; an arrival
+  must not inherit a mayoralty.
+
+- **The town is capped at twenty houses, ten of them AI.** The cap is what makes a seat scarce:
+  twenty houses for twelve seats is a contest, and the council only becomes political once the
+  town outgrows its seats. The AI cap keeps the town human: a shared world is mostly people, and
+  a solo world is ten AI and its founder. The town opens with ten AI and the founder; a human
+  arriving when it is full replaces an AI. Revisit if a season proves too small at twenty.
+
+- **The council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and each
+  floor holds a different right rather than a stronger version of the one below. One office per
+  person, all elected on the same day, every day; to climb, a person gives up the office they
+  hold. **The career is the gate**: standing for a floor requires having held an office of a
+  lower floor, and the career dies with the person, so the heir starts at the bottom. The five
+  seats at the base hold no lever: salary, prestige, a vote on exceptional measures, and jury
+  duty. A vacant seat blocks nothing — the power is simply unavailable, as in Europe 1400 — so a
+  young town has no mayor for its first four elections. Revisit if twelve seats for twenty houses
+  proves too generous.
+
+- **Titles are bought, and lost by a court, not by a vote.** Twelve degrees, from roturier to
+  prince, bought at the town hall: they cost gold, give prestige, open a level of residence and
+  some offices. Money buys the ladder; the court can strip a degree as a sentence; death drops
+  the house one degree. A majority that could strip a title would be a weapon, and a judge is a
+  defence. Revisit if titles become a pure money sink.
 
 ## Identity
 
@@ -62,6 +87,11 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
   An action may name the week being played or the next one; a week that already ticked is
   refused, and the action endpoint never catches the world up itself.
 
+- **The next format is a reset, not a migration.** No world is in production. The new model adds
+  a person and changes what a seat holds (from a house to a person), which the additive rule
+  cannot carry. The next `formatVersion` starts a new town; a world of the old format is refused,
+  never guessed. The additive rule resumes from that format.
+
 ## Simulation
 
 - **The core is pure, deterministic and clock-free.** One seed, one world, one hash. A test
@@ -69,49 +99,91 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
   `Date.now` ever enters `packages/core`. Everything else depends on this: it is how a bug is
   reproduced, how a balance change is measured, and why the server can catch a world up at all.
 
-- **One tick is one game week; one game week is one real hour.** A game year is about two days of
-  wall clock, a month away is about three game years, and a dynasty lasts weeks of real play.
-  Slow enough for a betrayal to be prepared, fast enough that an absence does not ruin a game.
-  Elections follow the same measure: one seat every eight weeks, so one every eight hours, and a
-  mandate of about forty hours. At four weeks the town decided a seat every four hours, a ceremony
-  that fires while the player is asleep, which rewards being awake rather than playing well and
-  leaves no window in which a campaign can be run.
+- **One tick is one game week and one real hour; a year is a day.** Twenty-four weeks make a
+  year, so the calendar advances a year per day. A mandate lasts a day; a character enters at
+  twenty, is offered retirement at fifty, and dies somewhere after, with a median around
+  sixty-two. The day is the unit the player actually plays; the week is the tick. The earlier
+  argument against faster elections — a ceremony that fires while the player sleeps and rewards
+  being awake — is answered by a fixed daily ceremony that is **queued in advance**, not by a
+  slower one. Two clocks must not be confused: the length of the year and the election cadence
+  are rules and move the `rulesetVersion`; how long a week lasts and how far a catch-up goes are
+  `PACING`, read by the server, and changing them must not refuse an existing world. Revisit if
+  the calendar feels too fast in play.
 
 - **Money is integer cents.** No float anywhere: the economy must replay exactly, and a drift of
   a hundredth per tick is invisible until it is catastrophic.
 
-- **A workshop's output is sold, never stored; the town's week prices the next one.** There is no
-  finished-goods stock: producing and selling are one act. Holding cloth for a better week would be
-  a second mechanic, and crediting both the goods and the coin would count the output twice. The
-  price is not a wand either: a week's net flow (sold minus bought) pushes the next week's price
-  away from its reference, and the gap back closes a quarter a week, so a shock fades instead of
-  becoming the new normal. The lag is on purpose — the price you see is the town you were, and what
-  you do now moves the price you will sell at next week. The town also has a standing demand per
-  good (`RULES.market`), so a good nobody makes climbs and a good it takes nothing of sits on its
-  reference. Revisit when a house can hold stock across weeks, which is the same question as a
-  second mechanic.
+- **A workshop produces into a stock, and selling is an action.** Production credits goods, the
+  sale credits coin, never both. The stock has a capacity fixed by the workshop's level, and it
+  does not spoil; what reduces it is theft. Holding is a bet on next week's price, and dumping a
+  large stock moves the price down for everyone. This replaces the earlier rule that output was
+  sold on production: that rule was chosen to count the output once, and the stock keeps that
+  property while giving the workshop its first real decision. Revisit if holding across weeks
+  proves to be a second mechanic too many.
 
-- **Pacing is not a rule.** How long a week lasts and how far a returning player is caught up
-  (`PACING`) are read by the server and must not bump `rulesetVersion`; a recipe, by contrast, is
-  a rule and lives in `RULES`, because changing one changes the economy. An election cadence
-  belongs on the recipe's side: it decides which weeks a seat changes hands, so a world holding
-  four-week elections is not the same world as one holding twelve-week elections, and the version
-  moves with it.
+- **Theft is what a stock loses, and a shield is what a victim earns.** A theft is a secret coup
+  resolved two weeks later: the thief's intrigue against the target's defence. A failure leaves a
+  proof at the clerk's office; a success leaves nothing. Each hostile act a house absorbs raises
+  its shield, which fades with the weeks, so the first blow is easy and the fifth is almost
+  impossible. Spoilage would have been a clock; theft is a decision by someone, and it makes a
+  full warehouse a target. Revisit if the shield makes a vendetta impossible.
+
+- **The price lags a week, and the town prices the week after.** A week's net flow (sold minus
+  bought) pushes the next week's price away from its reference, and the gap back closes a quarter
+  a week, so a shock fades instead of becoming the new normal. The lag is on purpose: the price
+  you see is the town you were, and what you do now moves the price you will sell at next week.
+  The town also has a standing demand per good, so a good nobody makes climbs and a good it takes
+  nothing of sits on its reference.
+
+- **Engagements have durations; there are no action points.** A campaign runs eight weeks, a
+  hearing is held six weeks after the complaint, a building site takes twelve. They are counted
+  in weeks, so they survive a catch-up: the world replays whole weeks and resolves what falls
+  due. A budget of actions per week would be action points with another clock; the calendar is
+  the scarcity, and it does not punish sleep. Revisit if players stop returning between
+  engagements.
+
+- **Laws are domains, plus exceptional votes.** Each office fixes its own laws alone: the mayor
+  the sales and guild taxes, the provost the definition of crimes, the alderman the price of
+  grain, wool and cloth and the rents, the treasurer the succession duty, the clerk the
+  admissibility of complaints, the crier libel, the master of the hall the places and the seal.
+  The council votes only the
+  exceptional measures — a public work, a loan, a recoinage, an amnesty, a requisition, the
+  gates, an ennoblement — with a quorum of seven, a majority of the votes cast (abstentions
+  excluded) and at least four yes. The vote is public; the mayor convenes, and four of the seven
+  offices can force a sitting. A short absence is tolerated, a long one passes the house to the
+  AI, which votes in its place; a deliberate boycott of six seats leaves no quorum and blocks the
+  sitting. This is Europe 1400's model, with a parliament kept for the big things: the five seats
+  without a lever become the swing vote. Revisit if the council never meets.
+
+- **The court is a jury of five random houses, voting in secret.** A complaint is filed at the
+  clerk's office with evidence; five houses drawn at random, excluding the parties, judge; the
+  judge — the provost or the clerk — presides, weighs in the deliberation and sets the sentence
+  (a fine, a title, prison, exile). The jury is where the houses without a seat hold power, and
+  the secret ballot is the only vote one can buy without knowing whether the money worked.
+  Evidence can be destroyed, hidden or fabricated; a forged proof is a crime, and the clerk
+  examines authenticity, which balances the provost's investigation. Revisit if juries are
+  captured or trials are too slow.
+
+- **Death is a window, retirement is a choice, and the heir inherits the house, not the career.**
+  At fifty, retirement is offered; refusing opens a window in which death may come any week,
+  with a chance that rises to certainty around a hundred and ten. The roll happens in the tick,
+  whether the player is connected or not. The heir keeps the house's money, workshops, stock and
+  grudges, loses the career and the seats, drops one title, pays about fifteen per cent of the
+  estate in duty and funerals, and starts with ten in each attribute plus a tenth of what the
+  parent had gained. The choice is what keeps death from being a tax on time passing; the rise
+  is what makes staying a gamble. Revisit if generations feel like a treadmill.
+
+- **The AI plays politics.** Each week an AI house chooses a seat by its rank, spends favour to
+  campaign, supports a camp and remembers who beat it. It also buys the input its workshops lack,
+  as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
+  nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
+  How the AI times its sales without making the price saw is still open. Revisit when an AI must
+  choose what to produce.
 
 - **A refusal is an event, never a throw.** The server replays stored actions weeks later; one
   poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase
   and a missing material all come back as `action.refused` or `workshop.idle`. Only a wrong
   version of the world throws, and only before any replay starts.
-
-- **An AI house buys the input its workshops lack, and decides nothing else.** The town's other
-  houses are not puppets and not planners: each week, before the price moves and at the same price
-  as the player, one that is short of a recipe's input buys what it lacks, as far as its purse
-  goes, and no further. This is what keeps the market two-sided; without it a house runs dry and
-  idles forever, and the town's only weaver is the player. There is no margin check on purpose: a
-  guard that stops buying once the input costs more than the output makes the demand switch on and
-  off with a week of lag, and the price saws. The price is the guard. A refused purchase is not an
-  action, so it leaves no `action.refused`: the workshop simply idles. Revisit when an AI has to
-  choose _what_ to produce, which is a different decision and will need its own entry.
 
 - **The shape of the world only ever grows.** A new field arrives with a default; a field is
   never renamed and a unit never changes. This is what keeps a world readable across a deploy
@@ -155,6 +227,7 @@ propose another with your arguments, then rewrite the entry. Git keeps the histo
 ## Interface
 
 - **A chancery, not an isometric town.** The game is played in documents: registers, letters,
-  edicts, an organisation tree. It is what the domain is, and it removes the largest cost of the
-  project, which is art. The one illustration is the town scene on the home screen. Revisit if
-  the town view ever becomes a place where the player acts.
+  edicts, a pyramid of seats. It is what the domain is, and it removes the largest cost of the
+  project, which is art. The one illustration is the town scene on the home screen; a map of
+  places, drawn in seals, is navigation, not a second scene. Revisit if the town view ever
+  becomes a place where the player acts.
