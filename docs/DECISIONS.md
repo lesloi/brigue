@@ -36,8 +36,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **The council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and each
   floor holds a different right rather than a stronger version of the one below. One office per
   person, all elected on the same day, every day; to climb, a person gives up the office they
-  hold. **The career is the gate**: standing for a floor requires having held an office of a
-  lower floor, and the career dies with the person, so the heir starts at the bottom. The five
+  hold. **The career is the gate**: standing for a floor requires the house to have held an
+  office of a lower floor, and one mandate is enough. The career belongs to the house, and the
+  heir keeps it one floor lower. The five
   seats at the base hold no lever: salary, prestige, a vote on exceptional measures, and jury
   duty. A vacant seat blocks nothing — the power is simply unavailable, as in Europe 1400 — so a
   young town has no mayor for its first four elections. Revisit if twelve seats for twenty houses
@@ -48,6 +49,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   some offices. Money buys the ladder; the court can strip a degree as a sentence; death drops
   the house one degree. A majority that could strip a title would be a weapon, and a judge is a
   defence. Revisit if titles become a pure money sink.
+
+- **Favour is earned by service and by visible spending.** A mandate held, a jury served, a vote
+  cast with the winner: the exercise gives a little, often. A gift to the treasury, a funded work,
+  a banquet: money gives a lot, once. Crimes take it away. Favour is the currency of elections,
+  and it has two speeds on purpose: the incumbent accumulates, the newcomer buys a campaign.
+  Revisit if one speed swallows the other.
 
 ## Identity
 
@@ -167,22 +174,26 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   not investigate — the provost judges what the clerk built, and the reverse — so no one defines
   a crime, gathers the proofs and sets the price. He does not vote: he fixes the sentence and
   breaks a tie. The law's severity sets the range, the evidence sets the starting point, and the
-  judge moves it. Three penalties: a fine (a tenth of the estate for a medium sentence), the loss
+  judge moves it (minor five per cent and one day, medium ten and two, serious twenty and three).
+  Three penalties: a fine (a tenth of the estate for a medium sentence), the loss
   of a title degree, and prison — two days for a medium sentence, and a political death rather
   than a pause, since the prisoner keeps his house and his trade but cannot stand, vote, judge or
   buy a title, and his office is suspended until the next election. There is no exile. Evidence
-  can be destroyed, hidden or fabricated; a forged proof is a crime, and the clerk examines
-  authenticity, which balances the provost's investigation. The jury is where the houses without
+  can be destroyed, hidden or fabricated; a forged proof is a crime, and **the clerk in office
+  exposes it automatically** — while he sits and is awake, no forgery passes, so a forger must
+  first bribe, defeat, or wait for a vacancy. A bribe is money and intrigue, for a few weeks,
+  against one category of acts; discovered, it is a crime for both. The jury is where the houses without
   a seat hold power, and the secret ballot is the only vote one can buy without knowing whether
   the money worked. Revisit if juries are captured or trials are too slow.
 
-- **Death is a window, retirement is a choice, and the heir inherits the house, not the career.**
+- **Death is a window, retirement is a choice, and the heir inherits the house and the career one
+  floor lower.**
   At fifty, retirement is offered; refusing opens a window in which death may come any week,
   with a chance that rises to certainty around a hundred and ten. The roll happens in the tick,
   whether the player is connected or not. The heir keeps the house's money, workshops, stock and
-  grudges, loses the career and the seats, drops one title, pays about fifteen per cent of the
-  estate in duty and funerals, and starts with ten in each attribute plus a tenth of what the
-  parent had gained. The choice is what keeps death from being a tax on time passing; the rise
+  grudges, keeps the career one floor lower, loses the seats, drops one title, pays about fifteen
+  per cent of the estate in duty and funerals, and starts with ten in each attribute plus a tenth
+  of what the parent had gained. The choice is what keeps death from being a tax on time passing; the rise
   is what makes staying a gamble. Revisit if generations feel like a treadmill.
 
 - **The AI plays politics.** Each week an AI house chooses a seat by its rank, spends favour to

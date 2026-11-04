@@ -7,7 +7,7 @@ French in the data and in the interface, and the English here is only how we tal
 
 - **Maison** — a house: one family, its money, its title, its workshops, its grudges. The unit a
   player controls, and the unit the simulation knows as a place.
-- **Personnage** — the current member of the house. Holds the career and the attributes, ages,
+- **Personnage** — the current member of the house. Holds the attributes, ages,
   dies, and is replaced by an heir.
 - **Ville** — the town, Saint-Aubin. One world, shared by every house; twenty houses at most.
 - **Semaine** — the tick. One game week, one real hour; twenty-four weeks make a year, and a year
@@ -30,15 +30,16 @@ French in the data and in the interface, and the English here is only how we tal
   measures.
 - **Trésorier** — the treasurer. Sets the succession duty, the income level and usury, and keeps
   the chest.
-- **Greffier** — the clerk. Keeps the record, admits or refuses a complaint, examines the
-  authenticity of evidence.
+- **Greffier** — the clerk. Keeps the record, admits or refuses a complaint, exposes a forged
+  proof automatically.
 - **Crieur** — the herald. Publishes the ban, defines libel, carries the rumours.
 - **Jurat**, **Marguillier** — the five seats without a lever: salary, prestige, a vote on
   exceptional measures, and jury duty.
-- **Carrière** — the offices a person has held. It gates the floor they may stand for, and it dies
-  with them.
+- **Carrière** — the offices a house has held. It gates the floor the house may stand for, and it
+  falls one floor at death.
 - **Titre** — the house's rank, from roturier to prince. Bought, lost by a court or by death.
-- **Faveur** — favour: the standing that makes a house electable. Earned by service, lost by
+- **Faveur** — favour: the standing that makes a house electable. Earned by service (a mandate, a
+  jury, a vote with the winner) and by visible spending (a gift, a work, a banquet); lost by
   offence.
 - **Prestige** — prestige: what the town thinks of the house, and what caps the residence.
 - **Camp** — a faction: houses that vote together, for now.
@@ -55,8 +56,12 @@ French in the data and in the interface, and the English here is only how we tal
 - **Jury** — five houses drawn at random, excluding the parties, voting in secret.
 - **Juge** — the office that did not investigate the case; he does not vote, he fixes the sentence
   and breaks a tie.
+- **Gravité** — the provost places each crime at minor, medium or serious; the penalty follows
+  (five per cent and a day, ten and two, twenty and three).
+- **Pot-de-vin** — money and intrigue to make an officer look away for a few weeks; discovered, it
+  is a crime for both.
 - **Preuve** — a piece of evidence. It can be destroyed, hidden or forged; a forged proof is a
-  crime.
+  crime, and the clerk in office exposes it automatically.
 - **Peine** — the sentence: a fine, the loss of a title degree, or prison. A medium sentence is two
   days and a tenth of the estate; there is no exile.
 - **Prison** — a political death, not a pause: the prisoner keeps his house and his trade, but

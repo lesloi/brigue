@@ -27,8 +27,8 @@
 Early, and in two layers.
 
 - **The design** is in [docs/DESIGN.md](./docs/DESIGN.md) and [docs/DECISIONS.md](./docs/DECISIONS.md).
-  It describes the target game: twelve seats, a person who holds an office and a career, a stock,
-  a court, titles, and a day-long mandate.
+  It describes the target game: twelve seats, a person who holds an office, a house that holds a
+  career, a stock, a court, titles, and a day-long mandate.
 - **The code** still implements the previous ruleset: five seats, output sold on production, one
   seat elected every eight weeks. It is covered by tests, and it is the base the next ruleset
   replaces. The next `formatVersion` starts a new town; no world is in production.
