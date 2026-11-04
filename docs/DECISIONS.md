@@ -17,12 +17,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   assignment. The seat is held by a **person**, not a house; that is what makes a career and a
   succession possible. Revisit only if the town proves too small to hold a solo player's pace.
 
-- **A house whose player leaves goes back to the AI; a human who arrives takes an AI's place.**
-  A house whose player leaves keeps its money, its seat, its grudges and its heir. Nothing in the
-  interface marks it as abandoned, because the town would not know. The reverse is deliberately
-  asymmetric: when a town is full and a human arrives, the AI house ends and the newcomer starts
-  with nothing — no money, no seat, no career. An absence must not destroy a house; an arrival
-  must not inherit a mayoralty.
+- **A house whose player stops playing goes dormant; a human who arrives takes an AI's place.**
+  A dormant house keeps its money, its seat, its grudges and its heir, but nothing runs: the
+  workshop idles, the stock stays a target, the holder votes no more. The holder stays a
+  candidate by default, so a challenger turns the next election into a normal contest. After
+  thirty days without a visit the house is deleted and the token with it: no return, no vacation
+  mode, and no AI ever plays it. The reverse is asymmetric: when a full town receives a human,
+  the AI house ends and the newcomer starts with nothing — no money, no seat, no career. No AI is
+  created after the opening; the ten founding families are a floor, and a freed place waits for a
+  human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
 
 - **The town is capped at twenty houses, ten of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
@@ -54,11 +57,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   ever opened to strangers.
 
 - **The token is bound to a house, and that binding lives outside the world.** A `players` table
-  holds the token hash, the world, the house and a revocation date. The binding is not part of
-  the world because the world is versioned, replayed and hashed; a login is not a game rule, and
-  a format change must never be able to lock a player out. Authorisation is checked once, at the
-  edge, before the world is loaded. One live token per house for now, enforced by a partial
-  unique index; the release that allows several tokens per house lifts it and adds a revoke-all.
+  holds the token hash, the world, the house, a revocation date and the last visit. The binding
+  is not part of the world because the world is versioned, replayed and hashed; a login is not a
+  game rule, and a format change must never be able to lock a player out. The last visit lives
+  there for the same reason: the thirty-day deletion is an edge rule, not a simulation rule,
+  because a world's catch-up cannot count weeks it never simulated. Authorisation is checked
+  once, at the edge, before the world is loaded. One live token per house for now, enforced by a
+  partial unique index; the release that allows several tokens per house lifts it and adds a
+  revoke-all.
 
 ## State
 
@@ -150,19 +156,25 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   exceptional measures — a public work, a loan, a recoinage, an amnesty, a requisition, the
   gates, an ennoblement — with a quorum of seven, a majority of the votes cast (abstentions
   excluded) and at least four yes. The vote is public; the mayor convenes, and four of the seven
-  offices can force a sitting. A short absence is tolerated, a long one passes the house to the
-  AI, which votes in its place; a deliberate boycott of six seats leaves no quorum and blocks the
-  sitting. This is Europe 1400's model, with a parliament kept for the big things: the five seats
-  without a lever become the swing vote. Revisit if the council never meets.
+  offices can force a sitting. A dormant house keeps its seat but casts no vote; a sitting counts
+  only the seats that answer, and a boycott of six blocks it just the same. This is Europe 1400's
+  model, with a parliament kept for the big things: the five seats without a lever become the
+  swing vote. Revisit if the council never meets.
 
-- **The court is a jury of five random houses, voting in secret.** A complaint is filed at the
-  clerk's office with evidence; five houses drawn at random, excluding the parties, judge; the
-  judge — the provost or the clerk — presides, weighs in the deliberation and sets the sentence
-  (a fine, a title, prison, exile). The jury is where the houses without a seat hold power, and
-  the secret ballot is the only vote one can buy without knowing whether the money worked.
-  Evidence can be destroyed, hidden or fabricated; a forged proof is a crime, and the clerk
-  examines authenticity, which balances the provost's investigation. Revisit if juries are
-  captured or trials are too slow.
+- **The court is a jury of five random houses, voting in secret, and a judge who does not vote.**
+  A complaint is filed at the clerk's office with evidence; five houses drawn at random,
+  excluding the parties, judge, and a dormant juror is replaced. The judge is the office that did
+  not investigate — the provost judges what the clerk built, and the reverse — so no one defines
+  a crime, gathers the proofs and sets the price. He does not vote: he fixes the sentence and
+  breaks a tie. The law's severity sets the range, the evidence sets the starting point, and the
+  judge moves it. Three penalties: a fine (a tenth of the estate for a medium sentence), the loss
+  of a title degree, and prison — two days for a medium sentence, and a political death rather
+  than a pause, since the prisoner keeps his house and his trade but cannot stand, vote, judge or
+  buy a title, and his office is suspended until the next election. There is no exile. Evidence
+  can be destroyed, hidden or fabricated; a forged proof is a crime, and the clerk examines
+  authenticity, which balances the provost's investigation. The jury is where the houses without
+  a seat hold power, and the secret ballot is the only vote one can buy without knowing whether
+  the money worked. Revisit if juries are captured or trials are too slow.
 
 - **Death is a window, retirement is a choice, and the heir inherits the house, not the career.**
   At fifty, retirement is offered; refusing opens a window in which death may come any week,
@@ -177,8 +189,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   campaign, supports a camp and remembers who beat it. It also buys the input its workshops lack,
   as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
   nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
-  How the AI times its sales without making the price saw is still open. Revisit when an AI must
-  choose what to produce.
+  It sells its whole stock every week at the market price: it takes the price, it does not time
+  it, so the flow stays regular and the price readable. Revisit when an AI must choose what to
+  produce.
 
 - **A refusal is an event, never a throw.** The server replays stored actions weeks later; one
   poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase

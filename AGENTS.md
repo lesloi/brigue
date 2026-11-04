@@ -27,8 +27,8 @@ By default:
   default. Renaming a field or changing a unit is a breaking change and needs a migration, so we
   do not do it. A new format may reset instead: see the DECISIONS entry on the next format.
 - A house is held by a controller, `ai` or `human`; a seat is held by a person of that house.
-  The simulation never asks who controls the house: solo, multiplayer and a player who leaves are
-  the same code.
+  The simulation never asks who controls the house: solo, multiplayer and a dormant house are the
+  same code.
 - A refusal is an event, never a throw: the server replays stored actions weeks later, and one
   poisoned action must not be able to stop the town. Only a wrong world version throws.
 - The game speaks French; the code, the commits and the docs speak English.

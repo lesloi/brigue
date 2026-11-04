@@ -15,6 +15,9 @@ French in the data and in the interface, and the English here is only how we tal
 - **An** — twenty-four weeks, one real day. The calendar advances a year per day.
 - **Place** — a seat or a house as something the town can assign: a house is held by a controller
   (`ai` or `human`), a seat by a person.
+- **Dormance** — the state of a house whose player has stopped playing: it keeps its money, its
+  seat and its grudges, nothing runs, and the holder votes no more. After thirty days, the house
+  is deleted.
 
 ## The council
 
@@ -50,9 +53,14 @@ French in the data and in the interface, and the English here is only how we tal
 - **Loi** — a law in force, always with the house that carried it.
 - **Séance** — a sitting of the council, where the exceptional measures are voted.
 - **Jury** — five houses drawn at random, excluding the parties, voting in secret.
+- **Juge** — the office that did not investigate the case; he does not vote, he fixes the sentence
+  and breaks a tie.
 - **Preuve** — a piece of evidence. It can be destroyed, hidden or forged; a forged proof is a
   crime.
-- **Peine** — the sentence: a fine, the loss of a title, prison, exile.
+- **Peine** — the sentence: a fine, the loss of a title degree, or prison. A medium sentence is two
+  days and a tenth of the estate; there is no exile.
+- **Prison** — a political death, not a pause: the prisoner keeps his house and his trade, but
+  cannot stand, vote, judge or buy a title, and his office is suspended until the next election.
 
 ## Money and goods
 

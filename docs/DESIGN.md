@@ -34,8 +34,14 @@ founder: the town exists before the player, but its offices do not. Every seat i
 pyramid fills from the bottom, one floor per election.
 
 A human who arrives in a full town takes the place of an AI house. The AI line ends; the newcomer
-starts with nothing — no money, no seat, no career. A player who leaves does the opposite: the
-house stays, with its money, its seat and its grudges, and the AI holds it.
+starts with nothing — no money, no seat, no career. No AI is created after the opening: the ten
+founding families are a floor, not a pump, and a freed place waits for a human.
+
+A player who stops playing leaves a **dormant** house. It keeps its money, its seat and its
+grudges, but nothing runs: the workshop is idle, the stock is still a target, and the holder
+votes no more. The holder stays a candidate by default, so a challenger turns the next election
+into a normal contest. After thirty days without a visit, the house is deleted and the token with
+it — no return, no vacation mode.
 
 The cap is the point. Twenty houses for twelve seats is scarcity; twelve seats for twenty houses
 is a queue.
@@ -79,21 +85,31 @@ of the votes cast, abstentions excluded, with at least four yes. The vote is pub
 knows who voted for whom. The mayor convenes; four of the seven offices with a domain can force
 a sitting.
 
-**Absence.** A short absence is tolerated; a long one passes the house to the AI, which votes in
-its place. A deliberate boycott of six seats leaves the sitting without a quorum and blocks it.
+**Absence.** A dormant house keeps its seat but casts no vote; a sitting counts only the seats
+that answer, so a town that sleeps loses its quorum before it loses its houses. A deliberate
+boycott of six seats blocks the sitting the same way.
 
 Every measure is carried by a house, and its name stays on the law.
 
 ## The court
 
 A complaint is filed at the clerk's office with evidence. **Five houses drawn at random**,
-excluding the parties, sit as a jury and vote in secret; the judge — the provost, or the clerk —
-presides, weighs in the deliberation and sets the sentence: a fine, the loss of a title, prison,
-exile.
+excluding the parties, sit as a jury and vote in secret. **The judge is the office that did not
+investigate** — the provost judges what the clerk built, and the other way round — so no one
+defines a crime, gathers the proofs and sets the price. The judge does not vote; he fixes the
+sentence and breaks a tie.
+
+The sentence sits between a floor and a ceiling set by the law that defines the crime; the
+evidence sets where in that range it starts, and the judge moves it. Three penalties exist: a
+fine, the loss of a degree of title, and prison. A medium sentence is two days and a tenth of the
+estate. Prison is a political death, not a pause: the prisoner keeps his house and his trade, but
+cannot stand, vote, judge or buy a title, and the office he held is suspended until the next
+election. There is no exile.
 
 Evidence is a thing one brings. It can be destroyed, hidden, or fabricated; a forged proof is a
 crime, and the clerk is the one who examines it. A false accusation that survives the clerk's
-eye is the sharpest weapon in the town.
+eye is the sharpest weapon in the town. A juror who is dormant when the vote comes is replaced by
+another draw; one does not refuse to serve.
 
 The jury is where the eight houses without a seat have power. It is also the only secret vote in
 the game: one may bribe a juror, never know whether the money worked.
@@ -103,7 +119,9 @@ the game: one may bribe a juror, never know whether the money worked.
 A workshop produces into a warehouse; selling is an action, at the week's price. Holding cloth
 for a better week is a bet: the price is pushed by what the town sold and bought the week
 before, pulled a quarter of the way back to its reference, and jittered by chance. Dumping a
-large stock moves the price down for everyone, including the dumper's neighbour.
+large stock moves the price down for everyone, including the dumper's neighbour. The AI houses
+sell their whole stock every week at the market price: they take the price, they do not time it,
+so the flow stays regular and the price readable.
 
 Capacity is fixed by the workshop's level, and there is no spoilage. What reduces a stock is
 theft: a secret coup resolved after two weeks, the thief's intrigue against the target's
@@ -140,9 +158,8 @@ Person = { id, houseId, name, age, attributes, career, alive }
 Seat   = { personId | null }
 ```
 
-The simulation never asks who controls a house. Solo, multiplayer, and a player who stops
-playing are the same code: the server assigns seats, and a seat given back to an AI keeps its
-history.
+The simulation never asks who controls a house. Solo, multiplayer, and a dormant house are the
+same code: the server assigns seats, and a dormant house keeps its history without being played.
 
 ## The week
 
@@ -170,9 +187,6 @@ a map of places, drawn in seals, serves as navigation.
 
 ## Not decided yet
 
-- The judge's weight in a jury, and how the clerk detects a forged proof.
-- How an AI house sells its stock without making the price saw.
-- What a drawn juror risks by refusing to serve.
-- The exact sentence lengths, and whether prison removes a character from play.
-- Whether the town grows by new houses or only by new players.
+- How the clerk detects a forged proof.
+- The range each crime's law gives the judge.
 - Whether twelve seats for twenty houses, with an election every day, keep the council contested.
