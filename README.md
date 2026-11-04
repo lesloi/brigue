@@ -8,23 +8,35 @@
 
 ## What it is
 
-- **Three chapters.** You learn a trade, you settle a house, then the town opens: five
-  council seats, elections, lawsuits, rumours, heirs.
-- **The council is the game.** Seats are few and named. Each one grants a concrete right, not
-  a bonus: the mayor names to small offices, the provost seizes goods, the alderman sets the
-  price of wool.
-- **A week per tick.** The town moves slowly enough that a betrayal can be prepared, and fast
-  enough that a week away does not ruin a game.
+- **Three chapters.** You learn a trade, you settle a house, then the town opens: twelve council
+  seats, an election every day, lawsuits, titles, heirs.
+- **The council is the game.** Twelve seats in a pyramid. Each one grants a concrete right, not a
+  bonus: the mayor sets the taxes and the agenda, the provost defines crimes and seizes goods, the
+  alderman fixes the prices of the market. Five seats carry no lever at all — but they vote the
+  exceptional measures, and they judge.
+- **The law is split.** Each office fixes its own domain alone; the council votes only the big
+  things: a work, a loan, a recoinage, an amnesty, a requisition, the gates, an ennoblement.
+- **The court is a jury.** Five houses drawn at random, a secret vote, a judge who presides. A
+  forged proof is a crime, and the clerk is the one who examines it.
+- **The market bites back.** A workshop produces into a warehouse; selling is a decision; the
+  price you see is the town you were; and a full store is a target.
 - **Played on a phone**, in short visits, as an installable PWA.
 
 ## Status
 
-Early. The simulation core runs and is covered by tests. The server issues a
-token, serves the world with catch-up, and accepts one action per week. The PWA
-has its shell and the Ville screen: it renders the projection and the events of
-the last week, and sends a market intent. The other screens are still to come.
-One image carries the API and the built client: one process, one port, one
-origin.
+Early, and in two layers.
+
+- **The design** is in [docs/DESIGN.md](./docs/DESIGN.md) and [docs/DECISIONS.md](./docs/DECISIONS.md).
+  It describes the target game: twelve seats, a person who holds an office, a house that holds a
+  career, a stock, a court, titles, and a day-long mandate.
+- **The code** still implements the previous ruleset: five seats, output sold on production, one
+  seat elected every eight weeks. It is covered by tests, and it is the base the next ruleset
+  replaces. The next `formatVersion` starts a new town; no world is in production.
+
+The server issues a token, serves the world with catch-up, and accepts actions for the week being
+played or the next one. The PWA has its shell and the Ville screen: it renders the projection and
+the events of the last week, and sends a market intent. The other screens are still to come. One
+image carries the API and the built client: one process, one port, one origin.
 
 ## Stack
 
