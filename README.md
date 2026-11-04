@@ -12,7 +12,7 @@
   seats, an election every day, lawsuits, titles, heirs.
 - **The council is the game.** Twelve seats in a pyramid. Each one grants a concrete right, not a
   bonus: the mayor sets the taxes and the agenda, the provost defines crimes and seizes goods, the
-  alderman fixes the price of wool. Five seats carry no lever at all — but they vote the
+  alderman fixes the prices of the market. Five seats carry no lever at all — but they vote the
   exceptional measures, and they judge.
 - **The law is split.** Each office fixes its own domain alone; the council votes only the big
   things: a work, a loan, a recoinage, an amnesty, a requisition, the gates, an ennoblement.

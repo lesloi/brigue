@@ -56,6 +56,16 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   and it has two speeds on purpose: the incumbent accumulates, the newcomer buys a campaign.
   Revisit if one speed swallows the other.
 
+- **The long game is the register.** One score per house — prestige, offices held, titles,
+  generations and wealth — kept at the clerk's office and shown to everyone. A single ladder makes
+  a merchant, a notable and a dynasty comparable, and gives a world that never ends a goal that
+  never ends. Revisit if the score rewards hoarding over playing.
+
+- **The residence is one ladder.** The title opens a level, money pays for it, and the level sets
+  the prestige cap, the defence of the stock, the warehouse capacity and the number of workshops.
+  Three separate ladders would be three things to read on a phone; one says what the house can
+  hold, which is what chapter II must teach. Revisit if a level stops meaning anything.
+
 ## Identity
 
 - **A token, not an account.** An opaque 256-bit token, stored hashed, shown once, no email, no
@@ -136,10 +146,17 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **Theft is what a stock loses, and a shield is what a victim earns.** A theft is a secret coup
   resolved two weeks later: the thief's intrigue against the target's defence. A failure leaves a
-  proof at the clerk's office; a success leaves nothing. Each hostile act a house absorbs raises
+  proof at the clerk's office; a success leaves no automatic proof, though an investigation may
+  still find one. Each hostile act a house absorbs raises
   its shield, which fades with the weeks, so the first blow is easy and the fifth is almost
   impossible. Spoilage would have been a clock; theft is a decision by someone, and it makes a
   full warehouse a target. Revisit if the shield makes a vendetta impossible.
+
+- **Six goods, three chains.** Wool into cloth, grain into bread, wood into planks. Three trades —
+  weaver, baker, carpenter — one chain each, and a person keeps one trade at a time but may learn
+  another, converting the workshop. The town eats bread, builds with planks and wears cloth, so
+  each chain has a buyer. Europe 1400 had sixty-nine goods; six is what a phone screen and twenty
+  houses can carry. Revisit when a seventh good arrives with a new trade.
 
 - **The price lags a week, and the town prices the week after.** A week's net flow (sold minus
   bought) pushes the next week's price away from its reference, and the gap back closes a quarter
@@ -156,8 +173,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   engagements.
 
 - **Laws are domains, plus exceptional votes.** Each office fixes its own laws alone: the mayor
-  the sales and guild taxes, the provost the definition of crimes, the alderman the price of
-  grain, wool and cloth and the rents, the treasurer the succession duty, the clerk the
+  the sales and guild taxes, the provost the definition of crimes, the alderman the prices of the
+  town's goods and the rents, the treasurer the succession duty, the clerk the
   admissibility of complaints, the crier libel, the master of the hall the places and the seal.
   The council votes only the
   exceptional measures — a public work, a loan, a recoinage, an amnesty, a requisition, the
@@ -169,8 +186,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   swing vote. Revisit if the council never meets.
 
 - **The court is a jury of five random houses, voting in secret, and a judge who does not vote.**
-  A complaint is filed at the clerk's office with evidence; five houses drawn at random,
-  excluding the parties, judge, and a dormant juror is replaced. The judge is the office that did
+  A complaint is filed at the clerk's office with evidence — a visible crime leaves a proof to its
+  victim, a secret one leaves a proof only when it fails, and the provost's investigation finds
+  the rest; five houses drawn at random, excluding the parties, judge, and a dormant juror is
+  replaced. The judge is the office that did
   not investigate — the provost judges what the clerk built, and the reverse — so no one defines
   a crime, gathers the proofs and sets the price. He does not vote: he fixes the sentence and
   breaks a tie. The law's severity sets the range, the evidence sets the starting point, and the
@@ -197,7 +216,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   is what makes staying a gamble. Revisit if generations feel like a treadmill.
 
 - **The AI plays politics.** Each week an AI house chooses a seat by its rank, spends favour to
-  campaign, supports a camp and remembers who beat it. It also buys the input its workshops lack,
+  campaign, and remembers who beat it. It votes according to its interests and its grudges. It also buys the input its workshops lack,
   as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
   nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
   It sells its whole stock every week at the market price: it takes the price, it does not time

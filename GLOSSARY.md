@@ -24,8 +24,8 @@ French in the data and in the interface, and the English here is only how we tal
 - **Charge** — an office. A seat on the council, with a right attached.
 - **Maire** — the mayor. Presides, sets the agenda, hears appeals, sets the sales and guild taxes.
 - **Prévôt** — the provost. Opens investigations, seizes goods, holds the watch, defines crimes.
-- **Échevin du ban** — the alderman of the ban. One of them; fixes the price of grain, wool and
-  cloth, and the rents.
+- **Échevin du ban** — the alderman of the ban. One of them; fixes the prices of the town's goods,
+  and the rents.
 - **Maître de la halle** — the master of the hall. Grants places, holds the cloth seal, weighs and
   measures.
 - **Trésorier** — the treasurer. Sets the succession duty, the income level and usury, and keeps
@@ -41,8 +41,9 @@ French in the data and in the interface, and the English here is only how we tal
 - **Faveur** — favour: the standing that makes a house electable. Earned by service (a mandate, a
   jury, a vote with the winner) and by visible spending (a gift, a work, a banquet); lost by
   offence.
-- **Prestige** — prestige: what the town thinks of the house, and what caps the residence.
-- **Camp** — a faction: houses that vote together, for now.
+- **Prestige** — prestige: what the town thinks of the house; the residence level caps it.
+- **Registre** — the clerk's ranking of the houses: prestige, offices held, titles, generations and
+  wealth, in one score.
 
 ## The law
 
@@ -74,17 +75,24 @@ French in the data and in the interface, and the English here is only how we tal
 - **Denier** — a unit of account worth ten cents, used in laws and taxes. A convention of the
   town, not a coin: it exists so a tax can be written as "one denier a piece" without introducing
   a fraction of a cent.
-- **Halle** — the market hall, where cloth is sold and where a place must be granted.
+- **Halle** — the market hall, where goods are sold and where a place must be granted.
 - **Sceau** — the seal that certifies cloth; also the drawn mark of a place on the map.
-- **Drap** — cloth, the good of the opening trade.
-- **Laine** — wool, the raw material.
-- **Blé** — grain, the good whose price the aldermen fix.
+- **Drap** — cloth, the good of chapter I.
+- **Laine** — wool, the raw material of cloth.
+- **Blé** — grain, the raw material of bread.
+- **Pain** — bread, the good the town eats.
+- **Bois** — wood, the raw material of planks.
+- **Planche** — plank, the good the town builds with.
 - **Entrepôt** — the warehouse: finished goods, with a capacity fixed by the workshop's level.
 
 ## The person
 
 - **Attributs** — artisanat, parole, intrigue. Raised by use, capped by the trade and the title,
   and lost with the person.
+- **Métier** — the trade a person practises: weaver, baker, carpenter. One at a time; another can
+  be learned, which converts the workshop.
+- **Résidence** — the house's one ladder: the title opens a level, money pays for it, and the level
+  sets the prestige cap, the defence of the stock, the capacity and the number of workshops.
 - **Héritier** — the next person of the house. Chosen at retirement; taken, unprepared, by death.
 - **Retraite** — the clean handover at fifty, chosen by the player. It keeps the estate and
   prepares the heir; refusing it opens the window in which death may come.

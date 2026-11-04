@@ -17,7 +17,7 @@ to sell. About an hour.
 The town hall is visible and locked: you are told the office needs a standing you do not have.
 About two hours.
 
-**III — The town.** You play. Twelve seats, factions, lawsuits, rumours, heirs. This is the real
+**III — The town.** You play. Twelve seats, lawsuits, rumours, heirs. This is the real
 game and it never ends.
 
 Two rules keep the chapters honest:
@@ -46,6 +46,10 @@ it — no return, no vacation mode.
 The cap is the point. Twenty houses for twelve seats is scarcity; twelve seats for twenty houses
 is a queue.
 
+The register, kept at the clerk's office, ranks the houses by one score: prestige, offices held,
+titles, generations and wealth. It is the long game, and the only place where a merchant, a
+notable and a dynasty can be compared.
+
 ## The council
 
 Twelve seats in a pyramid: one mayor, two great offices, four small ones, five without a lever.
@@ -55,7 +59,7 @@ Twelve seats in a pyramid: one mayor, two great offices, four small ones, five w
 - **Trésorier** — succession duty, income, usury, the chest.
 - **Greffier** — the record: complaints received or refused, evidence kept, authenticity.
 - **Crieur** — the voice: the ban published, insults, pamphlets, rumours.
-- **Échevin du ban** — the price of grain, wool and cloth; rents.
+- **Échevin du ban** — the prices of the town's goods; the rents.
 - **Maître de la halle** — places, the cloth seal, weights and measures.
 - **Five without a lever** — three jurats and two marguilliers. Salary, prestige, a vote on
   exceptional measures, and jury duty.
@@ -76,7 +80,7 @@ Two kinds.
 
 **By domain, without a vote.** Each office fixes its own laws alone: the mayor sets the sales and
 guild taxes; the provost defines which acts are crimes and places each at one of three degrees —
-minor, medium, serious; the alderman fixes the price of grain, wool and cloth, and the rents; the
+minor, medium, serious; the alderman fixes the prices of the town's goods, and the rents; the
 treasurer sets the succession duty; the clerk decides which complaints are received; the crier
 publishes and defines libel; the master of the hall sets the places and the seal.
 
@@ -94,7 +98,9 @@ Every measure is carried by a house, and its name stays on the law.
 
 ## The court
 
-A complaint is filed at the clerk's office with evidence. **Five houses drawn at random**,
+A complaint is filed at the clerk's office with evidence. A visible crime — blows, a threat, an
+insult — leaves a proof to its victim; a secret one leaves a proof only when it fails; the
+provost's investigation can find the rest. **Five houses drawn at random**,
 excluding the parties, sit as a jury and vote in secret. **The judge is the office that did not
 investigate** — the provost judges what the clerk built, and the other way round — so no one
 defines a crime, gathers the proofs and sets the price. The judge does not vote; he fixes the
@@ -120,16 +126,18 @@ the game: one may bribe a juror, never know whether the money worked.
 
 ## The economy
 
-A workshop produces into a warehouse; selling is an action, at the week's price. Holding cloth
-for a better week is a bet: the price is pushed by what the town sold and bought the week
-before, pulled a quarter of the way back to its reference, and jittered by chance. Dumping a
-large stock moves the price down for everyone, including the dumper's neighbour. The AI houses
-sell their whole stock every week at the market price: they take the price, they do not time it,
-so the flow stays regular and the price readable.
+A workshop produces into a warehouse; selling is an action, at the week's price. Six goods, three
+chains: wool into cloth, grain into bread, wood into planks. The town eats bread, builds with
+planks and wears cloth. Holding a good for a better week is a bet: the price is pushed by what the
+town sold and bought the week before, pulled a quarter of the way back to its reference, and
+jittered by chance. Dumping a large stock moves the price down for everyone, including the
+dumper's neighbour. The AI houses sell their whole stock every week at the market price: they
+take the price, they do not time it, so the flow stays regular and the price readable.
 
 Capacity is fixed by the workshop's level, and there is no spoilage. What reduces a stock is
 theft: a secret coup resolved after two weeks, the thief's intrigue against the target's
-defence. A failure leaves a proof at the clerk's office; a success leaves nothing. A victim who
+defence. A failure leaves a proof at the clerk's office; a success leaves no automatic proof,
+though an investigation may still find one. A victim who
 has been struck hard is harder to strike again for a while — the shield rises with each hostile
 act and fades with the weeks.
 
@@ -137,6 +145,11 @@ act and fades with the weeks.
 
 Three attributes, raised by use: **artisanat, parole, intrigue**. Returns diminish, and the
 ceiling is set by the trade and the title. They belong to the person and die with them.
+
+A person keeps one trade at a time — weaver, baker, carpenter — and can learn another, which
+converts the workshop. The **residence** is one ladder: the title opens a level, money pays for
+it, and the level sets the prestige cap, the defence of the stock, the capacity of the warehouse
+and the number of workshops.
 
 **Favour** is the currency of elections. It is earned by service — a mandate held, a
 jury served, a vote cast with the winner — and by visible acts: a gift to the treasury, a funded
