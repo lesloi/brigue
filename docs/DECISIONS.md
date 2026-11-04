@@ -111,10 +111,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   refused, and the action endpoint never catches the world up itself.
 
 - **The next format is a reset, not a migration.** The town that runs today is a test town, and the
-  reset deletes it with its tokens: the deploy that ships it clears the old world and its players.
-  The new model adds a person and changes what a seat holds (from a house to a person), which the
-  additive rule cannot carry. The next `formatVersion` starts a new town; a world of the old format
-  is refused, never guessed. The additive rule resumes from that format.
+  reset deletes it with its tokens. The release that ships the new format is followed by clearing
+  the old world and its players, once the new pod serves: during the rollout, the previous pod
+  would recreate a format-1 world at the first visit. The new model adds a person and changes what
+  a seat holds (from a house to a person), which the additive rule cannot carry. The next
+  `formatVersion` starts a new town; a world of the old format is refused, never guessed. The
+  additive rule resumes from that format.
 
 ## Simulation
 
