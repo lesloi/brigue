@@ -110,10 +110,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   An action may name the week being played or the next one; a week that already ticked is
   refused, and the action endpoint never catches the world up itself.
 
-- **The next format is a reset, not a migration.** No world is in production. The new model adds
-  a person and changes what a seat holds (from a house to a person), which the additive rule
-  cannot carry. The next `formatVersion` starts a new town; a world of the old format is refused,
-  never guessed. The additive rule resumes from that format.
+- **The next format is a reset, not a migration.** The town that runs today is a test town, and the
+  reset deletes it with its tokens: the deploy that ships it clears the old world and its players.
+  The new model adds a person and changes what a seat holds (from a house to a person), which the
+  additive rule cannot carry. The next `formatVersion` starts a new town; a world of the old format
+  is refused, never guessed. The additive rule resumes from that format.
 
 ## Simulation
 
