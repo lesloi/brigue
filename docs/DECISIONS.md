@@ -242,6 +242,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   browser-ready today; if a client-side mode is ever wanted, that one file moves to WebCrypto.)
   Revisit if profiling shows the simulation outgrowing Node.
 
+- **The client is Preact, and the projection descends in props.** A document game is six screens
+  of forms, lists and dialogs: hand-written templates carried one screen, but at six they are a
+  pile of `innerHTML`, `querySelector` and listeners rewired on every paint. Preact keeps the
+  rule — the client renders a projection and decides nothing — with components and local state,
+  for about 4 kB gzipped and one dependency. No router library and no state library: the
+  projection goes down the tree, everything else stays local. React was the other candidate; its
+  ecosystem buys nothing here and its runtime is ten times the size. Revisit if the bundle
+  outgrows a phone or the state stops fitting in props.
+
 - **One container serves both the API and the built client.** Same origin, no CORS, no second
   deployment, no CDN. In development, two processes; in production, one image that serves both,
   with nothing between the browser and the server. The image mounts the Vite output behind
