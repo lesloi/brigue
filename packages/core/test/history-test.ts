@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, GOODS, PRICE_HISTORY_WEEKS, RULES, tick } from '../src/index.ts';
+import { createWorld, GOODS, PRICE_HISTORY_BELLS, RULES } from '../src/index.ts';
+import { playHalfDay, tick } from './helpers.ts';
 
 describe('the price history', () => {
   it('starts at the reference and gains one point per good per tick', () => {
@@ -20,7 +21,7 @@ describe('the price history', () => {
     }
   });
 
-  it('keeps one point per week when the price holds', () => {
+  it('keeps one point per hour when the price holds', () => {
     // Arrange: a price pinned at the floor, so the next price is unchanged.
     const world = createWorld(1);
     world.market.cloth = RULES.priceFloorCents;
@@ -40,13 +41,13 @@ describe('the price history', () => {
     let world = createWorld(1);
 
     // Act
-    for (let week = 0; week < PRICE_HISTORY_WEEKS + 1; week += 1) {
+    for (let hour = 0; hour < PRICE_HISTORY_BELLS + 1; hour += 1) {
       world = tick(world).world;
     }
 
     // Assert
     for (const good of GOODS) {
-      expect(world.marketHistory?.[good]).toHaveLength(PRICE_HISTORY_WEEKS);
+      expect(world.marketHistory?.[good]).toHaveLength(PRICE_HISTORY_BELLS);
       expect(world.marketHistory?.[good]?.at(-1)).toBe(world.market[good]);
     }
   });

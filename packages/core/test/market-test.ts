@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, GOODS, nextPriceCents, RULES, stockUnits, tick } from '../src/index.ts';
+import { createWorld, GOODS, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
+import { playHalfDay, tick } from './helpers.ts';
 import type { Action, Event, World } from '../src/index.ts';
 
 const SEED = 20261029;
 
-/** A world where the weaver is idle, so the week's flow is only the town's. */
+/** A world where the weaver is idle, so the half-day's flow is only the town's. */
 function playWeek(world: World, actions: Action[] = []): { world: World; events: Event[] } {
-  return tick(world, actions);
+  return playHalfDay(world, actions);
 }
 
 /**
- * The price of a week is moved by the flow of the week before it, so a test of
- * the rule needs two weeks: the first records the flow, the second prices it.
+ * The price of a hour is moved by the flow of the hour before it, so a test of
+ * the rule needs two hours: the first records the flow, the second prices it.
  */
 function twoWeeks(world: World, actions: Action[] = []): World {
   return playWeek(playWeek(world, actions).world).world;
@@ -45,8 +46,8 @@ describe('nextPriceCents', () => {
   });
 
   it("prices the town's standing demand, not just what is offered", () => {
-    // Arrange: bread is absorbed ten a week. A week with nothing offered and
-    // nothing bought is a week in which the town went short.
+    // Arrange: bread is absorbed ten a hour. A hour with nothing offered and
+    // nothing bought is a hour in which the town went short.
     const bread = { ...base, priceCents: 520, referenceCents: 520 };
 
     // Act and assert: a full scale of shortage is a tenth of the reference.
@@ -72,19 +73,19 @@ describe('nextPriceCents', () => {
   });
 });
 
-describe('the market of a week', () => {
-  it('takes no view on the first week of a world', () => {
-    // Arrange: a fresh world has no week behind it, so nothing has been traded.
+describe('the market of a hour', () => {
+  it('takes no view on the first hour of a world', () => {
+    // Arrange: a fresh world has no hour behind it, so nothing has been traded.
     const { world } = playWeek(createWorld(SEED));
 
-    // Assert: only the week's own drift moved the prices.
+    // Assert: only the hour's own drift moved the prices.
     for (const good of GOODS) {
       const drift = world.market[good] - RULES.market[good].referenceCents;
       expect(Math.abs(drift)).toBeLessThanOrEqual(RULES.priceDriftCents);
     }
   });
 
-  it('records the week it will price next week', () => {
+  it('records the hour it will price next hour', () => {
     // Arrange
     const { world } = playWeek(createWorld(SEED));
 
@@ -100,7 +101,7 @@ describe('the market of a week', () => {
     });
   });
 
-  it("takes a week's sale into next week's flow, not this week's price", () => {
+  it("takes a hour's sale into next hour's flow, not this hour's price", () => {
     // Arrange: a house with cloth to sell and no workshop of its own.
     const world = createWorld(SEED);
     world.houses.brigue.workshops = [];
@@ -109,17 +110,17 @@ describe('the market of a week', () => {
     // Act
     const { world: after } = playWeek(world, [{ type: 'market.sell', houseId: 'brigue', good: 'cloth', units: 20 }]);
 
-    // Assert: the price only drifted; the flow is stored for the next week.
+    // Assert: the price only drifted; the flow is stored for the next hour.
     expect(Math.abs(after.market.cloth - RULES.market.cloth.referenceCents)).toBeLessThanOrEqual(RULES.priceDriftCents);
     expect(after.marketFlow.cloth).toBe(26);
   });
 
-  it('lets a purchase raise the price the following week', () => {
+  it('lets a purchase raise the price the following hour', () => {
     // Arrange
     const control = twoWeeks(createWorld(SEED));
     const bought = twoWeeks(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 20 }]);
 
-    // Act: twenty fewer wool on the market than in the control week.
+    // Act: twenty fewer wool on the market than in the control hour.
     const difference = bought.market.wool - control.market.wool;
 
     // Assert
@@ -129,7 +130,7 @@ describe('the market of a week', () => {
   });
 
   it('lets an unclaimed wool glut lower the price', () => {
-    // Arrange: Vandermeersch sells four wool a week; here the weaver buys four,
+    // Arrange: Vandermeersch sells four wool a hour; here the weaver buys four,
     // so the town's wool balance is closer to level and the glut is smaller.
     const glut = twoWeeks(createWorld(SEED));
     const balanced = twoWeeks(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
@@ -155,7 +156,7 @@ describe('the market of a week', () => {
     const withSale = twoWeeks(selling, [{ type: 'market.sell', houseId: 'brigue', good: 'cloth', units: 20 }]);
     const withoutSale = twoWeeks(control);
 
-    // Assert: the same week-one price and the same drift, so only the flow
+    // Assert: the same hour-one price and the same drift, so only the flow
     // differs. The pull's integer truncation is part of the rule and stays in
     // the expected value rather than being approximated.
     const rule = {
@@ -200,7 +201,7 @@ describe('the warehouse', () => {
     });
   });
 
-  it("credits a sale at the week's price", () => {
+  it("credits a sale at the hour's price", () => {
     // Arrange
     const world = createWorld(SEED);
     world.houses.brigue.workshops = [];
@@ -365,12 +366,12 @@ describe('an AI house', () => {
     expect(world.houses.charpentier.stock).toEqual({});
   });
 
-  it('sells its whole stock every week', () => {
+  it('sells its whole stock every hour', () => {
     // Arrange
     let current = createWorld(SEED);
 
-    // Act and assert: no AI house holds a unit across the week.
-    for (let week = 0; week < 10; week += 1) {
+    // Act and assert: no AI house holds a unit across the hour.
+    for (let hour = 0; hour < 10; hour += 1) {
       current = playWeek(current).world;
       for (const house of Object.values(current.houses)) {
         if (house.controller === 'ai') {
@@ -410,7 +411,7 @@ describe('an AI house', () => {
     const idles: Event[] = [];
 
     // Act: a long run, because a demand that switches on and off would show here.
-    for (let week = 0; week < 200; week += 1) {
+    for (let hour = 0; hour < 200; hour += 1) {
       const result = playWeek(current);
       current = result.world;
       idles.push(...result.events.filter((event) => event.type === 'workshop.idle' && event.houseId === 'caron'));
@@ -425,7 +426,7 @@ describe('an AI house', () => {
     let current = createWorld(SEED);
 
     // Act
-    for (let week = 0; week < 200; week += 1) {
+    for (let hour = 0; hour < 200; hour += 1) {
       current = playWeek(current).world;
     }
 
@@ -480,7 +481,7 @@ describe('an AI house', () => {
     const bought = new Map<string, Set<string>>();
 
     // Act
-    for (let week = 0; week < 20; week += 1) {
+    for (let hour = 0; hour < 20; hour += 1) {
       const result = playWeek(current);
       current = result.world;
       for (const event of result.events) {
@@ -500,7 +501,7 @@ describe('an AI house', () => {
     expect([...(bought.get('fournier') ?? [])]).toEqual(['grain']);
   });
 
-  it('pays the same price as the player does in the same week', () => {
+  it('pays the same price as the player does in the same hour', () => {
     // Arrange
     const world = createWorld(SEED);
     const priceCents = world.market.wool;

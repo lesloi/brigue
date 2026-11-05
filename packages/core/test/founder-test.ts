@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createFounder, createWorld, RULES, stateHash, tick, TRADES, TRADE_CHAINS } from '../src/index.ts';
+import { createFounder, createWorld, RULES, stateHash, TRADES, TRADE_CHAINS } from '../src/index.ts';
+import { tick } from './helpers.ts';
 
 describe('the founder', () => {
   it('starts as a weaver by default', () => {
