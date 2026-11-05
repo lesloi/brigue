@@ -29,20 +29,22 @@ Early, and in two layers.
 - **The design** is in [docs/DESIGN.md](./docs/DESIGN.md) and [docs/DECISIONS.md](./docs/DECISIONS.md).
   It describes the target game: twelve seats, a person who holds an office, a house that holds a
   career, a stock, a court, titles, and a day-long mandate.
-- **The code** implements the calendar and the economy: one week per real hour, twenty-four
-  weeks a year, and a scrutiny at the end of each year with every seat up. Five seats today, six
-  goods in three chains, a warehouse with a cap, a sale made by an action, and a trade chosen at
-  creation. The raw suppliers stay AI; humans replace only the finished trades when multiplayer
-  lands. It is covered by tests, and it is the base the next ruleset replaces. The next
-  `formatVersion` starts a new town; no world is in production.
+- **The code** implements the clock and the economy: one real hour is one town hour, twenty-four
+  hours a year, and a scrutiny at the end of each year with every seat up; the town advances on a
+  scheduler, and the two bells settle the prices. Five seats today, six goods in three chains, a
+  warehouse with a cap, a sale made by an action, and a trade chosen at creation. The raw
+  suppliers stay AI; humans replace only the finished trades when multiplayer lands. The town
+  lives in Postgres tables and its events in a journal. It is covered by tests, and it is the
+  format that replaces the week-based one — it deletes the test towns and starts the version at
+  one; no world is in production.
 
-The server issues a token, serves the world with catch-up, and accepts actions for the week being
-played or the next one. The PWA has its shell, the creation screen, the Ville screen and the
-Marché screen, rendered with Preact: it renders the projection and the events of the last week,
-and sends market intents. The Marché buys and sells, lists the queued actions with their cancel,
-and draws the year's price history; the Ville shows the workshop's chain and weekly figures and
-the week's ledger. The other screens are still to come. One image carries the API and the built
-client: one process, one port, one origin.
+The server issues a token, advances the town on its own, serves the projection and the journal
+page since the reader's cursor, and accepts actions for the hour being played or the next one.
+The PWA has its shell, the creation screen, the Ville screen and the Marché screen, rendered with
+Preact: it renders the projection and the journal, and sends market intents. The Marché buys and
+sells, lists the queued actions with their cancel, and draws the year's price history; the Ville
+shows the workshop's hourly figures and the journal. The other screens are still to come. One
+image carries the API and the built client: one process, one port, one origin.
 
 ## Stack
 
