@@ -1,14 +1,23 @@
-import { advance, PACING, type Event } from '@brigue/core';
+import { advance, PACING, type Event, type World } from '@brigue/core';
 
 import type { Logger } from './logger.ts';
 import { HOUR_MS, type WorldSession, type WorldStore } from './worlds.ts';
 
-export interface Played {
+export interface Due {
+  /** The town after the pass. */
+  world: World;
+  /** The instant the town's current hour began, after the pass. */
+  hourStartedAt: Date;
   /** Whole hours the town lived in this pass. */
   hours: number;
   /** Hours the wall clock jumped over because the backlog was too long. */
   skipped: number;
   events: Event[];
+}
+
+export interface Source {
+  world: World;
+  hourStartedAt: Date;
 }
 
 /**
@@ -22,30 +31,35 @@ export interface Played {
  * `minHours` is what separates the scheduler from the reader: the scheduler
  * plays from the first unplayed hour, the reader only wakes the town when it is
  * more than an hour behind — that is, when the scheduler is down.
+ *
+ * Pure: the caller decides whether to save the result.
  */
-export async function advanceIfDue(session: WorldSession, now: Date, minHours = 1): Promise<Played> {
-  const { world, hourStartedAt } = session.snapshot;
-  const elapsed = Math.floor((now.getTime() - hourStartedAt.getTime()) / HOUR_MS);
+export async function playDue(session: WorldSession, source: Source, now: Date, minHours = 1): Promise<Due> {
+  const elapsed = Math.floor((now.getTime() - source.hourStartedAt.getTime()) / HOUR_MS);
 
   if (elapsed < minHours) {
-    return { hours: 0, skipped: 0, events: [] };
+    return { world: source.world, hourStartedAt: source.hourStartedAt, hours: 0, skipped: 0, events: [] };
   }
 
   const hours = Math.min(elapsed, PACING.maxCatchUpHours);
   const skipped = elapsed - hours;
-  const until = world.hour + hours - 1;
-  const actions = await session.actionsBetween(world.hour, until);
+  const until = source.world.hour + hours - 1;
+  const actions = await session.actionsBetween(source.world.hour, until);
   const result = advance(
-    world,
+    source.world,
     until,
     actions.map((stored) => ({ at: stored.playsAt, action: stored.action })),
   );
 
   // The anchor moves by every elapsed hour, played or skipped, so the town's
   // clock and the wall clock agree again.
-  await session.save(result.world, new Date(hourStartedAt.getTime() + elapsed * HOUR_MS), result.events);
-
-  return { hours, skipped, events: result.events };
+  return {
+    world: result.world,
+    hourStartedAt: new Date(source.hourStartedAt.getTime() + elapsed * HOUR_MS),
+    hours,
+    skipped,
+    events: result.events,
+  };
 }
 
 export interface SchedulerOptions {
@@ -74,13 +88,16 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
     try {
       await options.store.withWorld(async (session) => {
-        const played = await advanceIfDue(session, options.now());
+        const due = await playDue(session, session.snapshot, options.now());
 
-        if (played.skipped > 0) {
-          options.logger.warn('town.catch_up_capped', { skipped: played.skipped });
+        if (due.hours > 0) {
+          await session.save(due.world, due.hourStartedAt, due.events);
         }
-        if (played.hours > 0) {
-          options.logger.info('town.advanced', { hours: played.hours });
+        if (due.skipped > 0) {
+          options.logger.warn('town.catch_up_capped', { skipped: due.skipped });
+        }
+        if (due.hours > 0) {
+          options.logger.info('town.advanced', { hours: due.hours });
         }
       });
     } catch (error) {

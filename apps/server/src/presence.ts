@@ -97,8 +97,10 @@ function removeHouse(world: World, houseId: string): void {
     }
   }
 
-  for (const byHouse of Object.values(world.campaigns)) {
-    delete byHouse?.[houseId];
+  for (const map of [world.campaigns, world.closedCampaigns]) {
+    for (const byHouse of Object.values(map)) {
+      delete byHouse?.[houseId];
+    }
   }
 
   // A house that is gone owes nothing: its queued engagements must not resolve

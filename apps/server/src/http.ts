@@ -14,7 +14,7 @@ import {
 } from '@brigue/core';
 
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
-import { catchUp, WEEK_MS, type CatchUpResult } from './catch-up.ts';
+import { catchUp, HOUR_MS, type CatchUpResult } from './catch-up.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import { withFounder } from './founder.ts';
 import type { Logger } from './logger.ts';
@@ -38,7 +38,7 @@ import {
 const SESSION_ATTEMPTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 /**
- * The action may target the week being played, or the next one when an hour
+ * The action may target the hour being played, or the next one when an hour
  * boundary fell between the client's read and its POST. Further ahead is a
  * client clock that cannot be reconciled with this town.
  */
@@ -369,21 +369,21 @@ export function createApp(deps: AppDeps): Server {
     const caught = outcome.result;
     await deps.store.touch(player.tokenHash, at);
 
-    if (caught.summary.skippedWeeks > 0) {
+    if (caught.summary.skipped > 0) {
       deps.logger.warn('world.catch_up_capped', {
         worldId: player.worldId,
-        skippedWeeks: caught.summary.skippedWeeks,
+        skipped: caught.summary.skipped,
       });
     }
     deps.logger.info('world.read', {
       worldId: player.worldId,
       houseId: player.houseId,
-      week: caught.world.week,
-      weeksPlayed: caught.summary.weeksPlayed,
-      skippedWeeks: caught.summary.skippedWeeks,
+      hour: caught.world.hour,
+      hoursPlayed: caught.summary.hoursPlayed,
+      skipped: caught.summary.skipped,
     });
 
-    const projection = projectWorld(caught.world, player.houseId, caught.weekStartedAt);
+    const projection = projectWorld(caught.world, player.houseId, caught.hourStartedAt);
 
     sendJson(response, 200, {
       world: projection,
@@ -399,7 +399,7 @@ export function createApp(deps: AppDeps): Server {
   }
 
   /**
-   * Local development only: plays the next week now instead of waiting for the
+   * Local development only: plays the next hour now instead of waiting for the
    * hour to pass. The world clock jumps, the wall clock does not.
    */
   async function advanceWeek(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -424,10 +424,10 @@ export function createApp(deps: AppDeps): Server {
     deps.logger.info('world.advanced', {
       worldId: player.worldId,
       houseId: player.houseId,
-      week: caught.world.week,
+      hour: caught.world.hour,
     });
 
-    const projection = projectWorld(caught.world, player.houseId, caught.weekStartedAt);
+    const projection = projectWorld(caught.world, player.houseId, caught.hourStartedAt);
 
     sendJson(response, 200, {
       world: projection,
@@ -439,10 +439,10 @@ export function createApp(deps: AppDeps): Server {
   }
 
   /** Where a catch-up read would land; the cap bounds what it actually plays. */
-  function currentWeekOf(world: World, weekStartedAt: Date, at: Date): number {
-    const elapsed = Math.max(0, Math.floor((at.getTime() - weekStartedAt.getTime()) / WEEK_MS));
+  function currentWeekOf(world: World, hourStartedAt: Date, at: Date): number {
+    const elapsed = Math.max(0, Math.floor((at.getTime() - hourStartedAt.getTime()) / HOUR_MS));
 
-    return world.week + Math.min(elapsed, PACING.maxCatchUpWeeks);
+    return world.hour + Math.min(elapsed, PACING.maxCatchUpHours);
   }
 
   function pendingView(stored: StoredAction): Record<string, unknown> {
@@ -450,7 +450,7 @@ export function createApp(deps: AppDeps): Server {
 
     return {
       id: stored.id,
-      week: stored.week,
+      hour: stored.hour,
       type: action.type,
       ...(action.type === 'market.buy' || action.type === 'market.sell'
         ? { good: action.good, units: action.units }
@@ -471,7 +471,7 @@ export function createApp(deps: AppDeps): Server {
       const queued: StoredAction[] = [];
 
       for (let offset = 0; offset <= QUEUE_AHEAD_WEEKS; offset += 1) {
-        queued.push(...(await session.actionsFor(world.week + offset)));
+        queued.push(...(await session.actionsFor(world.hour + offset)));
       }
 
       return queued.filter((action) => action.houseId === player.houseId);
@@ -494,7 +494,7 @@ export function createApp(deps: AppDeps): Server {
     const at = new Date(now());
     const actionId = id.toLowerCase();
     const outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
-      const { world, weekStartedAt } = session.snapshot;
+      const { world, hourStartedAt } = session.snapshot;
       sessionWorld(session);
 
       const stored = await session.findAction(actionId);
@@ -502,17 +502,17 @@ export function createApp(deps: AppDeps): Server {
       if (stored === null || stored.houseId !== player.houseId) {
         return { kind: 'unknown' as const };
       }
-      // Idempotent: a cancellation already won is 204, even if the week has
+      // Idempotent: a cancellation already won is 204, even if the hour has
       // ticked since; the row stays for dedup and replay.
       if (stored.cancelledAt !== null) {
         return { kind: 'cancelled' as const };
       }
-      if (stored.week < world.week) {
-        return { kind: 'stale' as const, currentWeek: currentWeekOf(world, weekStartedAt, at) };
+      if (stored.hour < world.hour) {
+        return { kind: 'stale' as const, currentWeek: currentWeekOf(world, hourStartedAt, at) };
       }
 
-      const currentWeek = currentWeekOf(world, weekStartedAt, at);
-      if (stored.week > currentWeek + QUEUE_AHEAD_WEEKS) {
+      const currentWeek = currentWeekOf(world, hourStartedAt, at);
+      if (stored.hour > currentWeek + QUEUE_AHEAD_WEEKS) {
         return { kind: 'future' as const, currentWeek };
       }
 
@@ -560,17 +560,17 @@ export function createApp(deps: AppDeps): Server {
     try {
       outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
         sessionWorld(session);
-        const { world, weekStartedAt } = session.snapshot;
+        const { world, hourStartedAt } = session.snapshot;
 
-        // The action names a week, not a house: the house is the session's.
-        // A week that already ticked can never be replayed, and the town clock
-        // is the upper bound for a week that has not begun yet.
-        const currentWeek = currentWeekOf(world, weekStartedAt, at);
+        // The action names a hour, not a house: the house is the session's.
+        // A hour that already ticked can never be replayed, and the town clock
+        // is the upper bound for a hour that has not begun yet.
+        const currentWeek = currentWeekOf(world, hourStartedAt, at);
 
-        if (submission.week < world.week) {
+        if (submission.hour < world.hour) {
           return { kind: 'stale' as const, currentWeek };
         }
-        if (submission.week > currentWeek + QUEUE_AHEAD_WEEKS) {
+        if (submission.hour > currentWeek + QUEUE_AHEAD_WEEKS) {
           return { kind: 'future' as const, currentWeek };
         }
         if ((await session.findAction(submission.id)) !== null) {
@@ -580,7 +580,7 @@ export function createApp(deps: AppDeps): Server {
         const stored: StoredAction = {
           id: submission.id,
           houseId: player.houseId,
-          week: submission.week,
+          hour: submission.hour,
           action: withHouse(submission.intent, player.houseId),
           receivedAt: at,
           cancelledAt: null,
@@ -590,7 +590,7 @@ export function createApp(deps: AppDeps): Server {
         return { kind: 'appended' as const, stored };
       });
     } catch (error) {
-      // The primary key caught an id another week already used; the pre-check
+      // The primary key caught an id another hour already used; the pre-check
       // above covers the common path, this covers a race from another world.
       if (error instanceof DuplicateActionError) {
         sendJson(response, 409, { error: 'duplicate_action' });
@@ -613,12 +613,12 @@ export function createApp(deps: AppDeps): Server {
         deps.logger.info('action.appended', {
           worldId: player.worldId,
           houseId: player.houseId,
-          week: outcome.stored.week,
+          hour: outcome.stored.hour,
           action: outcome.stored.action.type,
         });
         sendJson(response, 201, {
           id: outcome.stored.id,
-          week: outcome.stored.week,
+          hour: outcome.stored.hour,
           houseId: outcome.stored.houseId,
         });
     }
@@ -632,17 +632,17 @@ export function createApp(deps: AppDeps): Server {
       if (presence.deletedHouseIds.includes(houseId)) {
         // The house is gone, but the deletion is a real change to the town and
         // must be kept even though nothing is caught up for this reader.
-        await session.save(presence.world, session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+        await session.save(presence.world, session.snapshot.hourStartedAt, session.snapshot.lastEvents, at);
         return { kind: 'gone' as const };
       }
 
       const caught = await playWeek(session, presence.world, at, houseId);
       // The absence was simulated dormant; the visit itself wakes the house for
-      // the week that follows.
+      // the hour that follows.
       const woke = wake(caught.world, houseId);
 
-      if (caught.summary.weeksPlayed > 0 || caught.summary.skippedWeeks > 0 || presence.changed || woke) {
-        await session.save(caught.world, caught.weekStartedAt, caught.recordedEvents, at);
+      if (caught.summary.hoursPlayed > 0 || caught.summary.skipped > 0 || presence.changed || woke) {
+        await session.save(caught.world, caught.hourStartedAt, caught.recordedEvents, at);
       }
 
       return { kind: 'caught' as const, result: caught };
@@ -655,32 +655,32 @@ export function createApp(deps: AppDeps): Server {
       const presence = await synchronisePresence(worldId, world, at);
 
       if (presence.deletedHouseIds.includes(houseId)) {
-        await session.save(presence.world, session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+        await session.save(presence.world, session.snapshot.hourStartedAt, session.snapshot.lastEvents, at);
         return { kind: 'gone' as const };
       }
 
-      // One week further than the town's own clock, whatever the wall clock
+      // One hour further than the town's own clock, whatever the wall clock
       // says: the click is the hour.
-      const forced = new Date(session.snapshot.weekStartedAt.getTime() + WEEK_MS);
+      const forced = new Date(session.snapshot.hourStartedAt.getTime() + HOUR_MS);
       const caught = await playWeek(session, presence.world, forced, houseId);
       wake(caught.world, houseId);
-      // The week was simulated, not lived. Put the next natural tick an hour
+      // The hour was simulated, not lived. Put the next natural tick an hour
       // from the real now, instead of stacking a backlog the test never waits for.
       const savedAt = new Date(now());
       await session.save(caught.world, savedAt, caught.recordedEvents, savedAt);
 
-      return { kind: 'caught' as const, result: { ...caught, weekStartedAt: savedAt } };
+      return { kind: 'caught' as const, result: { ...caught, hourStartedAt: savedAt } };
     });
   }
 
   function playWeek(session: WorldSession, world: World, at: Date, houseId: string): Promise<CatchUpResult> {
     return catchUp({
       world,
-      weekStartedAt: session.snapshot.weekStartedAt,
+      hourStartedAt: session.snapshot.hourStartedAt,
       lastEvents: session.snapshot.lastEvents,
       now: at,
       houseId,
-      actionsFor: (week) => session.actionsFor(week),
+      actionsFor: (hour) => session.actionsFor(hour),
     });
   }
 
@@ -715,7 +715,7 @@ export function createApp(deps: AppDeps): Server {
         return;
       }
 
-      await session.save(withFounder(world, trade), session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+      await session.save(withFounder(world, trade), session.snapshot.hourStartedAt, session.snapshot.lastEvents, at);
     });
   }
 
@@ -759,7 +759,7 @@ type ActionOutcome =
   | { kind: 'duplicate' }
   | { kind: 'appended'; stored: StoredAction };
 
-/** The visit wakes a house the absence had made dormant, for the week to come. */
+/** The visit wakes a house the absence had made dormant, for the hour to come. */
 function wake(world: World, houseId: string): boolean {
   const house = world.houses[houseId];
 
