@@ -9,6 +9,9 @@ interface CreateProps {
   onChoose(trade: Trade): void;
 }
 
+/** The choices in the order a player reads them, not the order of the chains. */
+const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCompare(tradeName(right), 'fr'));
+
 /**
  * The first screen of a new player: the trade is the first decision, before
  * the town is read. The prices are the town's lesson, not the choice's.
@@ -20,11 +23,11 @@ export function Create({ joining, error, onChoose }: CreateProps) {
         <Seal size={38} />
         <h1>Choisis ton métier</h1>
         <p>
-          Ton premier atelier est celui de ton métier. Tu achètes sa matière, tu la travailles, tu vends le produit au
-          marché.
+          Ton premier atelier est celui de ton métier.
+          <span class="gate-next">Achète sa matière, travaille-la, vends le produit au marché.</span>
         </p>
         <div class="trade-list">
-          {TRADES.map((trade) => (
+          {TRADE_CHOICES.map((trade) => (
             <button class="trade-choice" type="button" key={trade} disabled={joining} onClick={() => onChoose(trade)}>
               <span class="trade-name">{tradeName(trade)}</span>
               <span class="trade-chain">{tradeChainText(trade)}</span>

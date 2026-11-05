@@ -174,7 +174,7 @@ describe('format helpers', () => {
     expect(tradeName('weaver')).toBe('Tisserand');
     expect(tradeName('baker')).toBe('Boulanger');
     expect(tradeName('carpenter')).toBe('Charpentier');
-    expect(tradeChainText('baker')).toBe('achète le blé, fait du pain');
+    expect(tradeChainText('baker')).toBe('cuit le blé pour faire du pain');
   });
 
   it('names seats and refusals in French', () => {

@@ -1035,6 +1035,12 @@ button:disabled {
   line-height: 1.45;
 }
 
+/* The frame of the choice, then the loop it opens: one breath between them. */
+.gate-next {
+  display: block;
+  margin-top: 6px;
+}
+
 .gate-card label {
   display: block;
   font-size: 10.5px;

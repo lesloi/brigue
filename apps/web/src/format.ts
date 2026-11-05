@@ -85,11 +85,11 @@ export function tradeName(trade: Trade): string {
 export function tradeChainText(trade: Trade): string {
   switch (trade) {
     case 'weaver':
-      return 'achète la laine, fait du drap';
+      return 'tisse la laine pour faire du drap';
     case 'baker':
-      return 'achète le blé, fait du pain';
+      return 'cuit le blé pour faire du pain';
     case 'carpenter':
-      return 'achète le bois, fait des planches';
+      return 'travaille le bois pour faire des planches';
   }
 }
 
