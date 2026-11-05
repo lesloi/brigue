@@ -1,4 +1,4 @@
-import type { Action, Event, World } from '@brigue/core';
+import { isVisibleTo, type Action, type Event, type World } from '@brigue/core';
 
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -22,6 +22,14 @@ export interface StoredAction {
   cancelledAt: Date | null;
 }
 
+export interface JournalPage {
+  events: Event[];
+  /** The id to store as the reader's cursor. */
+  lastId: number;
+  /** How many more entries the reader may see beyond this page. */
+  remaining: number;
+}
+
 export interface WorldSnapshot {
   world: World;
   /** When the town's current hour began, in real time. */
@@ -33,6 +41,8 @@ export interface WorldSession {
   readonly snapshot: WorldSnapshot;
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
   actionsBetween(from: number, to: number): Promise<StoredAction[]>;
+  /** The journal after a reader's cursor, and how much is left beyond the page. */
+  eventsSince(afterId: number, limit: number, houseId: string): Promise<JournalPage>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
   /** Marks an unplayed action cancelled; it is never handed to the advance. */
@@ -69,6 +79,8 @@ export class DuplicateActionError extends Error {
 interface MemoryWorld {
   snapshot: WorldSnapshot;
   actions: StoredAction[];
+  events: { id: number; event: Event }[];
+  nextEventId: number;
 }
 
 /**
@@ -89,6 +101,8 @@ export class MemoryWorldStore implements WorldStore {
     this.stored = {
       snapshot: { world: structuredClone(world), hourStartedAt: new Date(hourStartedAt) },
       actions: [],
+      events: [],
+      nextEventId: 1,
     };
     void at;
   }
@@ -130,6 +144,16 @@ export class MemoryWorldStore implements WorldStore {
           .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
           .sort((left, right) => left.playsAt - right.playsAt)
           .map((action) => structuredClone(action)),
+      eventsSince: async (afterId, limit, houseId) => {
+        const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, houseId));
+        const page = visible.slice(0, limit);
+
+        return {
+          events: page.map((entry) => structuredClone(entry.event)),
+          lastId: page.at(-1)?.id ?? afterId,
+          remaining: visible.length - page.length,
+        };
+      },
       findAction: async (id) => {
         const found = stored.actions.find((action) => action.id === id);
 
@@ -153,7 +177,10 @@ export class MemoryWorldStore implements WorldStore {
           world: structuredClone(world),
           hourStartedAt: new Date(hourStartedAt),
         };
-        void events;
+        for (const event of events) {
+          stored.events.push({ id: stored.nextEventId, event: structuredClone(event) });
+          stored.nextEventId += 1;
+        }
       },
     };
   }

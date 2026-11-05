@@ -56,8 +56,8 @@ describe('dormancy', () => {
     world.seats.maire = { personId: 'person-caron' };
     world.campaigns.maire = { caron: 2 };
     world.engagements = [
-      { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueWeek: world.week + 4 },
-      { id: 'engagement-brigue', kind: 'hearing', houseId: 'brigue', dueWeek: world.week + 4 },
+      { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueAt: world.hour + 4 },
+      { id: 'engagement-brigue', kind: 'hearing', houseId: 'brigue', dueAt: world.hour + 4 },
     ];
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
 
@@ -308,9 +308,9 @@ describe('the thirty-day deletion', () => {
         level: 2,
         workers: 2,
         input: 'grain',
-        outputUnitsPerWeek: 4,
-        inputUnitsPerWeek: 4,
-        wagesCentsPerWeek: 240,
+        outputUnitsPerHour: 4,
+        inputUnitsPerHour: 4,
+        wagesCentsPerHour: 240,
       },
     ]);
     expect(body.world.house.stock.grain).toBe(8);

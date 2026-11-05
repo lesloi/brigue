@@ -9,6 +9,7 @@ interface PlayerRow {
   created_at: Date | string;
   last_seen_at: Date | string;
   revoked_at: Date | string | null;
+  cursor_event_id: number;
 }
 
 /**
@@ -39,7 +40,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at
+      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, cursor_event_id
        FROM players
        WHERE token_hash = $1`,
       [tokenHash],
@@ -48,6 +49,15 @@ export class PgPlayerStore implements PlayerStore {
     const row = rows[0];
 
     return row ? rowToPlayer(row) : null;
+  }
+
+  async advanceCursor(tokenHash: string, cursor: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE players
+       SET cursor_event_id = GREATEST(cursor_event_id, $2)
+       WHERE token_hash = `,
+      [tokenHash, cursor],
+    );
   }
 
   async revoke(tokenHash: string, at: Date): Promise<void> {
@@ -70,7 +80,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async listByWorld(worldId: string): Promise<Player[]> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at
+      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, cursor_event_id
        FROM players
        WHERE world_id = $1
        ORDER BY created_at, token_hash`,
@@ -113,6 +123,7 @@ function rowToPlayer(row: PlayerRow): Player {
     createdAt: asDate(row.created_at),
     lastSeenAt: asDate(row.last_seen_at),
     revokedAt: row.revoked_at === null ? null : asDate(row.revoked_at),
+    cursorEventId: row.cursor_event_id,
   };
 }
 

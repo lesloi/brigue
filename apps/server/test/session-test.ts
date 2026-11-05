@@ -177,7 +177,7 @@ describe('joining the town', () => {
     expect(body.houseId).toBe('brigue');
     expect(body.token).toMatch(/^bgk_[A-Za-z0-9_-]{43}$/);
     expect(cookieOf(response)).toContain('HttpOnly');
-    expect(await harness.worlds.withWorld(async (session) => session.snapshot.world.week)).toBe(1);
+    expect(await harness.worlds.withWorld(async (session) => session.snapshot.world.hour)).toBe(1);
 
     // The issued token is the identity: it logs in on the next visit.
     const again = await login(harness, body.token);
@@ -199,7 +199,6 @@ describe('joining the town', () => {
   it('refuses to hand out a token for a world the current rules cannot read', async () => {
     const harness = await start();
     await harness.worlds.createIfAbsent(
-      'saint-aubin',
       { ...createWorld(7), rulesetVersion: RULES.version + 1 },
       new Date(),
       new Date(),
@@ -235,9 +234,9 @@ describe('joining the town', () => {
         level: 2,
         workers: 2,
         input: 'grain',
-        outputUnitsPerWeek: 4,
-        inputUnitsPerWeek: 4,
-        wagesCentsPerWeek: 240,
+        outputUnitsPerHour: 4,
+        inputUnitsPerHour: 4,
+        wagesCentsPerHour: 240,
       },
     ]);
     expect(world.world.house.stock.grain).toBe(8);
@@ -266,9 +265,9 @@ describe('joining the town', () => {
         level: 2,
         workers: 2,
         input: 'grain',
-        outputUnitsPerWeek: 4,
-        inputUnitsPerWeek: 4,
-        wagesCentsPerWeek: 240,
+        outputUnitsPerHour: 4,
+        inputUnitsPerHour: 4,
+        wagesCentsPerHour: 240,
       },
     ]);
   });

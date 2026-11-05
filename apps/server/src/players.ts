@@ -6,6 +6,8 @@ export interface Player {
   createdAt: Date;
   /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
   lastSeenAt: Date;
+  /** The last journal entry this reader has seen. */
+  cursorEventId?: number;
   revokedAt: Date | null;
 }
 
@@ -22,6 +24,8 @@ export interface PlayerStore {
   revoke(tokenHash: string, at: Date): Promise<void>;
   /** Records a visit without reopening a revoked session. */
   touch(tokenHash: string, at: Date): Promise<void>;
+  /** Moves the reader's journal cursor forward; it never goes back. */
+  advanceCursor(tokenHash: string, cursor: number): Promise<void>;
   /** Every row of a world, live or revoked, so presence can see the last visit. */
   listByWorld(worldId: string): Promise<Player[]>;
   /** Revokes every live token of a house, for the thirty-day deletion. */
@@ -54,6 +58,14 @@ export class MemoryPlayerStore implements PlayerStore {
     const player = this.players.get(tokenHash);
 
     return player ? { ...player } : null;
+  }
+
+  async advanceCursor(tokenHash: string, cursor: number): Promise<void> {
+    const player = this.players.get(tokenHash);
+
+    if (player !== undefined) {
+      player.cursorEventId = Math.max(player.cursorEventId ?? 0, cursor);
+    }
   }
 
   async revoke(tokenHash: string, at: Date): Promise<void> {

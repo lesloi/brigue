@@ -31,6 +31,7 @@ import {
   HOUR_MS,
   UnknownWorldError,
   WORLD_ID,
+  type JournalPage,
   type StoredAction,
   type WorldSession,
   type WorldStore,
@@ -44,6 +45,8 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
  * client clock that cannot be reconciled with this town.
  */
 const QUEUE_AHEAD_HOURS = 1;
+/** A read returns at most this many journal entries; the rest is counted. */
+const JOURNAL_PAGE = 50;
 
 export interface AppDeps {
   store: PlayerStore;
@@ -356,7 +359,7 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const outcome = await catchUpTown(player.houseId, at);
+    const outcome = await catchUpTown(player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       // The visit arrived after the house was silent for a month: the world has
@@ -385,11 +388,12 @@ export function createApp(deps: AppDeps): Server {
     });
 
     const projection = projectWorld(caught.world, player.houseId, caught.hourStartedAt);
+    await deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
 
     sendJson(response, 200, {
       world: projection,
-      events: caught.events,
-      summary: { hours: caught.hours, skipped: caught.skipped },
+      events: outcome.journal.events,
+      summary: { hours: caught.hours, skipped: caught.skipped, remaining: outcome.journal.remaining },
       // The projected state, not the world: hashing the world would reveal the
       // seed and with it every future the town has not lived yet.
       stateHash: hashJson(projection),
@@ -411,7 +415,7 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const outcome = await advanceTown(player.houseId, at);
+    const outcome = await advanceTown(player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
@@ -429,11 +433,12 @@ export function createApp(deps: AppDeps): Server {
     });
 
     const projection = projectWorld(caught.world, player.houseId, caught.hourStartedAt);
+    await deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
 
     sendJson(response, 200, {
       world: projection,
-      events: caught.events,
-      summary: { hours: caught.hours, skipped: caught.skipped },
+      events: outcome.journal.events,
+      summary: { hours: caught.hours, skipped: caught.skipped, remaining: outcome.journal.remaining },
       stateHash: hashJson(projection),
       dev: true,
     });
@@ -623,7 +628,7 @@ export function createApp(deps: AppDeps): Server {
     }
   }
 
-  function catchUpTown(houseId: string, at: Date): Promise<TownOutcome> {
+  function catchUpTown(houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(WORLD_ID, world, at);
@@ -651,11 +656,13 @@ export function createApp(deps: AppDeps): Server {
         await session.save(due.world, due.hourStartedAt, due.events);
       }
 
-      return { kind: 'caught' as const, result: due };
+      const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
+
+      return { kind: 'caught' as const, result: due, journal };
     });
   }
 
-  function advanceTown(houseId: string, at: Date): Promise<TownOutcome> {
+  function advanceTown(houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(WORLD_ID, world, at);
@@ -680,7 +687,9 @@ export function createApp(deps: AppDeps): Server {
       const savedAt = new Date(now());
       await session.save(due.world, savedAt, due.events);
 
-      return { kind: 'caught' as const, result: { ...due, hourStartedAt: savedAt } };
+      const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
+
+      return { kind: 'caught' as const, result: { ...due, hourStartedAt: savedAt }, journal };
     });
   }
 
@@ -751,7 +760,7 @@ export function createApp(deps: AppDeps): Server {
 
 type BodyRead = { ok: true; body: unknown } | { ok: false };
 
-type TownOutcome = { kind: 'caught'; result: Due } | { kind: 'gone' };
+type TownOutcome = { kind: 'caught'; result: Due; journal: JournalPage } | { kind: 'gone' };
 
 type ActionOutcome =
   | { kind: 'stale'; currentHour: number }

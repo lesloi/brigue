@@ -46,8 +46,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('keeps the first world when createIfAbsent is called twice', async () => {
     // Arrange
     const id = newWorldId();
-    const first = { ...createWorld(11), week: 5 };
-    const second = { ...createWorld(22), week: 9 };
+    const first = { ...createWorld(11), hour: 5 };
+    const second = { ...createWorld(22), hour: 9 };
     const firstAt = new Date(START);
     const laterAt = new Date(START.getTime() + 60 * 60 * 1000);
 
@@ -58,8 +58,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert
     expect(snapshot.world).toEqual(first);
-    expect(snapshot.weekStartedAt).toEqual(firstAt);
-    expect(snapshot.lastEvents).toEqual([]);
+    expect(snapshot.hourStartedAt).toEqual(firstAt);
   });
 
   it('refuses a world it does not hold', async () => {
@@ -77,7 +76,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     const id = newWorldId();
     const startWeek = 5;
-    await store.createIfAbsent({ ...createWorld(3), week: startWeek }, START, START);
+    await store.createIfAbsent({ ...createWorld(3), hour: startWeek }, START, START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
     const firstEntered = new Promise<void>((resolve) => {
@@ -91,7 +90,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       // were missing. This delay is load-bearing: without it a broken lock
       // would go unnoticed most of the time.
       await delay(150);
-      await session.save(oneWeekLater(session.snapshot.world), START, [], START);
+      await session.save(oneHourLater(session.snapshot.world), START, []);
       order.push('first:end');
     });
 
@@ -99,7 +98,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await firstEntered;
     const second = store.withWorld(async (session) => {
       order.push('second:start');
-      await session.save(oneWeekLater(session.snapshot.world), START, [], START);
+      await session.save(oneHourLater(session.snapshot.world), START, []);
       order.push('second:end');
     });
     await Promise.all([first, second]);
@@ -109,7 +108,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const world = await store.withWorld(async (session) => session.snapshot.world);
     // Two saves of +1 applied on top of each other: the second saw the first's
     // commit. A missing lock would leave both at startWeek + 1.
-    expect(world.week).toBe(startWeek + 2);
+    expect(world.hour).toBe(startWeek + 2);
   });
 
   it('raises DuplicateActionError on a UUID it already stored', async () => {
@@ -128,7 +127,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(found).toEqual(action);
   });
 
-  it('returns a week actions in the order they were received', async () => {
+  it('returns a hour actions in the order they were received', async () => {
     // Arrange: insert the lexically greater UUID first, so only `seq` can put
     // them back in insertion order. Ids are random per run because actions are
     // kept across runs on a developer's database.
@@ -145,11 +144,11 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     });
 
     // Act
-    const week = await store.withWorld(async (session) => session.actionsFor(1));
+    const queued = await store.withWorld(async (session) => session.actionsBetween(1, 1));
 
     // Assert
-    expect(week.map((action) => action.id)).toEqual([first.id, second.id]);
-    expect(week.map((action) => action.action)).toEqual([first.action, second.action]);
+    expect(queued.map((action) => action.id)).toEqual([first.id, second.id]);
+    expect(queued.map((action) => action.action)).toEqual([first.action, second.action]);
   });
 
   it('stops returning an action once it is cancelled, and keeps its row', async () => {
@@ -163,29 +162,27 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     });
 
     // Act
-    const week = await store.withWorld(async (session) => session.actionsFor(1));
+    const queued = await store.withWorld(async (session) => session.actionsBetween(1, 1));
     const found = await store.withWorld(async (session) => session.findAction(action.id));
 
     // Assert: the tick no longer sees it, but a retried POST still finds the id.
-    expect(week).toEqual([]);
+    expect(queued).toEqual([]);
     expect(found?.cancelledAt).toBeInstanceOf(Date);
   });
 
-  it('round-trips the world, the last events and an action through jsonb', async () => {
-    // Arrange
-    const id = newWorldId();
+  it('appends the events of a pass to the journal and reads them back for a house', async () => {
+    // Arrange: three shapes, one of them private to a house.
     const world: World = {
       ...createWorld(2_147_483_646),
-      week: 7,
+      hour: 7,
       rng: 1_234_567_890,
       market: { cloth: 1301, wool: 377, grain: 259, bread: 521, wood: 301, planks: 979 },
     };
-    // Heterogeneous events: `last_events` is a JS array, which `pg` used to
-    // serialise as a Postgres array literal instead of jsonb.
-    const lastEvents: Event[] = [
+    const events: Event[] = [
       {
         type: 'market.bought',
         audience: 'town',
+        at: 7,
         houseId: 'brigue',
         good: 'wool',
         units: 2,
@@ -195,6 +192,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       {
         type: 'council.election_held',
         audience: 'town',
+        at: 7,
         seatId: 'maire',
         winnerHouseId: 'caron',
         votes: { brigue: 1, caron: 2 },
@@ -202,44 +200,44 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       {
         type: 'workshop.idle',
         audience: { houseId: 'brigue' },
+        at: 7,
         houseId: 'brigue',
         good: 'cloth',
         input: 'wool',
         missingUnits: 0,
       },
     ];
-    const weekStartedAt = new Date(START.getTime() + 42_000);
-    const action = storedAction(randomUUID(), 7, buy(3));
+    const hourStartedAt = new Date(START.getTime() + 42_000);
     await store.createIfAbsent(createWorld(1), START, START);
 
     // Act
     await store.withWorld(async (session) => {
-      await session.append(action);
-      await session.save(world, weekStartedAt, lastEvents, new Date(START.getTime() + 60_000));
+      await session.save(world, hourStartedAt, events);
     });
     const read = await store.withWorld(async (session) => ({
       snapshot: session.snapshot,
-      action: await session.findAction(action.id),
+      journal: await session.eventsSince(0, 50, 'brigue'),
     }));
 
     // Assert
     expect(read.snapshot.world).toEqual(world);
-    expect(read.snapshot.lastEvents).toEqual(lastEvents);
-    expect(read.snapshot.weekStartedAt).toEqual(weekStartedAt);
-    expect(read.action).toEqual(action);
+    expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
+    expect(read.journal.events).toEqual(events);
+    expect(read.journal.lastId).toBeGreaterThan(0);
+    expect(read.journal.remaining).toBe(0);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {
     // Arrange
     const id = newWorldId();
-    const world = { ...createWorld(6), week: 3 };
+    const world = { ...createWorld(6), hour: 3 };
     await store.createIfAbsent(world, START, START);
     const action = storedAction(randomUUID(), 3, buy(1));
 
     // Act: a catch-up that refuses the world version, after writing both tables.
     const attempt = store.withWorld(async (session) => {
       await session.append(action);
-      await session.save(oneWeekLater(session.snapshot.world), START, [], START);
+      await session.save(oneHourLater(session.snapshot.world), START, []);
       throw new WorldVersionError({ ...world, rulesetVersion: RULES.version + 1 });
     });
 
@@ -250,21 +248,20 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       action: await session.findAction(action.id),
     }));
     expect(after.snapshot.world).toEqual(world);
-    expect(after.snapshot.lastEvents).toEqual([]);
     expect(after.action).toBeNull();
   });
 });
 
-function oneWeekLater(world: World): World {
-  return { ...world, week: world.week + 1 };
+function oneHourLater(world: World): World {
+  return { ...world, hour: world.hour + 1 };
 }
 
 function buy(units: number): Action {
   return { type: 'market.buy', houseId: 'brigue', good: 'wool', units };
 }
 
-function storedAction(id: string, week: number, action: Action): StoredAction {
-  return { id, houseId: 'brigue', week, action, receivedAt: new Date(START), cancelledAt: null };
+function storedAction(id: string, hour: number, action: Action): StoredAction {
+  return { id, houseId: 'brigue', playsAt: hour, action, receivedAt: new Date(START), cancelledAt: null };
 }
 
 function delay(ms: number): Promise<void> {

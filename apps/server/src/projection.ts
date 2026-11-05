@@ -136,17 +136,21 @@ export const HOUR_MS = 60 * 60 * 1000;
 
 /** The first bell strictly after this hour: noon or midnight, whichever comes first. */
 export function nextBellOf(hour: number): number {
-  return Math.ceil((hour + 1) / (HOURS_PER_YEAR / 2)) * (HOURS_PER_YEAR / 2);
+  const half = HOURS_PER_YEAR / 2;
+
+  return hour + ((half - (hour % half)) % half);
 }
 
 function hoursUntil(target: number, from: number): number {
-  return target - from;
+  // An hour's ceremony happens when that hour is over, so the end of the town's
+  // current hour is one step past its start.
+  return target - from + 1;
 }
 
 function calendarOf(world: World, hourStartedAt: Date): CalendarView {
   const hourOfYear = ((world.hour - 1) % HOURS_PER_YEAR) + 1;
   // A scrutiny closes the hour that is a multiple of the year length.
-  const nextScrutinyHour = Math.ceil((world.hour + 1) / HOURS_PER_YEAR) * HOURS_PER_YEAR;
+  const nextScrutinyHour = world.hour + ((HOURS_PER_YEAR - (world.hour % HOURS_PER_YEAR)) % HOURS_PER_YEAR);
 
   return {
     hoursPerYear: HOURS_PER_YEAR,

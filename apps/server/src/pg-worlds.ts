@@ -4,6 +4,7 @@ import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
 import {
   DuplicateActionError,
   UnknownWorldError,
+  type JournalPage,
   type StoredAction,
   type WorldSession,
   type WorldSnapshot,
@@ -111,6 +112,27 @@ class PgWorldSession implements WorldSession {
     );
 
     return rows.map(rowToStoredAction);
+  }
+
+  async eventsSince(afterId: number, limit: number, houseId: string): Promise<JournalPage> {
+    const { rows } = await this.client.query(
+      `SELECT id, at, audience, house_id, type, payload
+       FROM events
+       WHERE id > $1 AND (audience = 'town' OR (audience = 'house' AND house_id = $2))
+       ORDER BY id
+       LIMIT $3`,
+      [afterId, houseId, limit],
+    );
+    const events = rows.map(rowToEvent);
+    const lastId = events.length === 0 ? afterId : Number(rows[rows.length - 1].id);
+    const { rows: rest } = await this.client.query(
+      `SELECT count(*)::int AS remaining
+       FROM events
+       WHERE id > $3 AND (audience = 'town' OR (audience = 'house' AND house_id = $2))`,
+      [afterId, houseId, lastId],
+    );
+
+    return { events, lastId, remaining: rest[0]?.remaining ?? 0 };
   }
 
   async findAction(id: string): Promise<StoredAction | null> {
@@ -489,6 +511,19 @@ async function rollback(client: PoolClient): Promise<void> {
     // A dead connection cannot roll back; the original failure is the one worth
     // reporting, and the pool drops the client.
   }
+}
+
+function rowToEvent(row: {
+  id: string | number;
+  at: number;
+  audience: string;
+  house_id: string | null;
+  type: string;
+  payload: Record<string, unknown>;
+}): Event {
+  const audience = row.audience === 'house' ? { houseId: row.house_id ?? '' } : row.audience;
+
+  return { ...row.payload, type: row.type, audience, at: row.at } as Event;
 }
 
 function rowToStoredAction(row: {

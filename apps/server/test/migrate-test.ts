@@ -57,7 +57,7 @@ describe.runIf(databaseUrl !== '')('migrating an old format', () => {
 
   async function insertAction(worldId: string): Promise<void> {
     await pool.query(
-      `INSERT INTO actions (id, world_id, house_id, week, action)
+      `INSERT INTO actions (id, world_id, house_id, hour, action)
        VALUES ($1, $2, 'brigue', 1, $3)`,
       [randomUUID(), worldId, JSON.stringify({ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 1 })],
     );
@@ -185,6 +185,6 @@ describe.runIf(databaseUrl !== '')('migrating an old format', () => {
 
     // Assert
     expect(snapshot.world.formatVersion).toBe(FORMAT_VERSION);
-    expect(snapshot.world.week).toBe(1);
+    expect(snapshot.world.hour).toBe(1);
   });
 });
