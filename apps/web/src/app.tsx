@@ -9,6 +9,7 @@ import {
   readWorld,
   resumeTown,
   sendAction,
+  type TradeIntent,
   type WorldResponse,
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
@@ -36,8 +37,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>(() => stateOf(window.history.state)?.tab ?? tabFromHash(window.location.hash));
   const [token, setToken] = useState<string | null>(null);
   const [lostError, setLostError] = useState<string | null>(null);
-  const [buying, setBuying] = useState(false);
-  const [selling, setSelling] = useState<GoodId | null>(null);
+  const [trading, setTrading] = useState<TradeIntent | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
@@ -181,21 +181,23 @@ export function App() {
     }
   }
 
-  async function buyInput(): Promise<void> {
-    if (view.kind !== 'world') {
+  async function trade(kind: 'buy' | 'sell', good: GoodId, units: number): Promise<void> {
+    if (view.kind !== 'world' || units <= 0) {
       return;
     }
 
-    const input = view.data.world.house.workshops[0]?.input;
-    if (input === null || input === undefined) {
-      return;
-    }
-
-    setBuying(true);
+    setTrading({ kind, good });
     try {
-      const sent = await sendAction(view.data.world.week, { type: 'market.buy', good: input, units: 10 });
+      const intent =
+        kind === 'buy'
+          ? ({ type: 'market.buy', good, units } as const)
+          : ({ type: 'market.sell', good, units } as const);
+      const sent = await sendAction(view.data.world.week, intent);
+      const quantity = goodQuantity(units, good);
       showToast(
-        `Achat de ${goodQuantity(10, input)} envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`,
+        kind === 'buy'
+          ? `Achat de ${quantity} envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`
+          : `Vente de ${quantity} envoyée pour la semaine ${sent.week}. Elle apparaîtra à la prochaine lecture.`,
       );
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stale_week') {
@@ -205,7 +207,7 @@ export function App() {
         showToast(actionMessageFor(error), true);
       }
     } finally {
-      setBuying(false);
+      setTrading(null);
     }
   }
 
@@ -234,29 +236,6 @@ export function App() {
       window.history.replaceState(state, '', urlFor(next));
     }
     setTab(next);
-  }
-
-  async function sell(good: GoodId, units: number): Promise<void> {
-    if (view.kind !== 'world' || units <= 0) {
-      return;
-    }
-
-    setSelling(good);
-    try {
-      const sent = await sendAction(view.data.world.week, { type: 'market.sell', good, units });
-      showToast(
-        `Vente de ${goodQuantity(units, good)} envoyée pour la semaine ${sent.week}. Elle apparaîtra à la prochaine lecture.`,
-      );
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'stale_week') {
-        showToast(actionErrorText(error.code), true);
-        await refresh();
-      } else {
-        showToast(actionMessageFor(error), true);
-      }
-    } finally {
-      setSelling(null);
-    }
   }
 
   async function advanceOneWeek(): Promise<void> {
@@ -331,14 +310,13 @@ export function App() {
             <Ville
               data={view.data}
               now={now}
-              buying={buying}
               advancing={advancing}
               onRefresh={() => void refresh()}
-              onBuyInput={() => void buyInput()}
+              onGoMarket={() => selectTab('marche')}
               onAdvance={() => void advanceOneWeek()}
             />
           ) : (
-            <Marche data={view.data} selling={selling} onSell={(good, units) => void sell(good, units)} />
+            <Marche data={view.data} trading={trading} onTrade={(kind, good, units) => void trade(kind, good, units)} />
           )}
           <div class="fade" aria-hidden="true"></div>
           <Nav tab={tab} onSelect={selectTab} />

@@ -302,7 +302,17 @@ describe('the thirty-day deletion', () => {
     expect(read.status).toBe(200);
     expect(body.world.house.id).toBe('brigue');
     expect(body.world.house.treasuryCents).toBe(117340);
-    expect(body.world.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+    expect(body.world.house.workshops).toEqual([
+      {
+        good: 'bread',
+        level: 2,
+        workers: 2,
+        input: 'grain',
+        outputUnitsPerWeek: 4,
+        inputUnitsPerWeek: 4,
+        wagesCentsPerWeek: 240,
+      },
+    ]);
     expect(body.world.house.stock.grain).toBe(8);
     expect(body.world.town.seats.maire.personId).toBeNull();
   });

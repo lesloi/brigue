@@ -201,14 +201,15 @@ survive a catch-up: the world replays whole weeks and resolves what falls due.
 - **Ville** — the home screen. The town scene, your house, the week's ledger, the laws in force
   and who carried them, and the register of what falls due.
 - **Maison** — buildings, residence, family, heirs, titles.
-- **Marché** — prices, stock, sale.
+- **Marché** — prices, stock, buying and selling.
 - **Conseil** — the twelve seats as a pyramid, the offices and their domains, the next sitting.
 - **Greffe** — acts, complaints, evidence, the court.
 - **Courrier** — letters received, rumours, invitations.
 
-The interface is a chancery: flat sections, hairline rules, one strong action per screen, one
-accent colour reserved for what is dangerous. The town illustration appears once, on **Ville**;
-a map of places, drawn in seals, serves as navigation.
+The interface is a chancery: flat sections, hairline rules, one strong action per screen — the
+Marché is the one exception, its rows pairing a secondary buy with the sale that is the screen's
+lesson — one accent colour reserved for what is dangerous or decisive. The town illustration
+appears once, on **Ville**; a map of places, drawn in seals, serves as navigation.
 
 ## Not decided yet
 

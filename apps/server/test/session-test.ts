@@ -229,7 +229,17 @@ describe('joining the town', () => {
     // Assert
     expect(response.status).toBe(201);
     expect(read.status).toBe(200);
-    expect(world.world.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+    expect(world.world.house.workshops).toEqual([
+      {
+        good: 'bread',
+        level: 2,
+        workers: 2,
+        input: 'grain',
+        outputUnitsPerWeek: 4,
+        inputUnitsPerWeek: 4,
+        wagesCentsPerWeek: 240,
+      },
+    ]);
     expect(world.world.house.stock.grain).toBe(8);
   });
 
@@ -250,7 +260,17 @@ describe('joining the town', () => {
 
     // Assert
     expect(response.status).toBe(200);
-    expect(world.world.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+    expect(world.world.house.workshops).toEqual([
+      {
+        good: 'bread',
+        level: 2,
+        workers: 2,
+        input: 'grain',
+        outputUnitsPerWeek: 4,
+        inputUnitsPerWeek: 4,
+        wagesCentsPerWeek: 240,
+      },
+    ]);
   });
 
   it('refuses a join without a trade, before creating the world', async () => {

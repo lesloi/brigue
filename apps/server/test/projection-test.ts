@@ -74,7 +74,7 @@ describe('the projection calendar', () => {
     expect(projection.calendar.nextScrutinyAt).toBe(projection.nextTickAt);
   });
 
-  it('carries the workshop input so the client derives no recipe', () => {
+  it('carries the workshop chain and weekly figures so the client derives no rule', () => {
     // Arrange
     const world = createWorld(SEED, 'baker');
 
@@ -82,7 +82,57 @@ describe('the projection calendar', () => {
     const projection = projectWorld(world, 'brigue', START);
 
     // Assert
-    expect(projection.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+    expect(projection.house.workshops).toEqual([
+      {
+        good: 'bread',
+        level: 2,
+        workers: 2,
+        input: 'grain',
+        outputUnitsPerWeek: 4,
+        inputUnitsPerWeek: 4,
+        wagesCentsPerWeek: 240,
+      },
+    ]);
+  });
+
+  it('carries zero input for a raw workshop', () => {
+    // Arrange
+    const world = createWorld(SEED);
+    world.houses.brigue.workshops = [{ good: 'wool', level: 2, workers: 1 }];
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.house.workshops[0]).toEqual({
+      good: 'wool',
+      level: 2,
+      workers: 1,
+      input: null,
+      outputUnitsPerWeek: 4,
+      inputUnitsPerWeek: 0,
+      wagesCentsPerWeek: 120,
+    });
+  });
+
+  it('scales the weekly figures with the level and the workers', () => {
+    // Arrange
+    const world = createWorld(SEED);
+    world.houses.brigue.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.house.workshops[0]).toEqual({
+      good: 'cloth',
+      level: 3,
+      workers: 1,
+      input: 'wool',
+      outputUnitsPerWeek: 6,
+      inputUnitsPerWeek: 6,
+      wagesCentsPerWeek: 120,
+    });
   });
 
   it('carries six prices, the stock and the warehouse capacity', () => {

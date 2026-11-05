@@ -328,6 +328,52 @@ button:disabled {
   font-weight: 600;
 }
 
+.mquantity {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin: 0 8px 8px;
+}
+
+.mquantity > span {
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--mut);
+  font-weight: 700;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surf);
+}
+
+.segmented button {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--mut);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 9px;
+}
+
+.segmented button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.nm p.warn {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .cal {
   margin: 20px 12px 0;
 }

@@ -1,21 +1,20 @@
 import type { CalendarView, WorldResponse } from '../api.ts';
 import { eventLine } from '../events.ts';
-import { buyLabel, formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
+import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 
 interface VilleProps {
   data: WorldResponse;
   now: number;
-  buying: boolean;
   advancing: boolean;
   onRefresh(): void;
-  onBuyInput(): void;
+  onGoMarket(): void;
   onAdvance(): void;
 }
 
 /** The Ville screen, rendered only from the projection and last week's events. */
-export function Ville({ data, now, buying, advancing, onRefresh, onBuyInput, onAdvance }: VilleProps) {
+export function Ville({ data, now, advancing, onRefresh, onGoMarket, onAdvance }: VilleProps) {
   const { world, events, summary } = data;
   const house = world.house;
   const workshop = house.workshops[0];
@@ -108,7 +107,12 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyInput, onA
               </div>
             ) : (
               house.workshops.map((workshop) => (
-                <WorkshopRow workshop={workshop} priceCents={world.town.market[workshop.good]} />
+                <WorkshopRow
+                  workshop={workshop}
+                  priceCents={world.town.market[workshop.good]}
+                  stock={house.stock}
+                  onGoMarket={onGoMarket}
+                />
               ))
             )}
             {house.debtCents > 0 ? (
@@ -125,17 +129,6 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyInput, onA
                     <b>{formatCents(house.debtCents)}</b> écus
                   </span>
                 </div>
-              </div>
-            ) : null}
-            {input !== null ? (
-              <div class="buy">
-                <div>
-                  <b>{buyLabel(input)}</b>
-                  <p>{formatCents(world.town.market[input])} écus l'unité &middot; appliqué à la prochaine semaine</p>
-                </div>
-                <button class="btn" id="buy-input" type="button" disabled={buying} onClick={onBuyInput}>
-                  {goodQuantity(10, input)}
-                </button>
               </div>
             ) : null}
           </div>
@@ -299,10 +292,19 @@ function Calendar({ calendar, year, now }: { calendar: CalendarView; year: numbe
 function WorkshopRow({
   workshop,
   priceCents,
+  stock,
+  onGoMarket,
 }: {
   workshop: WorldResponse['world']['house']['workshops'][number];
   priceCents: number;
+  stock: WorldResponse['world']['house']['stock'];
+  onGoMarket(): void;
 }) {
+  const input = workshop.input;
+  const inputName = input === null ? null : goodName(input);
+  const held = input === null ? 0 : (stock[input] ?? 0);
+  const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerWeek - held);
+
   return (
     <div class="row">
       <div class="th">
@@ -311,15 +313,34 @@ function WorkshopRow({
       <div class="nm">
         <b>{workshopName(workshop.good)}</b>
         <p>
-          <span class="lv">niv. {workshop.level}</span> {formatCount(workshop.workers)} ouvrier
-          {workshop.workers > 1 ? 's' : ''} &middot; {goodName(workshop.good)}
+          {inputName === null ? goodName(workshop.good) : `${inputName} → ${goodName(workshop.good)}`} &middot; niveau{' '}
+          {workshop.level}
         </p>
+        <p>
+          {goodQuantity(workshop.outputUnitsPerWeek, workshop.good)}/semaine
+          {input !== null ? ` · consomme ${goodQuantity(workshop.inputUnitsPerWeek, input)}` : ''}
+        </p>
+        <p>
+          {formatCount(workshop.workers)} ouvrier{workshop.workers > 1 ? 's' : ''} &middot;{' '}
+          {formatCents(workshop.wagesCentsPerWeek)} écus de gages
+        </p>
+        {missing > 0 && input !== null ? (
+          <p class="warn">Il manque {goodQuantity(missing, input)} pour produire cette semaine.</p>
+        ) : null}
       </div>
       <div class="act">
         <span class="price">
           <b>{formatCents(priceCents)}</b> écus
         </span>
         <span class="price-l">l'unité</span>
+        <span class="price">
+          <b>{formatCount(stock[workshop.good] ?? 0)}</b> en stock
+        </span>
+        {missing > 0 ? (
+          <button class="btn outline" type="button" onClick={onGoMarket}>
+            Au marché
+          </button>
+        ) : null}
       </div>
     </div>
   );

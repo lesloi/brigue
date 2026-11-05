@@ -8,12 +8,21 @@ export interface CalendarView {
   nextScrutinyAt: string;
 }
 
+/** A market action in flight, shared by the screen and the shell. */
+export interface TradeIntent {
+  kind: 'buy' | 'sell';
+  good: GoodId;
+}
+
 /** A workshop as the server projects it: the chain's input is not the client's rule. */
 export interface ProjectedWorkshop {
   good: GoodId;
   level: number;
   workers: number;
   input: GoodId | null;
+  outputUnitsPerWeek: number;
+  inputUnitsPerWeek: number;
+  wagesCentsPerWeek: number;
 }
 
 export interface WorldProjection {

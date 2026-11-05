@@ -91,20 +91,6 @@ export function tradeChainText(trade: Trade): string {
   }
 }
 
-/** The article is part of the label, not a rule the screen re-derives. */
-export function buyLabel(good: GoodId): string {
-  switch (good) {
-    case 'wool':
-      return 'Acheter de la laine';
-    case 'grain':
-      return 'Acheter du blé';
-    case 'wood':
-      return 'Acheter du bois';
-    default:
-      return `Acheter ${goodName(good)}`;
-  }
-}
-
 export function seatName(seat: SeatId): string {
   switch (seat) {
     case 'maire':

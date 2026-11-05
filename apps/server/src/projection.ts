@@ -11,12 +11,15 @@ import {
   type World,
 } from '@brigue/core';
 
-/** A workshop as the screen reads it: its chain's input comes from the rules. */
+/** A workshop as the screen reads it: its chain and weekly figures come from the rules. */
 export interface WorkshopView {
   good: GoodId;
   level: number;
   workers: number;
   input: GoodId | null;
+  outputUnitsPerWeek: number;
+  inputUnitsPerWeek: number;
+  wagesCentsPerWeek: number;
 }
 
 export interface OwnHouseView {
@@ -144,10 +147,18 @@ function ownHouse(house: House): OwnHouseView {
     prestige: house.prestige,
     career: house.career,
     dormant: house.dormant,
-    workshops: house.workshops.map((workshop) => ({
-      ...structuredClone(workshop),
-      input: RULES.recipes[workshop.good]?.input ?? null,
-    })),
+    workshops: house.workshops.map((workshop) => {
+      const recipe = RULES.recipes[workshop.good];
+      const outputUnitsPerWeek = workshop.level * RULES.outputPerLevel;
+
+      return {
+        ...structuredClone(workshop),
+        input: recipe?.input ?? null,
+        outputUnitsPerWeek,
+        inputUnitsPerWeek: recipe === null ? 0 : outputUnitsPerWeek * recipe.perUnit,
+        wagesCentsPerWeek: workshop.workers * RULES.wagePerWorkerCents,
+      };
+    }),
     stock: structuredClone(house.stock),
     stockUnits: stockUnits(house),
     stockCapacityUnits: RULES.stockCapacityUnits,
