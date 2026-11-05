@@ -556,6 +556,23 @@ button:disabled {
   border-bottom: 0;
 }
 
+.wait {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.wait:last-child {
+  border-bottom: 0;
+}
+
+.wait .nm {
+  min-width: 0;
+}
+
 .row.empty {
   grid-template-columns: minmax(0, 1fr);
 }

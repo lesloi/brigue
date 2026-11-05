@@ -1,5 +1,7 @@
 import type { GoodId, RefusalReason, SeatId, Trade } from '@brigue/core';
 
+import type { PendingActionView } from './api.ts';
+
 const MONEY = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const COUNT = new Intl.NumberFormat('fr-FR');
 
@@ -91,6 +93,18 @@ export function tradeChainText(trade: Trade): string {
   }
 }
 
+/** One queued action, said the way the "En attente" list says it. */
+export function pendingActionText(action: PendingActionView): string {
+  switch (action.type) {
+    case 'market.buy':
+      return action.good === undefined ? 'Achat au marché' : `Achat de ${goodQuantity(action.units ?? 0, action.good)}`;
+    case 'market.sell':
+      return action.good === undefined ? 'Vente au marché' : `Vente de ${goodQuantity(action.units ?? 0, action.good)}`;
+    case 'council.campaign':
+      return action.seatId === undefined ? 'Candidature' : `Candidature à la ${seatName(action.seatId)}`;
+  }
+}
+
 export function seatName(seat: SeatId): string {
   switch (seat) {
     case 'maire':
@@ -140,6 +154,8 @@ export function actionErrorText(code: string | null): string {
       return "Cette semaine n'a pas encore commencé.";
     case 'duplicate_action':
       return 'Cette action a déjà été envoyée.';
+    case 'unknown_action':
+      return "Cette action n'existe plus.";
     case 'invalid_action':
       return "L'action n'a pas été comprise par le serveur.";
     case 'invalid_trade':
@@ -158,6 +174,8 @@ export function actionErrorText(code: string | null): string {
 /** Server error codes for a read, which is a different failure from an action. */
 export function readErrorText(code: string | null): string {
   switch (code) {
+    case 'unknown_action':
+      return "Cette action n'existe plus.";
     case 'invalid_trade':
       return 'Métier inconnu.';
     case 'unknown_world':

@@ -9,7 +9,7 @@ export type ActionIntent =
 export type ActionSubmission =
   { ok: true; id: string; week: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const ACTION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseActionSubmission(body: unknown): ActionSubmission {
   if (!isRecord(body)) {
@@ -17,7 +17,7 @@ export function parseActionSubmission(body: unknown): ActionSubmission {
   }
 
   const { id, week, action } = body;
-  if (typeof id !== 'string' || !UUID_PATTERN.test(id)) {
+  if (typeof id !== 'string' || !ACTION_ID_PATTERN.test(id)) {
     return invalid();
   }
   if (!Number.isInteger(week) || (week as number) < 1) {

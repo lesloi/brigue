@@ -1,11 +1,13 @@
 import type { Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { eventLine, ledgerEvents, netPendingFor, survivesRead } from '../src/events.ts';
+import type { PendingActionView } from '../src/api.ts';
+import { eventLine, ledgerEvents, netPendingFor } from '../src/events.ts';
 import {
   actionErrorText,
   goodName,
   goodQuantity,
+  pendingActionText,
   readErrorText,
   refusalText,
   seatName,
@@ -279,32 +281,25 @@ describe('the ledger filter', () => {
   });
 });
 
-describe('pending trades', () => {
-  it('nets the buys and sells of one good', () => {
-    // Arrange
-    const pending = [
-      { week: 3, good: 'grain' as const, units: 5 },
-      { week: 3, good: 'grain' as const, units: 10 },
-      { week: 3, good: 'grain' as const, units: -4 },
-      { week: 3, good: 'wool' as const, units: 2 },
-    ];
+describe('pending actions', () => {
+  const pending: PendingActionView[] = [
+    { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
+    { id: 'b', week: 3, type: 'market.buy', good: 'grain', units: 10 },
+    { id: 'c', week: 3, type: 'market.sell', good: 'grain', units: 4 },
+    { id: 'd', week: 3, type: 'market.buy', good: 'wool', units: 2 },
+    { id: 'e', week: 3, type: 'council.campaign', seatId: 'maire' },
+  ];
 
-    // Act and assert
+  it('nets the market actions of one good', () => {
+    // Act and assert: a campaign is not a trade and never enters the net.
     expect(netPendingFor('grain', pending)).toBe(11);
     expect(netPendingFor('wool', pending)).toBe(2);
     expect(netPendingFor('cloth', pending)).toBe(0);
   });
 
-  it('keeps a trade until a read reaches its week', () => {
-    // Arrange
-    const pending = [
-      { week: 2, good: 'grain' as const, units: 4 },
-      { week: 3, good: 'grain' as const, units: 4 },
-      { week: 4, good: 'grain' as const, units: 4 },
-    ];
-
-    // Act and assert
-    expect(survivesRead(pending, 3).map((trade) => trade.week)).toEqual([3, 4]);
-    expect(survivesRead(pending, 4).map((trade) => trade.week)).toEqual([4]);
+  it('says a queued action in words', () => {
+    expect(pendingActionText(pending[0] as PendingActionView)).toBe('Achat de 5 blés');
+    expect(pendingActionText(pending[2] as PendingActionView)).toBe('Vente de 4 blés');
+    expect(pendingActionText(pending[4] as PendingActionView)).toBe('Candidature à la mairie');
   });
 });

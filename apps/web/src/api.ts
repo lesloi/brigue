@@ -14,11 +14,14 @@ export interface TradeIntent {
   good: GoodId;
 }
 
-/** A trade the server accepted but has not ticked yet; units are signed. */
-export interface PendingTrade {
+/** One action the server holds for the current or next week. */
+export interface PendingActionView {
+  id: string;
   week: number;
-  good: GoodId;
-  units: number;
+  type: 'market.buy' | 'market.sell' | 'council.campaign';
+  good?: GoodId;
+  units?: number;
+  seatId?: SeatId;
 }
 
 /** A workshop as the server projects it: the chain's input is not the client's rule. */
@@ -146,6 +149,25 @@ export function sendAction(week: number, action: ActionIntent): Promise<{ id: st
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: actionId(), week, action }),
   });
+}
+
+/** The actions the server still holds for this house, current and next week. */
+export async function readPending(): Promise<PendingActionView[]> {
+  const body = await send<{ actions: PendingActionView[] }>('/api/actions');
+
+  return body.actions;
+}
+
+export async function cancelAction(id: string): Promise<void> {
+  const response = await fetch(`/api/actions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorCode(response));
+  }
 }
 
 /**

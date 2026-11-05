@@ -128,7 +128,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   "Insertion order" alone is only well defined inside one week, so a sequence column holds it.
   Applied actions are kept: a retry must stay detectable, and the town must stay replayable.
   An action may name the week being played or the next one; a week that already ticked is
-  refused, and the action endpoint never catches the world up itself.
+  refused, and the action endpoint never catches the world up itself. A queued action can be
+  cancelled before its week ticks: the row is marked, never deleted, so a retry stays a
+  duplicate and the week's replay uses the actions that were still queued when it ticked. The
+  list of queued actions does not catch the world up either; the world's own week is the only
+  applied verdict, and the wall clock only bounds how far ahead an action may be placed.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive. A change the additive rule cannot carry — this format adds a person and moves a

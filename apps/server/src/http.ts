@@ -13,7 +13,7 @@ import {
   type World,
 } from '@brigue/core';
 
-import { parseActionSubmission, withHouse } from './actions.ts';
+import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { catchUp, WEEK_MS, type CatchUpResult } from './catch-up.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import { withFounder } from './founder.ts';
@@ -119,6 +119,16 @@ export function createApp(deps: AppDeps): Server {
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const path = new URL(request.url ?? '/', 'http://localhost').pathname;
 
+    const cancelMatch = /^\/api\/actions\/([^/]+)$/.exec(path);
+    if (cancelMatch !== null) {
+      if (request.method !== 'DELETE') {
+        methodNotAllowed(response, 'DELETE');
+        return;
+      }
+      await cancelAction(request, response, cancelMatch[1] as string);
+      return;
+    }
+
     switch (path) {
       case '/healthz':
         if (!isReadable(request)) {
@@ -161,12 +171,17 @@ export function createApp(deps: AppDeps): Server {
         return;
 
       case '/api/actions':
-        if (request.method !== 'POST') {
-          methodNotAllowed(response, 'POST');
-          return;
+        switch (request.method) {
+          case 'GET':
+            await listActions(request, response);
+            return;
+          case 'POST':
+            await appendAction(request, response);
+            return;
+          default:
+            methodNotAllowed(response, 'GET, POST');
+            return;
         }
-        await appendAction(request, response);
-        return;
 
       case '/api/dev/advance':
         // The route only exists when the server was started for development:
@@ -423,6 +438,105 @@ export function createApp(deps: AppDeps): Server {
     });
   }
 
+  /** Where a catch-up read would land; the cap bounds what it actually plays. */
+  function currentWeekOf(world: World, weekStartedAt: Date, at: Date): number {
+    const elapsed = Math.max(0, Math.floor((at.getTime() - weekStartedAt.getTime()) / WEEK_MS));
+
+    return world.week + Math.min(elapsed, PACING.maxCatchUpWeeks);
+  }
+
+  function pendingView(stored: StoredAction): Record<string, unknown> {
+    const action = stored.action;
+
+    return {
+      id: stored.id,
+      week: stored.week,
+      type: action.type,
+      ...(action.type === 'market.buy' || action.type === 'market.sell'
+        ? { good: action.good, units: action.units }
+        : {}),
+      ...(action.type === 'council.campaign' ? { seatId: action.seatId } : {}),
+    };
+  }
+
+  async function listActions(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+
+    const actions = await deps.worlds.withWorld(player.worldId, async (session) => {
+      const world = sessionWorld(session);
+      const queued: StoredAction[] = [];
+
+      for (let offset = 0; offset <= QUEUE_AHEAD_WEEKS; offset += 1) {
+        queued.push(...(await session.actionsFor(world.week + offset)));
+      }
+
+      return queued.filter((action) => action.houseId === player.houseId);
+    });
+
+    sendJson(response, 200, { actions: actions.map(pendingView) });
+  }
+
+  async function cancelAction(request: IncomingMessage, response: ServerResponse, id: string): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+    if (!ACTION_ID_PATTERN.test(id)) {
+      sendJson(response, 404, { error: 'unknown_action' });
+      return;
+    }
+
+    const at = new Date(now());
+    const actionId = id.toLowerCase();
+    const outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
+      const { world, weekStartedAt } = session.snapshot;
+      sessionWorld(session);
+
+      const stored = await session.findAction(actionId);
+      // Another house's action is indistinguishable from an unknown one.
+      if (stored === null || stored.houseId !== player.houseId) {
+        return { kind: 'unknown' as const };
+      }
+      // Idempotent: a cancellation already won is 204, even if the week has
+      // ticked since; the row stays for dedup and replay.
+      if (stored.cancelledAt !== null) {
+        return { kind: 'cancelled' as const };
+      }
+      if (stored.week < world.week) {
+        return { kind: 'stale' as const, currentWeek: currentWeekOf(world, weekStartedAt, at) };
+      }
+
+      const currentWeek = currentWeekOf(world, weekStartedAt, at);
+      if (stored.week > currentWeek + QUEUE_AHEAD_WEEKS) {
+        return { kind: 'future' as const, currentWeek };
+      }
+
+      await session.cancel(actionId, at);
+
+      return { kind: 'cancelled' as const };
+    });
+
+    switch (outcome.kind) {
+      case 'unknown':
+        sendJson(response, 404, { error: 'unknown_action' });
+        return;
+      case 'stale':
+        sendJson(response, 409, { error: 'stale_week', currentWeek: outcome.currentWeek });
+        return;
+      case 'future':
+        sendJson(response, 409, { error: 'future_week', currentWeek: outcome.currentWeek });
+        return;
+      case 'cancelled':
+        response.writeHead(204, { 'Cache-Control': 'no-store' });
+        response.end();
+    }
+  }
+
   async function appendAction(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
@@ -451,10 +565,7 @@ export function createApp(deps: AppDeps): Server {
         // The action names a week, not a house: the house is the session's.
         // A week that already ticked can never be replayed, and the town clock
         // is the upper bound for a week that has not begun yet.
-        const elapsed = Math.max(0, Math.floor((at.getTime() - weekStartedAt.getTime()) / WEEK_MS));
-        // Where a catch-up read would land: the cap bounds how many weeks it
-        // will actually play, and skipping does not advance the town's week.
-        const currentWeek = world.week + Math.min(elapsed, PACING.maxCatchUpWeeks);
+        const currentWeek = currentWeekOf(world, weekStartedAt, at);
 
         if (submission.week < world.week) {
           return { kind: 'stale' as const, currentWeek };
@@ -472,6 +583,7 @@ export function createApp(deps: AppDeps): Server {
           week: submission.week,
           action: withHouse(submission.intent, player.houseId),
           receivedAt: at,
+          cancelledAt: null,
         };
         await session.append(stored);
 

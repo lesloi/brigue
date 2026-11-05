@@ -13,6 +13,7 @@ import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
 const ID_A = '00000000-0000-4000-8000-00000000000a';
+const ID_B = '00000000-0000-4000-8000-00000000000b';
 
 interface Harness {
   url: string;
@@ -28,7 +29,7 @@ interface WorldBody {
   world: {
     week: number;
     year: number;
-    house: { id: string; stock: Record<string, number> };
+    house: { id: string; stock: Record<string, number>; favour: number };
     town: { houses: Array<Record<string, unknown>> };
     nextTickAt: string;
   };
@@ -121,10 +122,25 @@ async function worldBodyAs(harness: Harness, houseId: string): Promise<WorldBody
 }
 
 function postAction(harness: Harness, body: unknown): Promise<Response> {
+  return postActionAs(harness, 'brigue', body);
+}
+
+function postActionAs(harness: Harness, houseId: string, body: unknown): Promise<Response> {
   return fetch(`${harness.url}/api/actions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: harness.cookie },
+    headers: { 'Content-Type': 'application/json', Cookie: harness.cookies[houseId] as string },
     body: JSON.stringify(body),
+  });
+}
+
+function getPending(harness: Harness, houseId = 'brigue'): Promise<Response> {
+  return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[houseId] as string } });
+}
+
+function cancelPending(harness: Harness, id: string, houseId = 'brigue'): Promise<Response> {
+  return fetch(`${harness.url}/api/actions/${id}`, {
+    method: 'DELETE',
+    headers: { Cookie: harness.cookies[houseId] as string },
   });
 }
 
@@ -511,6 +527,159 @@ describe('POST /api/actions', () => {
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'invalid_action' });
     }
+  });
+});
+
+describe('the queued actions', () => {
+  it('lists and cancels an action before its week ticks', async () => {
+    // Arrange
+    const harness = await start();
+    const empty = await getPending(harness);
+    expect(await empty.json()).toEqual({ actions: [] });
+    await postAction(harness, buyWool(ID_A, 1, 2));
+
+    // Act
+    const listed = await getPending(harness);
+    const cancelled = await cancelPending(harness, ID_A);
+    harness.clock.now += HOUR;
+    const body = await worldBody(harness);
+
+    // Assert
+    expect(await listed.json()).toEqual({
+      actions: [{ id: ID_A, week: 1, type: 'market.buy', good: 'wool', units: 2 }],
+    });
+    expect(cancelled.status).toBe(204);
+    expect(await (await getPending(harness)).json()).toEqual({ actions: [] });
+    // The cancelled buy was not applied: eight wool less the four woven.
+    expect(body.world.house.stock.wool).toBe(4);
+  });
+
+  it('keeps the cancelled row as a duplicate', async () => {
+    // Arrange
+    const harness = await start();
+    await postAction(harness, buyWool(ID_A, 1, 2));
+    await cancelPending(harness, ID_A);
+
+    // Act
+    const retry = await postAction(harness, buyWool(ID_A, 1, 2));
+
+    // Assert
+    expect(retry.status).toBe(409);
+    expect(await retry.json()).toEqual({ error: 'duplicate_action' });
+  });
+
+  it('is idempotent', async () => {
+    // Arrange
+    const harness = await start();
+    await postAction(harness, buyWool(ID_A, 1, 2));
+
+    // Act and assert
+    expect((await cancelPending(harness, ID_A)).status).toBe(204);
+    expect((await cancelPending(harness, ID_A)).status).toBe(204);
+  });
+
+  it('keeps a cancellation already won even after the week ticks', async () => {
+    // Arrange: cancel, then let the world catch up over the action's week.
+    const harness = await start();
+    await postAction(harness, buyWool(ID_A, 1, 2));
+    await cancelPending(harness, ID_A);
+    harness.clock.now += HOUR;
+    const warmed = await worldBody(harness);
+
+    // Act
+    const again = await cancelPending(harness, ID_A);
+
+    // Assert: the retry is a no-op, not a stale refusal.
+    expect(again.status).toBe(204);
+    expect((await worldBody(harness)).stateHash).toBe(warmed.stateHash);
+  });
+
+  it('refuses a cancellation once the week has ticked', async () => {
+    // Arrange
+    const harness = await start();
+    await postAction(harness, buyWool(ID_A, 1, 2));
+    harness.clock.now += HOUR;
+    const applied = await worldBody(harness);
+
+    // Act
+    const response = await cancelPending(harness, ID_A);
+
+    // Assert: the buy was applied (eight plus two, less four woven).
+    expect(applied.world.house.stock.wool).toBe(6);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'stale_week', currentWeek: 2 });
+  });
+
+  it("does not cancel another house's action", async () => {
+    // Arrange
+    const harness = await start({ houses: ['brigue', 'caron'] });
+    await postActionAs(harness, 'caron', buyWool(ID_A, 1, 2));
+
+    // Act
+    const foreign = await cancelPending(harness, ID_A, 'brigue');
+    const own = await cancelPending(harness, ID_A, 'caron');
+
+    // Assert
+    expect(foreign.status).toBe(404);
+    expect(await foreign.json()).toEqual({ error: 'unknown_action' });
+    expect(own.status).toBe(204);
+  });
+
+  it('lists and cancels a campaign', async () => {
+    // Arrange
+    const harness = await start();
+    await postAction(harness, { id: ID_A, week: 1, action: { type: 'council.campaign', seatId: 'maire' } });
+    const listed = (await (await getPending(harness)).json()) as {
+      actions: Array<{ type: string; seatId?: string }>;
+    };
+
+    // Act
+    await cancelPending(harness, ID_A);
+    harness.clock.now += HOUR;
+    const body = await worldBody(harness);
+
+    // Assert: no favour was spent and no campaign was queued.
+    expect(listed.actions).toContainEqual(expect.objectContaining({ type: 'council.campaign', seatId: 'maire' }));
+    expect(body.world.house.favour).toBe(50);
+  });
+
+  it('lists an action queued for the next week', async () => {
+    // Arrange
+    const harness = await start();
+    await postAction(harness, buyWool(ID_A, 2, 2));
+
+    // Act
+    const listed = (await (await getPending(harness)).json()) as {
+      actions: Array<{ id: string; week: number }>;
+    };
+
+    // Assert
+    expect(listed.actions).toContainEqual(expect.objectContaining({ id: ID_A, week: 2 }));
+  });
+
+  it('refuses an unknown or malformed id', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const unknown = await cancelPending(harness, ID_B);
+    const malformed = await cancelPending(harness, 'not-a-uuid');
+
+    // Assert
+    expect(unknown.status).toBe(404);
+    expect(await unknown.json()).toEqual({ error: 'unknown_action' });
+    expect(malformed.status).toBe(404);
+    expect(await malformed.json()).toEqual({ error: 'unknown_action' });
+  });
+
+  it('refuses without a session', async () => {
+    const harness = await start();
+
+    const list = await fetch(`${harness.url}/api/actions`);
+    const cancel = await fetch(`${harness.url}/api/actions/${ID_A}`, { method: 'DELETE' });
+
+    expect(list.status).toBe(401);
+    expect(cancel.status).toBe(401);
   });
 });
 

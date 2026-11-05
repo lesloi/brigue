@@ -14,6 +14,8 @@ export interface StoredAction {
   week: number;
   action: Action;
   receivedAt: Date;
+  /** Set when the player cancels before the week ticks; the row stays for dedup and replay. */
+  cancelledAt: Date | null;
 }
 
 export interface WorldSnapshot {
@@ -31,6 +33,8 @@ export interface WorldSession {
   actionsFor(week: number): Promise<StoredAction[]>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
+  /** Marks an unapplied action cancelled; it is never returned to the tick. */
+  cancel(id: string, at: Date): Promise<void>;
   save(world: World, weekStartedAt: Date, lastEvents: Event[], at: Date): Promise<void>;
 }
 
@@ -128,7 +132,9 @@ export class MemoryWorldStore implements WorldStore {
     return {
       snapshot: stored.snapshot,
       actionsFor: async (week) =>
-        stored.actions.filter((action) => action.week === week).map((action) => structuredClone(action)),
+        stored.actions
+          .filter((action) => action.week === week && action.cancelledAt === null)
+          .map((action) => structuredClone(action)),
       findAction: async (id) => {
         const found = stored.actions.find((action) => action.id === id);
 
@@ -139,6 +145,13 @@ export class MemoryWorldStore implements WorldStore {
           throw new DuplicateActionError(action.id);
         }
         stored.actions.push(structuredClone(action));
+      },
+      cancel: async (id, at) => {
+        const found = stored.actions.find((action) => action.id === id);
+
+        if (found !== undefined && found.cancelledAt === null) {
+          found.cancelledAt = new Date(at);
+        }
       },
       save: async (world, weekStartedAt, lastEvents, at) => {
         stored.snapshot = {

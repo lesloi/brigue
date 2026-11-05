@@ -1,8 +1,8 @@
 import { useState } from 'preact/hooks';
 
-import type { CalendarView, PendingTrade, WorldResponse } from '../api.ts';
+import type { CalendarView, PendingActionView, WorldResponse } from '../api.ts';
 import { eventLine, ledgerEvents, netPendingFor, type LedgerFilter } from '../events.ts';
-import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
+import { formatCents, formatCount, goodName, goodQuantity, pendingActionText, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 
@@ -12,15 +12,27 @@ interface VilleProps {
   data: WorldResponse;
   now: number;
   advancing: boolean;
-  /** Trades accepted for this week but not ticked yet. */
-  pending: PendingTrade[];
+  /** Actions the server holds for the current and next week. */
+  pending: PendingActionView[];
+  cancelling: string | null;
+  onCancel(id: string): void;
   onRefresh(): void;
   onGoMarket(): void;
   onAdvance(): void;
 }
 
 /** The Ville screen, rendered only from the projection and last week's events. */
-export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, onAdvance }: VilleProps) {
+export function Ville({
+  data,
+  now,
+  advancing,
+  pending,
+  cancelling,
+  onCancel,
+  onRefresh,
+  onGoMarket,
+  onAdvance,
+}: VilleProps) {
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('house');
   const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
@@ -121,7 +133,14 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
                   workshop={workshop}
                   priceCents={world.town.market[workshop.good]}
                   stock={house.stock}
-                  pendingInput={workshop.input === null ? 0 : netPendingFor(workshop.input, pending)}
+                  pendingInput={
+                    workshop.input === null
+                      ? 0
+                      : netPendingFor(
+                          workshop.input,
+                          pending.filter((action) => action.week === world.week),
+                        )
+                  }
                   onGoMarket={onGoMarket}
                 />
               ))
@@ -144,6 +163,35 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
             ) : null}
           </div>
         </section>
+
+        {pending.length > 0 ? (
+          <section class="sec" aria-labelledby="pending-title">
+            <div class="h">
+              <b id="pending-title">En attente</b>
+              <span>
+                {pending.length} action{pending.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div class="card">
+              {pending.map((action) => (
+                <div class="wait" key={action.id}>
+                  <div class="nm">
+                    <b>{pendingActionText(action)}</b>
+                    <p>semaine {action.week}</p>
+                  </div>
+                  <button
+                    class="btn outline"
+                    type="button"
+                    disabled={cancelling === action.id}
+                    onClick={() => onCancel(action.id)}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section class="sec" aria-labelledby="week-title">
           <div class="h">

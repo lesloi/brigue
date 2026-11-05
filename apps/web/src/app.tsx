@@ -4,16 +4,17 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   ApiError,
   advanceWeek,
+  cancelAction,
   hasSession,
   joinTown,
+  readPending,
   readWorld,
   resumeTown,
   sendAction,
-  type PendingTrade,
+  type PendingActionView,
   type TradeIntent,
   type WorldResponse,
 } from './api.ts';
-import { survivesRead } from './events.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
 import { Create } from './views/create.tsx';
@@ -40,9 +41,9 @@ export function App() {
   const [token, setToken] = useState<string | null>(null);
   const [lostError, setLostError] = useState<string | null>(null);
   const [trading, setTrading] = useState<TradeIntent | null>(null);
-  // The queued trades are session memory, not a second world: a reload empties
-  // them, and the next read proves or refuses them.
-  const [pending, setPending] = useState<PendingTrade[]>([]);
+  // The server's list, not a local guess: a reload keeps the queued actions.
+  const [pending, setPending] = useState<PendingActionView[]>([]);
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
@@ -160,7 +161,11 @@ export function App() {
     setToast(null);
     setNow(Date.now());
     setView({ kind: 'world', data });
-    setPending((current) => survivesRead(current, data.world.week));
+    try {
+      setPending(await readPending());
+    } catch {
+      setPending([]);
+    }
 
     if (pendingToken.current !== null) {
       const fresh = pendingToken.current;
@@ -199,7 +204,7 @@ export function App() {
           ? ({ type: 'market.buy', good, units } as const)
           : ({ type: 'market.sell', good, units } as const);
       const sent = await sendAction(view.data.world.week, intent);
-      setPending((current) => [...current, { week: sent.week, good, units: kind === 'buy' ? units : -units }]);
+      await readPending().then(setPending, () => setPending([]));
       const quantity = goodQuantity(units, good);
       showToast(
         kind === 'buy'
@@ -215,6 +220,23 @@ export function App() {
       }
     } finally {
       setTrading(null);
+    }
+  }
+
+  async function cancel(id: string): Promise<void> {
+    setCancelling(id);
+    try {
+      await cancelAction(id);
+      setPending((current) => current.filter((action) => action.id !== id));
+    } catch (error) {
+      if (error instanceof ApiError && (error.code === 'stale_week' || error.code === 'unknown_action')) {
+        showToast(actionErrorText(error.code), true);
+        await refresh();
+      } else {
+        showToast(actionMessageFor(error), true);
+      }
+    } finally {
+      setCancelling(null);
     }
   }
 
@@ -257,7 +279,7 @@ export function App() {
       const data = await advanceWeek();
       setNow(Date.now());
       setView({ kind: 'world', data });
-      setPending((current) => survivesRead(current, data.world.week));
+      await readPending().then(setPending, () => setPending([]));
       showToast(`Semaine ${data.world.week}, comme si une heure était passée.`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -319,7 +341,9 @@ export function App() {
               data={view.data}
               now={now}
               advancing={advancing}
-              pending={pending.filter((trade) => trade.week === view.data.world.week)}
+              pending={pending}
+              cancelling={cancelling}
+              onCancel={(id) => void cancel(id)}
               onRefresh={() => void refresh()}
               onGoMarket={() => selectTab('marche')}
               onAdvance={() => void advanceOneWeek()}

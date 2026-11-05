@@ -1,6 +1,6 @@
 import type { Action, Event, GoodId } from '@brigue/core';
 
-import type { PendingTrade } from './api.ts';
+import type { PendingActionView } from './api.ts';
 import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
 
 /** The three cuts of the week's ledger: the house's own story, everything, the prices. */
@@ -27,21 +27,22 @@ export function ledgerEvents(events: readonly Event[], houseId: string, filter: 
   }
 }
 
-/** The net signed units queued for a good in the current week. */
-export function netPendingFor(good: GoodId, pending: readonly PendingTrade[]): number {
+/** The net signed units queued for a good; campaign actions never count. */
+export function netPendingFor(good: GoodId, pending: readonly PendingActionView[]): number {
   let total = 0;
-  for (const trade of pending) {
-    if (trade.good === good) {
-      total += trade.units;
+  for (const action of pending) {
+    if (action.good !== good) {
+      continue;
+    }
+    if (action.type === 'market.buy') {
+      total += action.units ?? 0;
+    }
+    if (action.type === 'market.sell') {
+      total -= action.units ?? 0;
     }
   }
 
   return total;
-}
-
-/** A read at `readWeek` proves everything queued for an earlier week happened. */
-export function survivesRead(pending: readonly PendingTrade[], readWeek: number): PendingTrade[] {
-  return pending.filter((trade) => trade.week >= readWeek);
 }
 
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';

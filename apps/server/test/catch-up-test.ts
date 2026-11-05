@@ -20,7 +20,7 @@ const START = new Date('2026-10-31T12:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
 
 function storedAction(id: string, week: number, action: Action): StoredAction {
-  return { id, houseId: 'brigue', week, action, receivedAt: START };
+  return { id, houseId: 'brigue', week, action, receivedAt: START, cancelledAt: null };
 }
 
 function buyWool(units: number): Action {
