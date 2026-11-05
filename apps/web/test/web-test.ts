@@ -18,6 +18,7 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'market.bought',
+      audience: 'town',
       houseId: 'brigue',
       good: 'wool',
       units: 10,
@@ -38,6 +39,7 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'market.bought',
+      audience: 'town',
       houseId: 'caron',
       good: 'wool',
       units: 1,
@@ -56,6 +58,7 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'action.refused',
+      audience: { houseId: 'brigue' },
       action: 'market.buy',
       houseId: 'brigue',
       reason: 'insufficient_funds',
@@ -71,8 +74,18 @@ describe('eventLine', () => {
 
   it('keeps the house grammar for a missed wage payment', () => {
     // Arrange
-    const own: Event = { type: 'house.penniless', houseId: 'brigue', shortfallCents: 240 };
-    const other: Event = { type: 'house.penniless', houseId: 'caron', shortfallCents: 240 };
+    const own: Event = {
+      type: 'house.penniless',
+      audience: { houseId: 'brigue' },
+      houseId: 'brigue',
+      shortfallCents: 240,
+    };
+    const other: Event = {
+      type: 'house.penniless',
+      audience: { houseId: 'caron' },
+      houseId: 'caron',
+      shortfallCents: 240,
+    };
 
     // Act
     const ownLine = eventLine(own, 'brigue', nameOf);

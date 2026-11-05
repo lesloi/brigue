@@ -164,9 +164,30 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Heterogeneous events: `last_events` is a JS array, which `pg` used to
     // serialise as a Postgres array literal instead of jsonb.
     const lastEvents: Event[] = [
-      { type: 'market.bought', houseId: 'brigue', good: 'wool', units: 2, priceCents: 380, totalCents: 760 },
-      { type: 'council.election_held', seatId: 'maire', winnerHouseId: 'caron', votes: { brigue: 1, caron: 2 } },
-      { type: 'workshop.idle', houseId: 'brigue', good: 'cloth', input: 'wool', missingUnits: 0 },
+      {
+        type: 'market.bought',
+        audience: 'town',
+        houseId: 'brigue',
+        good: 'wool',
+        units: 2,
+        priceCents: 380,
+        totalCents: 760,
+      },
+      {
+        type: 'council.election_held',
+        audience: 'town',
+        seatId: 'maire',
+        winnerHouseId: 'caron',
+        votes: { brigue: 1, caron: 2 },
+      },
+      {
+        type: 'workshop.idle',
+        audience: { houseId: 'brigue' },
+        houseId: 'brigue',
+        good: 'cloth',
+        input: 'wool',
+        missingUnits: 0,
+      },
     ];
     const weekStartedAt = new Date(START.getTime() + 42_000);
     const action = storedAction(randomUUID(), 7, buy(3));

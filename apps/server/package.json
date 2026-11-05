@@ -7,6 +7,7 @@
     "start": "node src/main.ts",
     "dev": "node --watch src/main.ts",
     "migrate": "node scripts/migrate.ts",
+    "migrate-old-format": "node scripts/migrate-old-format.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

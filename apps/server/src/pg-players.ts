@@ -7,6 +7,7 @@ interface PlayerRow {
   world_id: string;
   house_id: string;
   created_at: Date | string;
+  last_seen_at: Date | string;
   revoked_at: Date | string | null;
 }
 
@@ -24,9 +25,9 @@ export class PgPlayerStore implements PlayerStore {
   async insert(player: Player): Promise<void> {
     try {
       await this.pool.query(
-        `INSERT INTO players (token_hash, world_id, house_id, created_at)
-         VALUES ($1, $2, $3, $4)`,
-        [player.tokenHash, player.worldId, player.houseId, player.createdAt],
+        `INSERT INTO players (token_hash, world_id, house_id, created_at, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [player.tokenHash, player.worldId, player.houseId, player.createdAt, player.lastSeenAt],
       );
     } catch (error) {
       if (isLiveHouseViolation(error)) {
@@ -38,7 +39,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, revoked_at
+      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at
        FROM players
        WHERE token_hash = $1`,
       [tokenHash],
@@ -52,9 +53,39 @@ export class PgPlayerStore implements PlayerStore {
   async revoke(tokenHash: string, at: Date): Promise<void> {
     await this.pool.query(
       `UPDATE players
-       SET revoked_at = $2
+       SET revoked_at = $2, last_seen_at = $2
        WHERE token_hash = $1 AND revoked_at IS NULL`,
       [tokenHash, at],
+    );
+  }
+
+  async touch(tokenHash: string, at: Date): Promise<void> {
+    await this.pool.query(
+      `UPDATE players
+       SET last_seen_at = $2
+       WHERE token_hash = $1 AND revoked_at IS NULL`,
+      [tokenHash, at],
+    );
+  }
+
+  async listByWorld(worldId: string): Promise<Player[]> {
+    const { rows } = await this.pool.query<PlayerRow>(
+      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at
+       FROM players
+       WHERE world_id = $1
+       ORDER BY created_at, token_hash`,
+      [worldId],
+    );
+
+    return rows.map(rowToPlayer);
+  }
+
+  async revokeHouse(worldId: string, houseId: string, at: Date): Promise<void> {
+    await this.pool.query(
+      `UPDATE players
+       SET revoked_at = $3
+       WHERE world_id = $1 AND house_id = $2 AND revoked_at IS NULL`,
+      [worldId, houseId, at],
     );
   }
 
@@ -80,6 +111,7 @@ function rowToPlayer(row: PlayerRow): Player {
     worldId: row.world_id,
     houseId: row.house_id,
     createdAt: asDate(row.created_at),
+    lastSeenAt: asDate(row.last_seen_at),
     revokedAt: row.revoked_at === null ? null : asDate(row.revoked_at),
   };
 }

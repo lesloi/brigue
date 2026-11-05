@@ -26,6 +26,7 @@ export async function issueToken(
     worldId,
     houseId,
     createdAt: now,
+    lastSeenAt: now,
     revokedAt: null,
   };
 

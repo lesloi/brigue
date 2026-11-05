@@ -22,7 +22,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   workshop idles, the stock stays a target, the holder votes no more. The holder stays a
   candidate by default, so a challenger turns the next election into a normal contest. After
   thirty days without a visit the house is deleted and the token with it: no return, no vacation
-  mode, and no AI ever plays it. The reverse is asymmetric: when a full town receives a human,
+  mode, and no AI ever plays it. The server reads the last visit before it catches the town up,
+  so the weeks a house was away are simulated dormant: it produced nothing, and the visit that
+  ends the absence wakes it for the week that follows. The dormancy threshold is calibration in
+  `PACING`; the deletion stays an edge rule. The reverse is asymmetric: when a full town receives a human,
   the AI house ends and the newcomer starts with nothing — no money, no seat, no career. No AI is
   created after the opening; the ten founding families are a floor, and a freed place waits for a
   human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
@@ -110,13 +113,16 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   An action may name the week being played or the next one; a week that already ticked is
   refused, and the action endpoint never catches the world up itself.
 
-- **The next format is a reset, not a migration.** The town that runs today is a test town, and the
-  reset deletes it with its tokens. The release that ships the new format is followed by clearing
-  the old world and its players, once the new pod serves: during the rollout, the previous pod
-  would recreate a format-1 world at the first visit. The new model adds a person and changes what
-  a seat holds (from a house to a person), which the additive rule cannot carry. The next
-  `formatVersion` starts a new town; a world of the old format is refused, never guessed. The
-  additive rule resumes from that format.
+- **A format change migrates or resets, and a reset is never silent.** Within a format, changes
+  stay additive. A change the additive rule cannot carry — this format adds a person and moves a
+  seat from a house to a person — starts a new `formatVersion`; a world of another format is
+  refused, never guessed. The release that ships the new format runs `migrate-old-format` after
+  the new pod serves: during the rollout, the previous pod would recreate a format-1 world at the
+  first visit. A world with a registered migration is converted; one without is not deleted in
+  silence — the script stops, names the reset and its cost, and an operator confirms it with
+  `--reset`. The town that runs today is a test town, so the format-2 reset is that confirmed
+  path; once a town has players whose history matters, a breaking change ships a migration by
+  default. The additive rule resumes from the new format.
 
 ## Simulation
 

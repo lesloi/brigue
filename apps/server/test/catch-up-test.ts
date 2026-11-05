@@ -6,6 +6,7 @@ import {
   RULES,
   stateHash,
   tick,
+  visibleTo,
   WorldVersionError,
   type Action,
   type Event,
@@ -33,6 +34,7 @@ function run(options: {
   actions?: Map<number, StoredAction[]>;
   lastEvents?: Event[];
   maxWeeks?: number;
+  houseId?: string;
 }) {
   const actions = options.actions ?? new Map<number, StoredAction[]>();
 
@@ -41,6 +43,7 @@ function run(options: {
     weekStartedAt: options.weekStartedAt ?? START,
     lastEvents: options.lastEvents ?? [],
     now: options.now ?? START,
+    houseId: options.houseId ?? 'brigue',
     actionsFor: async (week) => actions.get(week) ?? [],
     maxWeeks: options.maxWeeks,
   });
@@ -82,7 +85,7 @@ describe('catching the world up', () => {
     const second = await run({
       world: first.world,
       weekStartedAt: first.weekStartedAt,
-      lastEvents: first.events,
+      lastEvents: first.recordedEvents,
       now: new Date(START.getTime() + HOUR),
     });
 
@@ -134,8 +137,19 @@ describe('catching the world up', () => {
 
     // Assert
     expect(result.summary.weeksPlayed).toBe(3);
-    expect(result.summary.counts).toEqual(countTypes([...first.events, ...second.events]));
-    expect(result.events).toEqual(third.events);
+    expect(result.summary.counts).toEqual(countTypes(visibleTo([...first.events, ...second.events], 'brigue')));
+    expect(result.events).toEqual(visibleTo(third.events, 'brigue'));
+    expect(result.recordedEvents).toEqual(third.events);
+  });
+
+  it('counts only the events the reading house may see', async () => {
+    // Arrange: every house pays wages every week, but they are private.
+    const result = await run({ now: new Date(START.getTime() + 2 * HOUR) });
+
+    // Assert: one week reduced to counters, and only the reader's wage line.
+    expect(result.summary.counts['house.wages_paid']).toBe(1);
+    expect(result.events.filter((event) => event.type === 'house.wages_paid')).toHaveLength(1);
+    expect(result.events).toContainEqual(expect.objectContaining({ type: 'house.wages_paid', houseId: 'brigue' }));
   });
 
   it('catches a month-long absence up in one call', async () => {
@@ -180,6 +194,7 @@ describe('catching the world up', () => {
       weekStartedAt: START,
       lastEvents: [],
       now: new Date(START.getTime() + HOUR),
+      houseId: 'brigue',
       actionsFor: async () => {
         asked = true;
         return [];

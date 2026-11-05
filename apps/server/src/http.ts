@@ -1,13 +1,15 @@
 import { randomInt } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
-import { createWorld, FORMAT_VERSION, hashJson, PACING, RULES, WorldVersionError } from '@brigue/core';
+import { createWorld, FORMAT_VERSION, hashJson, PACING, RULES, WorldVersionError, type World } from '@brigue/core';
 
 import { parseActionSubmission, withHouse } from './actions.ts';
 import { catchUp, WEEK_MS, type CatchUpResult } from './catch-up.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
+import { withFounder } from './founder.ts';
 import type { Logger } from './logger.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
+import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
 import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
@@ -262,6 +264,10 @@ export function createApp(deps: AppDeps): Server {
       // take the house binding.
       await deps.worlds.createIfAbsent(WORLD_ID, createWorld(randomSeed()), at, at);
       await assertWorldVersion();
+      // A freed place waits for a human: the founder's house may have been
+      // deleted after thirty days of silence, and the binding must point at a
+      // house the world still holds.
+      await ensureFounder(at);
 
       const issued = await issueToken(deps.store, WORLD_ID, FIRST_HOUSE_ID, at);
       deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId: FIRST_HOUSE_ID });
@@ -316,7 +322,19 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const caught = await catchUpTown(player.worldId, at);
+    const outcome = await catchUpTown(player.worldId, player.houseId, at);
+
+    if (outcome.kind === 'gone') {
+      // The visit arrived after the house was silent for a month: the world has
+      // already deleted it and revoked the token. Clear the dead cookie so the
+      // client can take the freed place.
+      deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    const caught = outcome.result;
+    await deps.store.touch(player.tokenHash, at);
 
     if (caught.summary.skippedWeeks > 0) {
       deps.logger.warn('world.catch_up_capped', {
@@ -358,7 +376,18 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    const caught = await advanceTown(player.worldId);
+    const at = new Date(now());
+    const outcome = await advanceTown(player.worldId, player.houseId, at);
+
+    if (outcome.kind === 'gone') {
+      deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    const caught = outcome.result;
+    await deps.store.touch(player.tokenHash, at);
+
     deps.logger.info('world.advanced', {
       worldId: player.worldId,
       houseId: player.houseId,
@@ -398,10 +427,8 @@ export function createApp(deps: AppDeps): Server {
     let outcome: ActionOutcome;
     try {
       outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
+        sessionWorld(session);
         const { world, weekStartedAt } = session.snapshot;
-        if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
-          throw new WorldVersionError(world);
-        }
 
         // The action names a week, not a house: the house is the session's.
         // A week that already ticked can never be replayed, and the town clock
@@ -467,50 +494,104 @@ export function createApp(deps: AppDeps): Server {
     }
   }
 
-  function catchUpTown(worldId: string, at: Date): Promise<CatchUpResult> {
+  function catchUpTown(worldId: string, houseId: string, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(worldId, async (session) => {
-      const caught = await playWeek(session, at);
+      const world = sessionWorld(session);
+      const presence = await synchronisePresence(worldId, world, at);
 
-      if (caught.summary.weeksPlayed > 0 || caught.summary.skippedWeeks > 0) {
-        await session.save(caught.world, caught.weekStartedAt, caught.events, at);
+      if (presence.deletedHouseIds.includes(houseId)) {
+        // The house is gone, but the deletion is a real change to the town and
+        // must be kept even though nothing is caught up for this reader.
+        await session.save(presence.world, session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+        return { kind: 'gone' as const };
       }
 
-      return caught;
+      const caught = await playWeek(session, presence.world, at, houseId);
+      // The absence was simulated dormant; the visit itself wakes the house for
+      // the week that follows.
+      const woke = wake(caught.world, houseId);
+
+      if (caught.summary.weeksPlayed > 0 || caught.summary.skippedWeeks > 0 || presence.changed || woke) {
+        await session.save(caught.world, caught.weekStartedAt, caught.recordedEvents, at);
+      }
+
+      return { kind: 'caught' as const, result: caught };
     });
   }
 
-  function advanceTown(worldId: string): Promise<CatchUpResult> {
+  function advanceTown(worldId: string, houseId: string, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(worldId, async (session) => {
+      const world = sessionWorld(session);
+      const presence = await synchronisePresence(worldId, world, at);
+
+      if (presence.deletedHouseIds.includes(houseId)) {
+        await session.save(presence.world, session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+        return { kind: 'gone' as const };
+      }
+
       // One week further than the town's own clock, whatever the wall clock
       // says: the click is the hour.
       const forced = new Date(session.snapshot.weekStartedAt.getTime() + WEEK_MS);
-      const caught = await playWeek(session, forced);
+      const caught = await playWeek(session, presence.world, forced, houseId);
+      wake(caught.world, houseId);
       // The week was simulated, not lived. Put the next natural tick an hour
       // from the real now, instead of stacking a backlog the test never waits for.
       const savedAt = new Date(now());
-      await session.save(caught.world, savedAt, caught.events, savedAt);
+      await session.save(caught.world, savedAt, caught.recordedEvents, savedAt);
 
-      return { ...caught, weekStartedAt: savedAt };
+      return { kind: 'caught' as const, result: { ...caught, weekStartedAt: savedAt } };
     });
   }
 
-  function playWeek(session: WorldSession, at: Date): Promise<CatchUpResult> {
+  function playWeek(session: WorldSession, world: World, at: Date, houseId: string): Promise<CatchUpResult> {
     return catchUp({
-      world: session.snapshot.world,
+      world,
       weekStartedAt: session.snapshot.weekStartedAt,
       lastEvents: session.snapshot.lastEvents,
       now: at,
+      houseId,
       actionsFor: (week) => session.actionsFor(week),
+    });
+  }
+
+  async function synchronisePresence(worldId: string, world: World, at: Date): Promise<Presence> {
+    const players = await deps.store.listByWorld(worldId);
+    const presence = applyPresence(world, players, at.getTime());
+
+    for (const houseId of presence.deletedHouseIds) {
+      await deps.store.revokeHouse(worldId, houseId, at);
+      deps.logger.warn('world.house_deleted', { worldId, houseId });
+    }
+
+    return presence;
+  }
+
+  function sessionWorld(session: WorldSession): World {
+    // Wake no house and revoke no token before the world is known readable: a
+    // format-1 world must be refused without touching its players.
+    const world = session.snapshot.world;
+    if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
+      throw new WorldVersionError(world);
+    }
+
+    return world;
+  }
+
+  async function ensureFounder(at: Date): Promise<void> {
+    await deps.worlds.withWorld(WORLD_ID, async (session) => {
+      const world = sessionWorld(session);
+
+      if (world.houses[FIRST_HOUSE_ID] !== undefined) {
+        return;
+      }
+
+      await session.save(withFounder(world), session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
     });
   }
 
   async function assertWorldVersion(): Promise<void> {
     await deps.worlds.withWorld(WORLD_ID, async (session) => {
-      const world = session.snapshot.world;
-
-      if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
-        throw new WorldVersionError(world);
-      }
+      sessionWorld(session);
     });
   }
 
@@ -540,11 +621,26 @@ export function createApp(deps: AppDeps): Server {
 
 type BodyRead = { ok: true; body: unknown } | { ok: false };
 
+type TownOutcome = { kind: 'caught'; result: CatchUpResult } | { kind: 'gone' };
+
 type ActionOutcome =
   | { kind: 'stale'; currentWeek: number }
   | { kind: 'future'; currentWeek: number }
   | { kind: 'duplicate' }
   | { kind: 'appended'; stored: StoredAction };
+
+/** The visit wakes a house the absence had made dormant, for the week to come. */
+function wake(world: World, houseId: string): boolean {
+  const house = world.houses[houseId];
+
+  if (house === undefined || !house.dormant) {
+    return false;
+  }
+
+  house.dormant = false;
+
+  return true;
+}
 
 function isReadable(request: IncomingMessage): boolean {
   return request.method === 'GET' || request.method === 'HEAD';

@@ -59,6 +59,8 @@ export function refusalText(reason: RefusalReason): string {
       return 'action inconnue';
     case 'unknown_house':
       return 'maison inconnue';
+    case 'dormant_house':
+      return 'maison dormante';
     case 'unknown_seat':
       return 'charge inconnue';
     case 'invalid_quantity':

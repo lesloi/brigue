@@ -1,6 +1,17 @@
 import { drawBelow } from './prng.ts';
 import type { Action, Event, RefusalReason } from './events.ts';
-import { FORMAT_VERSION, RULES, SEATS, START_YEAR, WEEKS_PER_YEAR, type GoodId, type World } from './world.ts';
+import {
+  FORMAT_VERSION,
+  RULES,
+  seatHolder,
+  SEATS,
+  START_YEAR,
+  takeSeat,
+  WEEKS_PER_YEAR,
+  type GoodId,
+  type Person,
+  type World,
+} from './world.ts';
 
 export interface TickResult {
   world: World;
@@ -49,7 +60,13 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
     // A stored action can be anything: it went through a database and a JSON
     // parser. An unknown one is refused, never skipped, and never thrown.
     if (!isKnownAction(candidate)) {
-      events.push({ type: 'action.refused', action: 'unknown', houseId: 'unknown', reason: 'unknown_action' });
+      events.push({
+        type: 'action.refused',
+        audience: 'town',
+        action: 'unknown',
+        houseId: 'unknown',
+        reason: 'unknown_action',
+      });
       continue;
     }
 
@@ -85,11 +102,16 @@ function isKnownAction(value: unknown): value is Action {
   return type === 'market.buy' || type === 'council.campaign';
 }
 
-function refuse(events: Event[], action: Action, houseId: unknown, reason: RefusalReason): void {
+function refuse(events: Event[], action: Action, houseId: unknown, reason: RefusalReason, knownHouse: boolean): void {
+  const id = typeof houseId === 'string' && houseId.length > 0 ? houseId : 'unknown';
+
   events.push({
     type: 'action.refused',
+    // A house's own refusal is its business; one naming a house the town no
+    // longer holds has no reader but the town.
+    audience: knownHouse ? { houseId: id } : 'town',
     action: action.type,
-    houseId: typeof houseId === 'string' && houseId.length > 0 ? houseId : 'unknown',
+    houseId: id,
     reason,
   });
 }
@@ -97,21 +119,26 @@ function refuse(events: Event[], action: Action, houseId: unknown, reason: Refus
 function applyAction(world: World, action: Action, events: Event[], flow: Record<GoodId, number>): void {
   const house = world.houses[action.houseId];
   if (!house) {
-    refuse(events, action, action.houseId, 'unknown_house');
+    refuse(events, action, action.houseId, 'unknown_house', false);
+    return;
+  }
+
+  if (house.dormant) {
+    refuse(events, action, house.id, 'dormant_house', true);
     return;
   }
 
   switch (action.type) {
     case 'market.buy': {
       if (!Number.isInteger(action.units) || action.units <= 0) {
-        refuse(events, action, house.id, 'invalid_quantity');
+        refuse(events, action, house.id, 'invalid_quantity', true);
         return;
       }
 
       const priceCents = world.market[action.good];
       const totalCents = priceCents * action.units;
       if (house.treasuryCents < totalCents) {
-        refuse(events, action, house.id, 'insufficient_funds');
+        refuse(events, action, house.id, 'insufficient_funds', true);
         return;
       }
 
@@ -120,6 +147,7 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
       flow[action.good] -= action.units;
       events.push({
         type: 'market.bought',
+        audience: 'town',
         houseId: house.id,
         good: action.good,
         units: action.units,
@@ -131,11 +159,11 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
 
     case 'council.campaign': {
       if (!(action.seatId in world.seats)) {
-        refuse(events, action, house.id, 'unknown_seat');
+        refuse(events, action, house.id, 'unknown_seat', true);
         return;
       }
       if (house.favour < RULES.campaignFavourCost) {
-        refuse(events, action, house.id, 'insufficient_favour');
+        refuse(events, action, house.id, 'insufficient_favour', true);
         return;
       }
 
@@ -144,6 +172,7 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
       byHouse[house.id] = (byHouse[house.id] ?? 0) + RULES.campaignVoteBonus;
       events.push({
         type: 'council.campaigned',
+        audience: 'town',
         houseId: house.id,
         seatId: action.seatId,
         favourSpent: RULES.campaignFavourCost,
@@ -210,7 +239,7 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
-    if (house.controller !== 'ai') {
+    if (house.controller !== 'ai' || house.dormant) {
       continue;
     }
 
@@ -241,6 +270,7 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]
       flow[recipe.input] -= units;
       events.push({
         type: 'market.bought',
+        audience: 'town',
         houseId: house.id,
         good: recipe.input,
         units,
@@ -274,7 +304,7 @@ function driftPrices(world: World, events: Event[]): void {
 
     if (after !== before) {
       world.market[good] = after;
-      events.push({ type: 'market.price_changed', good, before, after });
+      events.push({ type: 'market.price_changed', audience: 'town', good, before, after });
     }
   }
 }
@@ -282,6 +312,13 @@ function driftPrices(world: World, events: Event[]): void {
 function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
+
+    // A dormant house runs nothing: the workshop is idle, the stock is still a
+    // target, and its money is untouched. Wages are part of running it.
+    if (house.dormant) {
+      continue;
+    }
+
     let workers = 0;
 
     for (const workshop of house.workshops) {
@@ -295,6 +332,7 @@ function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[
       if (recipe && units < wanted) {
         events.push({
           type: 'workshop.idle',
+          audience: { houseId: house.id },
           houseId: house.id,
           good: workshop.good,
           input: recipe.input,
@@ -319,6 +357,7 @@ function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[
 
       events.push({
         type: 'market.sold',
+        audience: 'town',
         houseId: house.id,
         good: workshop.good,
         units,
@@ -340,12 +379,12 @@ function employeesArePaid(world: World, houseId: string, workers: number, events
     house.treasuryCents -= paid;
 
     if (paid > 0) {
-      events.push({ type: 'house.wages_paid', houseId, amountCents: paid });
+      events.push({ type: 'house.wages_paid', audience: { houseId }, houseId, amountCents: paid });
     }
     if (paid < wages) {
       const shortfallCents = wages - paid;
       house.debtCents += shortfallCents;
-      events.push({ type: 'house.penniless', houseId, shortfallCents });
+      events.push({ type: 'house.penniless', audience: { houseId }, houseId, shortfallCents });
     }
   }
 
@@ -353,32 +392,80 @@ function employeesArePaid(world: World, houseId: string, workers: number, events
     const repaid = Math.min(house.treasuryCents, house.debtCents);
     house.treasuryCents -= repaid;
     house.debtCents -= repaid;
-    events.push({ type: 'house.debt_repaid', houseId, amountCents: repaid });
+    events.push({ type: 'house.debt_repaid', audience: { houseId }, houseId, amountCents: repaid });
   }
 }
 
 function holdElection(world: World, events: Event[]): void {
   const round = world.week / RULES.electionPeriodWeeks;
   const seatId = SEATS[(round - 1) % SEATS.length];
-  const bonuses = world.campaigns[seatId] ?? {};
+  const campaigns = world.campaigns[seatId] ?? {};
+  const incumbent = seatHolder(world, seatId);
+  const incumbentHouseId = incumbent?.houseId;
+  const incumbentDormant = incumbentHouseId !== undefined && world.houses[incumbentHouseId]?.dormant === true;
+  const contested = Object.keys(campaigns).some((houseId) => {
+    const house = world.houses[houseId];
+
+    return house !== undefined && !house.dormant && house.id !== incumbentHouseId;
+  });
+
+  // A dormant house keeps its seat while nobody contests it. The placeholder
+  // election has no separate candidacy; #55 gives the holder its default
+  // candidacy and turns a challenger into a normal contest. Its own campaign
+  // stays where it is: it was paid for, and a later contested election or #55
+  // consumes it.
+  if (incumbentDormant && !contested) {
+    return;
+  }
+
+  // A dormant house neither votes nor stands. Its seat is only cleared by an
+  // election, never by dormancy itself.
+  const candidates = Object.keys(world.houses)
+    .filter((houseId) => world.houses[houseId].dormant !== true)
+    .filter((houseId) => livingPersonOf(world, houseId) !== undefined)
+    .sort();
+
+  if (candidates.length === 0) {
+    world.seats[seatId] = { personId: null };
+    delete world.campaigns[seatId];
+    return;
+  }
 
   const votes: Record<string, number> = {};
-  for (const houseId of Object.keys(world.houses).sort()) {
+  for (const houseId of candidates) {
     const [rng, roll] = drawBelow(world.rng, 5);
     world.rng = rng;
-    votes[houseId] = roll + 1 + (bonuses[houseId] ?? 0);
+    votes[houseId] = roll + 1 + (campaigns[houseId] ?? 0);
   }
 
   // Highest vote wins; a tie goes to the house that comes first by id, so the
   // result never depends on the order of the object.
-  const winnerHouseId = Object.keys(votes)
-    .sort()
-    .reduce((best, houseId) => (votes[houseId] > votes[best] ? houseId : best));
+  const winnerHouseId = candidates.reduce((best, houseId) => (votes[houseId] > votes[best] ? houseId : best));
+  const winner = livingPersonOf(world, winnerHouseId);
 
-  world.seats[seatId] = { houseId: winnerHouseId };
+  if (winner !== undefined) {
+    // One office per person: to climb, the winner gives up the seat held.
+    for (const seat of Object.values(world.seats)) {
+      if (seat.personId === winner.id) {
+        seat.personId = null;
+      }
+    }
+
+    const assignment = takeSeat(world, winnerHouseId, winner.id);
+    if (assignment.ok) {
+      world.seats[seatId] = assignment.seat;
+    }
+  }
   delete world.campaigns[seatId];
 
-  events.push({ type: 'council.election_held', seatId, winnerHouseId, votes });
+  events.push({ type: 'council.election_held', audience: 'town', seatId, winnerHouseId, votes });
+}
+
+/** The first living person of a house by id, so a choice never depends on object order. */
+function livingPersonOf(world: World, houseId: string): Person | undefined {
+  return Object.values(world.people)
+    .filter((person) => person.houseId === houseId && person.alive)
+    .sort((left, right) => left.id.localeCompare(right.id))[0];
 }
 
 function clamp(value: number, min: number, max: number): number {

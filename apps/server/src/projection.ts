@@ -1,4 +1,13 @@
-import { PACING, type GoodId, type House, type Law, type SeatId, type Workshop, type World } from '@brigue/core';
+import {
+  PACING,
+  type GoodId,
+  type House,
+  type Law,
+  type Seat,
+  type SeatId,
+  type Workshop,
+  type World,
+} from '@brigue/core';
 
 export interface OwnHouseView {
   id: string;
@@ -7,6 +16,8 @@ export interface OwnHouseView {
   debtCents: number;
   favour: number;
   prestige: number;
+  career: number;
+  dormant: boolean;
   workshops: Workshop[];
   stock: Partial<Record<GoodId, number>>;
 }
@@ -16,6 +27,14 @@ export interface PublicHouseView {
   id: string;
   name: string;
   prestige: number;
+  dormant: boolean;
+}
+
+/** A person the client may name when a seat points at them. No attributes, no age. */
+export interface PublicPersonView {
+  id: string;
+  houseId: string;
+  name: string;
 }
 
 export interface WorldProjection {
@@ -24,7 +43,8 @@ export interface WorldProjection {
   house: OwnHouseView;
   town: {
     houses: PublicHouseView[];
-    seats: Record<SeatId, { houseId: string | null }>;
+    people: PublicPersonView[];
+    seats: Record<SeatId, Seat>;
     laws: Law[];
     market: Record<GoodId, number>;
   };
@@ -51,7 +71,15 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
     house: ownHouse(house),
     town: {
       houses: Object.values(world.houses)
-        .map((candidate) => ({ id: candidate.id, name: candidate.name, prestige: candidate.prestige }))
+        .map((candidate) => ({
+          id: candidate.id,
+          name: candidate.name,
+          prestige: candidate.prestige,
+          dormant: candidate.dormant,
+        }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      people: Object.values(world.people)
+        .map((person) => ({ id: person.id, houseId: person.houseId, name: person.name }))
         .sort((left, right) => left.id.localeCompare(right.id)),
       seats: structuredClone(world.seats),
       laws: structuredClone(world.laws),
@@ -69,6 +97,8 @@ function ownHouse(house: House): OwnHouseView {
     debtCents: house.debtCents,
     favour: house.favour,
     prestige: house.prestige,
+    career: house.career,
+    dormant: house.dormant,
     workshops: structuredClone(house.workshops),
     stock: structuredClone(house.stock),
   };

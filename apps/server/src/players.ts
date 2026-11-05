@@ -4,6 +4,8 @@ export interface Player {
   worldId: string;
   houseId: string;
   createdAt: Date;
+  /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
+  lastSeenAt: Date;
   revokedAt: Date | null;
 }
 
@@ -18,6 +20,12 @@ export interface PlayerStore {
   insert(player: Player): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<Player | null>;
   revoke(tokenHash: string, at: Date): Promise<void>;
+  /** Records a visit without reopening a revoked session. */
+  touch(tokenHash: string, at: Date): Promise<void>;
+  /** Every row of a world, live or revoked, so presence can see the last visit. */
+  listByWorld(worldId: string): Promise<Player[]>;
+  /** Revokes every live token of a house, for the thirty-day deletion. */
+  revokeHouse(worldId: string, houseId: string, at: Date): Promise<void>;
 }
 
 /**
@@ -51,7 +59,26 @@ export class MemoryPlayerStore implements PlayerStore {
   async revoke(tokenHash: string, at: Date): Promise<void> {
     const player = this.players.get(tokenHash);
     if (player && player.revokedAt === null) {
-      this.players.set(tokenHash, { ...player, revokedAt: at });
+      this.players.set(tokenHash, { ...player, revokedAt: at, lastSeenAt: at });
+    }
+  }
+
+  async touch(tokenHash: string, at: Date): Promise<void> {
+    const player = this.players.get(tokenHash);
+    if (player && player.revokedAt === null) {
+      this.players.set(tokenHash, { ...player, lastSeenAt: at });
+    }
+  }
+
+  async listByWorld(worldId: string): Promise<Player[]> {
+    return [...this.players.values()].filter((player) => player.worldId === worldId).map((player) => ({ ...player }));
+  }
+
+  async revokeHouse(worldId: string, houseId: string, at: Date): Promise<void> {
+    for (const [tokenHash, player] of this.players) {
+      if (player.worldId === worldId && player.houseId === houseId && player.revokedAt === null) {
+        this.players.set(tokenHash, { ...player, revokedAt: at });
+      }
     }
   }
 }
