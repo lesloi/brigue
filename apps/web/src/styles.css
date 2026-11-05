@@ -426,6 +426,27 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+/* The quantity is typed as often as it is stepped: a numeric keypad, no
+   spinners, and the field sized for three digits. */
+.qty-field {
+  width: 46px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  padding: 4px 0;
+  border-radius: 999px;
+}
+
+.qty-field:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .max {
   border: 1px solid var(--line);
   border-radius: 999px;

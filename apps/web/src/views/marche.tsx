@@ -204,9 +204,28 @@ interface TradePanelProps {
 function TradePanel({ good, priceCents, buyMax, sellMax, busy, onTrade }: TradePanelProps) {
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
   const [quantity, setQuantity] = useState(() => Math.min(10, buyMax));
+  // What the field shows while it has the focus: typing "1" then "0" must not be
+  // rewritten under the cursor, and an empty field is not a zero yet.
+  const [draft, setDraft] = useState<string | null>(null);
   const max = mode === 'buy' ? buyMax : sellMax;
   const units = Math.min(quantity, max);
-  const setUnits = (next: number) => setQuantity(Math.max(0, Math.min(max, next)));
+  const setUnits = (next: number) => {
+    setDraft(null);
+    setQuantity(Math.max(0, Math.min(max, next)));
+  };
+  const typeUnits = (raw: string) => {
+    const digits = raw.replace(/\D/g, '');
+    if (digits === '') {
+      setDraft('');
+      setQuantity(0);
+
+      return;
+    }
+    const next = Math.min(max, Number(digits));
+    setDraft(String(next));
+    setQuantity(next);
+  };
+  const field = `quantity-${good}`;
   const switchMode = (next: 'buy' | 'sell') => {
     const nextMax = next === 'buy' ? buyMax : sellMax;
     // Opening on an empty side (no room to buy, stock to sell) should not make
@@ -214,6 +233,7 @@ function TradePanel({ good, priceCents, buyMax, sellMax, busy, onTrade }: TradeP
     if (Math.min(quantity, nextMax) === 0 && nextMax > 0) {
       setQuantity(Math.min(10, nextMax));
     }
+    setDraft(null);
     setMode(next);
   };
 
@@ -238,12 +258,30 @@ function TradePanel({ good, priceCents, buyMax, sellMax, busy, onTrade }: TradeP
         </button>
       </div>
       <div class="qtyline">
-        <span class="qty-label">Quantité</span>
+        <label class="qty-label" for={field}>
+          Quantité
+        </label>
         <div class="stepper">
           <button type="button" disabled={units <= 0} onClick={() => setUnits(units - 1)}>
             −
           </button>
-          <span>{units}</span>
+          <input
+            id={field}
+            class="qty-field"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autocomplete="off"
+            aria-label="Quantité"
+            value={draft ?? String(units)}
+            onInput={(event) => typeUnits(event.currentTarget.value)}
+            onBlur={() => setDraft(null)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.currentTarget.blur();
+              }
+            }}
+          />
           <button type="button" disabled={units >= max} onClick={() => setUnits(units + 1)}>
             +
           </button>
