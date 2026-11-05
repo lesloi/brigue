@@ -379,15 +379,18 @@ function WorkshopRow({
         <WorkshopThumb good={workshop.good} />
       </div>
       <div class="nm">
-        <b>{workshopName(workshop.good)}</b>
+        <b>
+          {workshopName(workshop.good)}
+          <span class="lv">niv. {workshop.level}</span>
+        </b>
         {inputName === null ? null : (
           <p>
             {inputName} → {goodName(workshop.good)}
           </p>
         )}
-        {/* The chain line already names the trade; the two numbers below are the
-            week in units, the only ones a player acts on. Level and workers are
-            their causes, and the wages are written in the ledger each week. */}
+        {/* The chain line names the trade, the badge its level; the numbers below
+            are the week in units, the ones a player acts on. Workers only set the
+            wages, which the ledger writes every week. */}
         <p>
           {goodQuantity(workshop.outputUnitsPerWeek, workshop.good)}/semaine
           {input !== null ? ` · ${goodQuantity(workshop.inputUnitsPerWeek, input)}` : ''}
