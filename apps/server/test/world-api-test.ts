@@ -6,6 +6,7 @@ import { createWorld, FORMAT_VERSION, hashJson, RULES, stateHash, type World } f
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
 import { createLogger } from '../src/logger.ts';
+import { playDue } from '../src/scheduler.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
 import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
@@ -17,6 +18,8 @@ const ID_B = '00000000-0000-4000-8000-00000000000b';
 
 interface Harness {
   url: string;
+  /** Moves the clock and plays the hours the scheduler would, as the loop does. */
+  advance(ms: number): Promise<void>;
   store: MemoryPlayerStore;
   worlds: MemoryWorldStore;
   logs: string[];
@@ -88,6 +91,15 @@ async function start(
 
   return {
     url: `http://127.0.0.1:${address.port}`,
+    advance: async (ms: number) => {
+      clock.now += ms;
+      await worlds.withWorld(async (session) => {
+        const due = await playDue(session, session.snapshot, new Date(clock.now));
+        if (due.hours > 0) {
+          await session.save(due.world, due.hourStartedAt, due.events);
+        }
+      });
+    },
     store,
     worlds,
     logs,
@@ -179,7 +191,7 @@ describe('GET /api/world', () => {
   it('catches a month up in one request and summarises the rest', async () => {
     // Arrange
     const harness = await start();
-    harness.clock.now += 30 * 24 * HOUR;
+    await harness.advance(30 * 24 * HOUR);
 
     // Act
     const body = await worldBody(harness);
@@ -195,7 +207,7 @@ describe('GET /api/world', () => {
   it('keeps the last hour on the following read that has nothing to play', async () => {
     // Arrange
     const harness = await start();
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const first = await worldBody(harness);
 
     // Act
@@ -213,7 +225,7 @@ describe('GET /api/world', () => {
     const world = { ...createWorld(7), rulesetVersion: RULES.version + 1 };
     const harness = await start({ world });
     const before = stateHash(world);
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
 
     // Act
     const response = await getWorld(harness);
@@ -236,7 +248,7 @@ describe('GET /api/world', () => {
     const world = { ...createWorld(7), formatVersion: 1 };
     const harness = await start({ world });
     const before = stateHash(world);
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
 
     // Act
     const response = await getWorld(harness);
@@ -278,7 +290,7 @@ describe('GET /api/world', () => {
     const world = createWorld(20261031);
     world.houses.caron.controller = 'human';
     const harness = await start({ world, houses: ['brigue', 'caron'] });
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
 
     // Act
     const brigue = await worldBodyAs(harness, 'brigue');
@@ -319,7 +331,7 @@ describe('GET /api/world', () => {
 
     // Act
     const first = await worldBody(harness);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const next = await worldBody(harness);
 
     // Assert
@@ -347,7 +359,7 @@ describe('POST /api/actions', () => {
 
     // Act
     const response = await postAction(harness, buyWool(ID_A, 1, 2));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
@@ -370,7 +382,7 @@ describe('POST /api/actions', () => {
 
     // Act
     const response = await postAction(harness, sellWool(ID_A, 1, 2));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert: two of the eight wool are sold, four are woven, two remain.
@@ -389,7 +401,7 @@ describe('POST /api/actions', () => {
     // Act
     const first = await postAction(harness, submitted);
     const replay = await postAction(harness, submitted);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
@@ -404,7 +416,7 @@ describe('POST /api/actions', () => {
     const harness = await start();
     const submitted = buyWool(ID_A, 1, 2);
     await postAction(harness, submitted);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const applied = await worldBody(harness);
 
     // Act
@@ -423,7 +435,7 @@ describe('POST /api/actions', () => {
   it('refuses a hour that has already been played', async () => {
     // Arrange
     const harness = await start();
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
     await worldBody(harness);
 
     // Act
@@ -449,7 +461,7 @@ describe('POST /api/actions', () => {
   it('refuses a hour the catch-up cap will not reach', async () => {
     // Arrange: a world well over a month behind, so catch-up will skip.
     const harness = await start();
-    harness.clock.now += 1000 * HOUR;
+    await harness.advance(1000 * HOUR);
 
     // Act: a GET would land on hour 745, not hour 1001.
     const response = await postAction(harness, buyWool(ID_A, 1000, 1));
@@ -465,7 +477,7 @@ describe('POST /api/actions', () => {
 
     // Act
     const response = await postAction(harness, buyWool(ID_A, 2, 3));
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
     const body = await worldBody(harness);
 
     // Assert
@@ -482,7 +494,7 @@ describe('POST /api/actions', () => {
 
     // Act
     const response = await postAction(harness, buyWool(ID_A, 1, 1, { houseId: 'caron' }));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
@@ -541,7 +553,7 @@ describe('the queued actions', () => {
     // Act
     const listed = await getPending(harness);
     const cancelled = await cancelPending(harness, ID_A);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
@@ -583,7 +595,7 @@ describe('the queued actions', () => {
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
     await cancelPending(harness, ID_A);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const warmed = await worldBody(harness);
 
     // Act
@@ -598,7 +610,7 @@ describe('the queued actions', () => {
     // Arrange
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const applied = await worldBody(harness);
 
     // Act
@@ -635,7 +647,7 @@ describe('the queued actions', () => {
 
     // Act
     await cancelPending(harness, ID_A);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert: no favour was spent and no campaign was queued.
