@@ -1,8 +1,8 @@
 import { GOODS, type GoodId } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
-import type { TradeIntent, WorldResponse } from '../api.ts';
-import { formatCents, formatCount, goodName } from '../format.ts';
+import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
+import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
 import { Seal, WorkshopThumb } from '../icons.tsx';
 
 const QUANTITIES = [1, 5, 10, 25] as const;
@@ -10,14 +10,17 @@ const QUANTITIES = [1, 5, 10, 25] as const;
 interface MarcheProps {
   data: WorldResponse;
   trading: TradeIntent | null;
+  pending: PendingActionView[];
+  cancelling: string | null;
   onTrade(kind: 'buy' | 'sell', good: GoodId, units: number): void;
+  onCancel(id: string): void;
 }
 
 /**
- * The Marché screen: six prices, the house's stock, and the two market
- * gestures — buy the chosen quantity, or sell the whole stock of a good.
+ * The Marché screen: the queued actions, six prices, the house's stock, and
+ * the two market gestures — buy or sell the chosen quantity.
  */
-export function Marche({ data, trading, onTrade }: MarcheProps) {
+export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }: MarcheProps) {
   const { world } = data;
   const house = world.house;
   // Per visit: switching tabs resets it to ten, the short-visit default.
@@ -50,29 +53,75 @@ export function Marche({ data, trading, onTrade }: MarcheProps) {
       </section>
 
       <div class="body">
+        {pending.length > 0 ? (
+          <section class="sec" aria-labelledby="pending-title">
+            <div class="h">
+              <b id="pending-title">En attente</b>
+              <span>
+                {pending.length} action{pending.length > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div class="card">
+              {pending.map((action) => (
+                <div class="wait" key={action.id}>
+                  <div class="nm">
+                    <b>{pendingActionText(action)}</b>
+                    <p>semaine {action.week}</p>
+                  </div>
+                  <button
+                    class="btn outline"
+                    type="button"
+                    disabled={cancelling === action.id}
+                    onClick={() => onCancel(action.id)}
+                  >
+                    Annuler
+                  </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <section class="sec" aria-labelledby="market-title">
           <div class="h">
             <b id="market-title">Les six denrées</b>
             <span>prix de la semaine</span>
           </div>
           <div class="mquantity">
-            <span>Quantité d'achat</span>
-            <div class="segmented" role="group" aria-label="Quantité d'achat">
-              {QUANTITIES.map((value) => (
-                <button
-                  type="button"
-                  class={value === quantity ? 'on' : ''}
-                  aria-pressed={value === quantity}
-                  onClick={() => setQuantity(value)}
-                >
-                  {value}
-                </button>
-              ))}
+            <span>Quantité</span>
+            <div class="quantity-controls">
+              <input
+                class="qty-input"
+                type="number"
+                min="1"
+                step="1"
+                value={quantity}
+                aria-label="Quantité"
+                onInput={(event) => {
+                  const value = Number(event.currentTarget.value);
+                  if (Number.isInteger(value) && value > 0) {
+                    setQuantity(value);
+                  }
+                }}
+              />
+              <div class="segmented" role="group" aria-label="Quantités rapides">
+                {QUANTITIES.map((value) => (
+                  <button
+                    type="button"
+                    class={value === quantity ? 'on' : ''}
+                    aria-pressed={value === quantity}
+                    onClick={() => setQuantity(value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div class="card">
             {GOODS.map((good) => {
               const units = house.stock[good] ?? 0;
+              const sellUnits = Math.min(quantity, units);
 
               return (
                 <div class="row" key={good}>
@@ -103,9 +152,9 @@ export function Marche({ data, trading, onTrade }: MarcheProps) {
                       class="btn"
                       type="button"
                       disabled={trading !== null || units === 0}
-                      onClick={() => onTrade('sell', good, units)}
+                      onClick={() => onTrade('sell', good, sellUnits)}
                     >
-                      Tout vendre
+                      Vendre {sellUnits}
                     </button>
                   </div>
                 </div>

@@ -342,14 +342,19 @@ export function App() {
               now={now}
               advancing={advancing}
               pending={pending}
-              cancelling={cancelling}
-              onCancel={(id) => void cancel(id)}
               onRefresh={() => void refresh()}
               onGoMarket={() => selectTab('marche')}
               onAdvance={() => void advanceOneWeek()}
             />
           ) : (
-            <Marche data={view.data} trading={trading} onTrade={(kind, good, units) => void trade(kind, good, units)} />
+            <Marche
+              data={view.data}
+              trading={trading}
+              pending={pending}
+              cancelling={cancelling}
+              onTrade={(kind, good, units) => void trade(kind, good, units)}
+              onCancel={(id) => void cancel(id)}
+            />
           )}
           <div class="fade" aria-hidden="true"></div>
           <Nav tab={tab} onSelect={selectTab} />

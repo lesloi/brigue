@@ -344,6 +344,25 @@ button:disabled {
   font-weight: 700;
 }
 
+.quantity-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.qty-input {
+  width: 54px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surf);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 5px 6px;
+}
+
 .segmented {
   display: inline-flex;
   gap: 2px;
