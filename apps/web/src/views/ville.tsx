@@ -366,12 +366,15 @@ function WorkshopRow({
   onGoMarket(): void;
 }) {
   const input = workshop.input;
-  const inputName = input === null ? null : goodName(input);
   const held = input === null ? 0 : (stock[input] ?? 0);
   const effectiveHeld = Math.max(0, held + pendingInput);
   const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerWeek - effectiveHeld);
   const pendingBuy = input !== null && pendingInput > 0 ? pendingInput : 0;
   const pendingSell = input !== null && pendingInput < 0 ? -pendingInput : 0;
+  // What the warehouse already covers: the workshop eats its input at one rate
+  // a week, so every week of input is one week of production, no more.
+  const reserveWeeks =
+    input === null || workshop.inputUnitsPerWeek <= 0 ? null : Math.floor(effectiveHeld / workshop.inputUnitsPerWeek);
 
   return (
     <div class="row">
@@ -383,18 +386,22 @@ function WorkshopRow({
           {workshopName(workshop.good)}
           <span class="lv">niv. {workshop.level}</span>
         </b>
-        {inputName === null ? null : (
-          <p>
-            {inputName} → {goodName(workshop.good)}
-          </p>
-        )}
-        {/* The chain line names the trade, the badge its level; the numbers below
-            are the week in units, the ones a player acts on. Workers only set the
-            wages, which the ledger writes every week. */}
+        {/* The chain and its weekly rate in one line: what it eats, what it
+            makes, and how fast. The badge above carries the level, and the
+            workers only ever set the wages, which the ledger writes. */}
         <p>
-          {goodQuantity(workshop.outputUnitsPerWeek, workshop.good)}/semaine
-          {input !== null ? ` · ${goodQuantity(workshop.inputUnitsPerWeek, input)}` : ''}
+          {input === null
+            ? `${goodQuantity(workshop.outputUnitsPerWeek, workshop.good)} par semaine`
+            : `${goodQuantity(workshop.inputUnitsPerWeek, input)} → ${goodQuantity(
+                workshop.outputUnitsPerWeek,
+                workshop.good,
+              )} par semaine`}
         </p>
+        {reserveWeeks !== null && reserveWeeks > 0 ? (
+          <p>
+            réserve : {reserveWeeks} semaine{reserveWeeks > 1 ? 's' : ''}
+          </p>
+        ) : null}
         {missing > 0 && input !== null ? (
           <p class="warn">
             {pendingBuy > 0 ? 'Il manque toujours ' : 'Il manque '}
