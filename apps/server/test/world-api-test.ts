@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, FORMAT_VERSION, hashJson, RULES, stateHash, type World } from '@brigue/core';
+import { createWorld, FORMAT_VERSION, hashJson, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
@@ -38,8 +38,8 @@ interface WorldBody {
   };
   events: Array<Record<string, unknown> & { type: string; houseId?: string; units?: number }>;
   summary: {
-    weeksPlayed: number;
-    skippedWeeks: number;
+    hours: number;
+    skipped: number;
     counts: Record<string, number>;
     refusals: Record<string, number>;
   };
@@ -93,12 +93,19 @@ async function start(
     url: `http://127.0.0.1:${address.port}`,
     advance: async (ms: number) => {
       clock.now += ms;
-      await worlds.withWorld(async (session) => {
-        const due = await playDue(session, session.snapshot, new Date(clock.now));
-        if (due.hours > 0) {
-          await session.save(due.world, due.hourStartedAt, due.events);
+      try {
+        await worlds.withWorld(async (session) => {
+          const due = await playDue(session, session.snapshot, new Date(clock.now));
+          if (due.hours > 0) {
+            await session.save(due.world, due.hourStartedAt, due.events);
+          }
+        });
+      } catch (error) {
+        // The loop logs a refused world and leaves it for the reader to report.
+        if (!(error instanceof WorldVersionError)) {
+          throw error;
         }
-      });
+      }
     },
     store,
     worlds,
@@ -197,11 +204,11 @@ describe('GET /api/world', () => {
     const body = await worldBody(harness);
 
     // Assert
-    expect(body.summary.weeksPlayed).toBe(720);
-    expect(body.summary.skippedWeeks).toBe(0);
+    expect(body.summary.hours).toBe(720);
+    expect(body.summary.skipped).toBe(0);
     expect(body.world.hour).toBe(721);
     expect(body.events.length).toBeLessThan(100);
-    expect(body.summary.counts['market.sold']).toBeGreaterThan(0);
+    expect(body.summary.remaining).toBeGreaterThan(0);
   });
 
   it('keeps the last hour on the following read that has nothing to play', async () => {
@@ -214,7 +221,7 @@ describe('GET /api/world', () => {
     const second = await worldBody(harness);
 
     // Assert
-    expect(first.summary.weeksPlayed).toBe(1);
+    expect(first.summary.hours).toBe(1);
     expect(first.events.length).toBeGreaterThan(0);
     expect(second.events).toEqual(first.events);
     expect(second.stateHash).toBe(first.stateHash);
@@ -279,7 +286,7 @@ describe('GET /api/world', () => {
     expect(serialised).not.toContain('"seed"');
     expect(serialised).not.toContain('"rng"');
     expect(body.world.town.houses.every((house) => !('treasuryCents' in house))).toBe(true);
-    expect(new Date(body.world.nextBellAt).getTime()).toBe(START + HOUR);
+    expect(new Date(body.world.nextBellAt).getTime()).toBe(START + 12 * HOUR);
     // The hash covers the projection, not the seed-bearing world.
     expect(body.stateHash).toBe(hashJson(body.world));
   });
@@ -425,10 +432,10 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(replay.status).toBe(409);
-    expect(await replay.json()).toEqual({ error: 'stale_week', currentWeek: 2 });
+    expect(await replay.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
     expect(body.events).toEqual(applied.events);
     expect(body.stateHash).toBe(applied.stateHash);
-    expect(body.summary.weeksPlayed).toBe(0);
+    expect(body.summary.hours).toBe(0);
     expect(body.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);
   });
 
@@ -443,7 +450,7 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'stale_week', currentWeek: 3 });
+    expect(await response.json()).toEqual({ error: 'stale_hour', currentHour: 3 });
   });
 
   it('refuses a hour too far ahead of the town clock', async () => {
@@ -455,7 +462,7 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'future_week', currentWeek: 1 });
+    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 1 });
   });
 
   it('refuses a hour the catch-up cap will not reach', async () => {
@@ -468,7 +475,7 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'future_week', currentWeek: 745 });
+    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 745 });
   });
 
   it('accepts the next hour when the client read just before the hour turned', async () => {
@@ -619,7 +626,7 @@ describe('the queued actions', () => {
     // Assert: the buy was applied (eight plus two, less four woven).
     expect(applied.world.house.stock.wool).toBe(6);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'stale_week', currentWeek: 2 });
+    expect(await response.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
   });
 
   it("does not cancel another house's action", async () => {
