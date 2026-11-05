@@ -1,6 +1,10 @@
-import type { GoodId } from '@brigue/core';
+import { TRADE_CHAINS, TRADES, type GoodId } from '@brigue/core/world';
 
 import type { PendingActionView } from './api.ts';
+
+/** The three inputs first, then the three finished goods, in chain order. */
+export const RAW_GOODS: readonly GoodId[] = TRADES.map((trade) => TRADE_CHAINS[trade].input);
+export const FINISHED_GOODS: readonly GoodId[] = TRADES.map((trade) => TRADE_CHAINS[trade].output);
 
 /** The net signed units queued for a good; campaign actions never count. */
 export function netPendingFor(good: GoodId, pending: readonly PendingActionView[]): number {

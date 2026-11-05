@@ -328,6 +328,10 @@ button:disabled {
   font-weight: 600;
 }
 
+.market-group + .market-group {
+  margin-top: 16px;
+}
+
 .market-row {
   width: 100%;
   text-align: left;

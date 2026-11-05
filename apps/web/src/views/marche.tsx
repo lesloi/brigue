@@ -1,9 +1,9 @@
-import { GOODS, type GoodId } from '@brigue/core/world';
+import type { GoodId } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
 import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
-import { buyMax, netPendingFor, pendingCashCents, pendingUnits, sellMax } from '../trade.ts';
+import { buyMax, FINISHED_GOODS, netPendingFor, pendingCashCents, pendingUnits, RAW_GOODS, sellMax } from '../trade.ts';
 import { Seal, WorkshopThumb } from '../icons.tsx';
 
 interface MarcheProps {
@@ -29,6 +29,73 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
   const currentPending = pending.filter((action) => action.week === world.week);
   const queuedCashCents = pendingCashCents(currentPending, world.town.market);
   const queuedUnits = pendingUnits(currentPending);
+
+  const renderGood = (good: GoodId) => {
+    const priceCents = world.town.market[good];
+    const stock = house.stock[good] ?? 0;
+    // The Max accounts for the queued trades: a sell can use what a pending
+    // buy will bring, a buy cannot spend the same coin twice.
+    const buyLimit = buyMax({
+      treasuryCents: house.treasuryCents,
+      pendingCashCents: queuedCashCents,
+      stockUnits: house.stockUnits,
+      pendingUnits: queuedUnits,
+      capacityUnits: house.stockCapacityUnits,
+      priceCents,
+    });
+    const sellLimit = sellMax(stock, netPendingFor(good, currentPending));
+    const isOpen = open === good;
+
+    return (
+      <div key={good}>
+        <div
+          class="row market-row"
+          role="button"
+          tabIndex={0}
+          aria-expanded={isOpen}
+          aria-controls={`market-${good}`}
+          onClick={() => setOpen(isOpen ? null : good)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              setOpen(isOpen ? null : good);
+            }
+          }}
+        >
+          <div class="th">
+            <WorkshopThumb good={good} />
+          </div>
+          <div class="nm">
+            <b>{goodName(good)}</b>
+            <p>{formatCents(priceCents)} écus l'unité</p>
+            <PriceSparkline
+              values={world.town.marketHistory[good] ?? []}
+              referenceCents={world.town.marketReferences[good]}
+            />
+          </div>
+          <div class="act">
+            <span class="price">
+              <b>{formatCount(stock)}</b> en stock
+            </span>
+            <span class={isOpen ? 'chev on' : 'chev'} aria-hidden="true">
+              ›
+            </span>
+          </div>
+        </div>
+        {isOpen ? (
+          <TradePanel
+            key={good}
+            good={good}
+            priceCents={priceCents}
+            buyMax={buyLimit}
+            sellMax={sellLimit}
+            busy={trading !== null}
+            onTrade={(kind, units) => onTrade(kind, good, units)}
+          />
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <main class="screen">
@@ -86,78 +153,20 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
           </section>
         ) : null}
 
-        <section class="sec" aria-labelledby="market-title">
-          <div class="h">
-            <b id="market-title">Les six denrées</b>
-            <span>touche une denrée</span>
+        <section class="sec" aria-label="Les denrées">
+          <div class="market-group">
+            <div class="h">
+              <b>Matières premières</b>
+              <span>achats des ateliers</span>
+            </div>
+            <div class="card">{RAW_GOODS.map(renderGood)}</div>
           </div>
-          <div class="card">
-            {GOODS.map((good) => {
-              const priceCents = world.town.market[good];
-              const stock = house.stock[good] ?? 0;
-              // The Max accounts for the queued trades: a sell can use what a
-              // pending buy will bring, a buy cannot spend the same coin twice.
-              const buyLimit = buyMax({
-                treasuryCents: house.treasuryCents,
-                pendingCashCents: queuedCashCents,
-                stockUnits: house.stockUnits,
-                pendingUnits: queuedUnits,
-                capacityUnits: house.stockCapacityUnits,
-                priceCents,
-              });
-              const sellLimit = sellMax(stock, netPendingFor(good, currentPending));
-              const isOpen = open === good;
-
-              return (
-                <div key={good}>
-                  <div
-                    class="row market-row"
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isOpen}
-                    aria-controls={`market-${good}`}
-                    onClick={() => setOpen(isOpen ? null : good)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        setOpen(isOpen ? null : good);
-                      }
-                    }}
-                  >
-                    <div class="th">
-                      <WorkshopThumb good={good} />
-                    </div>
-                    <div class="nm">
-                      <b>{goodName(good)}</b>
-                      <p>{formatCents(priceCents)} écus l'unité</p>
-                      <PriceSparkline
-                        values={world.town.marketHistory[good] ?? []}
-                        referenceCents={world.town.marketReferences[good]}
-                      />
-                    </div>
-                    <div class="act">
-                      <span class="price">
-                        <b>{formatCount(stock)}</b> en stock
-                      </span>
-                      <span class={isOpen ? 'chev on' : 'chev'} aria-hidden="true">
-                        ›
-                      </span>
-                    </div>
-                  </div>
-                  {isOpen ? (
-                    <TradePanel
-                      key={good}
-                      good={good}
-                      priceCents={priceCents}
-                      buyMax={buyLimit}
-                      sellMax={sellLimit}
-                      busy={trading !== null}
-                      onTrade={(kind, units) => onTrade(kind, good, units)}
-                    />
-                  ) : null}
-                </div>
-              );
-            })}
+          <div class="market-group">
+            <div class="h">
+              <b>Produits finis</b>
+              <span>demande de la ville</span>
+            </div>
+            <div class="card">{FINISHED_GOODS.map(renderGood)}</div>
           </div>
           <p class="note">
             Le marché achète et vend au prix de la semaine. La courbe suit les dernières semaines ; le trait doré est le

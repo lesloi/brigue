@@ -1,9 +1,18 @@
 import type { Event } from '@brigue/core';
+import { GOODS } from '@brigue/core/world';
 import { describe, expect, it } from 'vitest';
 
 import type { PendingActionView } from '../src/api.ts';
 import { eventLine, ledgerEvents } from '../src/events.ts';
-import { buyMax, netPendingFor, pendingCashCents, pendingUnits, sellMax } from '../src/trade.ts';
+import {
+  buyMax,
+  FINISHED_GOODS,
+  netPendingFor,
+  pendingCashCents,
+  pendingUnits,
+  RAW_GOODS,
+  sellMax,
+} from '../src/trade.ts';
 import {
   actionErrorText,
   goodName,
@@ -335,5 +344,12 @@ describe('pending actions', () => {
     expect(sellMax(8, -3)).toBe(5);
     expect(sellMax(0, 5)).toBe(5);
     expect(sellMax(2, -5)).toBe(0);
+  });
+
+  it('splits every good into one raw or one finished block', () => {
+    // Assert: the two Marché blocks cover the whole catalogue exactly once.
+    expect(RAW_GOODS).toEqual(['wool', 'grain', 'wood']);
+    expect(FINISHED_GOODS).toEqual(['cloth', 'bread', 'planks']);
+    expect([...RAW_GOODS, ...FINISHED_GOODS].sort()).toEqual([...GOODS].sort());
   });
 });
