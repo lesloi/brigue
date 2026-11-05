@@ -17,7 +17,7 @@ const reset = args.includes('--reset');
 const targetArg = args.find((arg) => arg !== '--reset');
 
 if (targetArg !== undefined && (!/^\d+$/.test(targetArg) || Number(targetArg) < 1)) {
-  throw new Error('usage: migrate-old-format.ts [target-format] [--reset]');
+  throw new Error('usage: migrate-world.ts [target-format] [--reset]');
 }
 
 const targetFormat = targetArg === undefined ? FORMAT_VERSION : Number(targetArg);
