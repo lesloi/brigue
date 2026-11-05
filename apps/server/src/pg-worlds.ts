@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 
-import type { Action, Event, World } from '@brigue/core';
+import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
 import {
   DuplicateActionError,
   UnknownWorldError,
@@ -201,9 +201,9 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
     year: row.year,
     houses: {},
     people: {},
-    seats: {},
+    seats: {} as Record<SeatId, Seat>,
     laws: [],
-    market: {},
+    market: {} as Record<GoodId, number>,
     marketFlow: {},
     marketHistory: {},
     campaigns: {},
@@ -239,7 +239,7 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
   for (const unit of stock.rows) {
     const house = world.houses[unit.house_id];
     if (house !== undefined) {
-      house.stock[unit.good] = unit.units;
+      house.stock[unit.good as GoodId] = unit.units;
     }
   }
 
@@ -259,7 +259,7 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
   }
 
   for (const seat of seats.rows) {
-    world.seats[seat.seat_id] = { personId: seat.person_id };
+    world.seats[seat.seat_id as SeatId] = { personId: seat.person_id };
   }
 
   for (const law of laws.rows) {
@@ -282,17 +282,18 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
 
   for (const campaign of campaigns.rows) {
     const map = campaign.closed ? world.closedCampaigns : world.campaigns;
-    const byHouse = (map[campaign.seat_id] ??= {});
+    const byHouse = (map[campaign.seat_id as SeatId] ??= {});
     byHouse[campaign.house_id] = campaign.votes;
   }
 
   for (const good of market.rows) {
-    world.market[good.good] = good.price_cents;
-    world.marketFlow[good.good] = good.flow_units;
+    world.market[good.good as GoodId] = good.price_cents;
+    world.marketFlow[good.good as GoodId] = good.flow_units;
   }
 
   for (const point of history.rows) {
-    const prices = (world.marketHistory[point.good] ??= []);
+    world.marketHistory ??= {};
+    const prices = (world.marketHistory[point.good as GoodId] ??= []);
     prices.push(point.price_cents);
   }
 
@@ -416,7 +417,7 @@ async function writeWorld(client: PoolClient, world: World): Promise<void> {
     client,
     'market',
     ['good', 'price_cents', 'flow_units'],
-    Object.entries(world.market).map(([good, price]) => [good, price, world.marketFlow[good] ?? 0]),
+    Object.entries(world.market).map(([good, price]) => [good, price, world.marketFlow[good as GoodId] ?? 0]),
   );
 
   await insertRows(

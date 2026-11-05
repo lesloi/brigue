@@ -7,7 +7,7 @@ export type ActionIntent =
   | { type: 'council.campaign'; seatId: SeatId };
 
 export type ActionSubmission =
-  { ok: true; id: string; week: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
+  { ok: true; id: string; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
 
 export const ACTION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,11 +16,11 @@ export function parseActionSubmission(body: unknown): ActionSubmission {
     return invalid();
   }
 
-  const { id, week, action } = body;
+  const { id, hour, action } = body;
   if (typeof id !== 'string' || !ACTION_ID_PATTERN.test(id)) {
     return invalid();
   }
-  if (!Number.isInteger(week) || (week as number) < 1) {
+  if (!Number.isInteger(hour) || (hour as number) < 1) {
     return invalid();
   }
   if (!isRecord(action)) {
@@ -40,7 +40,7 @@ export function parseActionSubmission(body: unknown): ActionSubmission {
       return {
         ok: true,
         id: id.toLowerCase(),
-        week: week as number,
+        hour: hour as number,
         intent: { type: 'market.buy', good: good as GoodId, units: units as number },
       };
     }
@@ -57,7 +57,7 @@ export function parseActionSubmission(body: unknown): ActionSubmission {
       return {
         ok: true,
         id: id.toLowerCase(),
-        week: week as number,
+        hour: hour as number,
         intent: { type: 'market.sell', good: good as GoodId, units: units as number },
       };
     }
@@ -71,7 +71,7 @@ export function parseActionSubmission(body: unknown): ActionSubmission {
       return {
         ok: true,
         id: id.toLowerCase(),
-        week: week as number,
+        hour: hour as number,
         intent: { type: 'council.campaign', seatId: seatId as SeatId },
       };
     }

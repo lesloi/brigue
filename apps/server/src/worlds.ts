@@ -3,6 +3,9 @@ import type { Action, Event, World } from '@brigue/core';
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
 
+/** The players table still keys its binding by a world name; the town itself does not. */
+export const WORLD_ID = 'saint-aubin';
+
 /** The house a new player gets until multiplayer assigns AI houses. */
 export const FIRST_HOUSE_ID = 'brigue';
 
