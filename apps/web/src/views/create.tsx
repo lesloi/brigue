@@ -22,10 +22,7 @@ export function Create({ joining, error, onChoose }: CreateProps) {
       <div class="gate-card">
         <Seal size={38} />
         <h1>Choisis ton métier</h1>
-        <p>
-          Ton premier atelier est celui de ton métier.
-          <span class="gate-next">Achète sa matière, travaille-la, vends le produit au marché.</span>
-        </p>
+        <p>Ton premier atelier est celui de ton métier.</p>
         <div class="trade-list">
           {TRADE_CHOICES.map((trade) => (
             <button class="trade-choice" type="button" key={trade} disabled={joining} onClick={() => onChoose(trade)}>
