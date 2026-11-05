@@ -14,6 +14,13 @@ export interface TradeIntent {
   good: GoodId;
 }
 
+/** A trade the server accepted but has not ticked yet; units are signed. */
+export interface PendingTrade {
+  week: number;
+  good: GoodId;
+  units: number;
+}
+
 /** A workshop as the server projects it: the chain's input is not the client's rule. */
 export interface ProjectedWorkshop {
   good: GoodId;

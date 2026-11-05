@@ -1,26 +1,36 @@
-import type { CalendarView, WorldResponse } from '../api.ts';
-import { eventLine } from '../events.ts';
+import { useState } from 'preact/hooks';
+
+import type { CalendarView, PendingTrade, WorldResponse } from '../api.ts';
+import { eventLine, ledgerEvents, netPendingFor, type LedgerFilter } from '../events.ts';
 import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+
+const LEDGER_LIMIT = 8;
 
 interface VilleProps {
   data: WorldResponse;
   now: number;
   advancing: boolean;
+  /** Trades accepted for this week but not ticked yet. */
+  pending: PendingTrade[];
   onRefresh(): void;
   onGoMarket(): void;
   onAdvance(): void;
 }
 
 /** The Ville screen, rendered only from the projection and last week's events. */
-export function Ville({ data, now, advancing, onRefresh, onGoMarket, onAdvance }: VilleProps) {
+export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, onAdvance }: VilleProps) {
+  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('house');
+  const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
   const house = world.house;
   const workshop = house.workshops[0];
   const output = workshop?.good ?? null;
   const input = workshop?.input ?? null;
   const nameOf = houseName(world);
+  const ledger = ledgerEvents(events, house.id, ledgerFilter);
+  const shownLedger = expanded ? ledger : ledger.slice(0, LEDGER_LIMIT);
 
   return (
     <main class="screen">
@@ -111,6 +121,7 @@ export function Ville({ data, now, advancing, onRefresh, onGoMarket, onAdvance }
                   workshop={workshop}
                   priceCents={world.town.market[workshop.good]}
                   stock={house.stock}
+                  pendingInput={workshop.input === null ? 0 : netPendingFor(workshop.input, pending)}
                   onGoMarket={onGoMarket}
                 />
               ))
@@ -138,20 +149,57 @@ export function Ville({ data, now, advancing, onRefresh, onGoMarket, onAdvance }
           <div class="h">
             <b id="week-title">La semaine dernière</b>
             <span>
-              {events.length} ligne{events.length > 1 ? 's' : ''}
+              {ledger.length} ligne{ledger.length > 1 ? 's' : ''}
             </span>
+          </div>
+          <div class="filters">
+            <div class="segmented" role="group" aria-label="Filtrer le registre">
+              <button
+                type="button"
+                class={ledgerFilter === 'house' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'house'}
+                onClick={() => {
+                  setLedgerFilter('house');
+                  setExpanded(false);
+                }}
+              >
+                Ma maison
+              </button>
+              <button
+                type="button"
+                class={ledgerFilter === 'all' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'all'}
+                onClick={() => {
+                  setLedgerFilter('all');
+                  setExpanded(false);
+                }}
+              >
+                Tout
+              </button>
+              <button
+                type="button"
+                class={ledgerFilter === 'prices' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'prices'}
+                onClick={() => {
+                  setLedgerFilter('prices');
+                  setExpanded(false);
+                }}
+              >
+                Prix
+              </button>
+            </div>
           </div>
           <CatchUpNote summary={summary} />
           <div class="card">
-            {events.length === 0 ? (
+            {ledger.length === 0 ? (
               <div class="row empty">
                 <div class="nm">
                   <b>Rien au registre</b>
-                  <p>Aucun événement pour cette semaine.</p>
+                  <p>Rien pour ce filtre cette semaine.</p>
                 </div>
               </div>
             ) : (
-              events.map((event) => {
+              shownLedger.map((event) => {
                 const line = eventLine(event, house.id, nameOf);
 
                 return (
@@ -163,6 +211,13 @@ export function Ville({ data, now, advancing, onRefresh, onGoMarket, onAdvance }
               })
             )}
           </div>
+          {ledger.length > LEDGER_LIMIT ? (
+            <div class="more">
+              <button class="btn outline wide" type="button" onClick={() => setExpanded(!expanded)}>
+                {expanded ? 'Réduire' : `Voir les ${ledger.length - LEDGER_LIMIT} autres`}
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <section class="sec" aria-labelledby="laws-title">
@@ -293,17 +348,22 @@ function WorkshopRow({
   workshop,
   priceCents,
   stock,
+  pendingInput,
   onGoMarket,
 }: {
   workshop: WorldResponse['world']['house']['workshops'][number];
   priceCents: number;
   stock: WorldResponse['world']['house']['stock'];
+  pendingInput: number;
   onGoMarket(): void;
 }) {
   const input = workshop.input;
   const inputName = input === null ? null : goodName(input);
   const held = input === null ? 0 : (stock[input] ?? 0);
-  const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerWeek - held);
+  const effectiveHeld = Math.max(0, held + pendingInput);
+  const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerWeek - effectiveHeld);
+  const pendingBuy = input !== null && pendingInput > 0 ? pendingInput : 0;
+  const pendingSell = input !== null && pendingInput < 0 ? -pendingInput : 0;
 
   return (
     <div class="row">
@@ -325,7 +385,16 @@ function WorkshopRow({
           {formatCents(workshop.wagesCentsPerWeek)} écus de gages
         </p>
         {missing > 0 && input !== null ? (
-          <p class="warn">Il manque {goodQuantity(missing, input)} pour produire cette semaine.</p>
+          <p class="warn">
+            {pendingBuy > 0 ? 'Il manque toujours ' : 'Il manque '}
+            {goodQuantity(missing, input)} pour produire cette semaine.
+          </p>
+        ) : null}
+        {input !== null && pendingBuy > 0 ? (
+          <p class="pending">Achat de {goodQuantity(pendingBuy, input)} en attente pour cette semaine.</p>
+        ) : null}
+        {input !== null && pendingSell > 0 ? (
+          <p class="pending">Vente de {goodQuantity(pendingSell, input)} en attente pour cette semaine.</p>
         ) : null}
       </div>
       <div class="act">

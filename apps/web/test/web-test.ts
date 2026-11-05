@@ -1,7 +1,7 @@
 import type { Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { eventLine } from '../src/events.ts';
+import { eventLine, ledgerEvents, netPendingFor, survivesRead } from '../src/events.ts';
 import {
   actionErrorText,
   goodName,
@@ -234,5 +234,77 @@ describe('tab history', () => {
     expect(tabFromHash('')).toBe('ville');
     expect(stateOf(null)).toBeNull();
     expect(stateOf({ tab: 'marche', pushed: true })).toEqual({ tab: 'marche', pushed: true });
+  });
+});
+
+describe('the ledger filter', () => {
+  const events: Event[] = [
+    {
+      type: 'market.sold',
+      audience: 'town',
+      houseId: 'brigue',
+      good: 'cloth',
+      units: 2,
+      priceCents: 1240,
+      revenueCents: 2480,
+    },
+    {
+      type: 'market.bought',
+      audience: 'town',
+      houseId: 'caron',
+      good: 'wool',
+      units: 6,
+      priceCents: 380,
+      totalCents: 2280,
+    },
+    { type: 'council.election_held', audience: 'town', seatId: 'maire', winnerHouseId: 'caron', votes: {} },
+    { type: 'market.price_changed', audience: 'town', good: 'cloth', before: 1240, after: 1250 },
+    { type: 'house.wages_paid', audience: { houseId: 'brigue' }, houseId: 'brigue', amountCents: 240 },
+  ];
+
+  it('keeps the house and the town politics by default', () => {
+    // Act
+    const filtered = ledgerEvents(events, 'brigue', 'house');
+
+    // Assert
+    expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.wages_paid']);
+  });
+
+  it('keeps only the prices in the prices cut', () => {
+    expect(ledgerEvents(events, 'brigue', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
+  });
+
+  it('keeps everything in the full cut', () => {
+    expect(ledgerEvents(events, 'brigue', 'all')).toEqual(events);
+  });
+});
+
+describe('pending trades', () => {
+  it('nets the buys and sells of one good', () => {
+    // Arrange
+    const pending = [
+      { week: 3, good: 'grain' as const, units: 5 },
+      { week: 3, good: 'grain' as const, units: 10 },
+      { week: 3, good: 'grain' as const, units: -4 },
+      { week: 3, good: 'wool' as const, units: 2 },
+    ];
+
+    // Act and assert
+    expect(netPendingFor('grain', pending)).toBe(11);
+    expect(netPendingFor('wool', pending)).toBe(2);
+    expect(netPendingFor('cloth', pending)).toBe(0);
+  });
+
+  it('keeps a trade until a read reaches its week', () => {
+    // Arrange
+    const pending = [
+      { week: 2, good: 'grain' as const, units: 4 },
+      { week: 3, good: 'grain' as const, units: 4 },
+      { week: 4, good: 'grain' as const, units: 4 },
+    ];
+
+    // Act and assert
+    expect(survivesRead(pending, 3).map((trade) => trade.week)).toEqual([3, 4]);
+    expect(survivesRead(pending, 4).map((trade) => trade.week)).toEqual([4]);
   });
 });

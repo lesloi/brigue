@@ -1,6 +1,48 @@
-import type { Action, Event } from '@brigue/core';
+import type { Action, Event, GoodId } from '@brigue/core';
 
+import type { PendingTrade } from './api.ts';
 import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
+
+/** The three cuts of the week's ledger: the house's own story, everything, the prices. */
+export type LedgerFilter = 'house' | 'all' | 'prices';
+
+/**
+ * The default is the house's own story plus the town's politics; the AI's
+ * market noise and the price lines stay behind the other cuts. `prices` is
+ * where chapter I's lesson lives; `all` is the whole last week.
+ */
+export function ledgerEvents(events: readonly Event[], houseId: string, filter: LedgerFilter): Event[] {
+  switch (filter) {
+    case 'all':
+      return [...events];
+    case 'prices':
+      return events.filter((event) => event.type === 'market.price_changed');
+    case 'house':
+      return events.filter(
+        (event) =>
+          ('houseId' in event && event.houseId === houseId) ||
+          event.type.startsWith('council.') ||
+          event.type.startsWith('engagement.'),
+      );
+  }
+}
+
+/** The net signed units queued for a good in the current week. */
+export function netPendingFor(good: GoodId, pending: readonly PendingTrade[]): number {
+  let total = 0;
+  for (const trade of pending) {
+    if (trade.good === good) {
+      total += trade.units;
+    }
+  }
+
+  return total;
+}
+
+/** A read at `readWeek` proves everything queued for an earlier week happened. */
+export function survivesRead(pending: readonly PendingTrade[], readWeek: number): PendingTrade[] {
+  return pending.filter((trade) => trade.week >= readWeek);
+}
 
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';
 

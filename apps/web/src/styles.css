@@ -374,6 +374,11 @@ button:disabled {
   font-weight: 600;
 }
 
+.nm p.pending {
+  color: var(--mut);
+  font-style: italic;
+}
+
 .cal {
   margin: 20px 12px 0;
 }
@@ -497,6 +502,16 @@ button:disabled {
   color: var(--mut);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.filters {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 8px 8px;
+}
+
+.more {
+  margin-top: 8px;
 }
 
 .card {

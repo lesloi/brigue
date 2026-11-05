@@ -9,9 +9,11 @@ import {
   readWorld,
   resumeTown,
   sendAction,
+  type PendingTrade,
   type TradeIntent,
   type WorldResponse,
 } from './api.ts';
+import { survivesRead } from './events.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
 import { Create } from './views/create.tsx';
@@ -38,6 +40,9 @@ export function App() {
   const [token, setToken] = useState<string | null>(null);
   const [lostError, setLostError] = useState<string | null>(null);
   const [trading, setTrading] = useState<TradeIntent | null>(null);
+  // The queued trades are session memory, not a second world: a reload empties
+  // them, and the next read proves or refuses them.
+  const [pending, setPending] = useState<PendingTrade[]>([]);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
@@ -155,6 +160,7 @@ export function App() {
     setToast(null);
     setNow(Date.now());
     setView({ kind: 'world', data });
+    setPending((current) => survivesRead(current, data.world.week));
 
     if (pendingToken.current !== null) {
       const fresh = pendingToken.current;
@@ -193,6 +199,7 @@ export function App() {
           ? ({ type: 'market.buy', good, units } as const)
           : ({ type: 'market.sell', good, units } as const);
       const sent = await sendAction(view.data.world.week, intent);
+      setPending((current) => [...current, { week: sent.week, good, units: kind === 'buy' ? units : -units }]);
       const quantity = goodQuantity(units, good);
       showToast(
         kind === 'buy'
@@ -250,6 +257,7 @@ export function App() {
       const data = await advanceWeek();
       setNow(Date.now());
       setView({ kind: 'world', data });
+      setPending((current) => survivesRead(current, data.world.week));
       showToast(`Semaine ${data.world.week}, comme si une heure était passée.`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -311,6 +319,7 @@ export function App() {
               data={view.data}
               now={now}
               advancing={advancing}
+              pending={pending.filter((trade) => trade.week === view.data.world.week)}
               onRefresh={() => void refresh()}
               onGoMarket={() => selectTab('marche')}
               onAdvance={() => void advanceOneWeek()}
