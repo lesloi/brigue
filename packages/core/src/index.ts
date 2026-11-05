@@ -17,6 +17,8 @@ export {
   WEEKS_PER_YEAR,
   type Attributes,
   type Controller,
+  type Engagement,
+  type EngagementKind,
   type Founder,
   type GoodId,
   type House,

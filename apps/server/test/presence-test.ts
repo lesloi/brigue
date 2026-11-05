@@ -55,6 +55,10 @@ describe('dormancy', () => {
     const world = aHumanWorld();
     world.seats.maire = { personId: 'person-caron' };
     world.campaigns.maire = { caron: 2 };
+    world.engagements = [
+      { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueWeek: world.week + 4 },
+      { id: 'engagement-brigue', kind: 'hearing', houseId: 'brigue', dueWeek: world.week + 4 },
+    ];
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
 
     // Act
@@ -66,6 +70,7 @@ describe('dormancy', () => {
     expect(presence.world.people['person-caron']).toBeUndefined();
     expect(presence.world.seats.maire.personId).toBeNull();
     expect(presence.world.campaigns.maire).toEqual({});
+    expect(presence.world.engagements.map((engagement) => engagement.id)).toEqual(['engagement-brigue']);
   });
 
   it('still reads a house at exactly the thirty-day boundary', () => {

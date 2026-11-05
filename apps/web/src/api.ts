@@ -1,9 +1,17 @@
 import type { Event, GoodId, Law, SeatId, Workshop } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
+export interface CalendarView {
+  weeksPerYear: number;
+  weekOfYear: number;
+  nextScrutinyWeek: number;
+  nextScrutinyAt: string;
+}
+
 export interface WorldProjection {
   week: number;
   year: number;
+  calendar: CalendarView;
   house: {
     id: string;
     name: string;

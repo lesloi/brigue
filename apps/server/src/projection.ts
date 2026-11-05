@@ -1,5 +1,6 @@
 import {
   PACING,
+  WEEKS_PER_YEAR,
   type GoodId,
   type House,
   type Law,
@@ -37,9 +38,24 @@ export interface PublicPersonView {
   name: string;
 }
 
+/**
+ * The calendar the screen draws, computed here so the client derives no date:
+ * where the year stands, and when the next scrutiny closes it.
+ */
+export interface CalendarView {
+  weeksPerYear: number;
+  /** One-based week inside the year, always between 1 and `weeksPerYear`. */
+  weekOfYear: number;
+  /** The absolute town week in which the next scrutiny is held. */
+  nextScrutinyWeek: number;
+  /** When that week ends and the scrutiny happens, as an instant. */
+  nextScrutinyAt: string;
+}
+
 export interface WorldProjection {
   week: number;
   year: number;
+  calendar: CalendarView;
   house: OwnHouseView;
   town: {
     houses: PublicHouseView[];
@@ -68,6 +84,7 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
   return {
     week: world.week,
     year: world.year,
+    calendar: calendarOf(world, weekStartedAt),
     house: ownHouse(house),
     town: {
       houses: Object.values(world.houses)
@@ -86,6 +103,22 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
       market: structuredClone(world.market),
     },
     nextTickAt: new Date(weekStartedAt.getTime() + PACING.minutesPerWeek * 60_000).toISOString(),
+  };
+}
+
+function calendarOf(world: World, weekStartedAt: Date): CalendarView {
+  const weekOfYear = ((world.week - 1) % WEEKS_PER_YEAR) + 1;
+  // A scrutiny closes the week that is a multiple of the year length, so the
+  // week currently in progress is its own scrutiny week when it divides.
+  const nextScrutinyWeek = world.week + ((WEEKS_PER_YEAR - (world.week % WEEKS_PER_YEAR)) % WEEKS_PER_YEAR);
+  const weekMs = PACING.minutesPerWeek * 60_000;
+  const weeksUntilEnd = nextScrutinyWeek - world.week + 1;
+
+  return {
+    weeksPerYear: WEEKS_PER_YEAR,
+    weekOfYear,
+    nextScrutinyWeek,
+    nextScrutinyAt: new Date(weekStartedAt.getTime() + weeksUntilEnd * weekMs).toISOString(),
   };
 }
 

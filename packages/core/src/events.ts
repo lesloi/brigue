@@ -1,4 +1,4 @@
-import type { GoodId, SeatId } from './world.ts';
+import type { EngagementKind, GoodId, SeatId } from './world.ts';
 
 /**
  * Immutable domain vocabulary: what the player has to do, and what the world
@@ -56,7 +56,18 @@ type EventBody =
   | { type: 'house.wages_paid'; houseId: string; amountCents: number }
   | { type: 'house.penniless'; houseId: string; shortfallCents: number }
   | { type: 'house.debt_repaid'; houseId: string; amountCents: number }
-  | { type: 'council.campaigned'; houseId: string; seatId: SeatId; favourSpent: number }
+  | { type: 'council.campaigned'; houseId: string; seatId: SeatId; favourSpent: number; dueWeek: number }
+  | {
+      type: 'engagement.resolved';
+      engagementId: string;
+      kind: EngagementKind;
+      houseId: string;
+      seatId?: SeatId;
+      dueWeek: number;
+      /** The week the town actually reached: equal to `dueWeek` unless late. */
+      resolvedWeek: number;
+    }
+  | { type: 'council.scrutiny_held'; year: number; seats: SeatId[] }
   | {
       type: 'council.election_held';
       seatId: SeatId;

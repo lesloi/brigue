@@ -1,4 +1,4 @@
-import type { WorldResponse } from '../api.ts';
+import type { CalendarView, WorldResponse } from '../api.ts';
 import { eventLine } from '../events.ts';
 import { formatCents, formatCount, goodName, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
@@ -32,7 +32,9 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
               <div class="nm">Maison {house.name}</div>
               <div class="pl">Saint-Aubin &middot; an {world.year}</div>
             </div>
-            <div class="wk">sem. {world.week}</div>
+            <div class="wk">
+              sem. {world.calendar.weekOfYear}/{world.calendar.weeksPerYear}
+            </div>
           </div>
           <div class="cap">
             <div>
@@ -81,6 +83,8 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
             <span class="l">faveur</span>
           </div>
         </section>
+
+        <Calendar calendar={world.calendar} year={world.year} now={now} />
 
         {data.dev === true ? <DevBar busy={advancing} onAdvance={onAdvance} /> : null}
 
@@ -239,16 +243,63 @@ export function countdownText(nextTickAt: string, now: number): string {
     return 'semaine imminente';
   }
 
+  return `semaine dans ${durationText(remaining)}`;
+}
+
+/** The same countdown for the scrutiny the projection dates, never a computed one. */
+export function scrutinyText(nextScrutinyAt: string, now: number): string {
+  const remaining = new Date(nextScrutinyAt).getTime() - now;
+
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    return 'scrutin imminent';
+  }
+
+  return `scrutin dans ${durationText(remaining)}`;
+}
+
+function durationText(remaining: number): string {
   const totalSeconds = Math.floor(remaining / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `semaine dans ${hours} h ${String(minutes).padStart(2, '0')}`;
+    return `${hours} h ${String(minutes).padStart(2, '0')}`;
   }
 
-  return `semaine dans ${minutes}:${String(seconds).padStart(2, '0')}`;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function Calendar({ calendar, year, now }: { calendar: CalendarView; year: number; now: number }) {
+  const weeks = Array.from({ length: calendar.weeksPerYear }, (_, index) => index + 1);
+
+  return (
+    <section class="cal" aria-labelledby="cal-title">
+      <div class="h">
+        <b id="cal-title">Le calendrier</b>
+        <span>
+          an {year} &middot; semaine {calendar.weekOfYear} sur {calendar.weeksPerYear}
+        </span>
+      </div>
+      <div class="cal-card">
+        <ol class="weeks" aria-label={`Semaine ${calendar.weekOfYear} sur ${calendar.weeksPerYear}`}>
+          {weeks.map((week) => (
+            <li
+              key={week}
+              class={week === calendar.weekOfYear ? 'now' : week === calendar.weeksPerYear ? 'scrutiny' : ''}
+              aria-current={week === calendar.weekOfYear ? 'true' : undefined}
+              title={week === calendar.weeksPerYear ? 'Scrutin' : `Semaine ${week}`}
+            >
+              <span>{week}</span>
+            </li>
+          ))}
+        </ol>
+        <p class="cal-line">
+          {scrutinyText(calendar.nextScrutinyAt, now)} &middot; toutes les charges sont remises en jeu.
+        </p>
+      </div>
+    </section>
+  );
 }
 
 function WorkshopRow({

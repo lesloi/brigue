@@ -78,6 +78,18 @@ export interface Law {
   enactedWeek: number;
 }
 
+/** The durations the calendar gives an engagement, in weeks. */
+export type EngagementKind = 'campaign' | 'hearing' | 'site';
+
+/**
+ * Work that takes weeks. It carries the week it falls due rather than a
+ * remaining count, so a catch-up can replay whole weeks and pay what is owed.
+ */
+export type Engagement =
+  | { id: string; kind: 'campaign'; houseId: string; seatId: SeatId; dueWeek: number }
+  | { id: string; kind: 'hearing'; houseId: string; dueWeek: number }
+  | { id: string; kind: 'site'; houseId: string; dueWeek: number };
+
 export interface World {
   /** Stamped so a saved world can be refused rather than silently misread. */
   formatVersion: number;
@@ -100,18 +112,29 @@ export interface World {
   marketFlow: Partial<Record<GoodId, number>>;
   /** Votes bought per seat, per house, cleared when that seat is elected. */
   campaigns: Partial<Record<SeatId, Record<string, number>>>;
+  /**
+   * What the town owes to a future week: a campaign, a hearing, a building
+   * site. Resolved by the tick when its due week arrives, even if the town
+   * only reaches that week later.
+   */
+  engagements: Engagement[];
+  /** Mints engagement ids, so two campaigns in one week cannot collide. */
+  engagementSeq: number;
 }
 
 export const FORMAT_VERSION = 2;
 
 export const RULES = {
-  version: 5,
+  version: 6,
   /**
-   * Eight weeks is one seat contested every eight hours and a mandate of about forty hours.
-   * Four weeks made it every four hours: a ceremony that fires while the player sleeps, and
-   * a clock that rewards being awake over playing well.
+   * A game year is twenty-four weeks, and every seat is up at the scrutiny that
+   * closes it: one ceremony a day, fixed and known in advance, rather than a
+   * rotation that fires while the player sleeps. The day is the unit the player
+   * actually plays; the week is the tick.
    */
-  electionPeriodWeeks: 8,
+  campaignWeeks: 8,
+  hearingWeeks: 6,
+  siteWeeks: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
   priceDriftCents: 30,
@@ -172,7 +195,8 @@ export const PACING = {
 } as const;
 
 export const START_YEAR = 1401;
-export const WEEKS_PER_YEAR = 52;
+/** Twenty-four weeks make a year, so one real day is one game year. */
+export const WEEKS_PER_YEAR = 24;
 
 export interface Founder {
   house: House;
@@ -338,5 +362,7 @@ export function createWorld(seed: number): World {
     },
     marketFlow: {},
     campaigns: {},
+    engagements: [],
+    engagementSeq: 0,
   };
 }

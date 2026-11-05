@@ -101,5 +101,9 @@ function removeHouse(world: World, houseId: string): void {
     delete byHouse?.[houseId];
   }
 
+  // A house that is gone owes nothing: its queued engagements must not resolve
+  // into an event naming a house the town no longer holds.
+  world.engagements = world.engagements.filter((engagement) => engagement.houseId !== houseId);
+
   delete world.houses[houseId];
 }

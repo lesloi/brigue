@@ -8,10 +8,13 @@ import {
   createWorld,
   FORMAT_VERSION,
   RULES,
+  SEATS,
+  START_YEAR,
   stateHash,
   takeSeat,
   tick,
   visibleTo,
+  WEEKS_PER_YEAR,
   WorldVersionError,
 } from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
@@ -115,16 +118,76 @@ describe('the simulation core', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'cloth' }));
   });
 
-  it('holds an election on its period and fills a seat with a person of the winning house', () => {
-    const { world, events } = play(createWorld(SEED), RULES.electionPeriodWeeks);
-    const election = events.find(
+  it('holds one scrutiny per game year and puts every seat up', () => {
+    // Arrange: five houses, so five seats can actually be filled, and two years.
+    const base = createWorld(SEED);
+    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
+    world.houses.quint = {
+      ...base.houses.herse,
+      id: 'quint',
+      name: 'Quint',
+      workshops: [{ good: 'grain', level: 1, workers: 1 }],
+      stock: {},
+    };
+    world.people['person-quint'] = {
+      ...base.people['person-herse'],
+      id: 'person-quint',
+      houseId: 'quint',
+      name: 'Jean Quint',
+    };
+
+    // Act
+    const { world: after, events } = play(world, WEEKS_PER_YEAR * 2);
+
+    // Assert: one scrutiny each year, and every seat is contested in each.
+    const scrutinies = events.filter(
+      (event): event is Extract<Event, { type: 'council.scrutiny_held' }> => event.type === 'council.scrutiny_held',
+    );
+    expect(scrutinies.map((event) => event.year)).toEqual([START_YEAR, START_YEAR + 1]);
+    for (const scrutiny of scrutinies) {
+      expect(scrutiny.seats).toEqual([...SEATS]);
+    }
+
+    const elections = events.filter(
       (event): event is Extract<Event, { type: 'council.election_held' }> => event.type === 'council.election_held',
     );
-    const personId = world.seats.maire.personId;
+    for (const seatId of SEATS) {
+      expect(elections.filter((event) => event.seatId === seatId)).toHaveLength(2);
+    }
+    for (const seatId of SEATS) {
+      expect(after.seats[seatId].personId).not.toBeNull();
+    }
 
-    expect(election).toMatchObject({ type: 'council.election_held', seatId: 'maire' });
-    expect(personId).not.toBeNull();
-    expect(world.people[personId as string].houseId).toBe(election?.winnerHouseId);
+    const holders = Object.values(after.seats)
+      .map((seat) => seat.personId)
+      .filter((personId): personId is string => personId !== null);
+    expect(new Set(holders).size).toBe(holders.length);
+  });
+
+  it('makes twenty-four ticks a year and derives the year from the week', () => {
+    // Arrange: twenty-three weeks are still the first year.
+    const almost = play(createWorld(SEED), WEEKS_PER_YEAR - 1).world;
+
+    // Act: the twenty-fourth tick closes it.
+    const after = tick(almost).world;
+
+    // Assert
+    expect(almost.week).toBe(WEEKS_PER_YEAR);
+    expect(almost.year).toBe(START_YEAR);
+    expect(after.week).toBe(WEEKS_PER_YEAR + 1);
+    expect(after.year).toBe(START_YEAR + 1);
+  });
+
+  it('advances a living person one year per twenty-four ticks', () => {
+    // Arrange: the founder enters at twenty.
+    const before = play(createWorld(SEED), WEEKS_PER_YEAR - 1).world;
+
+    // Act
+    const after = tick(before).world;
+
+    // Assert
+    expect(before.people['person-brigue'].age).toBe(20);
+    expect(after.people['person-brigue'].age).toBe(21);
   });
 
   it('seats a person of the house and refuses another house’s person', () => {
@@ -140,7 +203,7 @@ describe('the simulation core', () => {
 
   it('keeps every filled seat on a living person of the house that holds it', () => {
     // Arrange and act: enough weeks to fill every seat once.
-    const { world } = play(createWorld(SEED), RULES.electionPeriodWeeks * 6);
+    const { world } = play(createWorld(SEED), WEEKS_PER_YEAR * 6);
 
     // Assert
     for (const seat of Object.values(world.seats)) {
@@ -154,16 +217,98 @@ describe('the simulation core', () => {
     }
   });
 
-  it('keeps a campaign for one seat out of another seat election', () => {
-    const control = play(createWorld(SEED), RULES.electionPeriodWeeks);
-    const campaigned = play(createWorld(SEED), RULES.electionPeriodWeeks, (week) =>
+  it('resolves a campaign eight weeks after it was queued', () => {
+    // Arrange: the campaign is queued during week one and falls due in week nine.
+    const queued = tick(createWorld(SEED), [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }]);
+    const engagement = queued.world.engagements[0];
+
+    // Assert the queue, then act: the eighth week is still silent.
+    expect(engagement).toMatchObject({ kind: 'campaign', seatId: 'maire', dueWeek: 1 + RULES.campaignWeeks });
+    expect(queued.events).toContainEqual(
+      expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', dueWeek: 1 + RULES.campaignWeeks }),
+    );
+    const early = play(queued.world, RULES.campaignWeeks - 1);
+    expect(early.events.filter((event) => event.type === 'engagement.resolved')).toEqual([]);
+
+    // Act: the ninth tick pays it.
+    const due = tick(early.world);
+
+    // Assert
+    expect(due.events).toContainEqual(
+      expect.objectContaining({
+        type: 'engagement.resolved',
+        kind: 'campaign',
+        seatId: 'maire',
+        dueWeek: 1 + RULES.campaignWeeks,
+        resolvedWeek: 1 + RULES.campaignWeeks,
+      }),
+    );
+    expect(due.world.campaigns.maire).toEqual({ brigue: RULES.campaignVoteBonus });
+    expect(due.world.engagements).toEqual([]);
+  });
+
+  it('resolves a hearing six weeks after the complaint and a site after twelve', () => {
+    for (const [kind, weeks] of [
+      ['hearing', RULES.hearingWeeks],
+      ['site', RULES.siteWeeks],
+    ] as const) {
+      // Arrange: an engagement due at week one plus its duration.
+      const world = createWorld(SEED);
+      const dueWeek = world.week + weeks;
+      world.engagements = [{ id: `engagement-${kind}`, kind, houseId: 'brigue', dueWeek }];
+
+      // Act: run to the week before the due week, then one tick more.
+      const early = play(world, weeks);
+      const due = tick(early.world);
+
+      // Assert
+      expect(early.events.filter((event) => event.type === 'engagement.resolved')).toEqual([]);
+      expect(due.events).toContainEqual(
+        expect.objectContaining({ type: 'engagement.resolved', kind, dueWeek, resolvedWeek: dueWeek }),
+      );
+      expect(due.world.engagements).toEqual([]);
+    }
+  });
+
+  it('resolves an engagement behind the town clock by the next tick instead of dropping it', () => {
+    // Arrange: an older state can leave the counter past a due week. A cap jump
+    // moves only the wall clock, so this is the defensive path, not the normal one.
+    const world = createWorld(SEED);
+    world.week = 900;
+    world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'brigue', dueWeek: 800 }];
+
+    // Act
+    const { world: after, events } = tick(world);
+
+    // Assert
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'engagement.resolved',
+        engagementId: 'engagement-late',
+        kind: 'site',
+        dueWeek: 800,
+        resolvedWeek: 900,
+      }),
+    );
+    expect(after.engagements).toEqual([]);
+  });
+
+  it('keeps a campaign for one seat out of another seat vote', () => {
+    // Arrange: both worlds reach the same scrutiny, one with a campaign for the treasury.
+    const control = play(createWorld(SEED), WEEKS_PER_YEAR);
+    const campaigned = play(createWorld(SEED), WEEKS_PER_YEAR, (week) =>
       week === 0 ? [{ type: 'council.campaign', houseId: 'brigue', seatId: 'tresorier' }] : [],
     );
 
-    const votesOf = (events: Event[]) => events.find((event) => event.type === 'council.election_held');
+    const votesOf = (events: Event[], seatId: string) =>
+      events.find(
+        (event): event is Extract<Event, { type: 'council.election_held' }> =>
+          event.type === 'council.election_held' && event.seatId === seatId,
+      )?.votes;
 
-    expect(votesOf(campaigned.events)).toEqual(votesOf(control.events));
-    expect(campaigned.world.campaigns.tresorier).toEqual({ brigue: 2 });
+    // Assert: the mayor is elected first and its vote is untouched.
+    expect(votesOf(campaigned.events, 'maire')).toEqual(votesOf(control.events, 'maire'));
+    expect(campaigned.world.campaigns).toEqual({});
   });
 
   it('turns unpaid wages into a debt instead of erasing them', () => {
@@ -204,7 +349,7 @@ describe('the simulation core', () => {
 
   it('keeps a dormant house’s seat, stops its trade and keeps it out of the vote', () => {
     // Arrange: one election fills the mayoralty, then its holder goes dormant.
-    const elected = play(createWorld(SEED), RULES.electionPeriodWeeks).world;
+    const elected = play(createWorld(SEED), WEEKS_PER_YEAR).world;
     const personId = elected.seats.maire.personId as string;
     const holder = elected.people[personId];
     const house = elected.houses[holder.houseId];
@@ -217,7 +362,7 @@ describe('the simulation core', () => {
 
     // Act: one plain week, then the five periods that bring the seat back.
     const quiet = tick(elected);
-    const later = play(quiet.world, RULES.electionPeriodWeeks * 5);
+    const later = play(quiet.world, WEEKS_PER_YEAR * 5);
 
     // Assert
     expect(quiet.events.filter((event) => event.type === 'market.sold' && event.houseId === holder.houseId)).toEqual(

@@ -10,6 +10,7 @@ import {
   WEEKS_PER_YEAR,
   type GoodId,
   type Person,
+  type SeatId,
   type World,
 } from './world.ts';
 
@@ -73,6 +74,10 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
     applyAction(next, candidate, events, flow);
   }
 
+  // What fell due is paid before the week's trade, so an engagement resolved
+  // in the same tick as its last action already counts for that week.
+  resolveEngagements(next, events);
+
   // The AI houses decide in the same breath as the players, at the same price:
   // both buy before the week moves the market.
   aiHousesBuy(next, flow, events);
@@ -82,8 +87,10 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
 
   next.marketFlow = flow;
 
-  if (next.week % RULES.electionPeriodWeeks === 0) {
-    holdElection(next, events);
+  // The scrutiny closes the year: every seat is up, once a day, and everyone
+  // present ages a year.
+  if (next.week % WEEKS_PER_YEAR === 0) {
+    holdScrutiny(next, events);
   }
 
   next.week += 1;
@@ -168,14 +175,22 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
       }
 
       house.favour -= RULES.campaignFavourCost;
-      const byHouse = (world.campaigns[action.seatId] ??= {});
-      byHouse[house.id] = (byHouse[house.id] ?? 0) + RULES.campaignVoteBonus;
+      const dueWeek = world.week + RULES.campaignWeeks;
+      world.engagements.push({
+        id: `engagement-${world.engagementSeq}`,
+        kind: 'campaign',
+        houseId: house.id,
+        seatId: action.seatId,
+        dueWeek,
+      });
+      world.engagementSeq += 1;
       events.push({
         type: 'council.campaigned',
         audience: 'town',
         houseId: house.id,
         seatId: action.seatId,
         favourSpent: RULES.campaignFavourCost,
+        dueWeek,
       });
       return;
     }
@@ -396,9 +411,67 @@ function employeesArePaid(world: World, houseId: string, workers: number, events
   }
 }
 
-function holdElection(world: World, events: Event[]): void {
-  const round = world.week / RULES.electionPeriodWeeks;
-  const seatId = SEATS[(round - 1) % SEATS.length];
+/**
+ * Pays every engagement whose due week has arrived. A week the catch-up never
+ * simulated does not drop it: the town's week counter is the only clock, so an
+ * engagement behind it is resolved by the next tick that runs, and the event
+ * carries both the week it was due and the week it was paid.
+ */
+function resolveEngagements(world: World, events: Event[]): void {
+  const due = world.engagements
+    .filter((engagement) => engagement.dueWeek <= world.week)
+    .sort((left, right) => left.dueWeek - right.dueWeek || left.id.localeCompare(right.id));
+
+  if (due.length === 0) {
+    return;
+  }
+
+  world.engagements = world.engagements.filter((engagement) => engagement.dueWeek > world.week);
+
+  for (const engagement of due) {
+    if (engagement.kind === 'campaign') {
+      const byHouse = (world.campaigns[engagement.seatId] ??= {});
+      byHouse[engagement.houseId] = (byHouse[engagement.houseId] ?? 0) + RULES.campaignVoteBonus;
+    }
+
+    events.push({
+      type: 'engagement.resolved',
+      audience: 'town',
+      engagementId: engagement.id,
+      kind: engagement.kind,
+      houseId: engagement.houseId,
+      ...(engagement.kind === 'campaign' ? { seatId: engagement.seatId } : {}),
+      dueWeek: engagement.dueWeek,
+      resolvedWeek: world.week,
+    });
+  }
+}
+
+function holdScrutiny(world: World, events: Event[]): void {
+  const year = world.year;
+
+  // Age belongs to the calendar: every living person takes a year at the
+  // scrutiny, whatever they did with it. The death roll is #7.
+  for (const person of Object.values(world.people)) {
+    if (person.alive) {
+      person.age += 1;
+    }
+  }
+
+  const elections: Event[] = [];
+  // One person, one office: a person already elected during this scrutiny is
+  // not a candidate for another seat on the same day. A town too small to fill
+  // every seat leaves one vacant rather than electing the same person twice.
+  const electedPersonIds = new Set<string>();
+  for (const seatId of SEATS) {
+    contestSeat(world, seatId, elections, electedPersonIds);
+  }
+
+  events.push({ type: 'council.scrutiny_held', audience: 'town', year, seats: [...SEATS] });
+  events.push(...elections);
+}
+
+function contestSeat(world: World, seatId: SeatId, events: Event[], electedPersonIds: Set<string>): void {
   const campaigns = world.campaigns[seatId] ?? {};
   const incumbent = seatHolder(world, seatId);
   const incumbentHouseId = incumbent?.houseId;
@@ -422,7 +495,11 @@ function holdElection(world: World, events: Event[]): void {
   // election, never by dormancy itself.
   const candidates = Object.keys(world.houses)
     .filter((houseId) => world.houses[houseId].dormant !== true)
-    .filter((houseId) => livingPersonOf(world, houseId) !== undefined)
+    .filter((houseId) => {
+      const person = livingPersonOf(world, houseId);
+
+      return person !== undefined && !electedPersonIds.has(person.id);
+    })
     .sort();
 
   if (candidates.length === 0) {
@@ -454,6 +531,7 @@ function holdElection(world: World, events: Event[]): void {
     const assignment = takeSeat(world, winnerHouseId, winner.id);
     if (assignment.ok) {
       world.seats[seatId] = assignment.seat;
+      electedPersonIds.add(winner.id);
     }
   }
   delete world.campaigns[seatId];
