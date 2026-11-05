@@ -251,7 +251,7 @@ function TradePanel({ good, priceCents, buyMax, sellMax, busy, onTrade }: TradeP
 
 /** The last year of a good's price, with the reference it is pulled back to. */
 function PriceSparkline({ values, referenceCents }: { values: number[]; referenceCents: number }) {
-  if (values.length < 2) {
+  if (values.length === 0) {
     return null;
   }
 
@@ -265,13 +265,23 @@ function PriceSparkline({ values, referenceCents }: { values: number[]; referenc
   const span = high - low;
   const x = (index: number) => (index / (values.length - 1)) * width;
   const y = (value: number) => height - 2 - ((value - low) / span) * (height - 4);
-  const points = values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
+  // One price is not a curve yet, but a flat line says "it has not moved" where
+  // an empty row would read as a missing chart.
+  const singleY = values.length === 1 ? y(values[0] ?? referenceCents).toFixed(1) : null;
+  const points =
+    singleY === null
+      ? values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ')
+      : `0,${singleY} ${width},${singleY}`;
   const referenceY = y(referenceCents).toFixed(1);
+  // The latest price, marked: with a single week it is the only hint that the
+  // flat line is a chart and not a rule under the price.
+  const lastY = y(values[values.length - 1] ?? referenceCents);
 
   return (
     <svg class="spark" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
       <line class="spark-ref" x1="0" x2={width} y1={referenceY} y2={referenceY} vector-effect="non-scaling-stroke" />
       <polyline class="spark-line" points={points} vector-effect="non-scaling-stroke" />
+      <line class="spark-now" x1={width} x2={width} y1={lastY - 2} y2={lastY + 2} vector-effect="non-scaling-stroke" />
     </svg>
   );
 }
