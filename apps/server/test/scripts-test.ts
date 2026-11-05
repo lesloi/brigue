@@ -6,9 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 // Renaming a script has to reach every command that names it: the package
 // scripts here, and the workflows that run it. A path that points at nothing
-// fails when the command runs, not when the rename lands. A caller outside this
-// repository cannot be checked from here, which is what the transitional
-// `scripts/migrate.ts` is for.
+// fails when the command runs, not when the rename lands.
 const serverRoot = new URL('..', import.meta.url);
 const repoRoot = new URL('../../../', import.meta.url);
 const SCRIPT = /node (scripts\/[a-z0-9_.-]+\.ts)/g;
