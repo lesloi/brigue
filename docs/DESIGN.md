@@ -136,8 +136,8 @@ town sold and bought the week before, pulled a quarter of the way back to its re
 jittered by chance. Dumping a large stock moves the price down for everyone, including the
 dumper's neighbour. The AI houses sell their whole stock every week at the market price: they
 take the price, they do not time it, so the flow stays regular and the price readable. The
-Marché draws the last twenty-four weeks of each price against its reference, so the flow is
-visible, not only described.
+Marché marks the prices that have left their band around the reference, so the flow is visible,
+not only described.
 
 Capacity is fixed by the house's residence level, and there is no spoilage. What reduces a stock is
 theft: a secret coup resolved after two weeks, the thief's intrigue against the target's
