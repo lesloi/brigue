@@ -207,7 +207,7 @@ async function start(
     });
   running.push(close);
 
-  await worlds.createIfAbsent(WORLD_ID, world, new Date(now), new Date(now));
+  await worlds.createIfAbsent(world, new Date(now), new Date(now));
 
   const cookies: Record<string, string> = {};
   for (const entry of players) {

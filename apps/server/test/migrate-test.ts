@@ -180,8 +180,8 @@ describe.runIf(databaseUrl !== '')('migrating an old format', () => {
     // Act: the first join inserts a new world under the same id.
     const store = new PgWorldStore(pool);
     const at = new Date();
-    await store.createIfAbsent(id, createWorld(4), at, at);
-    const snapshot = await store.withWorld(id, async (session) => session.snapshot);
+    await store.createIfAbsent(createWorld(4), at, at);
+    const snapshot = await store.withWorld(async (session) => session.snapshot);
 
     // Assert
     expect(snapshot.world.formatVersion).toBe(FORMAT_VERSION);

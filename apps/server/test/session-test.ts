@@ -177,7 +177,7 @@ describe('joining the town', () => {
     expect(body.houseId).toBe('brigue');
     expect(body.token).toMatch(/^bgk_[A-Za-z0-9_-]{43}$/);
     expect(cookieOf(response)).toContain('HttpOnly');
-    expect(await harness.worlds.withWorld('saint-aubin', async (session) => session.snapshot.world.week)).toBe(1);
+    expect(await harness.worlds.withWorld(async (session) => session.snapshot.world.week)).toBe(1);
 
     // The issued token is the identity: it logs in on the next visit.
     const again = await login(harness, body.token);
@@ -246,7 +246,7 @@ describe('joining the town', () => {
   it('does not change the trade when a token resumes', async () => {
     // Arrange
     const harness = await start();
-    await harness.worlds.createIfAbsent('saint-aubin', createWorld(7, 'baker'), new Date(), new Date());
+    await harness.worlds.createIfAbsent(createWorld(7, 'baker'), new Date(), new Date());
     const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
 
     // Act
@@ -284,7 +284,7 @@ describe('joining the town', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'invalid_trade' });
     expect(cookieOf(response)).toBeUndefined();
-    await expect(harness.worlds.withWorld('saint-aubin', async () => null)).rejects.toThrow();
+    await expect(harness.worlds.withWorld(async () => null)).rejects.toThrow();
   });
 
   it('refuses an unknown or null trade', async () => {

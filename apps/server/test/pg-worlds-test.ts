@@ -52,9 +52,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const laterAt = new Date(START.getTime() + 60 * 60 * 1000);
 
     // Act
-    await store.createIfAbsent(id, first, firstAt, firstAt);
-    await store.createIfAbsent(id, second, laterAt, laterAt);
-    const snapshot = await store.withWorld(id, async (session) => session.snapshot);
+    await store.createIfAbsent(first, firstAt, firstAt);
+    await store.createIfAbsent(second, laterAt, laterAt);
+    const snapshot = await store.withWorld(async (session) => session.snapshot);
 
     // Assert
     expect(snapshot.world).toEqual(first);
@@ -67,7 +67,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const id = newWorldId();
 
     // Act
-    const attempt = store.withWorld(id, async () => null);
+    const attempt = store.withWorld(async () => null);
 
     // Assert
     await expect(attempt).rejects.toBeInstanceOf(UnknownWorldError);
@@ -77,14 +77,14 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     const id = newWorldId();
     const startWeek = 5;
-    await store.createIfAbsent(id, { ...createWorld(3), week: startWeek }, START, START);
+    await store.createIfAbsent({ ...createWorld(3), week: startWeek }, START, START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
     const firstEntered = new Promise<void>((resolve) => {
       markFirstRunning = resolve;
     });
 
-    const first = store.withWorld(id, async (session) => {
+    const first = store.withWorld(async (session) => {
       order.push('first:start');
       markFirstRunning();
       // Holds the lock long enough for a second writer to barge in if the lock
@@ -97,7 +97,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Act: the second writer starts only once the first one holds the lock.
     await firstEntered;
-    const second = store.withWorld(id, async (session) => {
+    const second = store.withWorld(async (session) => {
       order.push('second:start');
       await session.save(oneWeekLater(session.snapshot.world), START, [], START);
       order.push('second:end');
@@ -106,7 +106,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert
     expect(order).toEqual(['first:start', 'first:end', 'second:start', 'second:end']);
-    const world = await store.withWorld(id, async (session) => session.snapshot.world);
+    const world = await store.withWorld(async (session) => session.snapshot.world);
     // Two saves of +1 applied on top of each other: the second saw the first's
     // commit. A missing lock would leave both at startWeek + 1.
     expect(world.week).toBe(startWeek + 2);
@@ -115,16 +115,16 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('raises DuplicateActionError on a UUID it already stored', async () => {
     // Arrange
     const id = newWorldId();
-    await store.createIfAbsent(id, createWorld(4), START, START);
+    await store.createIfAbsent(createWorld(4), START, START);
     const action = storedAction(randomUUID(), 1, buy(2));
-    await store.withWorld(id, async (session) => session.append(action));
+    await store.withWorld(async (session) => session.append(action));
 
     // Act
-    const replay = store.withWorld(id, async (session) => session.append(action));
+    const replay = store.withWorld(async (session) => session.append(action));
 
     // Assert
     await expect(replay).rejects.toBeInstanceOf(DuplicateActionError);
-    const found = await store.withWorld(id, async (session) => session.findAction(action.id));
+    const found = await store.withWorld(async (session) => session.findAction(action.id));
     expect(found).toEqual(action);
   });
 
@@ -133,19 +133,19 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // them back in insertion order. Ids are random per run because actions are
     // kept across runs on a developer's database.
     const id = newWorldId();
-    await store.createIfAbsent(id, createWorld(5), START, START);
+    await store.createIfAbsent(createWorld(5), START, START);
     const [lexicallyFirst, lexicallyLast] = [randomUUID(), randomUUID()].sort();
     const first = storedAction(lexicallyLast, 1, buy(1));
     const second = storedAction(lexicallyFirst, 1, buy(2));
     const otherWeek = storedAction(randomUUID(), 2, buy(3));
-    await store.withWorld(id, async (session) => {
+    await store.withWorld(async (session) => {
       await session.append(first);
       await session.append(second);
       await session.append(otherWeek);
     });
 
     // Act
-    const week = await store.withWorld(id, async (session) => session.actionsFor(1));
+    const week = await store.withWorld(async (session) => session.actionsFor(1));
 
     // Assert
     expect(week.map((action) => action.id)).toEqual([first.id, second.id]);
@@ -155,16 +155,16 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('stops returning an action once it is cancelled, and keeps its row', async () => {
     // Arrange
     const id = newWorldId();
-    await store.createIfAbsent(id, createWorld(6), START, START);
+    await store.createIfAbsent(createWorld(6), START, START);
     const action = storedAction(randomUUID(), 1, buy(2));
-    await store.withWorld(id, async (session) => {
+    await store.withWorld(async (session) => {
       await session.append(action);
       await session.cancel(action.id, START);
     });
 
     // Act
-    const week = await store.withWorld(id, async (session) => session.actionsFor(1));
-    const found = await store.withWorld(id, async (session) => session.findAction(action.id));
+    const week = await store.withWorld(async (session) => session.actionsFor(1));
+    const found = await store.withWorld(async (session) => session.findAction(action.id));
 
     // Assert: the tick no longer sees it, but a retried POST still finds the id.
     expect(week).toEqual([]);
@@ -210,14 +210,14 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     ];
     const weekStartedAt = new Date(START.getTime() + 42_000);
     const action = storedAction(randomUUID(), 7, buy(3));
-    await store.createIfAbsent(id, createWorld(1), START, START);
+    await store.createIfAbsent(createWorld(1), START, START);
 
     // Act
-    await store.withWorld(id, async (session) => {
+    await store.withWorld(async (session) => {
       await session.append(action);
       await session.save(world, weekStartedAt, lastEvents, new Date(START.getTime() + 60_000));
     });
-    const read = await store.withWorld(id, async (session) => ({
+    const read = await store.withWorld(async (session) => ({
       snapshot: session.snapshot,
       action: await session.findAction(action.id),
     }));
@@ -233,11 +233,11 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     const id = newWorldId();
     const world = { ...createWorld(6), week: 3 };
-    await store.createIfAbsent(id, world, START, START);
+    await store.createIfAbsent(world, START, START);
     const action = storedAction(randomUUID(), 3, buy(1));
 
     // Act: a catch-up that refuses the world version, after writing both tables.
-    const attempt = store.withWorld(id, async (session) => {
+    const attempt = store.withWorld(async (session) => {
       await session.append(action);
       await session.save(oneWeekLater(session.snapshot.world), START, [], START);
       throw new WorldVersionError({ ...world, rulesetVersion: RULES.version + 1 });
@@ -245,7 +245,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert
     await expect(attempt).rejects.toBeInstanceOf(WorldVersionError);
-    const after = await store.withWorld(id, async (session) => ({
+    const after = await store.withWorld(async (session) => ({
       snapshot: session.snapshot,
       action: await session.findAction(action.id),
     }));

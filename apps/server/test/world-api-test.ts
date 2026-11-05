@@ -77,7 +77,7 @@ async function start(
   );
 
   const world = options.world ?? createWorld(20261031);
-  await worlds.createIfAbsent(WORLD_ID, world, new Date(clock.now), new Date(clock.now));
+  await worlds.createIfAbsent(world, new Date(clock.now), new Date(clock.now));
 
   const houses = options.houses ?? ['brigue'];
   const cookies: Record<string, string> = {};
@@ -226,7 +226,7 @@ describe('GET /api/world', () => {
       rulesetVersion: RULES.version + 1,
       expected: { formatVersion: world.formatVersion, rulesetVersion: RULES.version },
     });
-    const after = await harness.worlds.withWorld(WORLD_ID, async (session) => session.snapshot.world);
+    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world);
     expect(stateHash(after)).toBe(before);
     expect(after.week).toBe(1);
   });
@@ -249,7 +249,7 @@ describe('GET /api/world', () => {
       rulesetVersion: RULES.version,
       expected: { formatVersion: FORMAT_VERSION, rulesetVersion: RULES.version },
     });
-    const after = await harness.worlds.withWorld(WORLD_ID, async (session) => session.snapshot.world);
+    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world);
     expect(stateHash(after)).toBe(before);
     expect(after.week).toBe(1);
   });
@@ -501,7 +501,7 @@ describe('POST /api/actions', () => {
     // Assert
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: 'world_version' });
-    expect(await harness.worlds.withWorld(WORLD_ID, async (session) => session.findAction(ID_A))).toBeNull();
+    expect(await harness.worlds.withWorld(async (session) => session.findAction(ID_A))).toBeNull();
   });
 
   it('rejects a malformed action before it reaches the world', async () => {
