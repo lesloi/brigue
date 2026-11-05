@@ -22,10 +22,10 @@ export function ResourceIcon({ kind }: { kind: GoodId | 'coins' | 'favour' }) {
     case 'cloth':
       return (
         <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 5h16" stroke="#a77a52" stroke-width="1.5" stroke-linecap="round" />
-          <path d="M7 5h10l-1 13c0 1-2 1.5-4 1.5s-4-.5-4-1.5z" fill="#c98f6a" />
-          <path d="M9.5 5v11M14.5 5v11" stroke="#b8714f" stroke-width="1" />
-          <path d="M7 9h10" stroke="#8f4b2d" stroke-width="1" />
+          <rect x="3" y="4" width="18" height="16" rx="2" fill="#e8d3bf" />
+          <path d="M3 4h18v5H3z" fill="#c98f6a" />
+          <path d="M3 16h18v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#d8a17f" />
+          <path d="M3 9l6-5" stroke="#8f4b2d" stroke-width="1" />
         </svg>
       );
     case 'wool':
@@ -86,11 +86,11 @@ export function WorkshopThumb({ good }: { good: GoodId }) {
       return (
         <svg viewBox="0 0 48 48" aria-hidden="true">
           <rect width="48" height="48" fill="#eef0e6" />
-          <path d="M7 13h34" stroke="#a77a52" stroke-width="2.5" stroke-linecap="round" />
-          <path d="M12 13h24l-2 23c-.2 2-3 3-5 3H19c-2 0-4.8-1-5-3z" fill="#c98f6a" />
-          <path d="M18 13l1 24M30 13l-1 24" stroke="#b8714f" stroke-width="1.2" />
-          <path d="M12 19h24" stroke="#8f4b2d" stroke-width="1.2" />
-          <path d="M14 40h6M28 40h6" stroke="#8f4b2d" stroke-width="1.2" stroke-linecap="round" />
+          <rect x="8" y="10" width="32" height="28" rx="3" fill="#e8d3bf" />
+          <path d="M8 10h32v8H8z" fill="#c98f6a" />
+          <path d="M8 30h32v5a3 3 0 0 1-3 3H11a3 3 0 0 1-3-3z" fill="#d8a17f" />
+          <path d="M8 18l10-8" stroke="#8f4b2d" stroke-width="1.2" />
+          <path d="M13 14h22" stroke="#8f4b2d" stroke-width="1" />
         </svg>
       );
     case 'wool':
