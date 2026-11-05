@@ -2,15 +2,15 @@ export { canonicalJson } from './canonical.ts';
 export { isVisibleTo, visibleTo } from './events.ts';
 export type { Action, Audience, Event, RefusalReason } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
-export { advance, drawBelow, MINSTD_MODULUS } from './prng.ts';
-export { tick, nextPriceCents, WorldVersionError, type PriceInput, type TickResult } from './tick.ts';
+export { advanceRng, drawBelow, MINSTD_MODULUS } from './prng.ts';
+export { advance, nextPriceCents, WorldVersionError, type PriceInput, type TickResult } from './tick.ts';
 export {
   createFounder,
   createWorld,
   FORMAT_VERSION,
   GOODS,
   PACING,
-  PRICE_HISTORY_WEEKS,
+  PRICE_HISTORY_BELLS,
   RULES,
   seatHolder,
   SEATS,
@@ -19,7 +19,7 @@ export {
   takeSeat,
   TRADE_CHAINS,
   TRADES,
-  WEEKS_PER_YEAR,
+  HOURS_PER_YEAR,
   type Attributes,
   type Controller,
   type Engagement,

@@ -9,7 +9,7 @@
 
 export const MINSTD_MODULUS = 2147483647;
 
-export function advance(state: number): number {
+export function advanceRng(state: number): number {
   // MINSTD has a fixed point at zero, and `%` keeps the sign of a negative seed:
   // a world seeded with 0 or -5 would draw 0 (or negative states) forever.
   const safe = ((state % MINSTD_MODULUS) + MINSTD_MODULUS) % MINSTD_MODULUS || 1;
@@ -23,7 +23,7 @@ export function drawBelow(state: number, bound: number): [state: number, value: 
     throw new RangeError(`drawBelow needs a positive integer bound, got ${bound}`);
   }
 
-  const next = advance(state);
+  const next = advanceRng(state);
 
   return [next, next % bound];
 }

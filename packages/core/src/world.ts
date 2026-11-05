@@ -95,20 +95,20 @@ export interface Law {
   id: string;
   title: string;
   sponsorHouseId: string;
-  enactedWeek: number;
+  enactedAt: number;
 }
 
-/** The durations the calendar gives an engagement, in weeks. */
-export type EngagementKind = 'campaign' | 'hearing' | 'site';
+/** The durations the calendar gives an engagement, in hours. */
+export type EngagementKind = 'hearing' | 'site';
 
 /**
- * Work that takes weeks. It carries the week it falls due rather than a
- * remaining count, so a catch-up can replay whole weeks and pay what is owed.
+ * Work that takes hours. It carries the instant it falls due rather than a
+ * remaining count, so a catch-up can replay whole hours and pay what is owed.
+ * A campaign has no duration left: it is a candidacy, and it counts once.
  */
 export type Engagement =
-  | { id: string; kind: 'campaign'; houseId: string; seatId: SeatId; dueWeek: number }
-  | { id: string; kind: 'hearing'; houseId: string; dueWeek: number }
-  | { id: string; kind: 'site'; houseId: string; dueWeek: number };
+  | { id: string; kind: 'hearing'; houseId: string; dueAt: number }
+  | { id: string; kind: 'site'; houseId: string; dueAt: number };
 
 export interface World {
   /** Stamped so a saved world can be refused rather than silently misread. */
@@ -117,7 +117,7 @@ export interface World {
   rulesetVersion: number;
   seed: number;
   rng: number;
-  week: number;
+  hour: number;
   year: number;
   houses: Record<string, House>;
   people: Record<string, Person>;
@@ -125,13 +125,13 @@ export interface World {
   laws: Law[];
   market: Record<GoodId, number>;
   /**
-   * What the town put on the market last week, per good: units sold minus units
-   * bought. It is what moves the prices of the week that follows, so it is
+   * What the town put on the market last hour, per good: units sold minus units
+   * bought. It is what moves the prices of the hour that follows, so it is
    * stored rather than recomputed: the price you see is the town you were.
    */
   marketFlow: Partial<Record<GoodId, number>>;
   /**
-   * The last PRICE_HISTORY_WEEKS prices per good, in cents, one point per tick.
+   * The last PRICE_HISTORY_BELLS prices per good, in cents, one point per tick.
    * Optional because a world stored before the field existed must keep ticking:
    * its history starts at the tick that first sees it.
    */
@@ -139,41 +139,45 @@ export interface World {
   /** Votes bought per seat, per house, cleared when that seat is elected. */
   campaigns: Partial<Record<SeatId, Record<string, number>>>;
   /**
-   * What the town owes to a future week: a campaign, a hearing, a building
-   * site. Resolved by the tick when its due week arrives, even if the town
-   * only reaches that week later.
+   * Candidacies closed at the last noon bell: they count at the coming
+   * scrutiny. What is lodged after that bell waits in `campaigns` for the next.
+   */
+  closedCampaigns: Partial<Record<SeatId, Record<string, number>>>;
+  /**
+   * What the town owes to a future hour: a campaign, a hearing, a building
+   * site. Resolved by the tick when its due hour arrives, even if the town
+   * only reaches that hour later.
    */
   engagements: Engagement[];
-  /** Mints engagement ids, so two campaigns in one week cannot collide. */
+  /** Mints engagement ids, so two campaigns in one hour cannot collide. */
   engagementSeq: number;
 }
 
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 1;
 
 export const RULES = {
-  version: 7,
+  version: 1,
   /**
-   * A game year is twenty-four weeks, and every seat is up at the scrutiny that
+   * A game year is twenty-four hours, and every seat is up at the scrutiny that
    * closes it: one ceremony a day, fixed and known in advance, rather than a
    * rotation that fires while the player sleeps. The day is the unit the player
-   * actually plays; the week is the tick.
+   * actually plays; the hour is the step.
    */
-  campaignWeeks: 8,
-  hearingWeeks: 6,
-  siteWeeks: 12,
+  hearingHours: 6,
+  siteHours: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
   priceDriftCents: 30,
   /**
-   * A good's price is pulled by three things every week: its own random drift,
+   * A good's price is pulled by three things every hour: its own random drift,
    * the town's imbalance on that good, and the gap back to its reference.
    *
    * `absorbedUnits` is the town's standing demand at the reference price: the
-   * volume it takes every week whether or not anyone makes the good. Where that
+   * volume it takes every hour whether or not anyone makes the good. Where that
    * demand is nil, a good nobody touches sits on its reference; where it is not,
    * a good nobody makes climbs. `scaleUnits` is the imbalance that moves the
    * price by a tenth of it (`pricePressureDivisor`); `priceReversionDivisor` is
-   * how many weeks the gap back to the reference takes to close. Wool has no
+   * how many hours the gap back to the reference takes to close. Wool has no
    * absorption because what is made of it is bought by the workshops, which
    * shows up as demand, not as the town's own trade.
    */
@@ -213,19 +217,19 @@ export const RULES = {
 } as const;
 
 /**
- * Wall-clock policy, not a simulation rule: how long a week lasts, how far a
- * returning player is caught up, and when a house stops being played. Read by
- * the server; changing it must not refuse an existing world.
+ * Wall-clock policy, not a simulation rule: how far a returning player is caught
+ * up, and when a house stops being played. Read by the server; changing it must
+ * not refuse an existing world.
  */
 export const PACING = {
-  minutesPerWeek: 60,
-  // A month is 720 hours; 744 covers any calendar month. Beyond that, a read
-  // simulates the cap and lets the wall clock jump over the rest rather than
-  // replaying an unbounded backlog.
-  maxCatchUpWeeks: 744,
-  // A week without a visit is enough to say the player has stopped playing;
-  // the house goes dormant and stops producing. Calibration, not a rule.
-  dormancyDays: 7,
+  // The scheduler plays one hour per pass. A month is 720 hours, and the read
+  // path catches up at most that far before the wall clock jumps: the backlog it
+  // cannot replay is not simulated, so the town only counts the hours it lived.
+  maxCatchUpHours: 744,
+  // Three days without a visit is enough to say the player has stopped playing;
+  // the house goes dormant, keeps its estate and loses its seat. Calibration,
+  // not a rule.
+  dormancyDays: 3,
   // After a month without a visit the house is gone with its tokens: no return,
   // no vacation mode. The boundary is strict, so exactly thirty days still
   // reads and the next read deletes.
@@ -233,14 +237,14 @@ export const PACING = {
 } as const;
 
 export const START_YEAR = 1401;
-/** Twenty-four weeks make a year, so one real day is one game year. */
-export const WEEKS_PER_YEAR = 24;
+/** Twenty-four hours make a year, so one real day is one game year. */
+export const HOURS_PER_YEAR = 24;
 /**
- * The Marché keeps one price per week for a game year: one scrutiny cycle, one
- * real day of town life. It is a display window, not a rule, so it stays out of
- * RULES; a later change grows or shrinks it without moving the ruleset.
+ * The Marché keeps one price per bell: twelve bells make a game year cycling
+ * twice a day, and the window is the last day of town life. It is a display
+ * window, not a rule, so it stays out of RULES.
  */
-export const PRICE_HISTORY_WEEKS = WEEKS_PER_YEAR;
+export const PRICE_HISTORY_BELLS = HOURS_PER_YEAR;
 
 export interface Founder {
   house: House;
@@ -332,7 +336,7 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
     rulesetVersion: RULES.version,
     seed,
     rng: seed,
-    week: 1,
+    hour: 1,
     year: START_YEAR,
     houses: {
       [founder.house.id]: founder.house,
@@ -492,6 +496,7 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
       planks: [RULES.market.planks.referenceCents],
     },
     campaigns: {},
+    closedCampaigns: {},
     engagements: [],
     engagementSeq: 0,
   };

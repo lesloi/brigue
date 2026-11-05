@@ -1,16 +1,16 @@
 import { drawBelow } from './prng.ts';
-import type { Action, Event, RefusalReason } from './events.ts';
+import type { Action, Event, EventDraft, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
   GOODS,
-  PRICE_HISTORY_WEEKS,
+  PRICE_HISTORY_BELLS,
   RULES,
   seatHolder,
   SEATS,
   START_YEAR,
   stockUnits,
   takeSeat,
-  WEEKS_PER_YEAR,
+  HOURS_PER_YEAR,
   type GoodId,
   type Person,
   type SeatId,
@@ -38,26 +38,56 @@ export class WorldVersionError extends Error {
 }
 
 /**
- * Advances one game week.
+ * Advances the town to an hour, one hour at a time.
  *
- * Pure: the world passed in is never touched. We clone it up front instead of
- * threading immutable updates through every rule, which keeps the rules
- * readable; the clone is the boundary, and a test pins that the input is
- * untouched.
+ * Pure: the world passed in is never touched. Every hour is stepped in order,
+ * so advancing three hours at once is exactly three advances of one — that is
+ * what lets a late scheduler catch up without drifting.
  *
- * Actions are applied in the order given, before the world moves. That order is
- * part of the contract: the caller (the server) is responsible for storing it,
- * because two different orders are two different weeks.
+ * Actions are placed on the hour they play, and two actions of the same hour
+ * keep the order they are given: the caller (the server) stores it, because two
+ * different orders are two different towns.
  */
-export function tick(world: World, actions: readonly Action[] = []): TickResult {
+export function advance(world: World, until: number, actions: readonly PlacedAction[] = []): TickResult {
   if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
     throw new WorldVersionError(world);
   }
 
   const next = structuredClone(world);
   const events: Event[] = [];
-  // The week's own trade, good by good: sold minus bought. It is written on the
-  // world once the week is over, because it prices the week that follows.
+  const byHour = new Map<number, Action[]>();
+
+  for (const placed of actions) {
+    const queued = byHour.get(placed.at);
+    if (queued === undefined) {
+      byHour.set(placed.at, [placed.action]);
+    } else {
+      queued.push(placed.action);
+    }
+  }
+
+  while (next.hour <= until) {
+    const at = next.hour;
+    const drafts: EventDraft[] = [];
+    step(next, byHour.get(at) ?? [], drafts);
+    for (const draft of drafts) {
+      events.push({ ...draft, at });
+    }
+  }
+
+  return { world: next, events };
+}
+
+export interface PlacedAction {
+  /** The town hour the action is applied on. */
+  at: number;
+  action: Action;
+}
+
+/** One hour of the town. Mutates `next`, which `advance` owns. */
+function step(next: World, actions: readonly Action[], events: EventDraft[]): void {
+  // The hour's own trade, good by good: sold minus bought. It is written on the
+  // world once the hour is over, and prices the next bell.
   const flow = Object.fromEntries(GOODS.map((good) => [good, 0])) as Record<GoodId, number>;
 
   for (const candidate of actions as readonly unknown[]) {
@@ -77,34 +107,43 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
     applyAction(next, candidate, events, flow);
   }
 
-  // What fell due is paid before the week's trade, so an engagement resolved
-  // in the same tick as its last action already counts for that week.
+  // What fell due is paid before the hour's trade, so an engagement resolved in
+  // the same hour as its last action already counts for that hour.
   resolveEngagements(next, events);
 
   // The AI houses decide in the same breath as the players, at the same price:
-  // both buy before the week moves the market.
+  // both buy before the hour moves the market.
   aiHousesBuy(next, flow, events);
 
   // Production, then the AI's sale, then wages: an AI pays its workers from the
-  // price it just took, and every trade of the week happens at the price the
-  // players saw. The prices move once the week is over, for the next one.
+  // price it just took. The prices move at the bells only, so every trade of the
+  // half-day happens at the price the players saw.
   runWorkshops(next, events);
   aiHousesSell(next, flow, events);
   payWages(next, events);
-  driftPrices(next, events);
+
+  const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
+  if (bell) {
+    driftPrices(next, events);
+  }
 
   next.marketFlow = flow;
 
+  // Noon closes the candidacies: what is in the open map counts tonight, what
+  // is lodged after the bell waits for the next scrutiny.
+  if (next.hour % HOURS_PER_YEAR === HOURS_PER_YEAR / 2) {
+    next.closedCampaigns = next.campaigns;
+    next.campaigns = {};
+  }
+
   // The scrutiny closes the year: every seat is up, once a day, and everyone
   // present ages a year.
-  if (next.week % WEEKS_PER_YEAR === 0) {
+  if (next.hour % HOURS_PER_YEAR === 0) {
     holdScrutiny(next, events);
   }
 
-  next.week += 1;
-  next.year = START_YEAR + Math.floor((next.week - 1) / WEEKS_PER_YEAR);
-
-  return { world: next, events };
+  next.hour += 1;
+  next.year = START_YEAR + Math.floor((next.hour - 1) / HOURS_PER_YEAR);
 }
 
 function isKnownAction(value: unknown): value is Action {
@@ -122,7 +161,13 @@ function isKnownGood(good: unknown): good is GoodId {
   return typeof good === 'string' && (GOODS as readonly string[]).includes(good);
 }
 
-function refuse(events: Event[], action: Action, houseId: unknown, reason: RefusalReason, knownHouse: boolean): void {
+function refuse(
+  events: EventDraft[],
+  action: Action,
+  houseId: unknown,
+  reason: RefusalReason,
+  knownHouse: boolean,
+): void {
   const id = typeof houseId === 'string' && houseId.length > 0 ? houseId : 'unknown';
 
   events.push({
@@ -136,7 +181,7 @@ function refuse(events: Event[], action: Action, houseId: unknown, reason: Refus
   });
 }
 
-function applyAction(world: World, action: Action, events: Event[], flow: Record<GoodId, number>): void {
+function applyAction(world: World, action: Action, events: EventDraft[], flow: Record<GoodId, number>): void {
   const house = world.houses[action.houseId];
   if (!house) {
     refuse(events, action, action.houseId, 'unknown_house', false);
@@ -236,22 +281,24 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
       }
 
       house.favour -= RULES.campaignFavourCost;
-      const dueWeek = world.week + RULES.campaignWeeks;
-      world.engagements.push({
-        id: `engagement-${world.engagementSeq}`,
-        kind: 'campaign',
-        houseId: house.id,
-        seatId: action.seatId,
-        dueWeek,
-      });
-      world.engagementSeq += 1;
+
+      // A candidacy has no run behind it: it is lodged, and the noon bell
+      // decides which scrutiny it counts for. The event says which, so the
+      // screen can tell the player what they bought.
+      const localHour = ((world.hour - 1) % HOURS_PER_YEAR) + 1;
+      const scrutiny = Math.ceil(world.hour / HOURS_PER_YEAR) * HOURS_PER_YEAR;
+      const countsAt = localHour <= HOURS_PER_YEAR / 2 ? scrutiny : scrutiny + HOURS_PER_YEAR;
+
+      const seat = (world.campaigns[action.seatId] ??= {});
+      seat[house.id] = (seat[house.id] ?? 0) + RULES.campaignVoteBonus;
+
       events.push({
         type: 'council.campaigned',
         audience: 'town',
         houseId: house.id,
         seatId: action.seatId,
         favourSpent: RULES.campaignFavourCost,
-        dueWeek,
+        countsAt,
       });
       return;
     }
@@ -266,16 +313,16 @@ export interface PriceInput {
   /** The imbalance that moves the price by a tenth of the reference. */
   scaleUnits: number;
   /**
-   * Net units the town put on the market last week: sold minus bought.
-   * Undefined when the world has no week behind it, or none for that good: the
+   * Net units the town put on the market last hour: sold minus bought.
+   * Undefined when the world has no hour behind it, or none for that good: the
    * market then has no imbalance to price.
    */
   flowUnits?: number;
-  /** This week's random drift, already drawn. */
+  /** This hour's random drift, already drawn. */
   driftCents: number;
   /** The imbalance, in scales, that moves the price by a tenth of the reference. */
   pressureDivisor: number;
-  /** How many weeks the gap back to the reference takes to close. */
+  /** How many hours the gap back to the reference takes to close. */
   reversionDivisor: number;
   floorCents: number;
   ceilCents: number;
@@ -284,8 +331,8 @@ export interface PriceInput {
 /**
  * The rule of the price, in whole cents.
  *
- * A week's imbalance moves the price by a tenth of the reference per scale, and
- * the price closes a fixed share of its gap back to the reference every week, so
+ * A hour's imbalance moves the price by a tenth of the reference per scale, and
+ * the price closes a fixed share of its gap back to the reference every hour, so
  * a shock fades instead of becoming the new normal. Both terms are integer
  * divisions: a price is never a fraction, and the same world replays the same.
  *
@@ -303,15 +350,15 @@ export function nextPriceCents(input: PriceInput): number {
 
 /**
  * The other houses are not puppets: an AI house buys the input its workshops
- * lack, at the week's price, as far as its purse goes, and decides nothing
+ * lack, at the hour's price, as far as its purse goes, and decides nothing
  * else. It is not an action, so a house that cannot pay produces no refusal:
  * its workshop simply idles, which `runWorkshops` reports.
  *
  * No margin check on purpose. A guard that stops buying once the input costs
- * more than the output makes the AI's demand switch on and off with a one-week
+ * more than the output makes the AI's demand switch on and off with a one-hour
  * lag, and the price saws. The price is the guard.
  */
-function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]): void {
+function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: EventDraft[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
@@ -358,7 +405,7 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]
   }
 }
 
-function driftPrices(world: World, events: Event[]): void {
+function driftPrices(world: World, events: EventDraft[]): void {
   // A world stored before the history existed starts its record at this tick.
   world.marketHistory ??= {};
 
@@ -385,17 +432,17 @@ function driftPrices(world: World, events: Event[]): void {
       events.push({ type: 'market.price_changed', audience: 'town', good, before, after });
     }
 
-    // One point per week even when the price holds: the chart must not skip a
-    // quiet week, or two changes would look adjacent.
+    // One point per hour even when the price holds: the chart must not skip a
+    // quiet hour, or two changes would look adjacent.
     const history = (world.marketHistory[good] ??= []);
     history.push(after);
-    if (history.length > PRICE_HISTORY_WEEKS) {
-      history.splice(0, history.length - PRICE_HISTORY_WEEKS);
+    if (history.length > PRICE_HISTORY_BELLS) {
+      history.splice(0, history.length - PRICE_HISTORY_BELLS);
     }
   }
 }
 
-function runWorkshops(world: World, events: Event[]): void {
+function runWorkshops(world: World, events: EventDraft[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
@@ -455,7 +502,7 @@ function runWorkshops(world: World, events: Event[]): void {
       }
 
       // Production credits the warehouse, never the purse: the sale is a
-      // separate action, at the week's price.
+      // separate action, at the hour's price.
       house.stock[workshop.good] = (house.stock[workshop.good] ?? 0) + units;
       events.push({
         type: 'workshop.produced',
@@ -469,12 +516,12 @@ function runWorkshops(world: World, events: Event[]): void {
 }
 
 /**
- * The AI takes the price and does not time it: every week it sells whatever
- * its workshops left in the warehouse, at the week's price. A human house
- * keeps its stock, because holding for a better week is the player's bet; a
+ * The AI takes the price and does not time it: every hour it sells whatever
+ * its workshops left in the warehouse, at the hour's price. A human house
+ * keeps its stock, because holding for a better hour is the player's bet; a
  * dormant house keeps everything it had.
  */
-function aiHousesSell(world: World, flow: Record<GoodId, number>, events: Event[]): void {
+function aiHousesSell(world: World, flow: Record<GoodId, number>, events: EventDraft[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
@@ -507,7 +554,7 @@ function aiHousesSell(world: World, flow: Record<GoodId, number>, events: Event[
 }
 
 /** Wages come after the AI's sale, so a house pays from the price it just took. */
-function payWages(world: World, events: Event[]): void {
+function payWages(world: World, events: EventDraft[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
@@ -524,7 +571,7 @@ function payWages(world: World, events: Event[]): void {
   }
 }
 
-function employeesArePaid(world: World, houseId: string, workers: number, events: Event[]): void {
+function employeesArePaid(world: World, houseId: string, workers: number, events: EventDraft[]): void {
   const house = world.houses[houseId];
   const wages = workers * RULES.wagePerWorkerCents;
 
@@ -551,42 +598,36 @@ function employeesArePaid(world: World, houseId: string, workers: number, events
 }
 
 /**
- * Pays every engagement whose due week has arrived. A week the catch-up never
- * simulated does not drop it: the town's week counter is the only clock, so an
+ * Pays every engagement whose due hour has arrived. A hour the catch-up never
+ * simulated does not drop it: the town's hour counter is the only clock, so an
  * engagement behind it is resolved by the next tick that runs, and the event
- * carries both the week it was due and the week it was paid.
+ * carries both the hour it was due and the hour it was paid.
  */
-function resolveEngagements(world: World, events: Event[]): void {
+function resolveEngagements(world: World, events: EventDraft[]): void {
   const due = world.engagements
-    .filter((engagement) => engagement.dueWeek <= world.week)
-    .sort((left, right) => left.dueWeek - right.dueWeek || left.id.localeCompare(right.id));
+    .filter((engagement) => engagement.dueAt <= world.hour)
+    .sort((left, right) => left.dueAt - right.dueAt || left.id.localeCompare(right.id));
 
   if (due.length === 0) {
     return;
   }
 
-  world.engagements = world.engagements.filter((engagement) => engagement.dueWeek > world.week);
+  world.engagements = world.engagements.filter((engagement) => engagement.dueAt > world.hour);
 
   for (const engagement of due) {
-    if (engagement.kind === 'campaign') {
-      const byHouse = (world.campaigns[engagement.seatId] ??= {});
-      byHouse[engagement.houseId] = (byHouse[engagement.houseId] ?? 0) + RULES.campaignVoteBonus;
-    }
-
     events.push({
       type: 'engagement.resolved',
       audience: 'town',
       engagementId: engagement.id,
       kind: engagement.kind,
       houseId: engagement.houseId,
-      ...(engagement.kind === 'campaign' ? { seatId: engagement.seatId } : {}),
-      dueWeek: engagement.dueWeek,
-      resolvedWeek: world.week,
+      dueAt: engagement.dueAt,
+      resolvedAt: world.hour,
     });
   }
 }
 
-function holdScrutiny(world: World, events: Event[]): void {
+function holdScrutiny(world: World, events: EventDraft[]): void {
   const year = world.year;
 
   // Age belongs to the calendar: every living person takes a year at the
@@ -610,8 +651,8 @@ function holdScrutiny(world: World, events: Event[]): void {
   events.push(...elections);
 }
 
-function contestSeat(world: World, seatId: SeatId, events: Event[], electedPersonIds: Set<string>): void {
-  const campaigns = world.campaigns[seatId] ?? {};
+function contestSeat(world: World, seatId: SeatId, events: EventDraft[], electedPersonIds: Set<string>): void {
+  const campaigns = world.closedCampaigns[seatId] ?? {};
   const incumbent = seatHolder(world, seatId);
   const incumbentHouseId = incumbent?.houseId;
   const incumbentDormant = incumbentHouseId !== undefined && world.houses[incumbentHouseId]?.dormant === true;
@@ -643,7 +684,7 @@ function contestSeat(world: World, seatId: SeatId, events: Event[], electedPerso
 
   if (candidates.length === 0) {
     world.seats[seatId] = { personId: null };
-    delete world.campaigns[seatId];
+    delete world.closedCampaigns[seatId];
     return;
   }
 
@@ -673,7 +714,7 @@ function contestSeat(world: World, seatId: SeatId, events: Event[], electedPerso
       electedPersonIds.add(winner.id);
     }
   }
-  delete world.campaigns[seatId];
+  delete world.closedCampaigns[seatId];
 
   events.push({ type: 'council.election_held', audience: 'town', seatId, winnerHouseId, votes });
 }

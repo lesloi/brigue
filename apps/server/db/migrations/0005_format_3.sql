@@ -91,14 +91,16 @@ CREATE TABLE engagements (
 
 CREATE INDEX engagements_due ON engagements (due_at);
 
--- `counts_at` is the scrutiny the votes land on: a candidacy lodged after the
--- noon bell waits for the next one, and the row says which.
+-- A campaign has no duration any more: it is a candidacy, and it counts once.
+-- The noon bell closes the open map into the closed one, so `closed` says which
+-- scrutiny the votes land on: a candidacy lodged after the bell waits for the
+-- next one.
 CREATE TABLE campaigns (
   seat_id text NOT NULL,
   house_id text NOT NULL REFERENCES houses (id) ON DELETE CASCADE,
-  counts_at integer NOT NULL,
+  closed boolean NOT NULL DEFAULT false,
   votes integer NOT NULL,
-  PRIMARY KEY (seat_id, house_id, counts_at)
+  PRIMARY KEY (seat_id, house_id, closed)
 );
 
 CREATE TABLE market (

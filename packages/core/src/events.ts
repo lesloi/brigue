@@ -62,16 +62,16 @@ type EventBody =
   | { type: 'house.wages_paid'; houseId: string; amountCents: number }
   | { type: 'house.penniless'; houseId: string; shortfallCents: number }
   | { type: 'house.debt_repaid'; houseId: string; amountCents: number }
-  | { type: 'council.campaigned'; houseId: string; seatId: SeatId; favourSpent: number; dueWeek: number }
+  | { type: 'council.campaigned'; houseId: string; seatId: SeatId; favourSpent: number; countsAt: number }
   | {
       type: 'engagement.resolved';
       engagementId: string;
       kind: EngagementKind;
       houseId: string;
       seatId?: SeatId;
-      dueWeek: number;
-      /** The week the town actually reached: equal to `dueWeek` unless late. */
-      resolvedWeek: number;
+      dueAt: number;
+      /** The hour the town actually reached: equal to `dueAt` unless late. */
+      resolvedAt: number;
     }
   | { type: 'council.scrutiny_held'; year: number; seats: SeatId[] }
   | {
@@ -81,10 +81,14 @@ type EventBody =
       votes: Record<string, number>;
     };
 
-export type Event = EventBody & { audience: Audience };
+/** An event as a step builds it: the hour is stamped by `advance`. */
+export type EventDraft = EventBody & { audience: Audience };
 
-/** What one house may read of a week. The court has no reader yet. */
-export function isVisibleTo(event: Event, houseId: string): boolean {
+/** What one house may read of an hour: every event carries the hour it happened on. */
+export type Event = EventDraft & { at: number };
+
+/** What one house may read of an hour. The court has no reader yet. */
+export function isVisibleTo(event: EventDraft, houseId: string): boolean {
   if (event.audience === 'town') {
     return true;
   }
