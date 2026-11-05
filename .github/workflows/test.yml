@@ -45,7 +45,7 @@ jobs:
           cache: true
       - run: pnpm install --frozen-lockfile
       # Both this step and the test's own setup apply the migrations; doing it here as well
-      # exercises the command a deploy actually runs.
+      # exercises the CLI through the package script a developer uses.
       - run: pnpm --filter @brigue/server migrate
       - run: pnpm test
       # The build is the check that the service worker and the manifest are produced.

@@ -116,7 +116,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive. A change the additive rule cannot carry — this format adds a person and moves a
   seat from a house to a person — starts a new `formatVersion`; a world of another format is
-  refused, never guessed. The release that ships the new format runs `migrate-old-format` after
+  refused, never guessed. The release that ships the new format runs `migrate-world` after
   the new pod serves: during the rollout, the previous pod would recreate a format-1 world at the
   first visit. A world with a registered migration is converted; one without is not deleted in
   silence — the script stops, names the reset and its cost, and an operator confirms it with
@@ -269,8 +269,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **Migrations can be checked without being applied.** `migrate --check` exits non-zero while the
   image carries a migration `schema_migrations` does not have, and `applyMigrations` takes a
-  Postgres advisory lock before touching anything, table included. That is the hook a deploy
-  uses to hold back a new instance until the schema matches its image.
+  Postgres advisory lock before touching anything, table included. That is the hook a deploy can
+  use to hold back a new instance until the schema matches its image.
 
 - **Readiness asks the database; liveness does not.** `/readyz` runs one `SELECT 1` and fails
   while it cannot; `/healthz` touches nothing. Wired the other way, a database outage would
