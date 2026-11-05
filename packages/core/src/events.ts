@@ -17,6 +17,7 @@ export type Audience = 'town' | 'court' | { houseId: string };
 
 export type Action =
   | { type: 'market.buy'; houseId: string; good: GoodId; units: number }
+  | { type: 'market.sell'; houseId: string; good: GoodId; units: number }
   | { type: 'council.campaign'; houseId: string; seatId: SeatId };
 
 export type RefusalReason =
@@ -24,8 +25,11 @@ export type RefusalReason =
   | 'unknown_house'
   | 'dormant_house'
   | 'unknown_seat'
+  | 'unknown_good'
   | 'invalid_quantity'
   | 'insufficient_funds'
+  | 'insufficient_stock'
+  | 'stock_full'
   | 'insufficient_favour';
 
 type EventBody =
@@ -52,6 +56,8 @@ type EventBody =
       priceCents: number;
       revenueCents: number;
     }
+  | { type: 'workshop.produced'; houseId: string; good: GoodId; units: number }
+  | { type: 'workshop.overflow'; houseId: string; good: GoodId; refusedUnits: number }
   | { type: 'workshop.idle'; houseId: string; good: GoodId; input: GoodId; missingUnits: number }
   | { type: 'house.wages_paid'; houseId: string; amountCents: number }
   | { type: 'house.penniless'; houseId: string; shortfallCents: number }

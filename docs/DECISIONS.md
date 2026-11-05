@@ -33,8 +33,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **The town is capped at twenty houses, ten of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
   town outgrows its seats. The AI cap keeps the town human: a shared world is mostly people, and
-  a solo world is ten AI and its founder. The town opens with ten AI and the founder; a human
-  arriving when it is full replaces an AI. Revisit if a season proves too small at twenty.
+  a solo world is ten AI and its founder. The town opens with ten AI and the founder; the code
+  today opens with six — one per trade plus the raw producers — and grows to ten with the town
+  composition. A human arriving when it is full replaces an AI. Revisit if a season proves too small at twenty.
 
 - **The council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and each
   floor holds a different right rather than a stronger version of the one below. One office per
@@ -120,9 +121,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   the new pod serves: during the rollout, the previous pod would recreate a format-1 world at the
   first visit. A world with a registered migration is converted; one without is not deleted in
   silence — the script stops, names the reset and its cost, and an operator confirms it with
-  `--reset`. The town that runs today is a test town, so the format-2 reset is that confirmed
-  path; once a town has players whose history matters, a breaking change ships a migration by
-  default. The additive rule resumes from the new format.
+  `--reset`. The town that runs today is a test town, so the format-2 and format-3 resets are
+  that confirmed path; once a town has players whose history matters, a breaking change ships a
+  migration by default. The additive rule resumes from the new format.
 
 ## Simulation
 
@@ -146,9 +147,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   a hundredth per tick is invisible until it is catastrophic.
 
 - **A workshop produces into a stock, and selling is an action.** Production credits goods, the
-  sale credits coin, never both. The stock has a capacity fixed by the workshop's level, and it
-  does not spoil; what reduces it is theft. Holding is a bet on next week's price, and dumping a
-  large stock moves the price down for everyone. This replaces the earlier rule that output was
+  sale credits coin, never both. The stock has a capacity fixed by the house's residence — a
+  constant until the residence ladder lands — and it does not spoil; what reduces it is theft.
+  Holding is a bet on next week's price, and dumping a large stock moves the price down for
+  everyone. This replaces the earlier rule that output was
   sold on production: that rule was chosen to count the output once, and the stock keeps that
   property while giving the workshop its first real decision. Revisit if holding across weeks
   proves to be a second mechanic too many.
@@ -294,3 +296,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   project, which is art. The one illustration is the town scene on the home screen; a map of
   places, drawn in seals, is navigation, not a second scene. Revisit if the town view ever
   becomes a place where the player acts.
+
+- **The back button walks the tabs, then leaves.** A tab is a history entry: opening Marché
+  pushes one, and the back button returns to the tab you came from; from the home tab it leaves
+  the PWA rather than trapping the player in a loop. No router: a tab switch is one `pushState`,
+  and `popstate` restores the tab. A deep-linked Marché has no in-app predecessor, so going home
+  replaces the entry instead of leaving. Revisit if a screen grows sub-views that need a back of
+  their own.

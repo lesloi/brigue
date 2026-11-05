@@ -102,7 +102,7 @@ describe('dormancy', () => {
     // Arrange
     const base = createWorld(20261105);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    for (let index = 5; index <= 20; index += 1) {
+    for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {

@@ -107,8 +107,9 @@ describe('catching the world up', () => {
 
     // Assert
     expect(result.events[0]).toMatchObject({ type: 'market.bought', houseId: 'brigue', units: 2 });
-    expect(result.summary.counts['market.bought']).toBe(1);
-    expect(result.summary.counts['market.sold']).toBe(4);
+    // The three AI houses that need an input also bought that week.
+    expect(result.summary.counts['market.bought']).toBe(4);
+    expect(result.summary.counts['market.sold']).toBe(6);
   });
 
   it('applies the actions of one week in the order they were received', async () => {
@@ -121,7 +122,7 @@ describe('catching the world up', () => {
     const result = await run({ actions, now: new Date(START.getTime() + HOUR) });
 
     // Assert
-    const bought = result.events.filter((event) => event.type === 'market.bought');
+    const bought = result.events.filter((event) => event.type === 'market.bought' && event.houseId === 'brigue');
     expect(bought.map((event) => (event.type === 'market.bought' ? event.units : 0))).toEqual([1, 2]);
   });
 

@@ -7,7 +7,10 @@
  * replayed or audited.
  */
 
-export type GoodId = 'cloth' | 'wool' | 'grain';
+export type GoodId = 'wool' | 'cloth' | 'grain' | 'bread' | 'wood' | 'planks';
+
+/** The six goods, in chain order: a raw good, then what is made of it. */
+export const GOODS: readonly GoodId[] = ['wool', 'cloth', 'grain', 'bread', 'wood', 'planks'];
 export type SeatId = 'maire' | 'prevot' | 'echevin-north' | 'echevin-south' | 'tresorier';
 
 /** Seats in the order they come up for election, and the order screens show them. */
@@ -122,10 +125,10 @@ export interface World {
   engagementSeq: number;
 }
 
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 export const RULES = {
-  version: 6,
+  version: 7,
   /**
    * A game year is twenty-four weeks, and every seat is up at the scrutiny that
    * closes it: one ceremony a day, fixed and known in advance, rather than a
@@ -152,12 +155,21 @@ export const RULES = {
    * shows up as demand, not as the town's own trade.
    */
   market: {
-    cloth: { referenceCents: 1240, absorbedUnits: 10, scaleUnits: 10 },
     wool: { referenceCents: 380, absorbedUnits: 0, scaleUnits: 4 },
-    grain: { referenceCents: 260, absorbedUnits: 4, scaleUnits: 4 },
+    cloth: { referenceCents: 1240, absorbedUnits: 10, scaleUnits: 10 },
+    grain: { referenceCents: 260, absorbedUnits: 0, scaleUnits: 4 },
+    bread: { referenceCents: 520, absorbedUnits: 10, scaleUnits: 10 },
+    wood: { referenceCents: 300, absorbedUnits: 0, scaleUnits: 4 },
+    planks: { referenceCents: 980, absorbedUnits: 8, scaleUnits: 8 },
   } satisfies Record<GoodId, { referenceCents: number; absorbedUnits: number; scaleUnits: number }>,
   pricePressureDivisor: 10,
   priceReversionDivisor: 4,
+  /**
+   * The warehouse holds this many units in total, all goods together. The
+   * residence ladder (#54) will make it a house's level; until then it is one
+   * constant, and the projection carries it so the client computes nothing.
+   */
+  stockCapacityUnits: 100,
   outputPerLevel: 2,
   wagePerWorkerCents: 120,
   campaignFavourCost: 5,
@@ -168,9 +180,12 @@ export const RULES = {
    * lives here and moves the version with everything else.
    */
   recipes: {
-    cloth: { input: 'wool', perUnit: 1 },
     wool: null,
+    cloth: { input: 'wool', perUnit: 1 },
     grain: null,
+    bread: { input: 'grain', perUnit: 1 },
+    wood: null,
+    planks: { input: 'wood', perUnit: 1 },
   } satisfies Record<GoodId, { input: GoodId; perUnit: number } | null>,
 } as const;
 
@@ -268,6 +283,16 @@ export function seatHolder(world: World, seatId: SeatId): Person | undefined {
   return personId === null ? undefined : world.people[personId];
 }
 
+/** What a house holds in its warehouse, all goods together: the capped total. */
+export function stockUnits(house: House): number {
+  let total = 0;
+  for (const units of Object.values(house.stock)) {
+    total += units ?? 0;
+  }
+
+  return total;
+}
+
 export function createWorld(seed: number): World {
   const founder = createFounder();
 
@@ -291,7 +316,7 @@ export function createWorld(seed: number): World {
         career: 0,
         dormant: false,
         workshops: [{ good: 'cloth', level: 3, workers: 3 }],
-        stock: { wool: 40 },
+        stock: {},
       },
       vandermeersch: {
         id: 'vandermeersch',
@@ -317,6 +342,45 @@ export function createWorld(seed: number): World {
         career: 0,
         dormant: false,
         workshops: [{ good: 'grain', level: 2, workers: 2 }],
+        stock: {},
+      },
+      fournier: {
+        id: 'fournier',
+        name: 'Fournier',
+        controller: 'ai',
+        treasuryCents: 160000,
+        debtCents: 0,
+        favour: 45,
+        prestige: 50,
+        career: 0,
+        dormant: false,
+        workshops: [{ good: 'bread', level: 2, workers: 2 }],
+        stock: {},
+      },
+      bois: {
+        id: 'bois',
+        name: 'Du Bois',
+        controller: 'ai',
+        treasuryCents: 140000,
+        debtCents: 0,
+        favour: 35,
+        prestige: 40,
+        career: 0,
+        dormant: false,
+        workshops: [{ good: 'wood', level: 2, workers: 1 }],
+        stock: {},
+      },
+      charpentier: {
+        id: 'charpentier',
+        name: 'Charpentier',
+        controller: 'ai',
+        treasuryCents: 170000,
+        debtCents: 0,
+        favour: 55,
+        prestige: 52,
+        career: 0,
+        dormant: false,
+        workshops: [{ good: 'planks', level: 2, workers: 2 }],
         stock: {},
       },
     },
@@ -346,6 +410,30 @@ export function createWorld(seed: number): World {
         attributes: { artisanat: 10, parole: 10, intrigue: 10 },
         alive: true,
       },
+      'person-fournier': {
+        id: 'person-fournier',
+        houseId: 'fournier',
+        name: 'Jehan Fournier',
+        age: 41,
+        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+        alive: true,
+      },
+      'person-bois': {
+        id: 'person-bois',
+        houseId: 'bois',
+        name: 'Martin Du Bois',
+        age: 35,
+        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+        alive: true,
+      },
+      'person-charpentier': {
+        id: 'person-charpentier',
+        houseId: 'charpentier',
+        name: 'Perrin Charpentier',
+        age: 49,
+        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+        alive: true,
+      },
     },
     seats: {
       maire: { personId: null },
@@ -356,9 +444,12 @@ export function createWorld(seed: number): World {
     },
     laws: [],
     market: {
-      cloth: RULES.market.cloth.referenceCents,
       wool: RULES.market.wool.referenceCents,
+      cloth: RULES.market.cloth.referenceCents,
       grain: RULES.market.grain.referenceCents,
+      bread: RULES.market.bread.referenceCents,
+      wood: RULES.market.wood.referenceCents,
+      planks: RULES.market.planks.referenceCents,
     },
     marketFlow: {},
     campaigns: {},

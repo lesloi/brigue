@@ -38,7 +38,7 @@ function play(world: World, weeks: number, actionAt?: (week: number) => Action[]
 function scripted(week: number): Action[] {
   if (week === 3) return [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 5 }];
   if (week === 7) return [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }];
-  if (week === 11) return [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 400 }];
+  if (week === 11) return [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 20 }];
   return [];
 }
 
@@ -94,11 +94,13 @@ describe('the simulation core', () => {
     expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_action', houseId: 'unknown' });
   });
 
-  it('clears the output at the market instead of counting it twice', () => {
+  it('credits the output to the stock instead of the purse', () => {
     const { world } = tick(createWorld(SEED));
 
-    expect(world.houses.brigue.stock.cloth).toBeUndefined();
+    expect(world.houses.brigue.stock.cloth).toBe(4);
     expect(world.houses.brigue.stock.wool).toBe(4);
+    // The founder is human: its stock is not sold, and production pays no coin.
+    expect(world.houses.brigue.treasuryCents).toBe(117340 - 240);
   });
 
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
@@ -115,7 +117,9 @@ describe('the simulation core', () => {
 
     const { events } = tick(first.world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
 
-    expect(events).toContainEqual(expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'cloth' }));
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'workshop.produced', houseId: 'brigue', good: 'cloth', units: 4 }),
+    );
   });
 
   it('holds one scrutiny per game year and puts every seat up', () => {
@@ -400,7 +404,7 @@ describe('the simulation core', () => {
     // Arrange
     const base = createWorld(SEED);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    for (let index = 5; index <= 20; index += 1) {
+    for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {
@@ -435,10 +439,10 @@ describe('the simulation core', () => {
 
   it('refuses a world of the previous format instead of guessing it', () => {
     // Arrange
-    const world = { ...createWorld(SEED), formatVersion: 1 };
+    const world = { ...createWorld(SEED), formatVersion: FORMAT_VERSION - 1 };
 
     // Act and assert
-    expect(FORMAT_VERSION).toBe(2);
+    expect(FORMAT_VERSION).toBe(3);
     expect(() => tick(world)).toThrow(WorldVersionError);
   });
 
