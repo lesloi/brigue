@@ -1,7 +1,8 @@
 import { useState } from 'preact/hooks';
 
 import type { CalendarView, PendingActionView, WorldResponse } from '../api.ts';
-import { eventLine, ledgerEvents, netPendingFor, type LedgerFilter } from '../events.ts';
+import { eventLine, ledgerEvents, type LedgerFilter } from '../events.ts';
+import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';

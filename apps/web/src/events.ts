@@ -1,6 +1,5 @@
-import type { Action, Event, GoodId } from '@brigue/core';
+import type { Action, Event } from '@brigue/core';
 
-import type { PendingActionView } from './api.ts';
 import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
 
 /** The three cuts of the week's ledger: the house's own story, everything, the prices. */
@@ -25,24 +24,6 @@ export function ledgerEvents(events: readonly Event[], houseId: string, filter: 
           event.type.startsWith('engagement.'),
       );
   }
-}
-
-/** The net signed units queued for a good; campaign actions never count. */
-export function netPendingFor(good: GoodId, pending: readonly PendingActionView[]): number {
-  let total = 0;
-  for (const action of pending) {
-    if (action.good !== good) {
-      continue;
-    }
-    if (action.type === 'market.buy') {
-      total += action.units ?? 0;
-    }
-    if (action.type === 'market.sell') {
-      total -= action.units ?? 0;
-    }
-  }
-
-  return total;
 }
 
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';

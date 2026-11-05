@@ -3,9 +3,8 @@ import { useState } from 'preact/hooks';
 
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
 import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
+import { buyMax, netPendingFor, pendingCashCents, pendingUnits, sellMax } from '../trade.ts';
 import { Seal, WorkshopThumb } from '../icons.tsx';
-
-const QUANTITIES = [1, 5, 10, 25] as const;
 
 interface MarcheProps {
   data: WorldResponse;
@@ -17,14 +16,19 @@ interface MarcheProps {
 }
 
 /**
- * The Marché screen: the queued actions, six prices, the house's stock, and
- * the two market gestures — buy or sell the chosen quantity.
+ * The Marché screen: the queued actions, six prices, and a row that opens its
+ * own buy/sell panel. The panel's Max uses the projected stock, the purse and
+ * the already queued trades, not a fresh server call.
  */
 export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }: MarcheProps) {
   const { world } = data;
   const house = world.house;
-  // Per visit: switching tabs resets it to ten, the short-visit default.
-  const [quantity, setQuantity] = useState(10);
+  const [open, setOpen] = useState<GoodId | null>(null);
+
+  // Only this week's queued trades change what this week's action can do.
+  const currentPending = pending.filter((action) => action.week === world.week);
+  const queuedCashCents = pendingCashCents(currentPending, world.town.market);
+  const queuedUnits = pendingUnits(currentPending);
 
   return (
     <main class="screen">
@@ -85,89 +89,154 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
         <section class="sec" aria-labelledby="market-title">
           <div class="h">
             <b id="market-title">Les six denrées</b>
-            <span>prix de la semaine</span>
-          </div>
-          <div class="mquantity">
-            <span>Quantité</span>
-            <div class="quantity-controls">
-              <input
-                class="qty-input"
-                type="number"
-                min="1"
-                step="1"
-                value={quantity}
-                aria-label="Quantité"
-                onInput={(event) => {
-                  const value = Number(event.currentTarget.value);
-                  if (Number.isInteger(value) && value > 0) {
-                    setQuantity(value);
-                  }
-                }}
-              />
-              <div class="segmented" role="group" aria-label="Quantités rapides">
-                {QUANTITIES.map((value) => (
-                  <button
-                    type="button"
-                    class={value === quantity ? 'on' : ''}
-                    aria-pressed={value === quantity}
-                    onClick={() => setQuantity(value)}
-                  >
-                    {value}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <span>touche une denrée</span>
           </div>
           <div class="card">
             {GOODS.map((good) => {
-              const units = house.stock[good] ?? 0;
-              const sellUnits = Math.min(quantity, units);
+              const priceCents = world.town.market[good];
+              const stock = house.stock[good] ?? 0;
+              // The Max accounts for the queued trades: a sell can use what a
+              // pending buy will bring, a buy cannot spend the same coin twice.
+              const buyLimit = buyMax({
+                treasuryCents: house.treasuryCents,
+                pendingCashCents: queuedCashCents,
+                stockUnits: house.stockUnits,
+                pendingUnits: queuedUnits,
+                capacityUnits: house.stockCapacityUnits,
+                priceCents,
+              });
+              const sellLimit = sellMax(stock, netPendingFor(good, currentPending));
+              const isOpen = open === good;
 
               return (
-                <div class="row" key={good}>
-                  <div class="th">
-                    <WorkshopThumb good={good} />
+                <div key={good}>
+                  <div
+                    class="row market-row"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isOpen}
+                    aria-controls={`market-${good}`}
+                    onClick={() => setOpen(isOpen ? null : good)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setOpen(isOpen ? null : good);
+                      }
+                    }}
+                  >
+                    <div class="th">
+                      <WorkshopThumb good={good} />
+                    </div>
+                    <div class="nm">
+                      <b>{goodName(good)}</b>
+                      <p>{formatCents(priceCents)} écus l'unité</p>
+                      <PriceSparkline
+                        values={world.town.marketHistory[good] ?? []}
+                        referenceCents={world.town.marketReferences[good]}
+                      />
+                    </div>
+                    <div class="act">
+                      <span class="price">
+                        <b>{formatCount(stock)}</b> en stock
+                      </span>
+                      <span class={isOpen ? 'chev on' : 'chev'} aria-hidden="true">
+                        ›
+                      </span>
+                    </div>
                   </div>
-                  <div class="nm">
-                    <b>{goodName(good)}</b>
-                    <p>{formatCents(world.town.market[good])} écus l'unité</p>
-                    <PriceSparkline
-                      values={world.town.marketHistory[good] ?? []}
-                      referenceCents={world.town.marketReferences[good]}
+                  {isOpen ? (
+                    <TradePanel
+                      key={good}
+                      good={good}
+                      priceCents={priceCents}
+                      buyMax={buyLimit}
+                      sellMax={sellLimit}
+                      busy={trading !== null}
+                      onTrade={(kind, units) => onTrade(kind, good, units)}
                     />
-                  </div>
-                  <div class="act">
-                    <span class="price">
-                      <b>{formatCount(units)}</b> en stock
-                    </span>
-                    <button
-                      class="btn outline"
-                      type="button"
-                      disabled={trading !== null}
-                      onClick={() => onTrade('buy', good, quantity)}
-                    >
-                      Acheter {quantity}
-                    </button>
-                    <button
-                      class="btn"
-                      type="button"
-                      disabled={trading !== null || units === 0}
-                      onClick={() => onTrade('sell', good, sellUnits)}
-                    >
-                      Vendre {sellUnits}
-                    </button>
-                  </div>
+                  ) : null}
                 </div>
               );
             })}
           </div>
           <p class="note">
             Le marché achète et vend au prix de la semaine. La courbe suit les dernières semaines ; le trait doré est le
-            prix de référence. L'entrepôt ne se vide pas tout seul : vendez avant qu'il ne soit plein.
+            prix de référence. Touche une denrée pour ouvrir sa fiche.
           </p>
         </section>
       </div>
     </main>
+  );
+}
+
+interface TradePanelProps {
+  good: GoodId;
+  priceCents: number;
+  buyMax: number;
+  sellMax: number;
+  busy: boolean;
+  onTrade(kind: 'buy' | 'sell', units: number): void;
+}
+
+/** The row's own buy/sell panel: mode, quantity with a Max, cost, one action. */
+function TradePanel({ good, priceCents, buyMax, sellMax, busy, onTrade }: TradePanelProps) {
+  const [mode, setMode] = useState<'buy' | 'sell'>('buy');
+  const [quantity, setQuantity] = useState(() => Math.min(10, buyMax));
+  const max = mode === 'buy' ? buyMax : sellMax;
+  const units = Math.min(quantity, max);
+  const setUnits = (next: number) => setQuantity(Math.max(0, Math.min(max, next)));
+  const switchMode = (next: 'buy' | 'sell') => {
+    const nextMax = next === 'buy' ? buyMax : sellMax;
+    // Opening on an empty side (no room to buy, stock to sell) should not make
+    // the other side start at zero; seed it with a usable quantity.
+    if (Math.min(quantity, nextMax) === 0 && nextMax > 0) {
+      setQuantity(Math.min(10, nextMax));
+    }
+    setMode(next);
+  };
+
+  return (
+    <div class="trade-panel" id={`market-${good}`}>
+      <div class="segmented" role="group" aria-label="Acheter ou vendre">
+        <button
+          type="button"
+          class={mode === 'buy' ? 'on' : ''}
+          aria-pressed={mode === 'buy'}
+          onClick={() => switchMode('buy')}
+        >
+          Acheter
+        </button>
+        <button
+          type="button"
+          class={mode === 'sell' ? 'on' : ''}
+          aria-pressed={mode === 'sell'}
+          onClick={() => switchMode('sell')}
+        >
+          Vendre
+        </button>
+      </div>
+      <div class="qtyline">
+        <span class="qty-label">Quantité</span>
+        <div class="stepper">
+          <button type="button" disabled={units <= 0} onClick={() => setUnits(units - 1)}>
+            −
+          </button>
+          <span>{units}</span>
+          <button type="button" disabled={units >= max} onClick={() => setUnits(units + 1)}>
+            +
+          </button>
+        </div>
+        <button class="max" type="button" disabled={max === 0} onClick={() => setUnits(max)}>
+          Max {max}
+        </button>
+      </div>
+      <p class="cost">
+        {units} &times; {formatCents(priceCents)} = {formatCents(units * priceCents)} écus
+      </p>
+      <button class="btn wide" type="button" disabled={busy || units === 0} onClick={() => onTrade(mode, units)}>
+        {mode === 'buy' ? 'Acheter' : 'Vendre'} {units}
+      </button>
+    </div>
   );
 }
 

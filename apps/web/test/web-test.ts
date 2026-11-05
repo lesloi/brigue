@@ -2,7 +2,8 @@ import type { Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
 import type { PendingActionView } from '../src/api.ts';
-import { eventLine, ledgerEvents, netPendingFor } from '../src/events.ts';
+import { eventLine, ledgerEvents } from '../src/events.ts';
+import { buyMax, netPendingFor, pendingCashCents, pendingUnits, sellMax } from '../src/trade.ts';
 import {
   actionErrorText,
   goodName,
@@ -301,5 +302,38 @@ describe('pending actions', () => {
     expect(pendingActionText(pending[0] as PendingActionView)).toBe('Achat de 5 blés');
     expect(pendingActionText(pending[2] as PendingActionView)).toBe('Vente de 4 blés');
     expect(pendingActionText(pending[4] as PendingActionView)).toBe('Candidature à la mairie');
+  });
+
+  it("values the queued actions at the week's prices", () => {
+    // Arrange
+    const prices = { wool: 380, cloth: 1240, grain: 260, bread: 520, wood: 300, planks: 980 };
+    const queued: PendingActionView[] = [
+      { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
+      { id: 'b', week: 3, type: 'market.sell', good: 'bread', units: 3 },
+    ];
+
+    // Act and assert: -5 × 260 + 3 × 520, and 5 − 3 units net.
+    expect(pendingCashCents(queued, prices)).toBe(260);
+    expect(pendingUnits(queued)).toBe(2);
+  });
+
+  it('caps the buy at the purse and the warehouse, and the sell at the stock', () => {
+    // Arrange
+    const base = {
+      treasuryCents: 1000,
+      pendingCashCents: 0,
+      stockUnits: 8,
+      pendingUnits: 0,
+      capacityUnits: 10,
+      priceCents: 100,
+    };
+
+    // Act and assert
+    expect(buyMax(base)).toBe(2);
+    expect(buyMax({ ...base, pendingCashCents: -200 })).toBe(2);
+    expect(buyMax({ ...base, pendingUnits: 2 })).toBe(0);
+    expect(sellMax(8, -3)).toBe(5);
+    expect(sellMax(0, 5)).toBe(5);
+    expect(sellMax(2, -5)).toBe(0);
   });
 });
