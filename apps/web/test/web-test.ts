@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { eventLine } from '../src/events.ts';
 import { actionErrorText, goodQuantity, readErrorText, refusalText, seatName } from '../src/format.ts';
-import { countdownText } from '../src/views/ville.ts';
+import { countdownText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
   brigue: 'Brigue',
