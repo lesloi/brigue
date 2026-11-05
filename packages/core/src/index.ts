@@ -10,6 +10,7 @@ export {
   FORMAT_VERSION,
   GOODS,
   PACING,
+  PRICE_HISTORY_WEEKS,
   RULES,
   seatHolder,
   SEATS,

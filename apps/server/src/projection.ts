@@ -1,4 +1,5 @@
 import {
+  GOODS,
   PACING,
   RULES,
   stockUnits,
@@ -78,6 +79,10 @@ export interface WorldProjection {
     seats: Record<SeatId, Seat>;
     laws: Law[];
     market: Record<GoodId, number>;
+    /** The last PRICE_HISTORY_WEEKS prices per good, so the Marché can draw them. */
+    marketHistory: Partial<Record<GoodId, number[]>>;
+    /** The reference each good returns to; the chart draws it as a guide. */
+    marketReferences: Record<GoodId, number>;
   };
   /** The instant the current week ends, so the client can show the next tick. */
   nextTickAt: string;
@@ -116,6 +121,11 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
       seats: structuredClone(world.seats),
       laws: structuredClone(world.laws),
       market: structuredClone(world.market),
+      marketHistory: structuredClone(world.marketHistory ?? {}),
+      marketReferences: Object.fromEntries(GOODS.map((good) => [good, RULES.market[good].referenceCents])) as Record<
+        GoodId,
+        number
+      >,
     },
     nextTickAt: new Date(weekStartedAt.getTime() + PACING.minutesPerWeek * 60_000).toISOString(),
   };

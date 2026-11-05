@@ -39,9 +39,9 @@ Early, and in two layers.
 The server issues a token, serves the world with catch-up, and accepts actions for the week being
 played or the next one. The PWA has its shell, the creation screen, the Ville screen and the
 Marché screen, rendered with Preact: it renders the projection and the events of the last week,
-and sends market intents. The Marché buys and sells; the Ville shows the workshop's chain and
-weekly figures. The other screens are still to come. One image carries the API and the built
-client: one process, one port, one origin.
+and sends market intents. The Marché buys and sells and draws the year's price history; the
+Ville shows the workshop's chain and weekly figures. The other screens are still to come. One
+image carries the API and the built client: one process, one port, one origin.
 
 ## Stack
 

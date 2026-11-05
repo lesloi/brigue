@@ -56,6 +56,8 @@ export interface WorldProjection {
     seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
+    marketHistory: Partial<Record<GoodId, number[]>>;
+    marketReferences: Record<GoodId, number>;
   };
   /** The instant the current week ends, so the client can show the next week. */
   nextTickAt: string;

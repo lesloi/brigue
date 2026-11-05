@@ -149,6 +149,33 @@ describe('the projection calendar', () => {
     expect(projection.house.stockCapacityUnits).toBe(RULES.stockCapacityUnits);
   });
 
+  it('carries the year of prices and their references', () => {
+    // Arrange
+    const world = createWorld(SEED, 'baker');
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    for (const good of GOODS) {
+      expect(projection.town.marketHistory[good]).toEqual([RULES.market[good].referenceCents]);
+      expect(projection.town.marketReferences[good]).toBe(RULES.market[good].referenceCents);
+    }
+  });
+
+  it('projects a field-less world with an empty history', () => {
+    // Arrange: a world stored before the history field existed.
+    const world = createWorld(SEED);
+    delete world.marketHistory;
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.town.marketHistory).toEqual({});
+    expect(Object.keys(projection.town.marketReferences).sort()).toEqual([...GOODS].sort());
+  });
+
   it('points at the next year once a scrutiny has closed the last one', () => {
     // Arrange: the first week of the second year.
     const world = play(createWorld(SEED), WEEKS_PER_YEAR);

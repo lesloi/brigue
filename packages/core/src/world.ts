@@ -130,6 +130,12 @@ export interface World {
    * stored rather than recomputed: the price you see is the town you were.
    */
   marketFlow: Partial<Record<GoodId, number>>;
+  /**
+   * The last PRICE_HISTORY_WEEKS prices per good, in cents, one point per tick.
+   * Optional because a world stored before the field existed must keep ticking:
+   * its history starts at the tick that first sees it.
+   */
+  marketHistory?: Partial<Record<GoodId, number[]>>;
   /** Votes bought per seat, per house, cleared when that seat is elected. */
   campaigns: Partial<Record<SeatId, Record<string, number>>>;
   /**
@@ -229,6 +235,12 @@ export const PACING = {
 export const START_YEAR = 1401;
 /** Twenty-four weeks make a year, so one real day is one game year. */
 export const WEEKS_PER_YEAR = 24;
+/**
+ * The Marché keeps one price per week for a game year: one scrutiny cycle, one
+ * real day of town life. It is a display window, not a rule, so it stays out of
+ * RULES; a later change grows or shrinks it without moving the ruleset.
+ */
+export const PRICE_HISTORY_WEEKS = WEEKS_PER_YEAR;
 
 export interface Founder {
   house: House;
@@ -471,6 +483,14 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
       planks: RULES.market.planks.referenceCents,
     },
     marketFlow: {},
+    marketHistory: {
+      wool: [RULES.market.wool.referenceCents],
+      cloth: [RULES.market.cloth.referenceCents],
+      grain: [RULES.market.grain.referenceCents],
+      bread: [RULES.market.bread.referenceCents],
+      wood: [RULES.market.wood.referenceCents],
+      planks: [RULES.market.planks.referenceCents],
+    },
     campaigns: {},
     engagements: [],
     engagementSeq: 0,

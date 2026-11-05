@@ -3,6 +3,7 @@ import type { Action, Event, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
   GOODS,
+  PRICE_HISTORY_WEEKS,
   RULES,
   seatHolder,
   SEATS,
@@ -358,6 +359,9 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]
 }
 
 function driftPrices(world: World, events: Event[]): void {
+  // A world stored before the history existed starts its record at this tick.
+  world.marketHistory ??= {};
+
   for (const good of GOODS) {
     const [rng, roll] = drawBelow(world.rng, RULES.priceDriftCents * 2 + 1);
     world.rng = rng;
@@ -379,6 +383,14 @@ function driftPrices(world: World, events: Event[]): void {
     if (after !== before) {
       world.market[good] = after;
       events.push({ type: 'market.price_changed', audience: 'town', good, before, after });
+    }
+
+    // One point per week even when the price holds: the chart must not skip a
+    // quiet week, or two changes would look adjacent.
+    const history = (world.marketHistory[good] ??= []);
+    history.push(after);
+    if (history.length > PRICE_HISTORY_WEEKS) {
+      history.splice(0, history.length - PRICE_HISTORY_WEEKS);
     }
   }
 }

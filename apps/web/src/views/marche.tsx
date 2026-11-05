@@ -82,6 +82,10 @@ export function Marche({ data, trading, onTrade }: MarcheProps) {
                   <div class="nm">
                     <b>{goodName(good)}</b>
                     <p>{formatCents(world.town.market[good])} écus l'unité</p>
+                    <PriceSparkline
+                      values={world.town.marketHistory[good] ?? []}
+                      referenceCents={world.town.marketReferences[good]}
+                    />
                   </div>
                   <div class="act">
                     <span class="price">
@@ -109,11 +113,38 @@ export function Marche({ data, trading, onTrade }: MarcheProps) {
             })}
           </div>
           <p class="note">
-            Le marché achète et vend au prix de la semaine. Le prix de la semaine prochaine suit ce que la ville a vendu
-            et acheté. L'entrepôt ne se vide pas tout seul : vendez avant qu'il ne soit plein.
+            Le marché achète et vend au prix de la semaine. La courbe suit les dernières semaines ; le trait doré est le
+            prix de référence. L'entrepôt ne se vide pas tout seul : vendez avant qu'il ne soit plein.
           </p>
         </section>
       </div>
     </main>
+  );
+}
+
+/** The last year of a good's price, with the reference it is pulled back to. */
+function PriceSparkline({ values, referenceCents }: { values: number[]; referenceCents: number }) {
+  if (values.length < 2) {
+    return null;
+  }
+
+  const width = 100;
+  const height = 24;
+  const min = Math.min(...values, referenceCents);
+  const max = Math.max(...values, referenceCents);
+  // A flat line sits in the middle of its box, not on the top edge.
+  const low = min === max ? min - 1 : min;
+  const high = min === max ? max + 1 : max;
+  const span = high - low;
+  const x = (index: number) => (index / (values.length - 1)) * width;
+  const y = (value: number) => height - 2 - ((value - low) / span) * (height - 4);
+  const points = values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ');
+  const referenceY = y(referenceCents).toFixed(1);
+
+  return (
+    <svg class="spark" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+      <line class="spark-ref" x1="0" x2={width} y1={referenceY} y2={referenceY} vector-effect="non-scaling-stroke" />
+      <polyline class="spark-line" points={points} vector-effect="non-scaling-stroke" />
+    </svg>
   );
 }
