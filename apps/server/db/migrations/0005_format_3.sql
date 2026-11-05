@@ -18,7 +18,10 @@ CREATE TABLE state (
   rng integer NOT NULL,
   hour integer NOT NULL CHECK (hour >= 1),
   year integer NOT NULL,
-  engagement_seq integer NOT NULL DEFAULT 0
+  engagement_seq integer NOT NULL DEFAULT 0,
+  -- When the current hour began, in real time. The scheduler measures how many
+  -- hours are owed from here, not from a grid.
+  hour_started_at timestamptz NOT NULL
 );
 
 CREATE TABLE houses (

@@ -3,7 +3,14 @@ export { isVisibleTo, visibleTo } from './events.ts';
 export type { Action, Audience, Event, RefusalReason } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
 export { advanceRng, drawBelow, MINSTD_MODULUS } from './prng.ts';
-export { advance, nextPriceCents, WorldVersionError, type PriceInput, type TickResult } from './tick.ts';
+export {
+  advance,
+  nextPriceCents,
+  WorldVersionError,
+  type PlacedAction,
+  type PriceInput,
+  type TickResult,
+} from './tick.ts';
 export {
   createFounder,
   createWorld,

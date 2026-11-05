@@ -1,7 +1,7 @@
 import type { Action, Event, World } from '@brigue/core';
 
-/** One town, shared by every house. The id is stable across deploys. */
-export const WORLD_ID = 'saint-aubin';
+/** One real hour is one town hour, and twenty-four of them make a year. */
+export const HOUR_MS = 60 * 60 * 1000;
 
 /** The house a new player gets until multiplayer assigns AI houses. */
 export const FIRST_HOUSE_ID = 'brigue';
@@ -11,47 +11,47 @@ export interface StoredAction {
   id: string;
   /** Always the authenticated player's house, never whatever the request body said. */
   houseId: string;
-  week: number;
+  /** The town hour the action plays on. */
+  playsAt: number;
   action: Action;
   receivedAt: Date;
-  /** Set when the player cancels before the week ticks; the row stays for dedup and replay. */
+  /** Set when the player cancels before it plays; the row stays for dedup and replay. */
   cancelledAt: Date | null;
 }
 
 export interface WorldSnapshot {
   world: World;
-  /** When the world's current week began. Catch-up is measured from here. */
-  weekStartedAt: Date;
-  /** Events of the last tick that was played, so an empty read still shows one. */
-  lastEvents: Event[];
+  /** When the town's current hour began, in real time. */
+  hourStartedAt: Date;
 }
 
-/** One unit of work on a world, inside the row lock (or its in-memory equivalent). */
+/** One unit of work on the town, inside the state row's lock. */
 export interface WorldSession {
   readonly snapshot: WorldSnapshot;
-  /** Actions queued for a week, in the order they were received. */
-  actionsFor(week: number): Promise<StoredAction[]>;
+  /** Actions queued for the hours in `[from, to]`, in the order they were received. */
+  actionsBetween(from: number, to: number): Promise<StoredAction[]>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
-  /** Marks an unapplied action cancelled; it is never returned to the tick. */
+  /** Marks an unplayed action cancelled; it is never handed to the advance. */
   cancel(id: string, at: Date): Promise<void>;
-  save(world: World, weekStartedAt: Date, lastEvents: Event[], at: Date): Promise<void>;
+  /** Writes the whole town and appends the events of the span. */
+  save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
 }
 
 export interface WorldStore {
-  /** Idempotent: a world that already exists keeps its state and its seed. */
-  createIfAbsent(id: string, world: World, weekStartedAt: Date, at: Date): Promise<void>;
+  /** Idempotent: a town that already exists keeps its state and its seed. */
+  createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void>;
   /**
-   * Locks the world for the whole callback. Everything that can turn a read
-   * into a write goes through here, so two requests never replay the same week.
+   * Locks the town for the whole callback — the scheduler and the reader both
+   * write, and two passes over the same town would lose one of them.
    */
-  withWorld<T>(id: string, run: (session: WorldSession) => Promise<T>): Promise<T>;
+  withWorld<T>(run: (session: WorldSession) => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
 export class UnknownWorldError extends Error {
-  constructor(worldId: string) {
-    super(`unknown world ${worldId}`);
+  constructor() {
+    super('the town does not exist yet');
     this.name = 'UnknownWorldError';
   }
 }
@@ -69,58 +69,49 @@ interface MemoryWorld {
 }
 
 /**
- * Mirrors the Postgres store for tests: one callback at a time per world, and a
- * rollback of both the snapshot and the actions when the callback throws, the
+ * Mirrors the Postgres store for tests: one callback at a time on the town, and
+ * a rollback of both the snapshot and the actions when the callback throws, the
  * way the surrounding transaction would roll back. Kept deliberately dumb: the
  * real locking is the `SELECT ... FOR UPDATE` in pg-worlds.ts.
  */
 export class MemoryWorldStore implements WorldStore {
-  private readonly worlds = new Map<string, MemoryWorld>();
-  private readonly queues = new Map<string, Promise<unknown>>();
+  private stored: MemoryWorld | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
 
-  async createIfAbsent(id: string, world: World, weekStartedAt: Date, at: Date): Promise<void> {
-    if (this.worlds.has(id)) {
+  async createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void> {
+    if (this.stored !== null) {
       return;
     }
 
-    this.worlds.set(id, {
-      snapshot: {
-        world: structuredClone(world),
-        weekStartedAt: new Date(weekStartedAt),
-        lastEvents: [],
-      },
+    this.stored = {
+      snapshot: { world: structuredClone(world), hourStartedAt: new Date(hourStartedAt) },
       actions: [],
-    });
+    };
     void at;
   }
 
-  async withWorld<T>(id: string, run: (session: WorldSession) => Promise<T>): Promise<T> {
-    const previous = this.queues.get(id) ?? Promise.resolve();
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>): Promise<T> {
+    const previous = this.queue;
     const current = previous.then(async () => {
-      const stored = this.worlds.get(id);
-      if (!stored) {
-        throw new UnknownWorldError(id);
+      if (this.stored === null) {
+        throw new UnknownWorldError();
       }
 
-      const backup = structuredClone(stored);
+      const backup = structuredClone(this.stored);
 
       try {
-        return await run(this.sessionOf(stored));
+        return await run(this.sessionOf(this.stored));
       } catch (error) {
-        stored.snapshot = backup.snapshot;
-        stored.actions = backup.actions;
+        this.stored = backup;
         throw error;
       }
     });
 
     // A failed callback must not block the queue behind it, but its error still
     // reaches its own caller.
-    this.queues.set(
-      id,
-      current.then(
-        () => undefined,
-        () => undefined,
-      ),
+    this.queue = current.then(
+      () => undefined,
+      () => undefined,
     );
 
     return current;
@@ -131,9 +122,10 @@ export class MemoryWorldStore implements WorldStore {
   private sessionOf(stored: MemoryWorld): WorldSession {
     return {
       snapshot: stored.snapshot,
-      actionsFor: async (week) =>
+      actionsBetween: async (from, to) =>
         stored.actions
-          .filter((action) => action.week === week && action.cancelledAt === null)
+          .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
+          .sort((left, right) => left.playsAt - right.playsAt)
           .map((action) => structuredClone(action)),
       findAction: async (id) => {
         const found = stored.actions.find((action) => action.id === id);
@@ -153,13 +145,12 @@ export class MemoryWorldStore implements WorldStore {
           found.cancelledAt = new Date(at);
         }
       },
-      save: async (world, weekStartedAt, lastEvents, at) => {
+      save: async (world, hourStartedAt, events) => {
         stored.snapshot = {
           world: structuredClone(world),
-          weekStartedAt: new Date(weekStartedAt),
-          lastEvents: structuredClone(lastEvents),
+          hourStartedAt: new Date(hourStartedAt),
         };
-        void at;
+        void events;
       },
     };
   }
