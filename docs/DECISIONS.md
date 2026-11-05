@@ -26,16 +26,32 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   so the weeks a house was away are simulated dormant: it produced nothing, and the visit that
   ends the absence wakes it for the week that follows. The dormancy threshold is calibration in
   `PACING`; the deletion stays an edge rule. The reverse is asymmetric: when a full town receives a human,
-  the AI house ends and the newcomer starts with nothing — no money, no seat, no career. No AI is
-  created after the opening; the ten founding families are a floor, and a freed place waits for a
-  human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
+  the finished-trade AI house ends and the newcomer chooses a trade, starts with its workshop
+  and no money, no seat, no career. No AI is created after the opening; the ten founding
+  families are the opening composition, and a freed finished-trade place waits for a human. The
+  three raw suppliers are permanent AI. An absence must not be a betrayal, and an arrival must
+  not inherit a mayoralty.
 
 - **The town is capped at twenty houses, ten of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
   town outgrows its seats. The AI cap keeps the town human: a shared world is mostly people, and
-  a solo world is ten AI and its founder. The town opens with ten AI and the founder; the code
-  today opens with six — one per trade plus the raw producers — and grows to ten with the town
-  composition. A human arriving when it is full replaces an AI. Revisit if a season proves too small at twenty.
+  a solo world is ten AI and its founder. The town opens with ten AI in the target — three
+  permanent raw suppliers and seven finished trades — and six today (three raw, three finished).
+  A human arriving when it is full replaces a finished-trade AI, never a raw supplier; the AI
+  count only falls as humans arrive, and "ten" is the opening composition, not a floor. Revisit
+  if a season proves too small at twenty.
+
+- **The player chooses a trade at creation; the raw suppliers stay AI.** At the first launch,
+  every player — the founder included — chooses one of three trades: weaver (wool into cloth),
+  baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
+  that trade; no assignment balances the town's mix. The founder is the first house, not a
+  political role: same house, no seat, no vote; only the starting kit differs. The three raw
+  suppliers (wool, grain, wood) stay AI houses forever and are never replaced by a human: they
+  are the floor that keeps every chain fed, so a player town cannot lose an input to a newcomer
+  who chose another trade. The finished trades are what humans replace. The price signal and
+  the trade conversion of the residence work let a player move into a missing finished good; a
+  town of weavers will have cheap cloth and dear bread, which is the market working, not a bug.
+  Revisit if the raw floor makes the town feel like a diorama rather than a player economy.
 
 - **The council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and each
   floor holds a different right rather than a stronger version of the one below. One office per
@@ -112,7 +128,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   "Insertion order" alone is only well defined inside one week, so a sequence column holds it.
   Applied actions are kept: a retry must stay detectable, and the town must stay replayable.
   An action may name the week being played or the next one; a week that already ticked is
-  refused, and the action endpoint never catches the world up itself.
+  refused, and the action endpoint never catches the world up itself. A queued action can be
+  cancelled before its week ticks: the row is marked, never deleted, so a retry stays a
+  duplicate and the week's replay uses the actions that were still queued when it ticked. The
+  list of queued actions does not catch the world up either; the world's own week is the only
+  applied verdict, and the wall clock only bounds how far ahead an action may be placed.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive. A change the additive rule cannot carry — this format adds a person and moves a
@@ -127,10 +147,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 ## Simulation
 
-- **The core is pure, deterministic and clock-free.** One seed, one world, one hash. A test
-  replays 200 weeks and asserts the same state hash, and another fails if `Math.random` or
-  `Date.now` ever enters `packages/core`. Everything else depends on this: it is how a bug is
-  reproduced, how a balance change is measured, and why the server can catch a world up at all.
+- **The core is pure, deterministic and clock-free.** One seed and one trade in, one world out:
+  the founder's chosen trade is a creation input, so two worlds from the same seed can start in
+  different chains, and nothing rebuilds a world from a seed alone. A stored world carries the
+  trade in its workshops. A test replays 200 weeks and asserts the same state hash, and another
+  fails if `Math.random` or `Date.now` ever enters `packages/core`. Everything else depends on
+  this: it is how a bug is reproduced, how a balance change is measured, and why the server can
+  catch a world up at all.
 
 - **One tick is one game week and one real hour; a year is a day.** Twenty-four weeks make a
   year, so the calendar advances a year per day. A mandate lasts a day; a character enters at

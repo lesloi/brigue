@@ -277,13 +277,22 @@ describe('the thirty-day deletion', () => {
     expect(expired.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=;`))).toBe(true);
     expect(await authenticate(harness.store, tokenOf(oldCookie))).toBeNull();
 
-    // Act: the freed place waits for a human.
-    const joined = await fetch(`${harness.url}/api/session`, { method: 'POST' });
+    // Act: the freed place waits for a human, who chooses a trade on arrival.
+    const joined = await fetch(`${harness.url}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trade: 'baker' }),
+    });
     const { token } = (await joined.json()) as { token: string };
     const read = await fetch(`${harness.url}/api/world`, { headers: { Cookie: `${SESSION_COOKIE}=${token}` } });
     const body = (await read.json()) as {
       world: {
-        house: { id: string; treasuryCents: number };
+        house: {
+          id: string;
+          treasuryCents: number;
+          workshops: Array<{ good: string; input: string | null }>;
+          stock: Record<string, number>;
+        };
         town: { seats: { maire: { personId: string | null } } };
       };
     };
@@ -293,6 +302,18 @@ describe('the thirty-day deletion', () => {
     expect(read.status).toBe(200);
     expect(body.world.house.id).toBe('brigue');
     expect(body.world.house.treasuryCents).toBe(117340);
+    expect(body.world.house.workshops).toEqual([
+      {
+        good: 'bread',
+        level: 2,
+        workers: 2,
+        input: 'grain',
+        outputUnitsPerWeek: 4,
+        inputUnitsPerWeek: 4,
+        wagesCentsPerWeek: 240,
+      },
+    ]);
+    expect(body.world.house.stock.grain).toBe(8);
     expect(body.world.town.seats.maire.personId).toBeNull();
   });
 });

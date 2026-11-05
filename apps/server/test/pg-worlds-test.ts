@@ -152,6 +152,25 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(week.map((action) => action.action)).toEqual([first.action, second.action]);
   });
 
+  it('stops returning an action once it is cancelled, and keeps its row', async () => {
+    // Arrange
+    const id = newWorldId();
+    await store.createIfAbsent(id, createWorld(6), START, START);
+    const action = storedAction(randomUUID(), 1, buy(2));
+    await store.withWorld(id, async (session) => {
+      await session.append(action);
+      await session.cancel(action.id, START);
+    });
+
+    // Act
+    const week = await store.withWorld(id, async (session) => session.actionsFor(1));
+    const found = await store.withWorld(id, async (session) => session.findAction(action.id));
+
+    // Assert: the tick no longer sees it, but a retried POST still finds the id.
+    expect(week).toEqual([]);
+    expect(found?.cancelledAt).toBeInstanceOf(Date);
+  });
+
   it('round-trips the world, the last events and an action through jsonb', async () => {
     // Arrange
     const id = newWorldId();
@@ -245,7 +264,7 @@ function buy(units: number): Action {
 }
 
 function storedAction(id: string, week: number, action: Action): StoredAction {
-  return { id, houseId: 'brigue', week, action, receivedAt: new Date(START) };
+  return { id, houseId: 'brigue', week, action, receivedAt: new Date(START), cancelledAt: null };
 }
 
 function delay(ms: number): Promise<void> {

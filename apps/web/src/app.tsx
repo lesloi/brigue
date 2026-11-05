@@ -1,18 +1,23 @@
-import type { GoodId } from '@brigue/core';
+import type { GoodId, Trade } from '@brigue/core';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import {
   ApiError,
   advanceWeek,
+  cancelAction,
   hasSession,
   joinTown,
+  readPending,
   readWorld,
   resumeTown,
   sendAction,
+  type PendingActionView,
+  type TradeIntent,
   type WorldResponse,
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
+import { Create } from './views/create.tsx';
 import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
 import { Marche } from './views/marche.tsx';
 import { Nav } from './views/nav.tsx';
@@ -20,6 +25,7 @@ import { Ville } from './views/ville.tsx';
 
 type View =
   | { kind: 'loading' }
+  | { kind: 'create' }
   | { kind: 'world'; data: WorldResponse }
   | { kind: 'lost' }
   | { kind: 'failure'; title: string; message: string };
@@ -34,8 +40,12 @@ export function App() {
   const [tab, setTab] = useState<Tab>(() => stateOf(window.history.state)?.tab ?? tabFromHash(window.location.hash));
   const [token, setToken] = useState<string | null>(null);
   const [lostError, setLostError] = useState<string | null>(null);
-  const [buying, setBuying] = useState(false);
-  const [selling, setSelling] = useState<GoodId | null>(null);
+  const [trading, setTrading] = useState<TradeIntent | null>(null);
+  // The server's list, not a local guess: a reload keeps the queued actions.
+  const [pending, setPending] = useState<PendingActionView[]>([]);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -95,16 +105,8 @@ export function App() {
 
     try {
       if (!(await hasSession())) {
-        try {
-          const joined = await joinTown();
-          pendingToken.current = joined.token;
-        } catch (error) {
-          if (error instanceof ApiError && error.code === 'no_free_house') {
-            setView({ kind: 'lost' });
-            return;
-          }
-          throw error;
-        }
+        setView({ kind: 'create' });
+        return;
       }
 
       await load();
@@ -117,6 +119,41 @@ export function App() {
     }
   }
 
+  async function createHouse(trade: Trade): Promise<void> {
+    setJoining(true);
+    setJoinError(null);
+
+    try {
+      const joined = await joinTown(trade);
+      pendingToken.current = joined.token;
+      await load();
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'no_free_house') {
+        // A half-completed join already set the cookie, or a fast second tap
+        // raced the first: recover the session before asking for a token.
+        try {
+          if (await hasSession()) {
+            await load();
+            return;
+          }
+          setView({ kind: 'lost' });
+        } catch (recoverError) {
+          if (recoverError instanceof ApiError && recoverError.status === 401) {
+            setView({ kind: 'lost' });
+            return;
+          }
+          setJoinError('La ville ne répond pas. Vérifiez la connexion.');
+        }
+        return;
+      }
+      setJoinError(
+        error instanceof ApiError ? readErrorText(error.code) : 'La ville ne répond pas. Vérifiez la connexion.',
+      );
+    } finally {
+      setJoining(false);
+    }
+  }
+
   async function load(): Promise<void> {
     const data = await readWorld();
     // A load replaces the screen, as a paint used to: an old toast does not
@@ -124,6 +161,11 @@ export function App() {
     setToast(null);
     setNow(Date.now());
     setView({ kind: 'world', data });
+    try {
+      setPending(await readPending());
+    } catch {
+      setPending([]);
+    }
 
     if (pendingToken.current !== null) {
       const fresh = pendingToken.current;
@@ -150,15 +192,25 @@ export function App() {
     }
   }
 
-  async function buyWool(): Promise<void> {
-    if (view.kind !== 'world') {
+  async function trade(kind: 'buy' | 'sell', good: GoodId, units: number): Promise<void> {
+    if (view.kind !== 'world' || units <= 0) {
       return;
     }
 
-    setBuying(true);
+    setTrading({ kind, good });
     try {
-      const sent = await sendAction(view.data.world.week, { type: 'market.buy', good: 'wool', units: 10 });
-      showToast(`Achat de 10 laines envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`);
+      const intent =
+        kind === 'buy'
+          ? ({ type: 'market.buy', good, units } as const)
+          : ({ type: 'market.sell', good, units } as const);
+      const sent = await sendAction(view.data.world.week, intent);
+      await readPending().then(setPending, () => setPending([]));
+      const quantity = goodQuantity(units, good);
+      showToast(
+        kind === 'buy'
+          ? `Achat de ${quantity} envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`
+          : `Vente de ${quantity} envoyée pour la semaine ${sent.week}. Elle apparaîtra à la prochaine lecture.`,
+      );
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stale_week') {
         showToast(actionErrorText(error.code), true);
@@ -167,7 +219,24 @@ export function App() {
         showToast(actionMessageFor(error), true);
       }
     } finally {
-      setBuying(false);
+      setTrading(null);
+    }
+  }
+
+  async function cancel(id: string): Promise<void> {
+    setCancelling(id);
+    try {
+      await cancelAction(id);
+      setPending((current) => current.filter((action) => action.id !== id));
+    } catch (error) {
+      if (error instanceof ApiError && (error.code === 'stale_week' || error.code === 'unknown_action')) {
+        showToast(actionErrorText(error.code), true);
+        await refresh();
+      } else {
+        showToast(actionMessageFor(error), true);
+      }
+    } finally {
+      setCancelling(null);
     }
   }
 
@@ -198,29 +267,6 @@ export function App() {
     setTab(next);
   }
 
-  async function sell(good: GoodId, units: number): Promise<void> {
-    if (view.kind !== 'world' || units <= 0) {
-      return;
-    }
-
-    setSelling(good);
-    try {
-      const sent = await sendAction(view.data.world.week, { type: 'market.sell', good, units });
-      showToast(
-        `Vente de ${goodQuantity(units, good)} envoyée pour la semaine ${sent.week}. Elle apparaîtra à la prochaine lecture.`,
-      );
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'stale_week') {
-        showToast(actionErrorText(error.code), true);
-        await refresh();
-      } else {
-        showToast(actionMessageFor(error), true);
-      }
-    } finally {
-      setSelling(null);
-    }
-  }
-
   async function advanceOneWeek(): Promise<void> {
     // A repaint replaces the town, and the token dialog lives above it: same
     // guard as a refresh.
@@ -233,6 +279,7 @@ export function App() {
       const data = await advanceWeek();
       setNow(Date.now());
       setView({ kind: 'world', data });
+      await readPending().then(setPending, () => setPending([]));
       showToast(`Semaine ${data.world.week}, comme si une heure était passée.`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -285,20 +332,29 @@ export function App() {
 
   return (
     <>
-      {view.kind === 'loading' ? null : view.kind === 'world' ? (
+      {view.kind === 'loading' ? null : view.kind === 'create' ? (
+        <Create joining={joining} error={joinError} onChoose={(trade) => void createHouse(trade)} />
+      ) : view.kind === 'world' ? (
         <div class="app">
           {tab === 'ville' ? (
             <Ville
               data={view.data}
               now={now}
-              buying={buying}
               advancing={advancing}
+              pending={pending}
               onRefresh={() => void refresh()}
-              onBuyWool={() => void buyWool()}
+              onGoMarket={() => selectTab('marche')}
               onAdvance={() => void advanceOneWeek()}
             />
           ) : (
-            <Marche data={view.data} selling={selling} onSell={(good, units) => void sell(good, units)} />
+            <Marche
+              data={view.data}
+              trading={trading}
+              pending={pending}
+              cancelling={cancelling}
+              onTrade={(kind, good, units) => void trade(kind, good, units)}
+              onCancel={(id) => void cancel(id)}
+            />
           )}
           <div class="fade" aria-hidden="true"></div>
           <Nav tab={tab} onSelect={selectTab} />

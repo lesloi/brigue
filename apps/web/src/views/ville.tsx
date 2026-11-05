@@ -1,24 +1,37 @@
-import type { CalendarView, WorldResponse } from '../api.ts';
-import { eventLine } from '../events.ts';
-import { formatCents, formatCount, goodName, workshopName } from '../format.ts';
+import { useState } from 'preact/hooks';
+
+import type { CalendarView, PendingActionView, WorldResponse } from '../api.ts';
+import { eventLine, ledgerEvents, type LedgerFilter } from '../events.ts';
+import { netPendingFor } from '../trade.ts';
+import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+
+const LEDGER_LIMIT = 8;
 
 interface VilleProps {
   data: WorldResponse;
   now: number;
-  buying: boolean;
   advancing: boolean;
+  /** Actions the server holds for the current and next week. */
+  pending: PendingActionView[];
   onRefresh(): void;
-  onBuyWool(): void;
+  onGoMarket(): void;
   onAdvance(): void;
 }
 
 /** The Ville screen, rendered only from the projection and last week's events. */
-export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAdvance }: VilleProps) {
+export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, onAdvance }: VilleProps) {
+  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('house');
+  const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
   const house = world.house;
+  const workshop = house.workshops[0];
+  const output = workshop?.good ?? null;
+  const input = workshop?.input ?? null;
   const nameOf = houseName(world);
+  const ledger = ledgerEvents(events, house.id, ledgerFilter);
+  const shownLedger = expanded ? ledger : ledger.slice(0, LEDGER_LIMIT);
 
   return (
     <main class="screen">
@@ -67,14 +80,14 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
           <span class="l">écus</span>
         </div>
         <div class="c">
-          <ResourceIcon kind="cloth" />
-          <span class="v">{formatCount(house.stock.cloth ?? 0)}</span>
-          <span class="l">drap</span>
+          {output !== null ? <ResourceIcon kind={output} /> : null}
+          <span class="v">{output !== null ? formatCount(house.stock[output] ?? 0) : '—'}</span>
+          <span class="l">{output !== null ? goodName(output) : 'stock'}</span>
         </div>
         <div class="c">
-          <ResourceIcon kind="wool" />
-          <span class="v">{formatCount(house.stock.wool ?? 0)}</span>
-          <span class="l">laine</span>
+          {input !== null ? <ResourceIcon kind={input} /> : null}
+          <span class="v">{input !== null ? formatCount(house.stock[input] ?? 0) : '—'}</span>
+          <span class="l">{input !== null ? goodName(input) : 'matière'}</span>
         </div>
         <div class="c">
           <ResourceIcon kind="favour" />
@@ -105,7 +118,20 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
               </div>
             ) : (
               house.workshops.map((workshop) => (
-                <WorkshopRow workshop={workshop} priceCents={world.town.market[workshop.good]} />
+                <WorkshopRow
+                  workshop={workshop}
+                  priceCents={world.town.market[workshop.good]}
+                  stock={house.stock}
+                  pendingInput={
+                    workshop.input === null
+                      ? 0
+                      : netPendingFor(
+                          workshop.input,
+                          pending.filter((action) => action.week === world.week),
+                        )
+                  }
+                  onGoMarket={onGoMarket}
+                />
               ))
             )}
             {house.debtCents > 0 ? (
@@ -124,15 +150,6 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
                 </div>
               </div>
             ) : null}
-            <div class="buy">
-              <div>
-                <b>Acheter de la laine</b>
-                <p>{formatCents(world.town.market.wool)} écus l'unité &middot; appliqué à la prochaine semaine</p>
-              </div>
-              <button class="btn" id="buy-wool" type="button" disabled={buying} onClick={onBuyWool}>
-                10 laines
-              </button>
-            </div>
           </div>
         </section>
 
@@ -140,20 +157,57 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
           <div class="h">
             <b id="week-title">La semaine dernière</b>
             <span>
-              {events.length} ligne{events.length > 1 ? 's' : ''}
+              {ledger.length} ligne{ledger.length > 1 ? 's' : ''}
             </span>
+          </div>
+          <div class="filters">
+            <div class="segmented" role="group" aria-label="Filtrer le registre">
+              <button
+                type="button"
+                class={ledgerFilter === 'house' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'house'}
+                onClick={() => {
+                  setLedgerFilter('house');
+                  setExpanded(false);
+                }}
+              >
+                Ma maison
+              </button>
+              <button
+                type="button"
+                class={ledgerFilter === 'all' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'all'}
+                onClick={() => {
+                  setLedgerFilter('all');
+                  setExpanded(false);
+                }}
+              >
+                Tout
+              </button>
+              <button
+                type="button"
+                class={ledgerFilter === 'prices' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'prices'}
+                onClick={() => {
+                  setLedgerFilter('prices');
+                  setExpanded(false);
+                }}
+              >
+                Prix
+              </button>
+            </div>
           </div>
           <CatchUpNote summary={summary} />
           <div class="card">
-            {events.length === 0 ? (
+            {ledger.length === 0 ? (
               <div class="row empty">
                 <div class="nm">
                   <b>Rien au registre</b>
-                  <p>Aucun événement pour cette semaine.</p>
+                  <p>Rien pour ce filtre cette semaine.</p>
                 </div>
               </div>
             ) : (
-              events.map((event) => {
+              shownLedger.map((event) => {
                 const line = eventLine(event, house.id, nameOf);
 
                 return (
@@ -165,6 +219,13 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
               })
             )}
           </div>
+          {ledger.length > LEDGER_LIMIT ? (
+            <div class="more">
+              <button class="btn outline wide" type="button" onClick={() => setExpanded(!expanded)}>
+                {expanded ? 'Réduire' : `Voir les ${ledger.length - LEDGER_LIMIT} autres`}
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <section class="sec" aria-labelledby="laws-title">
@@ -294,27 +355,79 @@ function Calendar({ calendar, year, now }: { calendar: CalendarView; year: numbe
 function WorkshopRow({
   workshop,
   priceCents,
+  stock,
+  pendingInput,
+  onGoMarket,
 }: {
   workshop: WorldResponse['world']['house']['workshops'][number];
   priceCents: number;
+  stock: WorldResponse['world']['house']['stock'];
+  pendingInput: number;
+  onGoMarket(): void;
 }) {
+  const input = workshop.input;
+  const held = input === null ? 0 : (stock[input] ?? 0);
+  const effectiveHeld = Math.max(0, held + pendingInput);
+  const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerWeek - effectiveHeld);
+  const pendingBuy = input !== null && pendingInput > 0 ? pendingInput : 0;
+  const pendingSell = input !== null && pendingInput < 0 ? -pendingInput : 0;
+  // What the warehouse already covers: the workshop eats its input at one rate
+  // a week, so every week of input is one week of production, no more.
+  const reserveWeeks =
+    input === null || workshop.inputUnitsPerWeek <= 0 ? null : Math.floor(effectiveHeld / workshop.inputUnitsPerWeek);
+
   return (
     <div class="row">
       <div class="th">
         <WorkshopThumb good={workshop.good} />
       </div>
       <div class="nm">
-        <b>{workshopName(workshop.good)}</b>
+        <b>
+          {workshopName(workshop.good)}
+          <span class="lv">niv. {workshop.level}</span>
+        </b>
+        {/* The chain and its weekly rate in one line: what it eats, what it
+            makes, and how fast. The badge above carries the level, and the
+            workers only ever set the wages, which the ledger writes. */}
         <p>
-          <span class="lv">niv. {workshop.level}</span> {formatCount(workshop.workers)} ouvrier
-          {workshop.workers > 1 ? 's' : ''} &middot; {goodName(workshop.good)}
+          {input === null
+            ? `${goodQuantity(workshop.outputUnitsPerWeek, workshop.good)} par semaine`
+            : `${goodQuantity(workshop.inputUnitsPerWeek, input)} → ${goodQuantity(
+                workshop.outputUnitsPerWeek,
+                workshop.good,
+              )} par semaine`}
         </p>
+        {reserveWeeks !== null && reserveWeeks > 0 ? (
+          <p>
+            réserve : {reserveWeeks} semaine{reserveWeeks > 1 ? 's' : ''}
+          </p>
+        ) : null}
+        {missing > 0 && input !== null ? (
+          <p class="warn">
+            {pendingBuy > 0 ? 'Il manque toujours ' : 'Il manque '}
+            {goodQuantity(missing, input)} pour produire cette semaine.
+          </p>
+        ) : null}
+        {input !== null && pendingBuy > 0 ? (
+          <p class="pending">Achat de {goodQuantity(pendingBuy, input)} en attente pour cette semaine.</p>
+        ) : null}
+        {input !== null && pendingSell > 0 ? (
+          <p class="pending">Vente de {goodQuantity(pendingSell, input)} en attente pour cette semaine.</p>
+        ) : null}
       </div>
       <div class="act">
         <span class="price">
           <b>{formatCents(priceCents)}</b> écus
         </span>
         <span class="price-l">l'unité</span>
+        <span class="price">
+          <b>{formatCount(stock[workshop.good] ?? 0)}</b> en stock
+        </span>
+        {missing > 0 ? (
+          <button class="btn outline" type="button" onClick={onGoMarket}>
+            Au marché
+          </button>
+        ) : null}
       </div>
     </div>
   );

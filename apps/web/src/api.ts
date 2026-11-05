@@ -1,4 +1,4 @@
-import type { Event, GoodId, Law, SeatId, Workshop } from '@brigue/core';
+import type { Event, GoodId, Law, SeatId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
@@ -6,6 +6,33 @@ export interface CalendarView {
   weekOfYear: number;
   nextScrutinyWeek: number;
   nextScrutinyAt: string;
+}
+
+/** A market action in flight, shared by the screen and the shell. */
+export interface TradeIntent {
+  kind: 'buy' | 'sell';
+  good: GoodId;
+}
+
+/** One action the server holds for the current or next week. */
+export interface PendingActionView {
+  id: string;
+  week: number;
+  type: 'market.buy' | 'market.sell' | 'council.campaign';
+  good?: GoodId;
+  units?: number;
+  seatId?: SeatId;
+}
+
+/** A workshop as the server projects it: the chain's input is not the client's rule. */
+export interface ProjectedWorkshop {
+  good: GoodId;
+  level: number;
+  workers: number;
+  input: GoodId | null;
+  outputUnitsPerWeek: number;
+  inputUnitsPerWeek: number;
+  wagesCentsPerWeek: number;
 }
 
 export interface WorldProjection {
@@ -21,7 +48,7 @@ export interface WorldProjection {
     prestige: number;
     career: number;
     dormant: boolean;
-    workshops: Workshop[];
+    workshops: ProjectedWorkshop[];
     stock: Partial<Record<GoodId, number>>;
     stockUnits: number;
     stockCapacityUnits: number;
@@ -32,6 +59,8 @@ export interface WorldProjection {
     seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
+    marketHistory: Partial<Record<GoodId, number[]>>;
+    marketReferences: Record<GoodId, number>;
   };
   /** The instant the current week ends, so the client can show the next week. */
   nextTickAt: string;
@@ -89,8 +118,12 @@ export interface Joined {
   token: string;
 }
 
-export function joinTown(): Promise<Joined> {
-  return send<Joined>('/api/session', { method: 'POST' });
+export function joinTown(trade: Trade): Promise<Joined> {
+  return send<Joined>('/api/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trade }),
+  });
 }
 
 export function resumeTown(token: string): Promise<{ worldId: string; houseId: string }> {
@@ -116,6 +149,25 @@ export function sendAction(week: number, action: ActionIntent): Promise<{ id: st
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: actionId(), week, action }),
   });
+}
+
+/** The actions the server still holds for this house, current and next week. */
+export async function readPending(): Promise<PendingActionView[]> {
+  const body = await send<{ actions: PendingActionView[] }>('/api/actions');
+
+  return body.actions;
+}
+
+export async function cancelAction(id: string): Promise<void> {
+  const response = await fetch(`/api/actions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorCode(response));
+  }
 }
 
 /**

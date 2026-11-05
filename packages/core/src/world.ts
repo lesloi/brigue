@@ -11,6 +11,23 @@ export type GoodId = 'wool' | 'cloth' | 'grain' | 'bread' | 'wood' | 'planks';
 
 /** The six goods, in chain order: a raw good, then what is made of it. */
 export const GOODS: readonly GoodId[] = ['wool', 'cloth', 'grain', 'bread', 'wood', 'planks'];
+
+/** The three trades a player may practise: one finished chain each. */
+export type Trade = 'weaver' | 'baker' | 'carpenter';
+
+export const TRADES: readonly Trade[] = ['weaver', 'baker', 'carpenter'];
+
+export interface TradeChain {
+  output: GoodId;
+  input: GoodId;
+}
+
+/** What each trade makes, and the raw good it buys to make it. */
+export const TRADE_CHAINS: Record<Trade, TradeChain> = {
+  weaver: { output: 'cloth', input: 'wool' },
+  baker: { output: 'bread', input: 'grain' },
+  carpenter: { output: 'planks', input: 'wood' },
+};
 export type SeatId = 'maire' | 'prevot' | 'echevin-north' | 'echevin-south' | 'tresorier';
 
 /** Seats in the order they come up for election, and the order screens show them. */
@@ -113,6 +130,12 @@ export interface World {
    * stored rather than recomputed: the price you see is the town you were.
    */
   marketFlow: Partial<Record<GoodId, number>>;
+  /**
+   * The last PRICE_HISTORY_WEEKS prices per good, in cents, one point per tick.
+   * Optional because a world stored before the field existed must keep ticking:
+   * its history starts at the tick that first sees it.
+   */
+  marketHistory?: Partial<Record<GoodId, number[]>>;
   /** Votes bought per seat, per house, cleared when that seat is elected. */
   campaigns: Partial<Record<SeatId, Record<string, number>>>;
   /**
@@ -212,6 +235,12 @@ export const PACING = {
 export const START_YEAR = 1401;
 /** Twenty-four weeks make a year, so one real day is one game year. */
 export const WEEKS_PER_YEAR = 24;
+/**
+ * The Marché keeps one price per week for a game year: one scrutiny cycle, one
+ * real day of town life. It is a display window, not a rule, so it stays out of
+ * RULES; a later change grows or shrinks it without moving the ruleset.
+ */
+export const PRICE_HISTORY_WEEKS = WEEKS_PER_YEAR;
 
 export interface Founder {
   house: House;
@@ -223,7 +252,9 @@ export interface Founder {
  * career. `createWorld` opens with it, and the server puts it back into a freed
  * place so a deleted founder cannot brick the join path.
  */
-export function createFounder(): Founder {
+export function createFounder(trade: Trade = 'weaver'): Founder {
+  const chain = TRADE_CHAINS[trade];
+
   return {
     house: {
       id: 'brigue',
@@ -235,8 +266,8 @@ export function createFounder(): Founder {
       prestige: 50,
       career: 0,
       dormant: false,
-      workshops: [{ good: 'cloth', level: 2, workers: 2 }],
-      stock: { wool: 8 },
+      workshops: [{ good: chain.output, level: 2, workers: 2 }],
+      stock: { [chain.input]: 8 },
     },
     person: {
       id: 'person-brigue',
@@ -293,8 +324,8 @@ export function stockUnits(house: House): number {
   return total;
 }
 
-export function createWorld(seed: number): World {
-  const founder = createFounder();
+export function createWorld(seed: number, trade: Trade = 'weaver'): World {
+  const founder = createFounder(trade);
 
   return {
     formatVersion: FORMAT_VERSION,
@@ -452,6 +483,14 @@ export function createWorld(seed: number): World {
       planks: RULES.market.planks.referenceCents,
     },
     marketFlow: {},
+    marketHistory: {
+      wool: [RULES.market.wool.referenceCents],
+      cloth: [RULES.market.cloth.referenceCents],
+      grain: [RULES.market.grain.referenceCents],
+      bread: [RULES.market.bread.referenceCents],
+      wood: [RULES.market.wood.referenceCents],
+      planks: [RULES.market.planks.referenceCents],
+    },
     campaigns: {},
     engagements: [],
     engagementSeq: 0,

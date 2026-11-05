@@ -2,6 +2,30 @@ import type { Action, Event } from '@brigue/core';
 
 import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
 
+/** The three cuts of the week's ledger: the house's own story, everything, the prices. */
+export type LedgerFilter = 'house' | 'all' | 'prices';
+
+/**
+ * The default is the house's own story plus the town's politics; the AI's
+ * market noise and the price lines stay behind the other cuts. `prices` is
+ * where chapter I's lesson lives; `all` is the whole last week.
+ */
+export function ledgerEvents(events: readonly Event[], houseId: string, filter: LedgerFilter): Event[] {
+  switch (filter) {
+    case 'all':
+      return [...events];
+    case 'prices':
+      return events.filter((event) => event.type === 'market.price_changed');
+    case 'house':
+      return events.filter(
+        (event) =>
+          ('houseId' in event && event.houseId === houseId) ||
+          event.type.startsWith('council.') ||
+          event.type.startsWith('engagement.'),
+      );
+  }
+}
+
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';
 
 export interface EventLine {

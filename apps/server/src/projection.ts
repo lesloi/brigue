@@ -1,4 +1,5 @@
 import {
+  GOODS,
   PACING,
   RULES,
   stockUnits,
@@ -8,9 +9,19 @@ import {
   type Law,
   type Seat,
   type SeatId,
-  type Workshop,
   type World,
 } from '@brigue/core';
+
+/** A workshop as the screen reads it: its chain and weekly figures come from the rules. */
+export interface WorkshopView {
+  good: GoodId;
+  level: number;
+  workers: number;
+  input: GoodId | null;
+  outputUnitsPerWeek: number;
+  inputUnitsPerWeek: number;
+  wagesCentsPerWeek: number;
+}
 
 export interface OwnHouseView {
   id: string;
@@ -21,7 +32,7 @@ export interface OwnHouseView {
   prestige: number;
   career: number;
   dormant: boolean;
-  workshops: Workshop[];
+  workshops: WorkshopView[];
   stock: Partial<Record<GoodId, number>>;
   /** What the stock holds in total, and the warehouse's cap: the client sums nothing. */
   stockUnits: number;
@@ -68,6 +79,10 @@ export interface WorldProjection {
     seats: Record<SeatId, Seat>;
     laws: Law[];
     market: Record<GoodId, number>;
+    /** The last PRICE_HISTORY_WEEKS prices per good, so the Marché can draw them. */
+    marketHistory: Partial<Record<GoodId, number[]>>;
+    /** The reference each good returns to; the chart draws it as a guide. */
+    marketReferences: Record<GoodId, number>;
   };
   /** The instant the current week ends, so the client can show the next tick. */
   nextTickAt: string;
@@ -106,6 +121,11 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
       seats: structuredClone(world.seats),
       laws: structuredClone(world.laws),
       market: structuredClone(world.market),
+      marketHistory: structuredClone(world.marketHistory ?? {}),
+      marketReferences: Object.fromEntries(GOODS.map((good) => [good, RULES.market[good].referenceCents])) as Record<
+        GoodId,
+        number
+      >,
     },
     nextTickAt: new Date(weekStartedAt.getTime() + PACING.minutesPerWeek * 60_000).toISOString(),
   };
@@ -137,7 +157,18 @@ function ownHouse(house: House): OwnHouseView {
     prestige: house.prestige,
     career: house.career,
     dormant: house.dormant,
-    workshops: structuredClone(house.workshops),
+    workshops: house.workshops.map((workshop) => {
+      const recipe = RULES.recipes[workshop.good];
+      const outputUnitsPerWeek = workshop.level * RULES.outputPerLevel;
+
+      return {
+        ...structuredClone(workshop),
+        input: recipe?.input ?? null,
+        outputUnitsPerWeek,
+        inputUnitsPerWeek: recipe === null ? 0 : outputUnitsPerWeek * recipe.perUnit,
+        wagesCentsPerWeek: workshop.workers * RULES.wagePerWorkerCents,
+      };
+    }),
     stock: structuredClone(house.stock),
     stockUnits: stockUnits(house),
     stockCapacityUnits: RULES.stockCapacityUnits,

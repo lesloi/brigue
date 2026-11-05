@@ -22,6 +22,7 @@ interface ActionRow {
   week: number;
   action: Action;
   received_at: Date | string;
+  cancelled_at: Date | string | null;
 }
 
 /**
@@ -100,9 +101,9 @@ class PgWorldSession implements WorldSession {
 
   async actionsFor(week: number): Promise<StoredAction[]> {
     const { rows } = await this.client.query<ActionRow>(
-      `SELECT id, house_id, week, action, received_at
+      `SELECT id, house_id, week, action, received_at, cancelled_at
        FROM actions
-       WHERE world_id = $1 AND week = $2
+       WHERE world_id = $1 AND week = $2 AND cancelled_at IS NULL
        ORDER BY seq`,
       [this.worldId, week],
     );
@@ -112,7 +113,7 @@ class PgWorldSession implements WorldSession {
 
   async findAction(id: string): Promise<StoredAction | null> {
     const { rows } = await this.client.query<ActionRow>(
-      `SELECT id, house_id, week, action, received_at FROM actions WHERE id = $1`,
+      `SELECT id, house_id, week, action, received_at, cancelled_at FROM actions WHERE id = $1`,
       [id],
     );
     const row = rows[0];
@@ -133,6 +134,15 @@ class PgWorldSession implements WorldSession {
       }
       throw error;
     }
+  }
+
+  async cancel(id: string, at: Date): Promise<void> {
+    await this.client.query(
+      `UPDATE actions
+       SET cancelled_at = $2
+       WHERE id = $1 AND cancelled_at IS NULL`,
+      [id, at],
+    );
   }
 
   async save(world: World, weekStartedAt: Date, lastEvents: Event[], at: Date): Promise<void> {
@@ -158,6 +168,7 @@ function rowToStoredAction(row: ActionRow): StoredAction {
     week: row.week,
     action: row.action,
     receivedAt: asDate(row.received_at),
+    cancelledAt: row.cancelled_at === null ? null : asDate(row.cancelled_at),
   };
 }
 

@@ -1,8 +1,30 @@
 import type { Event } from '@brigue/core';
+import { GOODS } from '@brigue/core/world';
 import { describe, expect, it } from 'vitest';
 
-import { eventLine } from '../src/events.ts';
-import { actionErrorText, goodName, goodQuantity, readErrorText, refusalText, seatName } from '../src/format.ts';
+import type { PendingActionView } from '../src/api.ts';
+import { eventLine, ledgerEvents } from '../src/events.ts';
+import {
+  buyMax,
+  FINISHED_GOODS,
+  netPendingFor,
+  pendingCashCents,
+  pendingUnits,
+  priceSignal,
+  RAW_GOODS,
+  sellMax,
+} from '../src/trade.ts';
+import {
+  actionErrorText,
+  goodName,
+  goodQuantity,
+  pendingActionText,
+  readErrorText,
+  refusalText,
+  seatName,
+  tradeChainText,
+  tradeName,
+} from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
 import { countdownText, scrutinyText } from '../src/views/ville.tsx';
 
@@ -149,12 +171,21 @@ describe('format helpers', () => {
     expect(goodName('planks')).toBe('planche');
   });
 
+  it('names the three trades and what each chain does', () => {
+    expect(tradeName('weaver')).toBe('Tisserand');
+    expect(tradeName('baker')).toBe('Boulanger');
+    expect(tradeName('carpenter')).toBe('Charpentier');
+    expect(tradeChainText('baker')).toBe('cuit le blé pour faire du pain');
+    expect(tradeChainText('weaver')).toBe('tisse la laine pour faire des draps');
+  });
+
   it('names seats and refusals in French', () => {
     expect(seatName('echevin-north')).toBe('échevinage nord');
     expect(refusalText('insufficient_favour')).toBe('faveur insuffisante');
     expect(refusalText('unknown_good')).toBe('denrée inconnue');
     expect(refusalText('insufficient_stock')).toBe('stock insuffisant');
     expect(refusalText('stock_full')).toBe('entrepôt plein');
+    expect(readErrorText('invalid_trade')).toBe('Métier inconnu.');
   });
 
   it('separates action failures from read failures', () => {
@@ -217,5 +248,123 @@ describe('tab history', () => {
     expect(tabFromHash('')).toBe('ville');
     expect(stateOf(null)).toBeNull();
     expect(stateOf({ tab: 'marche', pushed: true })).toEqual({ tab: 'marche', pushed: true });
+  });
+});
+
+describe('the ledger filter', () => {
+  const events: Event[] = [
+    {
+      type: 'market.sold',
+      audience: 'town',
+      houseId: 'brigue',
+      good: 'cloth',
+      units: 2,
+      priceCents: 1240,
+      revenueCents: 2480,
+    },
+    {
+      type: 'market.bought',
+      audience: 'town',
+      houseId: 'caron',
+      good: 'wool',
+      units: 6,
+      priceCents: 380,
+      totalCents: 2280,
+    },
+    { type: 'council.election_held', audience: 'town', seatId: 'maire', winnerHouseId: 'caron', votes: {} },
+    { type: 'market.price_changed', audience: 'town', good: 'cloth', before: 1240, after: 1250 },
+    { type: 'house.wages_paid', audience: { houseId: 'brigue' }, houseId: 'brigue', amountCents: 240 },
+  ];
+
+  it('keeps the house and the town politics by default', () => {
+    // Act
+    const filtered = ledgerEvents(events, 'brigue', 'house');
+
+    // Assert
+    expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.wages_paid']);
+  });
+
+  it('keeps only the prices in the prices cut', () => {
+    expect(ledgerEvents(events, 'brigue', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
+  });
+
+  it('keeps everything in the full cut', () => {
+    expect(ledgerEvents(events, 'brigue', 'all')).toEqual(events);
+  });
+});
+
+describe('pending actions', () => {
+  const pending: PendingActionView[] = [
+    { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
+    { id: 'b', week: 3, type: 'market.buy', good: 'grain', units: 10 },
+    { id: 'c', week: 3, type: 'market.sell', good: 'grain', units: 4 },
+    { id: 'd', week: 3, type: 'market.buy', good: 'wool', units: 2 },
+    { id: 'e', week: 3, type: 'council.campaign', seatId: 'maire' },
+  ];
+
+  it('nets the market actions of one good', () => {
+    // Act and assert: a campaign is not a trade and never enters the net.
+    expect(netPendingFor('grain', pending)).toBe(11);
+    expect(netPendingFor('wool', pending)).toBe(2);
+    expect(netPendingFor('cloth', pending)).toBe(0);
+  });
+
+  it('says a queued action in words', () => {
+    expect(pendingActionText(pending[0] as PendingActionView)).toBe('Achat de 5 blés');
+    expect(pendingActionText(pending[2] as PendingActionView)).toBe('Vente de 4 blés');
+    expect(pendingActionText(pending[4] as PendingActionView)).toBe('Candidature à la mairie');
+  });
+
+  it("values the queued actions at the week's prices", () => {
+    // Arrange
+    const prices = { wool: 380, cloth: 1240, grain: 260, bread: 520, wood: 300, planks: 980 };
+    const queued: PendingActionView[] = [
+      { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
+      { id: 'b', week: 3, type: 'market.sell', good: 'bread', units: 3 },
+    ];
+
+    // Act and assert: -5 × 260 + 3 × 520, and 5 − 3 units net.
+    expect(pendingCashCents(queued, prices)).toBe(260);
+    expect(pendingUnits(queued)).toBe(2);
+  });
+
+  it('caps the buy at the purse and the warehouse, and the sell at the stock', () => {
+    // Arrange
+    const base = {
+      treasuryCents: 1000,
+      pendingCashCents: 0,
+      stockUnits: 8,
+      pendingUnits: 0,
+      capacityUnits: 10,
+      priceCents: 100,
+    };
+
+    // Act and assert
+    expect(buyMax(base)).toBe(2);
+    expect(buyMax({ ...base, pendingCashCents: -200 })).toBe(2);
+    expect(buyMax({ ...base, pendingUnits: 2 })).toBe(0);
+    expect(sellMax(8, -3)).toBe(5);
+    expect(sellMax(0, 5)).toBe(5);
+    expect(sellMax(2, -5)).toBe(0);
+  });
+
+  it('calls a price dear or cheap only outside the band around its reference', () => {
+    // Arrange: grain's reference is 260 cents, so the band runs from 234 to 286.
+    // Act and assert: the edges belong to the signal, a cent inside does not.
+    expect(priceSignal(234, 260)).toBe('cheap');
+    expect(priceSignal(233, 260)).toBe('cheap');
+    expect(priceSignal(235, 260)).toBe('normal');
+    expect(priceSignal(260, 260)).toBe('normal');
+    expect(priceSignal(285, 260)).toBe('normal');
+    expect(priceSignal(286, 260)).toBe('dear');
+    expect(priceSignal(287, 260)).toBe('dear');
+    expect(priceSignal(300, 0)).toBe('normal');
+  });
+
+  it('splits every good into one raw or one finished block', () => {
+    // Assert: the two Marché blocks cover the whole catalogue exactly once.
+    expect(RAW_GOODS).toEqual(['wool', 'grain', 'wood']);
+    expect(FINISHED_GOODS).toEqual(['cloth', 'bread', 'planks']);
+    expect([...RAW_GOODS, ...FINISHED_GOODS].sort()).toEqual([...GOODS].sort());
   });
 });

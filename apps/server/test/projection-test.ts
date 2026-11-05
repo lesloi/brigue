@@ -74,6 +74,67 @@ describe('the projection calendar', () => {
     expect(projection.calendar.nextScrutinyAt).toBe(projection.nextTickAt);
   });
 
+  it('carries the workshop chain and weekly figures so the client derives no rule', () => {
+    // Arrange
+    const world = createWorld(SEED, 'baker');
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.house.workshops).toEqual([
+      {
+        good: 'bread',
+        level: 2,
+        workers: 2,
+        input: 'grain',
+        outputUnitsPerWeek: 4,
+        inputUnitsPerWeek: 4,
+        wagesCentsPerWeek: 240,
+      },
+    ]);
+  });
+
+  it('carries zero input for a raw workshop', () => {
+    // Arrange
+    const world = createWorld(SEED);
+    world.houses.brigue.workshops = [{ good: 'wool', level: 2, workers: 1 }];
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.house.workshops[0]).toEqual({
+      good: 'wool',
+      level: 2,
+      workers: 1,
+      input: null,
+      outputUnitsPerWeek: 4,
+      inputUnitsPerWeek: 0,
+      wagesCentsPerWeek: 120,
+    });
+  });
+
+  it('scales the weekly figures with the level and the workers', () => {
+    // Arrange
+    const world = createWorld(SEED);
+    world.houses.brigue.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.house.workshops[0]).toEqual({
+      good: 'cloth',
+      level: 3,
+      workers: 1,
+      input: 'wool',
+      outputUnitsPerWeek: 6,
+      inputUnitsPerWeek: 6,
+      wagesCentsPerWeek: 120,
+    });
+  });
+
   it('carries six prices, the stock and the warehouse capacity', () => {
     // Arrange
     const world = createWorld(SEED);
@@ -86,6 +147,33 @@ describe('the projection calendar', () => {
     expect(projection.house.stockUnits).toBe(stockUnits(world.houses.brigue));
     expect(projection.house.stockUnits).toBe(8);
     expect(projection.house.stockCapacityUnits).toBe(RULES.stockCapacityUnits);
+  });
+
+  it('carries the year of prices and their references', () => {
+    // Arrange
+    const world = createWorld(SEED, 'baker');
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    for (const good of GOODS) {
+      expect(projection.town.marketHistory[good]).toEqual([RULES.market[good].referenceCents]);
+      expect(projection.town.marketReferences[good]).toBe(RULES.market[good].referenceCents);
+    }
+  });
+
+  it('projects a field-less world with an empty history', () => {
+    // Arrange: a world stored before the history field existed.
+    const world = createWorld(SEED);
+    delete world.marketHistory;
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.town.marketHistory).toEqual({});
+    expect(Object.keys(projection.town.marketReferences).sort()).toEqual([...GOODS].sort());
   });
 
   it('points at the next year once a scrutiny has closed the last one', () => {
