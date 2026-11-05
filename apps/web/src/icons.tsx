@@ -10,13 +10,22 @@ export function Seal({ size = 30 }: { size?: number }) {
   );
 }
 
-export function ResourceIcon({ kind }: { kind: GoodId | 'coins' | 'favour' }) {
+export function ResourceIcon({ kind }: { kind: GoodId | 'coins' | 'favour' | 'warehouse' }) {
   switch (kind) {
     case 'coins':
       return (
         <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9.5" fill="#c79338" />
           <circle cx="12" cy="12" r="6" fill="none" stroke="#8a5c14" stroke-width="1.4" />
+        </svg>
+      );
+    case 'warehouse':
+      return (
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 10l9-6 9 6v10H3z" fill="#a77a52" />
+          <path d="M3 10h18" stroke="#8f4b2d" stroke-width="1" />
+          <rect x="8" y="13" width="8" height="7" fill="#d8b98c" />
+          <path d="M8 16h8M12 13v7" stroke="#8f4b2d" stroke-width="1" />
         </svg>
       );
     case 'cloth':

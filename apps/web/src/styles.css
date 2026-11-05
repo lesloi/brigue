@@ -313,6 +313,10 @@ button:disabled {
   border-left: 1px solid var(--line);
 }
 
+.mstats svg {
+  flex: none;
+}
+
 .mstats .v {
   font-size: 17px;
   font-weight: 750;

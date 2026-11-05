@@ -4,7 +4,7 @@ import { useState } from 'preact/hooks';
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
 import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
 import { buyMax, FINISHED_GOODS, netPendingFor, pendingCashCents, pendingUnits, RAW_GOODS, sellMax } from '../trade.ts';
-import { Seal, WorkshopThumb } from '../icons.tsx';
+import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 
 interface MarcheProps {
   data: WorldResponse;
@@ -112,10 +112,12 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
 
       <section class="mstats" aria-label="Ta maison">
         <div>
+          <ResourceIcon kind="coins" />
           <span class="v">{formatCents(house.treasuryCents)}</span>
           <span class="l">écus</span>
         </div>
         <div>
+          <ResourceIcon kind="warehouse" />
           <span class="v">
             {formatCount(house.stockUnits)} / {formatCount(house.stockCapacityUnits)}
           </span>
@@ -154,24 +156,22 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
         ) : null}
 
         <section class="sec" aria-label="Les denrées">
+          <p class="note">
+            Le marché achète et vend au prix de la semaine. La courbe suit les dernières semaines ; le trait doré est le
+            prix de référence. Touche une denrée pour ouvrir sa fiche.
+          </p>
           <div class="market-group">
             <div class="h">
               <b>Matières premières</b>
-              <span>achats des ateliers</span>
             </div>
             <div class="card">{RAW_GOODS.map(renderGood)}</div>
           </div>
           <div class="market-group">
             <div class="h">
               <b>Produits finis</b>
-              <span>demande de la ville</span>
             </div>
             <div class="card">{FINISHED_GOODS.map(renderGood)}</div>
           </div>
-          <p class="note">
-            Le marché achète et vend au prix de la semaine. La courbe suit les dernières semaines ; le trait doré est le
-            prix de référence. Touche une denrée pour ouvrir sa fiche.
-          </p>
         </section>
       </div>
     </main>
