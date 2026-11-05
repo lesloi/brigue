@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { eventLine } from '../src/events.ts';
 import { actionErrorText, goodQuantity, readErrorText, refusalText, seatName } from '../src/format.ts';
-import { countdownText } from '../src/views/ville.ts';
+import { countdownText, scrutinyText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
   brigue: 'Brigue',
@@ -132,5 +132,17 @@ describe('countdownText', () => {
 
   it('does not go negative', () => {
     expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('semaine imminente');
+  });
+});
+
+describe('scrutinyText', () => {
+  const start = Date.parse('2026-01-01T00:00:00.000Z');
+
+  it('counts down to the instant the projection dates', () => {
+    expect(scrutinyText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe('scrutin dans 2 h 05');
+  });
+
+  it('never goes negative', () => {
+    expect(scrutinyText(new Date(start - 1_000).toISOString(), start)).toBe('scrutin imminent');
   });
 });

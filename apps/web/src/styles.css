@@ -249,6 +249,66 @@ button:disabled {
   font-weight: 600;
 }
 
+.cal {
+  margin: 20px 12px 0;
+}
+
+.cal .h {
+  margin: 0 8px 8px;
+}
+
+.cal-card {
+  background: var(--surf);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  padding: 12px 14px 11px;
+}
+
+.weeks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 4px;
+}
+
+.weeks li {
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #f5f2ea;
+  color: var(--mut);
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.weeks li.now {
+  background: var(--accent);
+  color: #fff;
+}
+
+.weeks li.scrutiny {
+  box-shadow: inset 0 0 0 1px var(--gold);
+  color: #8a5f14;
+}
+
+.weeks li.now.scrutiny {
+  box-shadow: inset 0 0 0 2px #f0d59a;
+  color: #fff;
+}
+
+.cal-line {
+  margin: 10px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--mut);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
 /* The development-only control: dashed and quiet, so it never reads as a game action. */
 .dev {
   display: flex;
@@ -798,6 +858,15 @@ button:disabled {
 
   .res .v {
     font-size: 18px;
+  }
+
+  .cal {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+
+  .weeks {
+    grid-template-columns: repeat(24, 1fr);
   }
 
   .body {

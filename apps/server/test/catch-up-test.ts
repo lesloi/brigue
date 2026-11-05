@@ -183,6 +183,30 @@ describe('catching the world up', () => {
     expect(result.weekStartedAt.getTime()).toBeGreaterThan(now.getTime() - HOUR);
   });
 
+  it('resolves an engagement behind the town clock on the first week it simulates', async () => {
+    // Arrange: an older state left the counter past a due week. A cap jump moves
+    // only the wall clock, so this exercises the defensive path, not a skipped week.
+    const world = createWorld(20261031);
+    world.week = PACING.maxCatchUpWeeks + 1;
+    world.engagements = [{ id: 'engagement-late', kind: 'campaign', houseId: 'brigue', seatId: 'maire', dueWeek: 700 }];
+
+    // Act: the next whole week is simulated.
+    const result = await run({ world, now: new Date(START.getTime() + HOUR) });
+
+    // Assert: never dropped in silence, and the vote it bought is credited.
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: 'engagement.resolved',
+        engagementId: 'engagement-late',
+        kind: 'campaign',
+        dueWeek: 700,
+        resolvedWeek: PACING.maxCatchUpWeeks + 1,
+      }),
+    );
+    expect(result.world.engagements).toEqual([]);
+    expect(result.world.campaigns.maire).toEqual({ brigue: RULES.campaignVoteBonus });
+  });
+
   it('refuses a world of another version before replaying anything', async () => {
     // Arrange
     const world = { ...createWorld(1), rulesetVersion: RULES.version + 1 };

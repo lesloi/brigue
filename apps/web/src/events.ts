@@ -70,7 +70,38 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
     case 'council.campaigned':
       return {
         tone: 'council',
-        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez dépensé', 'a dépensé')} ${formatCount(event.favourSpent)} de faveur pour la ${seatName(event.seatId)}.`,
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez dépensé', 'a dépensé')} ${formatCount(event.favourSpent)} de faveur pour la ${seatName(event.seatId)} ; la campagne aboutit semaine ${formatCount(event.dueWeek)}.`,
+      };
+
+    case 'engagement.resolved': {
+      const late =
+        event.resolvedWeek === event.dueWeek
+          ? ''
+          : ` (${formatCount(event.resolvedWeek - event.dueWeek)} semaine${event.resolvedWeek - event.dueWeek > 1 ? 's' : ''} de retard)`;
+
+      if (event.kind === 'campaign') {
+        return {
+          tone: 'council',
+          text: `La campagne de ${subject(event.houseId)} pour la ${event.seatId === undefined ? 'charge' : seatName(event.seatId)} aboutit${late}.`,
+        };
+      }
+      if (event.kind === 'hearing') {
+        return {
+          tone: 'council',
+          text: `L'audience de ${subject(event.houseId)} est tenue${late}.`,
+        };
+      }
+
+      return {
+        tone: 'neutral',
+        text: `Le chantier de ${subject(event.houseId)} est achevé${late}.`,
+      };
+    }
+
+    case 'council.scrutiny_held':
+      return {
+        tone: 'council',
+        text: `Scrutin de l'an ${event.year} : les ${formatCount(event.seats.length)} charges sont remises en jeu.`,
       };
 
     case 'council.election_held': {

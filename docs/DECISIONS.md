@@ -177,9 +177,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **Engagements have durations; there are no action points.** A campaign runs eight weeks, a
   hearing is held six weeks after the complaint, a building site takes twelve. They are counted
   in weeks, so they survive a catch-up: the world replays whole weeks and resolves what falls
-  due. A budget of actions per week would be action points with another clock; the calendar is
-  the scarcity, and it does not punish sleep. Revisit if players stop returning between
-  engagements.
+  due. If the town's week counter is already past a due week, the next tick that runs pays it and
+  the event carries both weeks, so it is late rather than dropped; the cap jump skips wall-clock
+  weeks, never the town's own count, so this is the defensive path. A budget of actions per week
+  would be action points with another clock; the calendar is the scarcity, and it does not
+  punish sleep. Revisit if players stop returning between engagements.
 
 - **Laws are domains, plus exceptional votes.** Each office fixes its own laws alone: the mayor
   the sales and guild taxes, the provost the definition of crimes, the alderman the prices of the
