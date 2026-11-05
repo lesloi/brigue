@@ -3,6 +3,7 @@ import {
   PACING,
   RULES,
   tick,
+  visibleTo,
   WorldVersionError,
   type Event,
   type RefusalReason,
@@ -28,8 +29,13 @@ export interface CatchUpSummary {
 export interface CatchUpResult {
   world: World;
   weekStartedAt: Date;
-  /** The last week played, or the one already on record when nothing elapsed. */
+  /** What the reading house may see of the last week played. */
   events: Event[];
+  /**
+   * The last week as the town lived it, private events included. The next
+   * reader must still find its own; the store keeps this, the API filters it.
+   */
+  recordedEvents: Event[];
   summary: CatchUpSummary;
 }
 
@@ -38,6 +44,8 @@ export interface CatchUpInput {
   weekStartedAt: Date;
   lastEvents: readonly Event[];
   now: Date;
+  /** The house reading, so events and counters carry only what it may see. */
+  houseId: string;
   actionsFor(week: number): Promise<readonly StoredAction[]>;
   maxWeeks?: number;
 }
@@ -65,7 +73,8 @@ export async function catchUp(input: CatchUpInput): Promise<CatchUpResult> {
   const refusals: CatchUpSummary['refusals'] = {};
   let world = input.world;
   let weekStartedAt = input.weekStartedAt;
-  let events: Event[] = [...input.lastEvents];
+  let recordedEvents: Event[] = [...input.lastEvents];
+  let events: Event[] = visibleTo(recordedEvents, input.houseId);
 
   for (let played = 0; played < weeksPlayed; played += 1) {
     const queued = await input.actionsFor(world.week);
@@ -75,13 +84,14 @@ export async function catchUp(input: CatchUpInput): Promise<CatchUpResult> {
     );
     world = result.world;
     weekStartedAt = new Date(weekStartedAt.getTime() + WEEK_MS);
+    recordedEvents = result.events;
 
     // Everything but the last week is reduced to counters: a month away must
-    // not return thousands of events.
+    // not return thousands of events. Only the reader's own events count.
     if (played < weeksPlayed - 1) {
-      tally(result.events, counts, refusals);
+      tally(visibleTo(result.events, input.houseId), counts, refusals);
     } else {
-      events = result.events;
+      events = visibleTo(result.events, input.houseId);
     }
   }
 
@@ -93,6 +103,7 @@ export async function catchUp(input: CatchUpInput): Promise<CatchUpResult> {
     world,
     weekStartedAt,
     events,
+    recordedEvents,
     summary: { weeksPlayed, skippedWeeks, counts, refusals },
   };
 }

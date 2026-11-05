@@ -208,6 +208,7 @@ describe('an AI house', () => {
     expect(events.filter((event) => event.type === 'market.bought' && event.houseId === 'caron')).toEqual([]);
     expect(events).toContainEqual({
       type: 'workshop.idle',
+      audience: { houseId: 'caron' },
       houseId: 'caron',
       good: 'cloth',
       input: 'wool',

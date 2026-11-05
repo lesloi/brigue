@@ -29,6 +29,21 @@ describe('the token', () => {
 });
 
 describe('the binding', () => {
+  it('records the last visit and moves it on touch', async () => {
+    // Arrange
+    const store = new MemoryPlayerStore();
+    const at = new Date('2026-10-31T12:00:00Z');
+    const later = new Date('2026-11-01T12:00:00Z');
+    const { player } = await issueToken(store, 'saint-aubin', 'brigue', at);
+
+    // Act
+    await store.touch(player.tokenHash, later);
+
+    // Assert
+    expect(player.lastSeenAt).toEqual(at);
+    expect((await store.findByTokenHash(player.tokenHash))?.lastSeenAt).toEqual(later);
+  });
+
   it('opens exactly one house', async () => {
     const store = new MemoryPlayerStore();
     const brigue = await issueToken(store, 'saint-aubin', 'brigue');

@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, hashJson, RULES, stateHash, type World } from '@brigue/core';
+import { createWorld, FORMAT_VERSION, hashJson, RULES, stateHash, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
@@ -21,6 +21,7 @@ interface Harness {
   logs: string[];
   clock: { now: number };
   cookie: string;
+  cookies: Record<string, string>;
 }
 
 interface WorldBody {
@@ -48,7 +49,9 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((close) => close()));
 });
 
-async function start(options: { world?: World; at?: number; devAdvance?: boolean } = {}): Promise<Harness> {
+async function start(
+  options: { world?: World; at?: number; devAdvance?: boolean; houses?: string[] } = {},
+): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
   const worlds = new MemoryWorldStore();
@@ -74,7 +77,13 @@ async function start(options: { world?: World; at?: number; devAdvance?: boolean
 
   const world = options.world ?? createWorld(20261031);
   await worlds.createIfAbsent(WORLD_ID, world, new Date(clock.now), new Date(clock.now));
-  const { token } = await issueToken(store, WORLD_ID, 'brigue', new Date(clock.now));
+
+  const houses = options.houses ?? ['brigue'];
+  const cookies: Record<string, string> = {};
+  for (const houseId of houses) {
+    const { token } = await issueToken(store, WORLD_ID, houseId, new Date(clock.now));
+    cookies[houseId] = `${SESSION_COOKIE}=${token}`;
+  }
 
   return {
     url: `http://127.0.0.1:${address.port}`,
@@ -82,7 +91,8 @@ async function start(options: { world?: World; at?: number; devAdvance?: boolean
     worlds,
     logs,
     clock,
-    cookie: `${SESSION_COOKIE}=${token}`,
+    cookies,
+    cookie: cookies[houses[0] as string] as string,
   };
 }
 
@@ -90,8 +100,20 @@ function getWorld(harness: Harness): Promise<Response> {
   return fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookie } });
 }
 
+function getWorldAs(harness: Harness, houseId: string): Promise<Response> {
+  return fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookies[houseId] as string } });
+}
+
 async function worldBody(harness: Harness): Promise<WorldBody> {
   const response = await getWorld(harness);
+
+  expect(response.status).toBe(200);
+
+  return (await response.json()) as WorldBody;
+}
+
+async function worldBodyAs(harness: Harness, houseId: string): Promise<WorldBody> {
+  const response = await getWorldAs(harness, houseId);
 
   expect(response.status).toBe(200);
 
@@ -189,6 +211,29 @@ describe('GET /api/world', () => {
     expect(after.week).toBe(1);
   });
 
+  it('refuses a world of the previous format at the door', async () => {
+    // Arrange: a format-1 world is refused before any replay.
+    const world = { ...createWorld(7), formatVersion: 1 };
+    const harness = await start({ world });
+    const before = stateHash(world);
+    harness.clock.now += 2 * HOUR;
+
+    // Act
+    const response = await getWorld(harness);
+
+    // Assert
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: 'world_version',
+      formatVersion: 1,
+      rulesetVersion: RULES.version,
+      expected: { formatVersion: FORMAT_VERSION, rulesetVersion: RULES.version },
+    });
+    const after = await harness.worlds.withWorld(WORLD_ID, async (session) => session.snapshot.world);
+    expect(stateHash(after)).toBe(before);
+    expect(after.week).toBe(1);
+  });
+
   it('shows its own house in full, the town without the seed or other purses', async () => {
     // Arrange
     const harness = await start();
@@ -205,6 +250,61 @@ describe('GET /api/world', () => {
     expect(new Date(body.world.nextTickAt).getTime()).toBe(START + HOUR);
     // The hash covers the projection, not the seed-bearing world.
     expect(body.stateHash).toBe(hashJson(body.world));
+  });
+
+  it('returns a house its own ledger and not another house’s', async () => {
+    // Arrange: both houses read the same last week, so the second read is
+    // served from the stored events of the first.
+    const world = createWorld(20261031);
+    world.houses.caron.controller = 'human';
+    const harness = await start({ world, houses: ['brigue', 'caron'] });
+    harness.clock.now += HOUR;
+
+    // Act
+    const brigue = await worldBodyAs(harness, 'brigue');
+    const caron = await worldBodyAs(harness, 'caron');
+
+    // Assert
+    const wagesOf = (body: WorldBody, houseId: string) =>
+      body.events.filter((event) => event.type === 'house.wages_paid' && event.houseId === houseId);
+
+    expect(wagesOf(brigue, 'brigue').length).toBeGreaterThan(0);
+    expect(wagesOf(brigue, 'caron')).toEqual([]);
+    expect(wagesOf(caron, 'caron').length).toBeGreaterThan(0);
+    expect(wagesOf(caron, 'brigue')).toEqual([]);
+  });
+
+  it('projects and ticks a town of twenty houses', async () => {
+    // Arrange
+    const base = createWorld(20261031);
+    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
+    for (let index = 5; index <= 20; index += 1) {
+      const id = `house-${index}`;
+      const personId = `person-${index}`;
+      world.houses[id] = {
+        ...base.houses.herse,
+        id,
+        name: `Maison ${index}`,
+        workshops: [{ good: 'grain', level: 1, workers: 1 }],
+        stock: {},
+      };
+      world.people[personId] = {
+        ...base.people['person-herse'],
+        id: personId,
+        houseId: id,
+        name: `Nom ${index}`,
+      };
+    }
+    const harness = await start({ world });
+
+    // Act
+    const first = await worldBody(harness);
+    harness.clock.now += HOUR;
+    const next = await worldBody(harness);
+
+    // Assert
+    expect(first.world.town.houses).toHaveLength(20);
+    expect(next.world.week).toBe(2);
   });
 });
 

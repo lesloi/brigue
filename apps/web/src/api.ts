@@ -11,12 +11,15 @@ export interface WorldProjection {
     debtCents: number;
     favour: number;
     prestige: number;
+    career: number;
+    dormant: boolean;
     workshops: Workshop[];
     stock: Partial<Record<GoodId, number>>;
   };
   town: {
-    houses: Array<{ id: string; name: string; prestige: number }>;
-    seats: Record<SeatId, { houseId: string | null }>;
+    houses: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
+    people: Array<{ id: string; houseId: string; name: string }>;
+    seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
   };

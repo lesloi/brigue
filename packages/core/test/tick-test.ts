@@ -2,7 +2,18 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { advance, canonicalJson, createWorld, RULES, stateHash, tick, WorldVersionError } from '../src/index.ts';
+import {
+  advance,
+  canonicalJson,
+  createWorld,
+  FORMAT_VERSION,
+  RULES,
+  stateHash,
+  takeSeat,
+  tick,
+  visibleTo,
+  WorldVersionError,
+} from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
 
 const SEED = 20261029;
@@ -59,6 +70,7 @@ describe('the simulation core', () => {
 
     expect(refused.events).toContainEqual({
       type: 'action.refused',
+      audience: { houseId: 'brigue' },
       action: 'market.buy',
       houseId: 'brigue',
       reason: 'insufficient_funds',
@@ -91,6 +103,7 @@ describe('the simulation core', () => {
 
     expect(first.events).toContainEqual({
       type: 'workshop.idle',
+      audience: { houseId: 'brigue' },
       houseId: 'brigue',
       good: 'cloth',
       input: 'wool',
@@ -102,12 +115,43 @@ describe('the simulation core', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'cloth' }));
   });
 
-  it('holds an election on its period and fills a seat', () => {
+  it('holds an election on its period and fills a seat with a person of the winning house', () => {
     const { world, events } = play(createWorld(SEED), RULES.electionPeriodWeeks);
-    const election = events.find((event) => event.type === 'council.election_held');
+    const election = events.find(
+      (event): event is Extract<Event, { type: 'council.election_held' }> => event.type === 'council.election_held',
+    );
+    const personId = world.seats.maire.personId;
 
     expect(election).toMatchObject({ type: 'council.election_held', seatId: 'maire' });
-    expect(world.seats.maire.houseId).not.toBeNull();
+    expect(personId).not.toBeNull();
+    expect(world.people[personId as string].houseId).toBe(election?.winnerHouseId);
+  });
+
+  it('seats a person of the house and refuses another house’s person', () => {
+    // Arrange
+    const world = createWorld(SEED);
+    const brigue = world.people['person-brigue'];
+    const caron = world.people['person-caron'];
+
+    // Act and assert
+    expect(takeSeat(world, 'brigue', caron.id)).toEqual({ ok: false, reason: 'person_of_another_house' });
+    expect(takeSeat(world, 'brigue', brigue.id)).toEqual({ ok: true, seat: { personId: brigue.id } });
+  });
+
+  it('keeps every filled seat on a living person of the house that holds it', () => {
+    // Arrange and act: enough weeks to fill every seat once.
+    const { world } = play(createWorld(SEED), RULES.electionPeriodWeeks * 6);
+
+    // Assert
+    for (const seat of Object.values(world.seats)) {
+      if (seat.personId === null) {
+        continue;
+      }
+      const person = world.people[seat.personId];
+      expect(person).toBeDefined();
+      expect(person.alive).toBe(true);
+      expect(world.houses[person.houseId]).toBeDefined();
+    }
   });
 
   it('keeps a campaign for one seat out of another seat election', () => {
@@ -130,14 +174,126 @@ describe('the simulation core', () => {
 
     const { world: after, events } = tick(world);
 
-    expect(events).toContainEqual({ type: 'house.penniless', houseId: 'brigue', shortfallCents: 360 });
+    expect(events).toContainEqual({
+      type: 'house.penniless',
+      audience: { houseId: 'brigue' },
+      houseId: 'brigue',
+      shortfallCents: 360,
+    });
     expect(after.houses.brigue.debtCents).toBe(360);
+  });
+
+  it('refuses an action from a dormant house instead of running it', () => {
+    // Arrange
+    const world = createWorld(SEED);
+    world.houses.brigue.dormant = true;
+
+    // Act
+    const { world: after, events } = tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 1 }]);
+
+    // Assert
+    expect(events).toContainEqual({
+      type: 'action.refused',
+      audience: { houseId: 'brigue' },
+      action: 'market.buy',
+      houseId: 'brigue',
+      reason: 'dormant_house',
+    });
+    expect(after.houses.brigue.stock.wool).toBe(8);
+  });
+
+  it('keeps a dormant house’s seat, stops its trade and keeps it out of the vote', () => {
+    // Arrange: one election fills the mayoralty, then its holder goes dormant.
+    const elected = play(createWorld(SEED), RULES.electionPeriodWeeks).world;
+    const personId = elected.seats.maire.personId as string;
+    const holder = elected.people[personId];
+    const house = elected.houses[holder.houseId];
+    house.dormant = true;
+    // A workshop with no input, so any sale at all would be the dormant house
+    // running when it must not.
+    house.workshops = [{ good: 'wool', level: 2, workers: 2 }];
+    house.stock = {};
+    const treasuryCents = house.treasuryCents;
+
+    // Act: one plain week, then the five periods that bring the seat back.
+    const quiet = tick(elected);
+    const later = play(quiet.world, RULES.electionPeriodWeeks * 5);
+
+    // Assert
+    expect(quiet.events.filter((event) => event.type === 'market.sold' && event.houseId === holder.houseId)).toEqual(
+      [],
+    );
+    expect(quiet.world.houses[holder.houseId].treasuryCents).toBe(treasuryCents);
+    expect(later.world.seats.maire.personId).toBe(personId);
+    expect(later.events.filter((event) => event.type === 'council.election_held' && event.seatId === 'maire')).toEqual(
+      [],
+    );
+    for (const event of later.events) {
+      if (event.type === 'council.election_held') {
+        expect(event.votes[holder.houseId]).toBeUndefined();
+      }
+    }
+  });
+
+  it('shows a house-ledger event to that house only', () => {
+    // Arrange
+    const { events } = tick(createWorld(SEED));
+
+    // Act
+    const forBrigue = visibleTo(events, 'brigue');
+    const forCaron = visibleTo(events, 'caron');
+
+    // Assert
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'house.wages_paid', houseId: 'caron', audience: { houseId: 'caron' } }),
+    );
+    expect(forBrigue.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toEqual([]);
+    expect(forCaron.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toHaveLength(1);
+  });
+
+  it('ticks a town of twenty houses', () => {
+    // Arrange
+    const base = createWorld(SEED);
+    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
+    for (let index = 5; index <= 20; index += 1) {
+      const id = `house-${index}`;
+      const personId = `person-${index}`;
+      world.houses[id] = {
+        ...base.houses.herse,
+        id,
+        name: `Maison ${index}`,
+        workshops: [{ good: 'grain', level: 1, workers: 1 }],
+        stock: {},
+      };
+      world.people[personId] = {
+        ...base.people['person-herse'],
+        id: personId,
+        houseId: id,
+        name: `Nom ${index}`,
+      };
+    }
+
+    // Act
+    const { world: after } = play(world, 2);
+
+    // Assert
+    expect(Object.keys(after.houses)).toHaveLength(20);
+    expect(after.week).toBe(3);
   });
 
   it('refuses a world written by another ruleset', () => {
     const world = createWorld(SEED);
     world.rulesetVersion += 1;
 
+    expect(() => tick(world)).toThrow(WorldVersionError);
+  });
+
+  it('refuses a world of the previous format instead of guessing it', () => {
+    // Arrange
+    const world = { ...createWorld(SEED), formatVersion: 1 };
+
+    // Act and assert
+    expect(FORMAT_VERSION).toBe(2);
     expect(() => tick(world)).toThrow(WorldVersionError);
   });
 
