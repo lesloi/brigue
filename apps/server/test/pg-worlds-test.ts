@@ -159,7 +159,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       ...createWorld(2_147_483_646),
       week: 7,
       rng: 1_234_567_890,
-      market: { cloth: 1301, wool: 377, grain: 259 },
+      market: { cloth: 1301, wool: 377, grain: 259, bread: 521, wood: 301, planks: 979 },
     };
     // Heterogeneous events: `last_events` is a JS array, which `pg` used to
     // serialise as a Postgres array literal instead of jsonb.

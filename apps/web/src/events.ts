@@ -43,6 +43,18 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
         text: `${capitalize(goodName(event.good))} : ${formatCents(event.before)} → ${formatCents(event.after)} écus l'unité.`,
       };
 
+    case 'workshop.produced':
+      return {
+        tone: 'gain',
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez produit', 'a produit')} ${goodQuantity(event.units, event.good)}.`,
+      };
+
+    case 'workshop.overflow':
+      return {
+        tone: 'warning',
+        text: `${subject(event.houseId)} : entrepôt plein, ${goodQuantity(event.refusedUnits, event.good)} en trop.`,
+      };
+
     case 'workshop.idle':
       return {
         tone: 'warning',
@@ -120,6 +132,8 @@ function actionName(action: Action['type'] | 'unknown'): string {
   switch (action) {
     case 'market.buy':
       return 'achat';
+    case 'market.sell':
+      return 'vente';
     case 'council.campaign':
       return 'candidature';
     case 'unknown':

@@ -29,16 +29,17 @@ Early, and in two layers.
 - **The design** is in [docs/DESIGN.md](./docs/DESIGN.md) and [docs/DECISIONS.md](./docs/DECISIONS.md).
   It describes the target game: twelve seats, a person who holds an office, a house that holds a
   career, a stock, a court, titles, and a day-long mandate.
-- **The code** implements the calendar: one week per real hour, twenty-four weeks a year, and a
-  scrutiny at the end of each year with every seat up. Five seats today, output sold on
-  production. It is covered by tests, and it is the base the next ruleset replaces. The next
-  `formatVersion` starts a new town; no world is in production.
+- **The code** implements the calendar and the economy: one week per real hour, twenty-four
+  weeks a year, and a scrutiny at the end of each year with every seat up. Five seats today, six
+  goods in three chains, a warehouse with a cap, and a sale made by an action. It is covered by
+  tests, and it is the base the next ruleset replaces. The next `formatVersion` starts a new
+  town; no world is in production.
 
 The server issues a token, serves the world with catch-up, and accepts actions for the week being
-played or the next one. The PWA has its shell and the Ville screen, rendered with Preact: it
-renders the projection and the events of the last week, and sends a market intent. The other
-screens are still to come. One image carries the API and the built client: one process, one port,
-one origin.
+played or the next one. The PWA has its shell, the Ville screen and the Marché screen, rendered
+with Preact: it renders the projection and the events of the last week, and sends market intents.
+The other screens are still to come. One image carries the API and the built client: one process,
+one port, one origin.
 
 ## Stack
 

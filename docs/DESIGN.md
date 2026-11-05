@@ -134,7 +134,7 @@ jittered by chance. Dumping a large stock moves the price down for everyone, inc
 dumper's neighbour. The AI houses sell their whole stock every week at the market price: they
 take the price, they do not time it, so the flow stays regular and the price readable.
 
-Capacity is fixed by the workshop's level, and there is no spoilage. What reduces a stock is
+Capacity is fixed by the house's residence level, and there is no spoilage. What reduces a stock is
 theft: a secret coup resolved after two weeks, the thief's intrigue against the target's
 defence. A failure leaves a proof at the clerk's office; a success leaves no automatic proof,
 though an investigation may still find one. A victim who
@@ -198,7 +198,7 @@ survive a catch-up: the world replays whole weeks and resolves what falls due.
 - **Ville** — the home screen. The town scene, your house, the week's ledger, the laws in force
   and who carried them, and the register of what falls due.
 - **Maison** — buildings, residence, family, heirs, titles.
-- **Marché** — prices, stock, orders, contracts.
+- **Marché** — prices, stock, sale.
 - **Conseil** — the twelve seats as a pyramid, the offices and their domains, the next sitting.
 - **Greffe** — acts, complaints, evidence, the court.
 - **Courrier** — letters received, rumours, invitations.

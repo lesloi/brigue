@@ -132,6 +132,10 @@ function buyWool(id: string, week: number, units: number, extra: Record<string, 
   return { id, week, action: { type: 'market.buy', good: 'wool', units, ...extra } };
 }
 
+function sellWool(id: string, week: number, units: number): unknown {
+  return { id, week, action: { type: 'market.sell', good: 'wool', units } };
+}
+
 describe('GET /api/world', () => {
   it('refuses without a session', async () => {
     const harness = await start();
@@ -278,7 +282,7 @@ describe('GET /api/world', () => {
     // Arrange
     const base = createWorld(20261031);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    for (let index = 5; index <= 20; index += 1) {
+    for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {
@@ -342,6 +346,23 @@ describe('POST /api/actions', () => {
       totalCents: 760,
     });
     expect(body.world.house.stock.wool).toBe(6);
+  });
+
+  it("queues a sale at the week's price", async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const response = await postAction(harness, sellWool(ID_A, 1, 2));
+    harness.clock.now += HOUR;
+    const body = await worldBody(harness);
+
+    // Assert: two of the eight wool are sold, four are woven, two remain.
+    expect(response.status).toBe(201);
+    expect(body.events).toContainEqual(
+      expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'wool', units: 2, priceCents: 380 }),
+    );
+    expect(body.world.house.stock.wool).toBe(2);
   });
 
   it('refuses a replayed request and applies it once', async () => {
@@ -434,7 +455,9 @@ describe('POST /api/actions', () => {
     // Assert
     expect(response.status).toBe(201);
     expect(body.events[0]).toMatchObject({ type: 'market.bought', units: 3 });
-    expect(body.summary.counts['market.bought']).toBeUndefined();
+    // The first week still counts only the three AI purchases; the queued
+    // action belongs to the second week and is not applied early.
+    expect(body.summary.counts['market.bought']).toBe(3);
   });
 
   it('never takes the house from the body', async () => {
@@ -474,6 +497,8 @@ describe('POST /api/actions', () => {
       { id: ID_A, week: 0, action: { type: 'market.buy', good: 'wool', units: 1 } },
       { id: ID_A, week: 1, action: { type: 'market.buy', good: 'silk', units: 1 } },
       { id: ID_A, week: 1, action: { type: 'market.buy', good: 'wool', units: 0 } },
+      { id: ID_A, week: 1, action: { type: 'market.sell', good: 'silk', units: 1 } },
+      { id: ID_A, week: 1, action: { type: 'market.sell', good: 'wool', units: 0 } },
       { id: ID_A, week: 1, action: { type: 'council.campaign', seatId: 'roi' } },
       { id: ID_A, week: 1, action: { type: 'market.short', good: 'wool', units: 1 } },
     ];

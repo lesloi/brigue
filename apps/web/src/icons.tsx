@@ -75,6 +75,37 @@ export function WorkshopThumb({ good }: { good: GoodId }) {
           <path d="M24 13v6" stroke="#a9855a" stroke-width="2" />
         </svg>
       );
+    case 'bread':
+      return (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect width="48" height="48" fill="#f4ecdc" />
+          <path d="M10 30c0-9 6-15 14-15s14 6 14 15v2c0 2-2 4-4 4H14c-2 0-4-2-4-4z" fill="#c58a4a" />
+          <path d="M17 21l3 9M24 19v11M31 21l-3 9" stroke="#8f5f2d" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      );
+    case 'wood':
+      return (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect width="48" height="48" fill="#eef0e6" />
+          <ellipse cx="17" cy="31" rx="9" ry="5" fill="#a77a52" />
+          <path d="M8 31v-7c0-3 4-5 9-5s9 2 9 5v7" fill="#c09a6b" />
+          <ellipse cx="17" cy="24" rx="9" ry="5" fill="#d8b98c" />
+          <ellipse cx="17" cy="24" rx="4" ry="2" fill="none" stroke="#a77a52" stroke-width="1.2" />
+          <ellipse cx="31" cy="35" rx="8" ry="4" fill="#a77a52" />
+          <path d="M23 35v-5c0-2 4-4 8-4s8 2 8 4v5" fill="#b98d5f" />
+          <ellipse cx="31" cy="30" rx="8" ry="4" fill="#cfa878" />
+        </svg>
+      );
+    case 'planks':
+      return (
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <rect width="48" height="48" fill="#f3eedf" />
+          <rect x="8" y="12" width="32" height="7" rx="1" fill="#c09a6b" />
+          <rect x="8" y="21" width="32" height="7" rx="1" fill="#b98d5f" />
+          <rect x="8" y="30" width="32" height="7" rx="1" fill="#c09a6b" />
+          <path d="M13 15h22M13 24h22M13 33h22" stroke="#9a7046" stroke-width="1" />
+        </svg>
+      );
   }
 }
 

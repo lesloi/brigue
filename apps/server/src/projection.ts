@@ -1,5 +1,7 @@
 import {
   PACING,
+  RULES,
+  stockUnits,
   WEEKS_PER_YEAR,
   type GoodId,
   type House,
@@ -21,6 +23,9 @@ export interface OwnHouseView {
   dormant: boolean;
   workshops: Workshop[];
   stock: Partial<Record<GoodId, number>>;
+  /** What the stock holds in total, and the warehouse's cap: the client sums nothing. */
+  stockUnits: number;
+  stockCapacityUnits: number;
 }
 
 /** What the town knows about another house: its name and standing, not its purse. */
@@ -134,5 +139,7 @@ function ownHouse(house: House): OwnHouseView {
     dormant: house.dormant,
     workshops: structuredClone(house.workshops),
     stock: structuredClone(house.stock),
+    stockUnits: stockUnits(house),
+    stockCapacityUnits: RULES.stockCapacityUnits,
   };
 }

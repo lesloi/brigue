@@ -249,6 +249,85 @@ button:disabled {
   font-weight: 600;
 }
 
+.mhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: calc(18px + env(safe-area-inset-top)) 20px 0;
+}
+
+.mhead .seal {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.mhead .eyebrow {
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--mut);
+}
+
+.mhead h1 {
+  margin: 2px 0 0;
+  font-size: 23px;
+  font-weight: 750;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.mhead .wk {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mut);
+  background: var(--surf);
+  border: 1px solid var(--line);
+  padding: 5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.mstats {
+  margin: 14px 20px 0;
+  background: var(--surf);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 11px 4px 12px;
+}
+
+.mstats > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.mstats > div + div {
+  border-left: 1px solid var(--line);
+}
+
+.mstats .v {
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mstats .l {
+  font-size: 9.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--mut);
+  font-weight: 600;
+}
+
 .cal {
   margin: 20px 12px 0;
 }
@@ -853,6 +932,17 @@ button:disabled {
     margin-left: 40px;
     margin-right: 40px;
     margin-top: -32px;
+    padding: 14px 8px;
+  }
+
+  .mhead {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+
+  .mstats {
+    margin-left: 40px;
+    margin-right: 40px;
     padding: 14px 8px;
   }
 

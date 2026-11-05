@@ -2,10 +2,12 @@ import { drawBelow } from './prng.ts';
 import type { Action, Event, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
+  GOODS,
   RULES,
   seatHolder,
   SEATS,
   START_YEAR,
+  stockUnits,
   takeSeat,
   WEEKS_PER_YEAR,
   type GoodId,
@@ -55,7 +57,7 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
   const events: Event[] = [];
   // The week's own trade, good by good: sold minus bought. It is written on the
   // world once the week is over, because it prices the week that follows.
-  const flow: Record<GoodId, number> = { cloth: 0, wool: 0, grain: 0 };
+  const flow = Object.fromEntries(GOODS.map((good) => [good, 0])) as Record<GoodId, number>;
 
   for (const candidate of actions as readonly unknown[]) {
     // A stored action can be anything: it went through a database and a JSON
@@ -82,8 +84,13 @@ export function tick(world: World, actions: readonly Action[] = []): TickResult 
   // both buy before the week moves the market.
   aiHousesBuy(next, flow, events);
 
+  // Production, then the AI's sale, then wages: an AI pays its workers from the
+  // price it just took, and every trade of the week happens at the price the
+  // players saw. The prices move once the week is over, for the next one.
+  runWorkshops(next, events);
+  aiHousesSell(next, flow, events);
+  payWages(next, events);
   driftPrices(next, events);
-  runWorkshops(next, flow, events);
 
   next.marketFlow = flow;
 
@@ -106,7 +113,12 @@ function isKnownAction(value: unknown): value is Action {
 
   const type = (value as { type?: unknown }).type;
 
-  return type === 'market.buy' || type === 'council.campaign';
+  return type === 'market.buy' || type === 'market.sell' || type === 'council.campaign';
+}
+
+/** A stored action's good went through a database and a JSON parser too. */
+function isKnownGood(good: unknown): good is GoodId {
+  return typeof good === 'string' && (GOODS as readonly string[]).includes(good);
 }
 
 function refuse(events: Event[], action: Action, houseId: unknown, reason: RefusalReason, knownHouse: boolean): void {
@@ -137,6 +149,10 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
 
   switch (action.type) {
     case 'market.buy': {
+      if (!isKnownGood(action.good)) {
+        refuse(events, action, house.id, 'unknown_good', true);
+        return;
+      }
       if (!Number.isInteger(action.units) || action.units <= 0) {
         refuse(events, action, house.id, 'invalid_quantity', true);
         return;
@@ -146,6 +162,12 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
       const totalCents = priceCents * action.units;
       if (house.treasuryCents < totalCents) {
         refuse(events, action, house.id, 'insufficient_funds', true);
+        return;
+      }
+      // The warehouse is one capacity for all goods, and a purchase is atomic:
+      // it is refused whole, never trimmed to what would fit.
+      if (stockUnits(house) + action.units > RULES.stockCapacityUnits) {
+        refuse(events, action, house.id, 'stock_full', true);
         return;
       }
 
@@ -160,6 +182,44 @@ function applyAction(world: World, action: Action, events: Event[], flow: Record
         units: action.units,
         priceCents,
         totalCents,
+      });
+      return;
+    }
+
+    case 'market.sell': {
+      if (!isKnownGood(action.good)) {
+        refuse(events, action, house.id, 'unknown_good', true);
+        return;
+      }
+      if (!Number.isInteger(action.units) || action.units <= 0) {
+        refuse(events, action, house.id, 'invalid_quantity', true);
+        return;
+      }
+
+      const held = house.stock[action.good] ?? 0;
+      if (held < action.units) {
+        refuse(events, action, house.id, 'insufficient_stock', true);
+        return;
+      }
+
+      const priceCents = world.market[action.good];
+      const revenueCents = priceCents * action.units;
+      house.treasuryCents += revenueCents;
+      const left = held - action.units;
+      if (left === 0) {
+        delete house.stock[action.good];
+      } else {
+        house.stock[action.good] = left;
+      }
+      flow[action.good] += action.units;
+      events.push({
+        type: 'market.sold',
+        audience: 'town',
+        houseId: house.id,
+        good: action.good,
+        units: action.units,
+        priceCents,
+        revenueCents,
       });
       return;
     }
@@ -274,7 +334,8 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]
 
       const priceCents = world.market[recipe.input];
       const affordable = Math.floor(house.treasuryCents / priceCents);
-      const units = Math.min(shortfall, affordable);
+      const room = RULES.stockCapacityUnits - stockUnits(house);
+      const units = Math.min(shortfall, affordable, room);
 
       if (units <= 0) {
         continue;
@@ -297,9 +358,7 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: Event[]
 }
 
 function driftPrices(world: World, events: Event[]): void {
-  const goods = Object.keys(world.market).sort() as Array<keyof World['market']>;
-
-  for (const good of goods) {
+  for (const good of GOODS) {
     const [rng, roll] = drawBelow(world.rng, RULES.priceDriftCents * 2 + 1);
     world.rng = rng;
 
@@ -324,7 +383,7 @@ function driftPrices(world: World, events: Event[]): void {
   }
 }
 
-function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[]): void {
+function runWorkshops(world: World, events: Event[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
@@ -334,24 +393,40 @@ function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[
       continue;
     }
 
-    let workers = 0;
-
     for (const workshop of house.workshops) {
-      workers += workshop.workers;
-
       const wanted = workshop.level * RULES.outputPerLevel;
       const recipe = RULES.recipes[workshop.good];
       const available = recipe ? (house.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
-      const units = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
+      const makeable = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
 
-      if (recipe && units < wanted) {
+      if (recipe && makeable < wanted) {
         events.push({
           type: 'workshop.idle',
           audience: { houseId: house.id },
           houseId: house.id,
           good: workshop.good,
           input: recipe.input,
-          missingUnits: wanted - units,
+          missingUnits: wanted - makeable,
+        });
+      }
+      if (makeable === 0) {
+        continue;
+      }
+
+      // A recipe moves units from one good to another; a raw workshop creates
+      // them out of nothing. Both must stop at the warehouse's cap, and the
+      // units that do not fit are refused with an event, never dropped.
+      const netPerUnit = 1 - (recipe?.perUnit ?? 0);
+      const room = RULES.stockCapacityUnits - stockUnits(house);
+      const units = netPerUnit <= 0 ? makeable : Math.min(makeable, Math.floor(Math.max(0, room) / netPerUnit));
+
+      if (units < makeable) {
+        events.push({
+          type: 'workshop.overflow',
+          audience: { houseId: house.id },
+          houseId: house.id,
+          good: workshop.good,
+          refusedUnits: makeable - units,
         });
       }
       if (units === 0) {
@@ -359,29 +434,81 @@ function runWorkshops(world: World, flow: Record<GoodId, number>, events: Event[
       }
 
       if (recipe) {
-        house.stock[recipe.input] = available - units * recipe.perUnit;
+        const left = available - units * recipe.perUnit;
+        if (left === 0) {
+          delete house.stock[recipe.input];
+        } else {
+          house.stock[recipe.input] = left;
+        }
       }
 
-      // The market clears what the workshop makes, at the week's price: holding
-      // finished cloth for a better week is not a mechanic yet, and crediting
-      // both the goods and the coin would count the output twice.
-      const priceCents = world.market[workshop.good];
+      // Production credits the warehouse, never the purse: the sale is a
+      // separate action, at the week's price.
+      house.stock[workshop.good] = (house.stock[workshop.good] ?? 0) + units;
+      events.push({
+        type: 'workshop.produced',
+        audience: { houseId: house.id },
+        houseId: house.id,
+        good: workshop.good,
+        units,
+      });
+    }
+  }
+}
+
+/**
+ * The AI takes the price and does not time it: every week it sells whatever
+ * its workshops left in the warehouse, at the week's price. A human house
+ * keeps its stock, because holding for a better week is the player's bet; a
+ * dormant house keeps everything it had.
+ */
+function aiHousesSell(world: World, flow: Record<GoodId, number>, events: Event[]): void {
+  for (const houseId of Object.keys(world.houses).sort()) {
+    const house = world.houses[houseId];
+
+    if (house.controller !== 'ai' || house.dormant) {
+      continue;
+    }
+
+    for (const good of GOODS) {
+      const units = house.stock[good] ?? 0;
+      if (units <= 0) {
+        continue;
+      }
+
+      const priceCents = world.market[good];
       const revenueCents = units * priceCents;
       house.treasuryCents += revenueCents;
-      flow[workshop.good] += units;
-
+      delete house.stock[good];
+      flow[good] += units;
       events.push({
         type: 'market.sold',
         audience: 'town',
         houseId: house.id,
-        good: workshop.good,
+        good,
         units,
         priceCents,
         revenueCents,
       });
     }
+  }
+}
 
-    employeesArePaid(world, house.id, workers, events);
+/** Wages come after the AI's sale, so a house pays from the price it just took. */
+function payWages(world: World, events: Event[]): void {
+  for (const houseId of Object.keys(world.houses).sort()) {
+    const house = world.houses[houseId];
+
+    if (house.dormant) {
+      continue;
+    }
+
+    let workers = 0;
+    for (const workshop of house.workshops) {
+      workers += workshop.workers;
+    }
+
+    employeesArePaid(world, houseId, workers, events);
   }
 }
 

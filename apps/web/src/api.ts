@@ -23,6 +23,8 @@ export interface WorldProjection {
     dormant: boolean;
     workshops: Workshop[];
     stock: Partial<Record<GoodId, number>>;
+    stockUnits: number;
+    stockCapacityUnits: number;
   };
   town: {
     houses: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
@@ -52,7 +54,9 @@ export interface WorldResponse {
 }
 
 export type ActionIntent =
-  { type: 'market.buy'; good: GoodId; units: number } | { type: 'council.campaign'; seatId: SeatId };
+  | { type: 'market.buy'; good: GoodId; units: number }
+  | { type: 'market.sell'; good: GoodId; units: number }
+  | { type: 'council.campaign'; seatId: SeatId };
 
 export class ApiError extends Error {
   readonly status: number;

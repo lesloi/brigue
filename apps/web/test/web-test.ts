@@ -2,7 +2,8 @@ import type { Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
 import { eventLine } from '../src/events.ts';
-import { actionErrorText, goodQuantity, readErrorText, refusalText, seatName } from '../src/format.ts';
+import { actionErrorText, goodName, goodQuantity, readErrorText, refusalText, seatName } from '../src/format.ts';
+import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
 import { countdownText, scrutinyText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
@@ -95,6 +96,41 @@ describe('eventLine', () => {
     expect(ownLine.text).toBe("Vous n'avez pas pu payer 2,4 écus de gages.");
     expect(otherLine.text).toBe("Caron n'a pas pu payer 2,4 écus de gages.");
   });
+
+  it('reads production as goods entering the warehouse', () => {
+    // Arrange
+    const event: Event = {
+      type: 'workshop.produced',
+      audience: { houseId: 'brigue' },
+      houseId: 'brigue',
+      good: 'cloth',
+      units: 4,
+    };
+
+    // Act
+    const line = eventLine(event, 'brigue', nameOf);
+
+    // Assert
+    expect(line.tone).toBe('gain');
+    expect(line.text).toBe('Vous avez produit 4 draps.');
+  });
+
+  it('reads an overflow as goods left out of a full warehouse', () => {
+    // Arrange
+    const event: Event = {
+      type: 'workshop.overflow',
+      audience: { houseId: 'brigue' },
+      houseId: 'brigue',
+      good: 'wool',
+      refusedUnits: 3,
+    };
+
+    // Act
+    const line = eventLine(event, 'brigue', nameOf);
+
+    // Assert
+    expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
+  });
 });
 
 describe('format helpers', () => {
@@ -102,11 +138,23 @@ describe('format helpers', () => {
     expect(goodQuantity(0, 'grain')).toBe('0 blé');
     expect(goodQuantity(1, 'wool')).toBe('1 laine');
     expect(goodQuantity(3, 'cloth')).toBe('3 draps');
+    expect(goodQuantity(2, 'bread')).toBe('2 pains');
+    expect(goodQuantity(2, 'wood')).toBe('2 bois');
+    expect(goodQuantity(2, 'planks')).toBe('2 planches');
+  });
+
+  it('names the six goods', () => {
+    expect(goodName('bread')).toBe('pain');
+    expect(goodName('wood')).toBe('bois');
+    expect(goodName('planks')).toBe('planche');
   });
 
   it('names seats and refusals in French', () => {
     expect(seatName('echevin-north')).toBe('échevinage nord');
     expect(refusalText('insufficient_favour')).toBe('faveur insuffisante');
+    expect(refusalText('unknown_good')).toBe('denrée inconnue');
+    expect(refusalText('insufficient_stock')).toBe('stock insuffisant');
+    expect(refusalText('stock_full')).toBe('entrepôt plein');
   });
 
   it('separates action failures from read failures', () => {
@@ -144,5 +192,30 @@ describe('scrutinyText', () => {
 
   it('never goes negative', () => {
     expect(scrutinyText(new Date(start - 1_000).toISOString(), start)).toBe('scrutin imminent');
+  });
+});
+
+describe('tab history', () => {
+  it('pushes Marché from the home tab', () => {
+    expect(navigationFor('ville', { tab: 'ville', pushed: false }, 'marche')).toBe('push');
+  });
+
+  it('walks back to the tab it came from', () => {
+    expect(navigationFor('marche', { tab: 'marche', pushed: true }, 'ville')).toBe('back');
+  });
+
+  it('replaces a deep-linked Marché instead of leaving the PWA', () => {
+    expect(navigationFor('marche', { tab: 'marche', pushed: false }, 'ville')).toBe('replace');
+  });
+
+  it('does nothing on the current tab', () => {
+    expect(navigationFor('ville', null, 'ville')).toBe('none');
+  });
+
+  it('seeds the tab from the hash and validates history state', () => {
+    expect(tabFromHash('#marche')).toBe('marche');
+    expect(tabFromHash('')).toBe('ville');
+    expect(stateOf(null)).toBeNull();
+    expect(stateOf({ tab: 'marche', pushed: true })).toEqual({ tab: 'marche', pushed: true });
   });
 });

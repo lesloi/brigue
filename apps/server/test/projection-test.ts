@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, START_YEAR, tick, WEEKS_PER_YEAR, type World } from '@brigue/core';
+import { createWorld, GOODS, RULES, START_YEAR, stockUnits, tick, WEEKS_PER_YEAR, type World } from '@brigue/core';
 
 import { projectWorld } from '../src/projection.ts';
 
@@ -72,6 +72,20 @@ describe('the projection calendar', () => {
     expect(projection.calendar.weekOfYear).toBe(WEEKS_PER_YEAR);
     expect(projection.calendar.nextScrutinyWeek).toBe(WEEKS_PER_YEAR);
     expect(projection.calendar.nextScrutinyAt).toBe(projection.nextTickAt);
+  });
+
+  it('carries six prices, the stock and the warehouse capacity', () => {
+    // Arrange
+    const world = createWorld(SEED);
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert: the client sums nothing and derives no capacity.
+    expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
+    expect(projection.house.stockUnits).toBe(stockUnits(world.houses.brigue));
+    expect(projection.house.stockUnits).toBe(8);
+    expect(projection.house.stockCapacityUnits).toBe(RULES.stockCapacityUnits);
   });
 
   it('points at the next year once a scrutiny has closed the last one', () => {

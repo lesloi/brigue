@@ -12,8 +12,8 @@ export function formatCount(value: number): string {
 }
 
 export function goodQuantity(units: number, good: GoodId): string {
-  const name = goodName(good);
-  return `${formatCount(units)} ${name}${units > 1 ? 's' : ''}`;
+  const name = units > 1 ? pluralGoodName(good) : goodName(good);
+  return `${formatCount(units)} ${name}`;
 }
 
 export function goodName(good: GoodId): string {
@@ -24,6 +24,30 @@ export function goodName(good: GoodId): string {
       return 'laine';
     case 'grain':
       return 'blé';
+    case 'bread':
+      return 'pain';
+    case 'wood':
+      return 'bois';
+    case 'planks':
+      return 'planche';
+  }
+}
+
+/** "Bois" is already plural; the other goods take an s. */
+function pluralGoodName(good: GoodId): string {
+  switch (good) {
+    case 'cloth':
+      return 'draps';
+    case 'wool':
+      return 'laines';
+    case 'grain':
+      return 'blés';
+    case 'bread':
+      return 'pains';
+    case 'wood':
+      return 'bois';
+    case 'planks':
+      return 'planches';
   }
 }
 
@@ -35,6 +59,12 @@ export function workshopName(good: GoodId): string {
       return 'Atelier de laine';
     case 'grain':
       return 'Atelier de grain';
+    case 'bread':
+      return 'Atelier de boulanger';
+    case 'wood':
+      return 'Atelier de bûcheron';
+    case 'planks':
+      return 'Atelier de charpentier';
   }
 }
 
@@ -63,10 +93,16 @@ export function refusalText(reason: RefusalReason): string {
       return 'maison dormante';
     case 'unknown_seat':
       return 'charge inconnue';
+    case 'unknown_good':
+      return 'denrée inconnue';
     case 'invalid_quantity':
       return 'quantité invalide';
     case 'insufficient_funds':
       return 'fonds insuffisants';
+    case 'insufficient_stock':
+      return 'stock insuffisant';
+    case 'stock_full':
+      return 'entrepôt plein';
     case 'insufficient_favour':
       return 'faveur insuffisante';
   }
