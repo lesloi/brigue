@@ -1,4 +1,4 @@
-import type { GoodId, RefusalReason, SeatId } from '@brigue/core';
+import type { GoodId, RefusalReason, SeatId, Trade } from '@brigue/core';
 
 const MONEY = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const COUNT = new Intl.NumberFormat('fr-FR');
@@ -68,6 +68,43 @@ export function workshopName(good: GoodId): string {
   }
 }
 
+export function tradeName(trade: Trade): string {
+  switch (trade) {
+    case 'weaver':
+      return 'Tisserand';
+    case 'baker':
+      return 'Boulanger';
+    case 'carpenter':
+      return 'Charpentier';
+  }
+}
+
+/** What the trade buys and makes, said as the creation screen says it. */
+export function tradeChainText(trade: Trade): string {
+  switch (trade) {
+    case 'weaver':
+      return 'achète la laine, fait du drap';
+    case 'baker':
+      return 'achète le blé, fait du pain';
+    case 'carpenter':
+      return 'achète le bois, fait des planches';
+  }
+}
+
+/** The article is part of the label, not a rule the screen re-derives. */
+export function buyLabel(good: GoodId): string {
+  switch (good) {
+    case 'wool':
+      return 'Acheter de la laine';
+    case 'grain':
+      return 'Acheter du blé';
+    case 'wood':
+      return 'Acheter du bois';
+    default:
+      return `Acheter ${goodName(good)}`;
+  }
+}
+
 export function seatName(seat: SeatId): string {
   switch (seat) {
     case 'maire':
@@ -119,6 +156,8 @@ export function actionErrorText(code: string | null): string {
       return 'Cette action a déjà été envoyée.';
     case 'invalid_action':
       return "L'action n'a pas été comprise par le serveur.";
+    case 'invalid_trade':
+      return 'Métier inconnu.';
     case 'unknown_world':
       return 'Cette ville a disparu.';
     case 'world_version':
@@ -133,6 +172,8 @@ export function actionErrorText(code: string | null): string {
 /** Server error codes for a read, which is a different failure from an action. */
 export function readErrorText(code: string | null): string {
   switch (code) {
+    case 'invalid_trade':
+      return 'Métier inconnu.';
     case 'unknown_world':
       return 'Cette ville a disparu.';
     case 'world_version':

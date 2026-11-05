@@ -1,7 +1,7 @@
 # Brigue
 
-Brigue is a slow, tick-based game of municipal politics in a medieval town. You start as a
-cloth weaver, you learn the market, then you climb into the council. The game is played
+Brigue is a slow, tick-based game of municipal politics in a medieval town. You choose a trade,
+you learn the market with its workshop, then you climb into the council. The game is played
 mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 
 ## Architecture

@@ -1,6 +1,6 @@
 import type { CalendarView, WorldResponse } from '../api.ts';
 import { eventLine } from '../events.ts';
-import { formatCents, formatCount, goodName, workshopName } from '../format.ts';
+import { buyLabel, formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 
@@ -10,14 +10,17 @@ interface VilleProps {
   buying: boolean;
   advancing: boolean;
   onRefresh(): void;
-  onBuyWool(): void;
+  onBuyInput(): void;
   onAdvance(): void;
 }
 
 /** The Ville screen, rendered only from the projection and last week's events. */
-export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAdvance }: VilleProps) {
+export function Ville({ data, now, buying, advancing, onRefresh, onBuyInput, onAdvance }: VilleProps) {
   const { world, events, summary } = data;
   const house = world.house;
+  const workshop = house.workshops[0];
+  const output = workshop?.good ?? null;
+  const input = workshop?.input ?? null;
   const nameOf = houseName(world);
 
   return (
@@ -67,14 +70,14 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
           <span class="l">écus</span>
         </div>
         <div class="c">
-          <ResourceIcon kind="cloth" />
-          <span class="v">{formatCount(house.stock.cloth ?? 0)}</span>
-          <span class="l">drap</span>
+          {output !== null ? <ResourceIcon kind={output} /> : null}
+          <span class="v">{output !== null ? formatCount(house.stock[output] ?? 0) : '—'}</span>
+          <span class="l">{output !== null ? goodName(output) : 'stock'}</span>
         </div>
         <div class="c">
-          <ResourceIcon kind="wool" />
-          <span class="v">{formatCount(house.stock.wool ?? 0)}</span>
-          <span class="l">laine</span>
+          {input !== null ? <ResourceIcon kind={input} /> : null}
+          <span class="v">{input !== null ? formatCount(house.stock[input] ?? 0) : '—'}</span>
+          <span class="l">{input !== null ? goodName(input) : 'matière'}</span>
         </div>
         <div class="c">
           <ResourceIcon kind="favour" />
@@ -124,15 +127,17 @@ export function Ville({ data, now, buying, advancing, onRefresh, onBuyWool, onAd
                 </div>
               </div>
             ) : null}
-            <div class="buy">
-              <div>
-                <b>Acheter de la laine</b>
-                <p>{formatCents(world.town.market.wool)} écus l'unité &middot; appliqué à la prochaine semaine</p>
+            {input !== null ? (
+              <div class="buy">
+                <div>
+                  <b>{buyLabel(input)}</b>
+                  <p>{formatCents(world.town.market[input])} écus l'unité &middot; appliqué à la prochaine semaine</p>
+                </div>
+                <button class="btn" id="buy-input" type="button" disabled={buying} onClick={onBuyInput}>
+                  {goodQuantity(10, input)}
+                </button>
               </div>
-              <button class="btn" id="buy-wool" type="button" disabled={buying} onClick={onBuyWool}>
-                10 laines
-              </button>
-            </div>
+            ) : null}
           </div>
         </section>
 

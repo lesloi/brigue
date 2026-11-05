@@ -1,4 +1,4 @@
-import type { Event, GoodId, Law, SeatId, Workshop } from '@brigue/core';
+import type { Event, GoodId, Law, SeatId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
@@ -6,6 +6,14 @@ export interface CalendarView {
   weekOfYear: number;
   nextScrutinyWeek: number;
   nextScrutinyAt: string;
+}
+
+/** A workshop as the server projects it: the chain's input is not the client's rule. */
+export interface ProjectedWorkshop {
+  good: GoodId;
+  level: number;
+  workers: number;
+  input: GoodId | null;
 }
 
 export interface WorldProjection {
@@ -21,7 +29,7 @@ export interface WorldProjection {
     prestige: number;
     career: number;
     dormant: boolean;
-    workshops: Workshop[];
+    workshops: ProjectedWorkshop[];
     stock: Partial<Record<GoodId, number>>;
     stockUnits: number;
     stockCapacityUnits: number;
@@ -89,8 +97,12 @@ export interface Joined {
   token: string;
 }
 
-export function joinTown(): Promise<Joined> {
-  return send<Joined>('/api/session', { method: 'POST' });
+export function joinTown(trade: Trade): Promise<Joined> {
+  return send<Joined>('/api/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trade }),
+  });
 }
 
 export function resumeTown(token: string): Promise<{ worldId: string; houseId: string }> {

@@ -2,7 +2,16 @@ import type { Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
 import { eventLine } from '../src/events.ts';
-import { actionErrorText, goodName, goodQuantity, readErrorText, refusalText, seatName } from '../src/format.ts';
+import {
+  actionErrorText,
+  goodName,
+  goodQuantity,
+  readErrorText,
+  refusalText,
+  seatName,
+  tradeChainText,
+  tradeName,
+} from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
 import { countdownText, scrutinyText } from '../src/views/ville.tsx';
 
@@ -149,12 +158,20 @@ describe('format helpers', () => {
     expect(goodName('planks')).toBe('planche');
   });
 
+  it('names the three trades and what each chain does', () => {
+    expect(tradeName('weaver')).toBe('Tisserand');
+    expect(tradeName('baker')).toBe('Boulanger');
+    expect(tradeName('carpenter')).toBe('Charpentier');
+    expect(tradeChainText('baker')).toBe('achète le blé, fait du pain');
+  });
+
   it('names seats and refusals in French', () => {
     expect(seatName('echevin-north')).toBe('échevinage nord');
     expect(refusalText('insufficient_favour')).toBe('faveur insuffisante');
     expect(refusalText('unknown_good')).toBe('denrée inconnue');
     expect(refusalText('insufficient_stock')).toBe('stock insuffisant');
     expect(refusalText('stock_full')).toBe('entrepôt plein');
+    expect(readErrorText('invalid_trade')).toBe('Métier inconnu.');
   });
 
   it('separates action failures from read failures', () => {

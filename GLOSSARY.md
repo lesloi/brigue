@@ -7,6 +7,10 @@ French in the data and in the interface, and the English here is only how we tal
 
 - **Maison** — a house: one family, its money, its title, its workshops, its grudges. The unit a
   player controls, and the unit the simulation knows as a place.
+- **Fondateur** — the first house of the town. Not a political role: no seat, no vote, no special
+  trade; it only differs in its starting kit.
+- **Fournisseur** — an AI house that produces a raw good: wool, grain or wood. Permanent, and
+  never replaced by a human.
 - **Personnage** — the current member of the house. Holds the attributes, ages,
   dies, and is replaced by an heir.
 - **Ville** — the town, Saint-Aubin. One world, shared by every house; twenty houses at most.
@@ -83,14 +87,15 @@ French in the data and in the interface, and the English here is only how we tal
 - **Pain** — bread, the good the town eats.
 - **Bois** — wood, the raw material of planks.
 - **Planche** — plank, the good the town builds with.
-- **Entrepôt** — the warehouse: finished goods, with a capacity fixed by the workshop's level.
+- **Entrepôt** — the warehouse: finished goods, with a capacity fixed by the house's residence
+  level.
 
 ## The person
 
 - **Attributs** — artisanat, parole, intrigue. Raised by use, capped by the trade and the title,
   and lost with the person.
-- **Métier** — the trade a person practises: weaver, baker, carpenter. One at a time; another can
-  be learned, which converts the workshop.
+- **Métier** — the trade a player chooses at creation: weaver, baker, carpenter. One at a time;
+  another can be learned, which converts the workshop.
 - **Résidence** — the house's one ladder: the title opens a level, money pays for it, and the level
   sets the prestige cap, the defence of the stock, the capacity and the number of workshops.
 - **Héritier** — the next person of the house. Chosen at retirement; taken, unprepared, by death.

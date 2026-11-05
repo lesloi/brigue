@@ -16,6 +16,8 @@ export {
   START_YEAR,
   stockUnits,
   takeSeat,
+  TRADE_CHAINS,
+  TRADES,
   WEEKS_PER_YEAR,
   type Attributes,
   type Controller,
@@ -30,6 +32,8 @@ export {
   type SeatAttempt,
   type SeatId,
   type SeatRefusal,
+  type Trade,
+  type TradeChain,
   type Workshop,
   type World,
 } from './world.ts';

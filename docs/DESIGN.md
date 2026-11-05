@@ -1,17 +1,17 @@
 # Design
 
-Brigue is a game of municipal politics in a medieval town. You arrive with a loom and no name,
-and the town has twelve seats. It is not a game about building an empire: it is a game about
-being someone in a room where twelve people decide.
+Brigue is a game of municipal politics in a medieval town. You choose a trade, you arrive with
+its workshop and no name, and the town has twelve seats. It is not a game about building an
+empire: it is a game about being someone in a room where twelve people decide.
 
 ## The three chapters
 
 The structure decides everything else.
 
-**I — The workshop.** You learn. You buy wool, you weave, you sell at the hall, and you discover
-that the price you see is the town you were: what everyone sells this week moves what you will
-get next week. The goal is a workshop that produces without you watching it, and a sense of when
-to sell. About an hour.
+**I — The workshop.** You choose a trade and learn it. You buy its raw good, you work it, you
+sell the finished good at the hall, and you discover that the price you see is the town you
+were: what everyone sells this week moves what you will get next week. The goal is a workshop
+that produces without you watching it, and a sense of when to sell. About an hour.
 
 **II — The house.** You settle. A better residence, a title, a first file at the clerk's office.
 The town hall is visible and locked: you are told the office needs a standing you do not have.
@@ -29,13 +29,16 @@ Two rules keep the chapters honest:
 
 ## The town
 
-Twenty houses at most, ten of them held by the AI. A world opens with ten AI houses and its
+Twenty houses at most, ten of them AI at the opening. A world opens with ten AI houses and its
 founder: the town exists before the player, but its offices do not. Every seat is empty, and the
 pyramid fills from the bottom, one floor per election.
 
-A human who arrives in a full town takes the place of an AI house. The AI line ends; the newcomer
-starts with nothing — no money, no seat, no career. No AI is created after the opening: the ten
-founding families are a floor, not a pump, and a freed place waits for a human.
+A human who arrives in a full town takes the place of a finished-trade AI house. The AI line
+ends; the newcomer chooses a trade, starts with its workshop and no money, no seat, no career.
+The three raw suppliers — wool, grain and wood — stay AI forever: they are the floor that feeds
+every chain, and a human never replaces one. No AI is created after the opening: the ten founding
+families are the opening composition, not a pump, and a freed finished-trade place waits for a
+human.
 
 A player who stops playing leaves a **dormant** house. It keeps its money, its seat and its
 grudges, but nothing runs: the workshop is idle, the stock is still a target, and the holder

@@ -850,6 +850,50 @@ button:disabled {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.trade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.trade-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: #fbfaf6;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: var(--ink);
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
+}
+
+.trade-choice:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.trade-choice:disabled {
+  opacity: 0.55;
+}
+
+.trade-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.trade-chain {
+  font-size: 12px;
+  color: var(--mut);
+}
+
 .gate-card .gate-error {
   margin: 10px 0 0;
   color: var(--accent);

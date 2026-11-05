@@ -74,6 +74,17 @@ describe('the projection calendar', () => {
     expect(projection.calendar.nextScrutinyAt).toBe(projection.nextTickAt);
   });
 
+  it('carries the workshop input so the client derives no recipe', () => {
+    // Arrange
+    const world = createWorld(SEED, 'baker');
+
+    // Act
+    const projection = projectWorld(world, 'brigue', START);
+
+    // Assert
+    expect(projection.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+  });
+
   it('carries six prices, the stock and the warehouse capacity', () => {
     // Arrange
     const world = createWorld(SEED);

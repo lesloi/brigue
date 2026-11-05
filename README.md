@@ -3,7 +3,7 @@
 <h3 align="center">A slow game of municipal politics in a medieval town.</h3>
 
 <p align="center">
-  You arrive with a loom and no name. You leave with a seat, or you leave.
+  You choose a trade and arrive with its workshop, and no name. You leave with a seat, or you leave.
 </p>
 
 ## What it is
@@ -31,15 +31,16 @@ Early, and in two layers.
   career, a stock, a court, titles, and a day-long mandate.
 - **The code** implements the calendar and the economy: one week per real hour, twenty-four
   weeks a year, and a scrutiny at the end of each year with every seat up. Five seats today, six
-  goods in three chains, a warehouse with a cap, and a sale made by an action. It is covered by
-  tests, and it is the base the next ruleset replaces. The next `formatVersion` starts a new
-  town; no world is in production.
+  goods in three chains, a warehouse with a cap, a sale made by an action, and a trade chosen at
+  creation. The raw suppliers stay AI; humans replace only the finished trades when multiplayer
+  lands. It is covered by tests, and it is the base the next ruleset replaces. The next
+  `formatVersion` starts a new town; no world is in production.
 
 The server issues a token, serves the world with catch-up, and accepts actions for the week being
-played or the next one. The PWA has its shell, the Ville screen and the Marché screen, rendered
-with Preact: it renders the projection and the events of the last week, and sends market intents.
-The other screens are still to come. One image carries the API and the built client: one process,
-one port, one origin.
+played or the next one. The PWA has its shell, the creation screen, the Ville screen and the
+Marché screen, rendered with Preact: it renders the projection and the events of the last week,
+and sends market intents. The other screens are still to come. One image carries the API and the
+built client: one process, one port, one origin.
 
 ## Stack
 

@@ -8,9 +8,16 @@ import {
   type Law,
   type Seat,
   type SeatId,
-  type Workshop,
   type World,
 } from '@brigue/core';
+
+/** A workshop as the screen reads it: its chain's input comes from the rules. */
+export interface WorkshopView {
+  good: GoodId;
+  level: number;
+  workers: number;
+  input: GoodId | null;
+}
 
 export interface OwnHouseView {
   id: string;
@@ -21,7 +28,7 @@ export interface OwnHouseView {
   prestige: number;
   career: number;
   dormant: boolean;
-  workshops: Workshop[];
+  workshops: WorkshopView[];
   stock: Partial<Record<GoodId, number>>;
   /** What the stock holds in total, and the warehouse's cap: the client sums nothing. */
   stockUnits: number;
@@ -137,7 +144,10 @@ function ownHouse(house: House): OwnHouseView {
     prestige: house.prestige,
     career: house.career,
     dormant: house.dormant,
-    workshops: structuredClone(house.workshops),
+    workshops: house.workshops.map((workshop) => ({
+      ...structuredClone(workshop),
+      input: RULES.recipes[workshop.good]?.input ?? null,
+    })),
     stock: structuredClone(house.stock),
     stockUnits: stockUnits(house),
     stockCapacityUnits: RULES.stockCapacityUnits,

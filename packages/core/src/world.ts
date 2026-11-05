@@ -11,6 +11,23 @@ export type GoodId = 'wool' | 'cloth' | 'grain' | 'bread' | 'wood' | 'planks';
 
 /** The six goods, in chain order: a raw good, then what is made of it. */
 export const GOODS: readonly GoodId[] = ['wool', 'cloth', 'grain', 'bread', 'wood', 'planks'];
+
+/** The three trades a player may practise: one finished chain each. */
+export type Trade = 'weaver' | 'baker' | 'carpenter';
+
+export const TRADES: readonly Trade[] = ['weaver', 'baker', 'carpenter'];
+
+export interface TradeChain {
+  output: GoodId;
+  input: GoodId;
+}
+
+/** What each trade makes, and the raw good it buys to make it. */
+export const TRADE_CHAINS: Record<Trade, TradeChain> = {
+  weaver: { output: 'cloth', input: 'wool' },
+  baker: { output: 'bread', input: 'grain' },
+  carpenter: { output: 'planks', input: 'wood' },
+};
 export type SeatId = 'maire' | 'prevot' | 'echevin-north' | 'echevin-south' | 'tresorier';
 
 /** Seats in the order they come up for election, and the order screens show them. */
@@ -223,7 +240,9 @@ export interface Founder {
  * career. `createWorld` opens with it, and the server puts it back into a freed
  * place so a deleted founder cannot brick the join path.
  */
-export function createFounder(): Founder {
+export function createFounder(trade: Trade = 'weaver'): Founder {
+  const chain = TRADE_CHAINS[trade];
+
   return {
     house: {
       id: 'brigue',
@@ -235,8 +254,8 @@ export function createFounder(): Founder {
       prestige: 50,
       career: 0,
       dormant: false,
-      workshops: [{ good: 'cloth', level: 2, workers: 2 }],
-      stock: { wool: 8 },
+      workshops: [{ good: chain.output, level: 2, workers: 2 }],
+      stock: { [chain.input]: 8 },
     },
     person: {
       id: 'person-brigue',
@@ -293,8 +312,8 @@ export function stockUnits(house: House): number {
   return total;
 }
 
-export function createWorld(seed: number): World {
-  const founder = createFounder();
+export function createWorld(seed: number, trade: Trade = 'weaver'): World {
+  const founder = createFounder(trade);
 
   return {
     formatVersion: FORMAT_VERSION,

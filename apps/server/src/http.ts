@@ -1,7 +1,17 @@
 import { randomInt } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
-import { createWorld, FORMAT_VERSION, hashJson, PACING, RULES, WorldVersionError, type World } from '@brigue/core';
+import {
+  createWorld,
+  FORMAT_VERSION,
+  hashJson,
+  PACING,
+  RULES,
+  TRADES,
+  WorldVersionError,
+  type Trade,
+  type World,
+} from '@brigue/core';
 
 import { parseActionSubmission, withHouse } from './actions.ts';
 import { catchUp, WEEK_MS, type CatchUpResult } from './catch-up.ts';
@@ -234,7 +244,15 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    await joinTown(response, ip);
+    // A join carries the trade the player chose. No default: the choice is the
+    // screen's, and a missing trade must not silently weave.
+    const trade = (body as { trade?: unknown } | null | undefined)?.trade;
+    if (typeof trade !== 'string' || !TRADES.includes(trade as Trade)) {
+      sendJson(response, 400, { error: 'invalid_trade' });
+      return;
+    }
+
+    await joinTown(response, ip, trade as Trade);
   }
 
   async function resumeSession(response: ServerResponse, ip: string, token: string): Promise<void> {
@@ -256,18 +274,18 @@ export function createApp(deps: AppDeps): Server {
     );
   }
 
-  async function joinTown(response: ServerResponse, ip: string): Promise<void> {
+  async function joinTown(response: ServerResponse, ip: string, trade: Trade): Promise<void> {
     const at = new Date(now());
 
     try {
       // One town, created by the first player; the next ones find it and only
-      // take the house binding.
-      await deps.worlds.createIfAbsent(WORLD_ID, createWorld(randomSeed()), at, at);
+      // take the house binding. The trade is what the founder chose.
+      await deps.worlds.createIfAbsent(WORLD_ID, createWorld(randomSeed(), trade), at, at);
       await assertWorldVersion();
       // A freed place waits for a human: the founder's house may have been
       // deleted after thirty days of silence, and the binding must point at a
       // house the world still holds.
-      await ensureFounder(at);
+      await ensureFounder(at, trade);
 
       const issued = await issueToken(deps.store, WORLD_ID, FIRST_HOUSE_ID, at);
       deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId: FIRST_HOUSE_ID });
@@ -577,7 +595,7 @@ export function createApp(deps: AppDeps): Server {
     return world;
   }
 
-  async function ensureFounder(at: Date): Promise<void> {
+  async function ensureFounder(at: Date, trade: Trade): Promise<void> {
     await deps.worlds.withWorld(WORLD_ID, async (session) => {
       const world = sessionWorld(session);
 
@@ -585,7 +603,7 @@ export function createApp(deps: AppDeps): Server {
         return;
       }
 
-      await session.save(withFounder(world), session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+      await session.save(withFounder(world, trade), session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
     });
   }
 

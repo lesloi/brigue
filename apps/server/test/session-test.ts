@@ -53,6 +53,14 @@ function login(harness: Harness, token: string, ip?: string): Promise<Response> 
   });
 }
 
+function join(harness: Harness, trade = 'weaver'): Promise<Response> {
+  return fetch(`${harness.url}/api/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trade }),
+  });
+}
+
 function cookieOf(response: Response): string | undefined {
   return response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`));
 }
@@ -104,7 +112,7 @@ describe('the token endpoint', () => {
     const response = await fetch(`${harness.url}/api/session?token=${encodeURIComponent(token)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ trade: 'weaver' }),
     });
 
     expect(response.status).toBe(409);
@@ -161,11 +169,7 @@ describe('joining the town', () => {
   it('issues a token for the first human house and creates the world', async () => {
     const harness = await start();
 
-    const response = await fetch(`${harness.url}/api/session`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    });
+    const response = await join(harness);
     const body = (await response.json()) as { token: string; worldId: string; houseId: string };
 
     expect(response.status).toBe(201);
@@ -185,7 +189,7 @@ describe('joining the town', () => {
     const harness = await start();
     await issueToken(harness.store, 'saint-aubin', 'brigue');
 
-    const response = await fetch(`${harness.url}/api/session`, { method: 'POST' });
+    const response = await join(harness);
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'no_free_house' });
@@ -201,11 +205,85 @@ describe('joining the town', () => {
       new Date(),
     );
 
-    const response = await fetch(`${harness.url}/api/session`, { method: 'POST' });
+    const response = await join(harness);
 
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: 'world_version', rulesetVersion: RULES.version + 1 });
     expect(cookieOf(response)).toBeUndefined();
+  });
+
+  it('opens the founder with the chosen trade', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const response = await join(harness, 'baker');
+    const body = (await response.json()) as { token: string };
+    const read = await fetch(`${harness.url}/api/world`, {
+      headers: { Cookie: `${SESSION_COOKIE}=${body.token}` },
+    });
+    const world = (await read.json()) as {
+      world: { house: { workshops: Array<{ good: string; input: string | null }>; stock: Record<string, number> } };
+    };
+
+    // Assert
+    expect(response.status).toBe(201);
+    expect(read.status).toBe(200);
+    expect(world.world.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+    expect(world.world.house.stock.grain).toBe(8);
+  });
+
+  it('does not change the trade when a token resumes', async () => {
+    // Arrange
+    const harness = await start();
+    await harness.worlds.createIfAbsent('saint-aubin', createWorld(7, 'baker'), new Date(), new Date());
+    const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+
+    // Act
+    const response = await login(harness, token);
+    const read = await fetch(`${harness.url}/api/world`, {
+      headers: { Cookie: `${SESSION_COOKIE}=${token}` },
+    });
+    const world = (await read.json()) as {
+      world: { house: { workshops: Array<{ good: string; input: string | null }> } };
+    };
+
+    // Assert
+    expect(response.status).toBe(200);
+    expect(world.world.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2, input: 'grain' }]);
+  });
+
+  it('refuses a join without a trade, before creating the world', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const response = await fetch(`${harness.url}/api/session`, { method: 'POST' });
+
+    // Assert: no world was minted for an invalid request.
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'invalid_trade' });
+    expect(cookieOf(response)).toBeUndefined();
+    await expect(harness.worlds.withWorld('saint-aubin', async () => null)).rejects.toThrow();
+  });
+
+  it('refuses an unknown or null trade', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const unknown = await join(harness, 'silk');
+    const body = await fetch(`${harness.url}/api/session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trade: null }),
+    });
+
+    // Assert
+    expect(unknown.status).toBe(400);
+    expect(await unknown.json()).toEqual({ error: 'invalid_trade' });
+    expect(body.status).toBe(400);
+    expect(await body.json()).toEqual({ error: 'invalid_trade' });
   });
 });
 

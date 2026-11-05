@@ -1,4 +1,4 @@
-import type { GoodId } from '@brigue/core';
+import type { GoodId, Trade } from '@brigue/core';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import {
@@ -13,6 +13,7 @@ import {
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
+import { Create } from './views/create.tsx';
 import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
 import { Marche } from './views/marche.tsx';
 import { Nav } from './views/nav.tsx';
@@ -20,6 +21,7 @@ import { Ville } from './views/ville.tsx';
 
 type View =
   | { kind: 'loading' }
+  | { kind: 'create' }
   | { kind: 'world'; data: WorldResponse }
   | { kind: 'lost' }
   | { kind: 'failure'; title: string; message: string };
@@ -36,6 +38,8 @@ export function App() {
   const [lostError, setLostError] = useState<string | null>(null);
   const [buying, setBuying] = useState(false);
   const [selling, setSelling] = useState<GoodId | null>(null);
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -95,16 +99,8 @@ export function App() {
 
     try {
       if (!(await hasSession())) {
-        try {
-          const joined = await joinTown();
-          pendingToken.current = joined.token;
-        } catch (error) {
-          if (error instanceof ApiError && error.code === 'no_free_house') {
-            setView({ kind: 'lost' });
-            return;
-          }
-          throw error;
-        }
+        setView({ kind: 'create' });
+        return;
       }
 
       await load();
@@ -114,6 +110,41 @@ export function App() {
         return;
       }
       showFailure(error);
+    }
+  }
+
+  async function createHouse(trade: Trade): Promise<void> {
+    setJoining(true);
+    setJoinError(null);
+
+    try {
+      const joined = await joinTown(trade);
+      pendingToken.current = joined.token;
+      await load();
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'no_free_house') {
+        // A half-completed join already set the cookie, or a fast second tap
+        // raced the first: recover the session before asking for a token.
+        try {
+          if (await hasSession()) {
+            await load();
+            return;
+          }
+          setView({ kind: 'lost' });
+        } catch (recoverError) {
+          if (recoverError instanceof ApiError && recoverError.status === 401) {
+            setView({ kind: 'lost' });
+            return;
+          }
+          setJoinError('La ville ne répond pas. Vérifiez la connexion.');
+        }
+        return;
+      }
+      setJoinError(
+        error instanceof ApiError ? readErrorText(error.code) : 'La ville ne répond pas. Vérifiez la connexion.',
+      );
+    } finally {
+      setJoining(false);
     }
   }
 
@@ -150,15 +181,22 @@ export function App() {
     }
   }
 
-  async function buyWool(): Promise<void> {
+  async function buyInput(): Promise<void> {
     if (view.kind !== 'world') {
+      return;
+    }
+
+    const input = view.data.world.house.workshops[0]?.input;
+    if (input === null || input === undefined) {
       return;
     }
 
     setBuying(true);
     try {
-      const sent = await sendAction(view.data.world.week, { type: 'market.buy', good: 'wool', units: 10 });
-      showToast(`Achat de 10 laines envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`);
+      const sent = await sendAction(view.data.world.week, { type: 'market.buy', good: input, units: 10 });
+      showToast(
+        `Achat de ${goodQuantity(10, input)} envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`,
+      );
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stale_week') {
         showToast(actionErrorText(error.code), true);
@@ -285,7 +323,9 @@ export function App() {
 
   return (
     <>
-      {view.kind === 'loading' ? null : view.kind === 'world' ? (
+      {view.kind === 'loading' ? null : view.kind === 'create' ? (
+        <Create joining={joining} error={joinError} onChoose={(trade) => void createHouse(trade)} />
+      ) : view.kind === 'world' ? (
         <div class="app">
           {tab === 'ville' ? (
             <Ville
@@ -294,7 +334,7 @@ export function App() {
               buying={buying}
               advancing={advancing}
               onRefresh={() => void refresh()}
-              onBuyWool={() => void buyWool()}
+              onBuyInput={() => void buyInput()}
               onAdvance={() => void advanceOneWeek()}
             />
           ) : (

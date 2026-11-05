@@ -10,7 +10,7 @@ export function Seal({ size = 30 }: { size?: number }) {
   );
 }
 
-export function ResourceIcon({ kind }: { kind: 'coins' | 'cloth' | 'wool' | 'favour' }) {
+export function ResourceIcon({ kind }: { kind: GoodId | 'coins' | 'favour' }) {
   switch (kind) {
     case 'coins':
       return (
@@ -32,6 +32,41 @@ export function ResourceIcon({ kind }: { kind: 'coins' | 'cloth' | 'wool' | 'fav
           <circle cx="9" cy="11" r="4.6" fill="#ddd5c4" />
           <circle cx="14.5" cy="10" r="5" fill="#cfc6b3" />
           <circle cx="12" cy="15" r="4.2" fill="#e8e1d2" />
+        </svg>
+      );
+    case 'grain':
+      return (
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 21V6" stroke="#a9855a" stroke-width="1.6" stroke-linecap="round" />
+          <path
+            d="M12 8c-3 0-4-2-4-4 3 0 4 2 4 4zm0 0c3 0 4-2 4-4-3 0-4 2-4 4zm0 5c-3 0-4-2-4-4 3 0 4 2 4 4zm0 0c3 0 4-2 4-4-3 0-4 2-4 4z"
+            fill="#d8b978"
+          />
+        </svg>
+      );
+    case 'bread':
+      return (
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 15c0-5 3-8 8-8s8 3 8 8v1c0 1-1 2-2 2H6c-1 0-2-1-2-2z" fill="#c58a4a" />
+          <path d="M8 10l2 5M12 9v6M16 10l-2 5" stroke="#8f5f2d" stroke-width="1.1" stroke-linecap="round" />
+        </svg>
+      );
+    case 'wood':
+      return (
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+          <ellipse cx="9" cy="15" rx="5" ry="3" fill="#a77a52" />
+          <path d="M4 15v-4c0-2 2-3 5-3s5 1 5 3v4" fill="#c09a6b" />
+          <ellipse cx="9" cy="11" rx="5" ry="3" fill="#d8b98c" />
+          <ellipse cx="15" cy="18" rx="4" ry="2.5" fill="#a77a52" />
+          <path d="M11 18v-3c0-1 2-2 4-2s4 1 4 2v3" fill="#b98d5f" />
+        </svg>
+      );
+    case 'planks':
+      return (
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="6" width="18" height="4" rx="1" fill="#c09a6b" />
+          <rect x="3" y="11" width="18" height="4" rx="1" fill="#b98d5f" />
+          <rect x="3" y="16" width="18" height="4" rx="1" fill="#c09a6b" />
         </svg>
       );
     case 'favour':
