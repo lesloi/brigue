@@ -209,10 +209,9 @@ survive a catch-up: the world replays whole weeks and resolves what falls due.
 - **Greffe** — acts, complaints, evidence, the court.
 - **Courrier** — letters received, rumours, invitations.
 
-The interface is a chancery: flat sections, hairline rules, one strong action per screen — the
-Marché is the one exception, its rows pairing a secondary buy with the sale that is the screen's
-lesson — one accent colour reserved for what is dangerous or decisive. The town illustration
-appears once, on **Ville**; a map of places, drawn in seals, serves as navigation.
+The interface is a chancery: flat sections, hairline rules, one strong action per screen, one accent
+colour reserved for what is dangerous or decisive. The town illustration appears once, on **Ville**;
+a map of places, drawn in seals, serves as navigation.
 
 ## Not decided yet
 
