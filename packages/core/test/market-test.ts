@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, GOODS, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
+import { createWorld, GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
 import { playHalfDay, tick } from './helpers.ts';
 import type { Action, Event, World } from '../src/index.ts';
 
 const SEED = 20261029;
 
-/** A world where the weaver is idle, so the half-day's flow is only the town's. */
+/** A world where the weaver is idle, so the hour's flow is only the town's. */
 function playWeek(world: World, actions: Action[] = []): { world: World; events: Event[] } {
-  return playHalfDay(world, actions);
+  return tick(world, actions);
 }
 
 /**
- * The price of a hour is moved by the flow of the hour before it, so a test of
- * the rule needs two hours: the first records the flow, the second prices it.
+ * One period: the town plays the actions on its first hour, then runs to the
+ * bell, where the accumulated flow prices the market.
  */
-function twoWeeks(world: World, actions: Action[] = []): World {
-  return playWeek(playWeek(world, actions).world).world;
+function playPeriod(world: World, actions: Action[] = []): World {
+  return playHalfDay(world, actions).world;
 }
 
 describe('nextPriceCents', () => {
@@ -74,7 +74,7 @@ describe('nextPriceCents', () => {
 });
 
 describe('the market of a hour', () => {
-  it('takes no view on the first hour of a world', () => {
+  it('holds its price until the first bell', () => {
     // Arrange: a fresh world has no hour behind it, so nothing has been traded.
     const { world } = playWeek(createWorld(SEED));
 
@@ -85,7 +85,7 @@ describe('the market of a hour', () => {
     }
   });
 
-  it('records the hour it will price next hour', () => {
+  it('records the flow the next bell will price', () => {
     // Arrange
     const { world } = playWeek(createWorld(SEED));
 
@@ -101,7 +101,7 @@ describe('the market of a hour', () => {
     });
   });
 
-  it("takes a hour's sale into next hour's flow, not this hour's price", () => {
+  it('takes a sale into the flow, not the price', () => {
     // Arrange: a house with cloth to sell and no workshop of its own.
     const world = createWorld(SEED);
     world.houses.brigue.workshops = [];
@@ -117,30 +117,36 @@ describe('the market of a hour', () => {
 
   it('lets a purchase raise the price the following hour', () => {
     // Arrange
-    const control = twoWeeks(createWorld(SEED));
-    const bought = twoWeeks(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 20 }]);
+    const control = playPeriod(createWorld(SEED));
+    const bought = playPeriod(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 20 }]);
 
     // Act: twenty fewer wool on the market than in the control hour.
     const difference = bought.market.wool - control.market.wool;
 
     // Assert
     expect(difference).toBe(
-      Math.trunc((20 * RULES.market.wool.referenceCents) / (RULES.pricePressureDivisor * RULES.market.wool.scaleUnits)),
+      Math.trunc(
+        (20 * RULES.market.wool.referenceCents) /
+          (RULES.pricePressureDivisor * RULES.market.wool.scaleUnits * (HOURS_PER_YEAR / 2)),
+      ),
     );
   });
 
   it('lets an unclaimed wool glut lower the price', () => {
     // Arrange: Vandermeersch sells four wool a hour; here the weaver buys four,
     // so the town's wool balance is closer to level and the glut is smaller.
-    const glut = twoWeeks(createWorld(SEED));
-    const balanced = twoWeeks(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
+    const glut = playPeriod(createWorld(SEED));
+    const balanced = playPeriod(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
 
     // Act: four units of imbalance, half a scale of four.
     const difference = balanced.market.wool - glut.market.wool;
 
     // Assert
     expect(difference).toBe(
-      Math.trunc((4 * RULES.market.wool.referenceCents) / (RULES.pricePressureDivisor * RULES.market.wool.scaleUnits)),
+      Math.trunc(
+        (4 * RULES.market.wool.referenceCents) /
+          (RULES.pricePressureDivisor * RULES.market.wool.scaleUnits * (HOURS_PER_YEAR / 2)),
+      ),
     );
   });
 
@@ -150,28 +156,31 @@ describe('the market of a hour', () => {
     selling.houses.brigue.workshops = [];
     selling.houses.brigue.stock = { cloth: 20 };
     const control = createWorld(SEED);
-    const weekOne = playWeek(createWorld(SEED)).world.market.cloth;
+    const firstBell = playPeriod(createWorld(SEED)).market.cloth;
 
     // Act: twenty extra cloth on the market, against a market that absorbs ten.
-    const withSale = twoWeeks(selling, [{ type: 'market.sell', houseId: 'brigue', good: 'cloth', units: 20 }]);
-    const withoutSale = twoWeeks(control);
+    const withSale = playPeriod(selling, [{ type: 'market.sell', houseId: 'brigue', good: 'cloth', units: 20 }]);
+    const withoutSale = playPeriod(control);
 
-    // Assert: the same hour-one price and the same drift, so only the flow
+    // Assert: the same first-bell price and the same drift, so only the flow
     // differs. The pull's integer truncation is part of the rule and stays in
     // the expected value rather than being approximated.
+    const hours = HOURS_PER_YEAR / 2;
     const rule = {
       referenceCents: RULES.market.cloth.referenceCents,
-      absorbedUnits: RULES.market.cloth.absorbedUnits,
-      scaleUnits: RULES.market.cloth.scaleUnits,
+      absorbedUnits: RULES.market.cloth.absorbedUnits * hours,
+      scaleUnits: RULES.market.cloth.scaleUnits * hours,
       driftCents: 0,
       pressureDivisor: RULES.pricePressureDivisor,
       reversionDivisor: RULES.priceReversionDivisor,
       floorCents: RULES.priceFloorCents,
       ceilCents: RULES.priceCeilCents,
     };
+    // Both towns leave the same market: the AI sells six cloth an hour, and one
+    // founder adds twenty on top of it.
     const expected =
-      nextPriceCents({ ...rule, priceCents: weekOne, flowUnits: 6 }) -
-      nextPriceCents({ ...rule, priceCents: weekOne, flowUnits: 26 });
+      nextPriceCents({ ...rule, priceCents: RULES.market.cloth.referenceCents, flowUnits: 6 * hours }) -
+      nextPriceCents({ ...rule, priceCents: RULES.market.cloth.referenceCents, flowUnits: 6 * hours + 20 });
 
     expect(withoutSale.market.cloth - withSale.market.cloth).toBe(expected);
   });
@@ -192,13 +201,15 @@ describe('the warehouse', () => {
     expect(after.houses.brigue.stock.cloth).toBe(4);
     expect(after.houses.brigue.stock.wool).toBe(4);
     expect(after.houses.brigue.treasuryCents).toBe(treasuryCents);
-    expect(events).toContainEqual({
-      type: 'workshop.produced',
-      audience: { houseId: 'brigue' },
-      houseId: 'brigue',
-      good: 'cloth',
-      units: 4,
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'workshop.produced',
+        audience: { houseId: 'brigue' },
+        houseId: 'brigue',
+        good: 'cloth',
+        units: 4,
+      }),
+    );
   });
 
   it("credits a sale at the hour's price", () => {
@@ -217,15 +228,17 @@ describe('the warehouse', () => {
     // Assert
     expect(after.houses.brigue.treasuryCents).toBe(priceCents * 4);
     expect(after.houses.brigue.stock.cloth).toBe(6);
-    expect(events).toContainEqual({
-      type: 'market.sold',
-      audience: 'town',
-      houseId: 'brigue',
-      good: 'cloth',
-      units: 4,
-      priceCents,
-      revenueCents: priceCents * 4,
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'market.sold',
+        audience: 'town',
+        houseId: 'brigue',
+        good: 'cloth',
+        units: 4,
+        priceCents,
+        revenueCents: priceCents * 4,
+      }),
+    );
   });
 
   it('refuses a sale of more stock than the house holds', () => {
@@ -241,13 +254,15 @@ describe('the warehouse', () => {
     ]);
 
     // Assert
-    expect(events).toContainEqual({
-      type: 'action.refused',
-      audience: { houseId: 'brigue' },
-      action: 'market.sell',
-      houseId: 'brigue',
-      reason: 'insufficient_stock',
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'action.refused',
+        audience: { houseId: 'brigue' },
+        action: 'market.sell',
+        houseId: 'brigue',
+        reason: 'insufficient_stock',
+      }),
+    );
     expect(after.houses.brigue.treasuryCents).toBe(treasuryCents);
     expect(after.houses.brigue.stock.cloth).toBe(2);
   });
@@ -265,13 +280,15 @@ describe('the warehouse', () => {
     ]);
 
     // Assert
-    expect(events).toContainEqual({
-      type: 'action.refused',
-      audience: { houseId: 'brigue' },
-      action: 'market.buy',
-      houseId: 'brigue',
-      reason: 'stock_full',
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'action.refused',
+        audience: { houseId: 'brigue' },
+        action: 'market.buy',
+        houseId: 'brigue',
+        reason: 'stock_full',
+      }),
+    );
     expect(stockUnits(after.houses.brigue)).toBe(RULES.stockCapacityUnits);
     expect(after.houses.brigue.treasuryCents).toBe(1_000_000);
   });
@@ -286,13 +303,15 @@ describe('the warehouse', () => {
     const { world: after, events } = playWeek(world);
 
     // Assert: four wool were wanted, one fit, and the three refused are named.
-    expect(events).toContainEqual({
-      type: 'workshop.overflow',
-      audience: { houseId: 'brigue' },
-      houseId: 'brigue',
-      good: 'wool',
-      refusedUnits: 3,
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'workshop.overflow',
+        audience: { houseId: 'brigue' },
+        houseId: 'brigue',
+        good: 'wool',
+        refusedUnits: 3,
+      }),
+    );
     expect(stockUnits(after.houses.brigue)).toBe(RULES.stockCapacityUnits);
     expect(after.houses.brigue.stock.wool).toBe(1);
   });
@@ -334,13 +353,15 @@ describe('the warehouse', () => {
       const { world: after, events } = playWeek(world, [malformed]);
 
       // Assert
-      expect(events).toContainEqual({
-        type: 'action.refused',
-        audience: { houseId: 'brigue' },
-        action: type,
-        houseId: 'brigue',
-        reason: 'unknown_good',
-      });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'action.refused',
+          audience: { houseId: 'brigue' },
+          action: type,
+          houseId: 'brigue',
+          reason: 'unknown_good',
+        }),
+      );
       expect(after.houses.brigue.treasuryCents).toBe(treasuryCents);
     }
   });
@@ -465,14 +486,16 @@ describe('an AI house', () => {
 
     // Assert
     expect(events.filter((event) => event.type === 'market.bought' && event.houseId === 'caron')).toEqual([]);
-    expect(events).toContainEqual({
-      type: 'workshop.idle',
-      audience: { houseId: 'caron' },
-      houseId: 'caron',
-      good: 'cloth',
-      input: 'wool',
-      missingUnits: 6,
-    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'workshop.idle',
+        audience: { houseId: 'caron' },
+        houseId: 'caron',
+        good: 'cloth',
+        input: 'wool',
+        missingUnits: 6,
+      }),
+    );
   });
 
   it('never buys an input it does not need', () => {

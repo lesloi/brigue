@@ -123,11 +123,16 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   payWages(next, events);
 
   const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
+
+  // The flow accumulates over the half-day: the bell prices the town's whole
+  // trade, not the last hour of it.
+  for (const good of GOODS) {
+    next.marketFlow[good] = (next.marketFlow[good] ?? 0) + flow[good];
+  }
+
   if (bell) {
     driftPrices(next, events);
   }
-
-  next.marketFlow = flow;
 
   // Noon closes the candidacies: what is in the open map counts tonight, what
   // is lodged after the bell waits for the next scrutiny.
@@ -406,8 +411,12 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: EventDr
 }
 
 function driftPrices(world: World, events: EventDraft[]): void {
-  // A world stored before the history existed starts its record at this tick.
+  // A world stored before the history existed starts its record at this bell.
   world.marketHistory ??= {};
+
+  // The constants are per hour; a bell prices a whole half-day of trade, so the
+  // scale it is measured against is the half-day's.
+  const hours = HOURS_PER_YEAR / 2;
 
   for (const good of GOODS) {
     const [rng, roll] = drawBelow(world.rng, RULES.priceDriftCents * 2 + 1);
@@ -417,8 +426,8 @@ function driftPrices(world: World, events: EventDraft[]): void {
     const after = nextPriceCents({
       priceCents: before,
       referenceCents: RULES.market[good].referenceCents,
-      absorbedUnits: RULES.market[good].absorbedUnits,
-      scaleUnits: RULES.market[good].scaleUnits,
+      absorbedUnits: RULES.market[good].absorbedUnits * hours,
+      scaleUnits: RULES.market[good].scaleUnits * hours,
       flowUnits: world.marketFlow[good],
       driftCents: roll - RULES.priceDriftCents,
       pressureDivisor: RULES.pricePressureDivisor,
@@ -432,14 +441,17 @@ function driftPrices(world: World, events: EventDraft[]): void {
       events.push({ type: 'market.price_changed', audience: 'town', good, before, after });
     }
 
-    // One point per hour even when the price holds: the chart must not skip a
-    // quiet hour, or two changes would look adjacent.
+    // One point per bell even when the price holds: the chart must not skip a
+    // quiet bell, or two changes would look adjacent.
     const history = (world.marketHistory[good] ??= []);
     history.push(after);
     if (history.length > PRICE_HISTORY_BELLS) {
       history.splice(0, history.length - PRICE_HISTORY_BELLS);
     }
   }
+
+  // The bell closes the period: the next one starts from zero.
+  world.marketFlow = {};
 }
 
 function runWorkshops(world: World, events: EventDraft[]): void {
