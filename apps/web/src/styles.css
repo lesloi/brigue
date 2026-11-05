@@ -7,6 +7,8 @@
   --line: #ece8df;
   --accent: #8e1f2f;
   --accent-soft: #f7e8ea;
+  --good: #1e6b4a;
+  --good-soft: #e6f1e8;
   --gold: #b4832e;
   --shadow-soft: 0 1px 2px rgba(40, 30, 15, 0.05), 0 10px 26px -20px rgba(40, 30, 15, 0.4);
   --shadow-float: 0 2px 6px rgba(40, 30, 15, 0.08), 0 16px 34px -18px rgba(40, 30, 15, 0.5);
@@ -479,32 +481,28 @@ button:disabled {
   font-style: italic;
 }
 
-.spark {
-  display: block;
-  width: 100%;
-  height: 24px;
-  margin-top: 4px;
-  overflow: visible;
+/* A price that has left the band around its reference: the word carries the
+   judgement, the tone only colours it. */
+.chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: 1px;
+  white-space: nowrap;
 }
 
-.spark-line {
-  fill: none;
-  stroke: var(--ink-2);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.chip.dear {
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-.spark-ref {
-  stroke: var(--gold);
-  stroke-width: 1;
-  stroke-dasharray: 2 3;
-}
-
-.spark-now {
-  stroke: var(--ink);
-  stroke-width: 3;
-  stroke-linecap: round;
+.chip.cheap {
+  background: var(--good-soft);
+  color: var(--good);
 }
 
 .cal {

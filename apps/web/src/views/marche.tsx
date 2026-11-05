@@ -3,7 +3,16 @@ import { useState } from 'preact/hooks';
 
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
 import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
-import { buyMax, FINISHED_GOODS, netPendingFor, pendingCashCents, pendingUnits, RAW_GOODS, sellMax } from '../trade.ts';
+import {
+  buyMax,
+  FINISHED_GOODS,
+  netPendingFor,
+  pendingCashCents,
+  pendingUnits,
+  priceSignal,
+  RAW_GOODS,
+  sellMax,
+} from '../trade.ts';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 
 interface MarcheProps {
@@ -45,6 +54,7 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
     });
     const sellLimit = sellMax(stock, netPendingFor(good, currentPending));
     const isOpen = open === good;
+    const signal = priceSignal(priceCents, world.town.marketReferences[good]);
 
     return (
       <div key={good}>
@@ -67,11 +77,14 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
           </div>
           <div class="nm">
             <b>{goodName(good)}</b>
-            <p>{formatCents(priceCents)} écus l'unité</p>
-            <PriceSparkline
-              values={world.town.marketHistory[good] ?? []}
-              referenceCents={world.town.marketReferences[good]}
-            />
+            <p>
+              {formatCents(priceCents)} écus l'unité{' '}
+              {signal === 'normal' ? null : (
+                <span class={signal === 'cheap' ? 'chip cheap' : 'chip dear'}>
+                  {signal === 'cheap' ? 'bon marché' : 'cher'}
+                </span>
+              )}
+            </p>
           </div>
           <div class="act">
             <span class="price">
@@ -157,8 +170,8 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
 
         <section class="sec" aria-label="Les denrées">
           <p class="note">
-            Le marché achète et vend au prix de la semaine. La courbe suit les dernières semaines ; le trait doré est le
-            prix de référence. Touche une denrée pour ouvrir sa fiche.
+            Le marché achète et vend au prix de la semaine. La pastille signale une denrée nettement plus chère ou moins
+            chère que son prix de référence. Touche une denrée pour ouvrir sa fiche.
           </p>
           <div class="market-group">
             <div class="h">
@@ -246,42 +259,5 @@ function TradePanel({ good, priceCents, buyMax, sellMax, busy, onTrade }: TradeP
         {mode === 'buy' ? 'Acheter' : 'Vendre'} {units}
       </button>
     </div>
-  );
-}
-
-/** The last year of a good's price, with the reference it is pulled back to. */
-function PriceSparkline({ values, referenceCents }: { values: number[]; referenceCents: number }) {
-  if (values.length === 0) {
-    return null;
-  }
-
-  const width = 100;
-  const height = 24;
-  const min = Math.min(...values, referenceCents);
-  const max = Math.max(...values, referenceCents);
-  // A flat line sits in the middle of its box, not on the top edge.
-  const low = min === max ? min - 1 : min;
-  const high = min === max ? max + 1 : max;
-  const span = high - low;
-  const x = (index: number) => (index / (values.length - 1)) * width;
-  const y = (value: number) => height - 2 - ((value - low) / span) * (height - 4);
-  // One price is not a curve yet, but a flat line says "it has not moved" where
-  // an empty row would read as a missing chart.
-  const singleY = values.length === 1 ? y(values[0] ?? referenceCents).toFixed(1) : null;
-  const points =
-    singleY === null
-      ? values.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`).join(' ')
-      : `0,${singleY} ${width},${singleY}`;
-  const referenceY = y(referenceCents).toFixed(1);
-  // The latest price, marked: with a single week it is the only hint that the
-  // flat line is a chart and not a rule under the price.
-  const lastY = y(values[values.length - 1] ?? referenceCents);
-
-  return (
-    <svg class="spark" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
-      <line class="spark-ref" x1="0" x2={width} y1={referenceY} y2={referenceY} vector-effect="non-scaling-stroke" />
-      <polyline class="spark-line" points={points} vector-effect="non-scaling-stroke" />
-      <line class="spark-now" x1={width} x2={width} y1={lastY - 2} y2={lastY + 2} vector-effect="non-scaling-stroke" />
-    </svg>
   );
 }

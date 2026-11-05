@@ -203,8 +203,8 @@ survive a catch-up: the world replays whole weeks and resolves what falls due.
 - **Ville** — the home screen. The town scene, your house, the week's ledger, the laws in force
   and who carried them, and the register of what falls due.
 - **Maison** — buildings, residence, family, heirs, titles.
-- **Marché** — prices, stock, buying and selling, the queued actions with their cancel, and the
-  year's price history.
+- **Marché** — prices against their reference, stock, buying and selling, and the queued actions
+  with their cancel.
 - **Conseil** — the twelve seats as a pyramid, the offices and their domains, the next sitting.
 - **Greffe** — acts, complaints, evidence, the court.
 - **Courrier** — letters received, rumours, invitations.

@@ -10,6 +10,7 @@ import {
   netPendingFor,
   pendingCashCents,
   pendingUnits,
+  priceSignal,
   RAW_GOODS,
   sellMax,
 } from '../src/trade.ts';
@@ -344,6 +345,19 @@ describe('pending actions', () => {
     expect(sellMax(8, -3)).toBe(5);
     expect(sellMax(0, 5)).toBe(5);
     expect(sellMax(2, -5)).toBe(0);
+  });
+
+  it('calls a price dear or cheap only outside the band around its reference', () => {
+    // Arrange: grain's reference is 260 cents, so the band runs from 234 to 286.
+    // Act and assert: the edges belong to the signal, a cent inside does not.
+    expect(priceSignal(234, 260)).toBe('cheap');
+    expect(priceSignal(233, 260)).toBe('cheap');
+    expect(priceSignal(235, 260)).toBe('normal');
+    expect(priceSignal(260, 260)).toBe('normal');
+    expect(priceSignal(285, 260)).toBe('normal');
+    expect(priceSignal(286, 260)).toBe('dear');
+    expect(priceSignal(287, 260)).toBe('dear');
+    expect(priceSignal(300, 0)).toBe('normal');
   });
 
   it('splits every good into one raw or one finished block', () => {

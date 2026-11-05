@@ -70,6 +70,29 @@ export interface BuyMaxInput {
   priceCents: number;
 }
 
+/**
+ * A price is "cheap" or "dear" only outside the band around the reference the
+ * town pulls it back to; inside, it is simply the price. Integer arithmetic on
+ * cents keeps the band's edges exact.
+ */
+export type PriceSignal = 'cheap' | 'normal' | 'dear';
+
+export const PRICE_SIGNAL_PERCENT = 10;
+
+export function priceSignal(priceCents: number, referenceCents: number): PriceSignal {
+  if (referenceCents <= 0) {
+    return 'normal';
+  }
+  if (priceCents * 100 <= referenceCents * (100 - PRICE_SIGNAL_PERCENT)) {
+    return 'cheap';
+  }
+  if (priceCents * 100 >= referenceCents * (100 + PRICE_SIGNAL_PERCENT)) {
+    return 'dear';
+  }
+
+  return 'normal';
+}
+
 /** How many units a buy can add, after the queued cash and the warehouse cap. */
 export function buyMax(input: BuyMaxInput): number {
   const cashCents = Math.max(0, input.treasuryCents + input.pendingCashCents);
