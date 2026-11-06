@@ -3,8 +3,9 @@ export interface Player {
   tokenHash: string;
   /** The stable identity the book of kings keeps; the store assigns it. */
   playerId: number;
-  townId: number;
-  houseId: string;
+  /** Empty for an account a reset left between towns, until it chooses again. */
+  townId: number | null;
+  houseId: string | null;
   createdAt: Date;
   /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
   lastSeenAt: Date;
@@ -14,6 +15,12 @@ export interface Player {
   /** Set when the player asks to delete their identity: the erasure deadline. */
   deleteAfter: Date | null;
 }
+
+/**
+ * An account with a house. Every route that plays a town needs one: a valid
+ * token without a house may only choose a trade, which is an explicit action.
+ */
+export type BoundPlayer = Player & { townId: number; houseId: string };
 
 export type Closing = { kind: 'none' } | { kind: 'pending'; after: Date } | { kind: 'due' };
 
@@ -29,7 +36,7 @@ export function closingOf(player: Player, at: Date): Closing {
 }
 
 export class HouseAlreadyBoundError extends Error {
-  constructor(townId: number, houseId: string) {
+  constructor(townId: number | null, houseId: string | null) {
     super(`house ${townId}/${houseId} already has a live token`);
     this.name = 'HouseAlreadyBoundError';
   }
@@ -39,6 +46,11 @@ export interface PlayerStore {
   /** Creates the account and returns it with the id the store assigned. */
   insert(player: Omit<Player, 'playerId'>): Promise<Player>;
   findByTokenHash(tokenHash: string): Promise<Player | null>;
+  /**
+   * Gives a house back to an account a reset left without one. Null when the
+   * account is already bound or revoked: the choice is only made once.
+   */
+  rebind(tokenHash: string, townId: number, houseId: string, at: Date): Promise<Player | null>;
   revoke(tokenHash: string, at: Date): Promise<void>;
   /** Records a visit without reopening a revoked session. */
   touch(tokenHash: string, at: Date): Promise<void>;
@@ -54,6 +66,12 @@ export interface PlayerStore {
   cancelDeletion(tokenHash: string): Promise<void>;
   /** Deletes every row of a house, for an identity the scheduler erased. */
   deleteHouse(townId: number, houseId: string): Promise<void>;
+  /**
+   * Erases the accounts a reset left without a house whose deletion deadline
+   * has passed, and returns how many. They belong to no town, so the per-town
+   * sweep never reaches them.
+   */
+  deleteUnboundDue(at: Date): Promise<number>;
 }
 
 /**
@@ -70,8 +88,15 @@ export class MemoryPlayerStore implements PlayerStore {
       throw new HouseAlreadyBoundError(player.townId, player.houseId);
     }
 
+    // A house-less account holds no place: only a bound one can collide.
     for (const existing of this.players.values()) {
-      if (existing.revokedAt === null && existing.townId === player.townId && existing.houseId === player.houseId) {
+      if (
+        player.townId !== null &&
+        player.houseId !== null &&
+        existing.revokedAt === null &&
+        existing.townId === player.townId &&
+        existing.houseId === player.houseId
+      ) {
         throw new HouseAlreadyBoundError(player.townId, player.houseId);
       }
     }
@@ -79,6 +104,25 @@ export class MemoryPlayerStore implements PlayerStore {
     const stored: Player = { ...player, playerId: this.nextPlayerId };
     this.nextPlayerId += 1;
     this.players.set(stored.tokenHash, stored);
+
+    return { ...stored };
+  }
+
+  async rebind(tokenHash: string, townId: number, houseId: string, at: Date): Promise<Player | null> {
+    const player = this.players.get(tokenHash);
+
+    if (player === undefined || player.revokedAt !== null || player.houseId !== null) {
+      return null;
+    }
+
+    for (const existing of this.players.values()) {
+      if (existing.revokedAt === null && existing.townId === townId && existing.houseId === houseId) {
+        throw new HouseAlreadyBoundError(townId, houseId);
+      }
+    }
+
+    const stored: Player = { ...player, townId, houseId, lastSeenAt: new Date(at) };
+    this.players.set(tokenHash, stored);
 
     return { ...stored };
   }
@@ -144,6 +188,26 @@ export class MemoryPlayerStore implements PlayerStore {
       if (player.townId === townId && player.houseId === houseId) {
         this.players.delete(tokenHash);
       }
+    }
+  }
+
+  async deleteUnboundDue(at: Date): Promise<number> {
+    let erased = 0;
+
+    for (const [tokenHash, player] of this.players) {
+      if (player.houseId === null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime()) {
+        this.players.delete(tokenHash);
+        erased += 1;
+      }
+    }
+
+    return erased;
+  }
+
+  /** Mirrors the reset: every account keeps its identity and loses its house. */
+  resetAccounts(): void {
+    for (const [tokenHash, player] of this.players) {
+      this.players.set(tokenHash, { ...player, townId: null, houseId: null, cursorEventId: 0 });
     }
   }
 }

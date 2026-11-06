@@ -21,8 +21,9 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
 
   afterEach(async () => {
     // Scoped to this file's world: the other Postgres tests share the database
-    // and run in parallel.
-    await pool.query('DELETE FROM players WHERE town_id = $1', [900_001]);
+    // and run in parallel. An account a reset left without a house belongs to
+    // no town, so it is cleaned by its own shape.
+    await pool.query('DELETE FROM players WHERE town_id = $1 OR town_id IS NULL', [900_001]);
   });
 
   afterAll(async () => {
@@ -60,6 +61,57 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     // Assert
     const found = await store.findByTokenHash(tokenHash);
     expect(found?.cursorEventId).toBe(12);
+  });
+
+  it('binds an account a reset left without a house, and only once', async () => {
+    // Arrange
+    const tokenHash = 'a'.repeat(64);
+    const at = new Date('2026-12-02T00:00:00.000Z');
+    await store.insert({ ...player(tokenHash), townId: null, houseId: null });
+
+    // Act
+    const rebound = await store.rebind(tokenHash, 900_001, 'leclerc', at);
+
+    // Assert: the house is back and the visit is now, so the new house is not
+    // measured from the old silence.
+    expect(rebound).toMatchObject({ townId: 900_001, houseId: 'leclerc' });
+    expect(rebound?.lastSeenAt).toEqual(at);
+    expect(await store.rebind(tokenHash, 900_001, 'herse', at)).toBeNull();
+    expect((await store.findByTokenHash(tokenHash))?.houseId).toBe('leclerc');
+  });
+
+  it('never binds a revoked account', async () => {
+    // Arrange
+    const tokenHash = 'a'.repeat(64);
+    const at = new Date('2026-12-02T00:00:00.000Z');
+    await store.insert({ ...player(tokenHash), townId: null, houseId: null });
+    await store.revoke(tokenHash, at);
+
+    // Act / Assert
+    expect(await store.rebind(tokenHash, 900_001, 'leclerc', at)).toBeNull();
+  });
+
+  it('erases the house-less accounts whose deadline passed, and only those', async () => {
+    // Arrange: one due, one later, one bound and due (a town's sweep owns it).
+    const at = new Date('2026-12-10T00:00:00.000Z');
+    const due = 'a'.repeat(64);
+    const later = 'b'.repeat(64);
+    const bound = 'c'.repeat(64);
+    await store.insert({ ...player(due), townId: null, houseId: null });
+    await store.markDeletion(due, new Date('2026-12-09T00:00:00.000Z'));
+    await store.insert({ ...player(later), townId: null, houseId: null });
+    await store.markDeletion(later, new Date('2026-12-11T00:00:00.000Z'));
+    await store.insert(player(bound));
+    await store.markDeletion(bound, new Date('2026-12-09T00:00:00.000Z'));
+
+    // Act
+    const erased = await store.deleteUnboundDue(at);
+
+    // Assert
+    expect(erased).toBe(1);
+    expect(await store.findByTokenHash(due)).toBeNull();
+    expect(await store.findByTokenHash(later)).not.toBeNull();
+    expect(await store.findByTokenHash(bound)).not.toBeNull();
   });
 });
 

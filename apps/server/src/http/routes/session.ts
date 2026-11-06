@@ -7,8 +7,8 @@ import { closingOf, HouseAlreadyBoundError, type Player } from '../../identity/p
 import { authenticate, issueToken } from '../../identity/session.ts';
 import { drawHouseIdentity, drawTownName } from '../../town/names.ts';
 import { type TownInfo, sessionWorld, UnknownWorldError } from '../../town/worlds.ts';
-import { identifiedBy, type AppContext } from '../context.ts';
-import { sessionCookie } from '../cookies.ts';
+import { identifiedBy, refuseClosing, type AppContext } from '../context.ts';
+import { readSessionCookie, sessionCookie } from '../cookies.ts';
 import { readBody, sendJson, unauthorized } from '../respond.ts';
 
 export async function readSession(context: AppContext, request: IncomingMessage, response: ServerResponse) {
@@ -74,6 +74,16 @@ export async function openSession(
     return;
   }
 
+  // The cookie is an identity too: an account a reset left without a house
+  // takes a new one with the trade it chooses, instead of a second account.
+  // The choice is an explicit action; no read ever binds.
+  const cookiePlayer = await authenticate(context.deps.store, readSessionCookie(request.headers.cookie));
+
+  if (cookiePlayer !== null) {
+    await chooseHouse(context, response, ip, cookiePlayer, trade as Trade);
+    return;
+  }
+
   await joinTown(context, response, ip, trade as Trade);
 }
 
@@ -104,30 +114,10 @@ async function joinTown(context: AppContext, response: ServerResponse, ip: strin
     // The join is one critical section: two newcomers must not both take the
     // same freed place, nor read an empty database and found two towns.
     const joined = await context.deps.worlds.withJoinLock(async () => {
-      const towns = await context.deps.worlds.listTowns();
+      const placed = await takePlaceAnywhere(context, trade, at);
+      const issued = await issueToken(context.deps.store, placed.town.id, placed.houseId, at);
 
-      for (const town of towns) {
-        let houseId: string | null;
-
-        try {
-          houseId = await takePlace(context, town.id, trade);
-        } catch (error) {
-          // The town went between the list and its lock, or the scheduler
-          // deleted it: the next join will not see it either.
-          if (error instanceof UnknownWorldError) {
-            continue;
-          }
-          // A town of another version is refused, and stops the join: the
-          // format belongs to the database, not to one town.
-          throw error;
-        }
-
-        if (houseId !== null) {
-          return bind(context, town, houseId, at);
-        }
-      }
-
-      return foundTown(context, trade, at);
+      return { ...placed, token: issued.token };
     });
 
     context.deps.logger.info('session.joined', { ip, townId: joined.town.id, houseId: joined.houseId });
@@ -145,6 +135,125 @@ async function joinTown(context: AppContext, response: ServerResponse, ip: strin
     }
     throw error;
   }
+}
+
+/**
+ * The trade of an account that already holds a live cookie. A house-less
+ * account gets a house back — the token and the player id stay — and a bound
+ * one just gets its session again, so a retried tap never opens a second
+ * account. Refused while a deletion is scheduled or due, like every route.
+ */
+async function chooseHouse(
+  context: AppContext,
+  response: ServerResponse,
+  ip: string,
+  player: Player,
+  trade: Trade,
+): Promise<void> {
+  const at = new Date(context.now());
+  const closing = closingOf(player, at);
+
+  if (closing.kind === 'due') {
+    context.deps.logger.warn('session.deletion_due', { ip, playerId: player.playerId });
+    unauthorized(response, context.secureCookies, true);
+    return;
+  }
+  if (closing.kind === 'pending') {
+    sendJson(response, 409, { error: 'deletion_pending', deleteAfter: closing.after.toISOString() });
+    return;
+  }
+
+  let outcome: { kind: 'answered' } | { kind: 'refused' } | { kind: 'bound' | 'rebound'; player: Player };
+
+  try {
+    outcome = await context.deps.worlds.withJoinLock(async () => {
+      // Re-read under the lock: another request may have bound the account
+      // already, or scheduled its deletion, and no place should be spent on a
+      // choice that cannot land.
+      const current = await context.deps.store.findByTokenHash(player.tokenHash);
+
+      if (current === null) {
+        return { kind: 'refused' as const };
+      }
+      if (refuseClosing(context, current, response, at)) {
+        return { kind: 'answered' as const };
+      }
+      if (current.revokedAt !== null) {
+        return { kind: 'refused' as const };
+      }
+      if (current.houseId !== null) {
+        return { kind: 'bound' as const, player: current };
+      }
+
+      const placed = await takePlaceAnywhere(context, trade, at);
+      const rebound = await context.deps.store.rebind(player.tokenHash, placed.town.id, placed.houseId, at);
+
+      return rebound === null ? { kind: 'refused' as const } : { kind: 'rebound' as const, player: rebound };
+    });
+  } catch (error) {
+    if (error instanceof HouseAlreadyBoundError) {
+      context.deps.logger.warn('session.no_free_house', { ip });
+      sendJson(response, 409, { error: 'no_free_house' });
+      return;
+    }
+    throw error;
+  }
+
+  if (outcome.kind === 'answered') {
+    // The deletion check inside the lock already answered, with the same
+    // refusal the first check would have given.
+    return;
+  }
+  if (outcome.kind === 'refused') {
+    context.deps.logger.warn('session.refused', { ip });
+    unauthorized(response, context.secureCookies, true);
+    return;
+  }
+
+  if (outcome.kind === 'rebound') {
+    context.deps.logger.info('session.rebound', {
+      ip,
+      playerId: outcome.player.playerId,
+      townId: outcome.player.townId,
+      houseId: outcome.player.houseId,
+    });
+  }
+  // No new token: the returning account keeps its own, and there is nothing
+  // new to show.
+  sendJson(response, 200, sessionBody(outcome.player));
+}
+
+/**
+ * The place a join takes: a free house in a town, else a town of its own. The
+ * caller holds the join lock, so two joins never take the same place.
+ */
+async function takePlaceAnywhere(
+  context: AppContext,
+  trade: Trade,
+  at: Date,
+): Promise<{ town: TownInfo; houseId: string }> {
+  for (const town of await context.deps.worlds.listTowns()) {
+    let houseId: string | null;
+
+    try {
+      houseId = await takePlace(context, town.id, trade);
+    } catch (error) {
+      // The town went between the list and its lock, or the scheduler deleted
+      // it: the next join will not see it either.
+      if (error instanceof UnknownWorldError) {
+        continue;
+      }
+      // A town of another version is refused, and stops the join: the format
+      // belongs to the database, not to one town.
+      throw error;
+    }
+
+    if (houseId !== null) {
+      return { town, houseId };
+    }
+  }
+
+  return foundTown(context, trade, at);
 }
 
 /**
@@ -183,28 +292,13 @@ async function takePlace(context: AppContext, townId: number, trade: Trade): Pro
 }
 
 /** No town has a free place: the newcomer founds one, named from the places left. */
-async function foundTown(
-  context: AppContext,
-  trade: Trade,
-  at: Date,
-): Promise<{ town: TownInfo; houseId: string; token: string }> {
+async function foundTown(context: AppContext, trade: Trade, at: Date): Promise<{ town: TownInfo; houseId: string }> {
   const name = drawTownName();
   const world = createWorld(randomSeed());
   const identity = drawHouseIdentity(world);
   const town = await context.deps.worlds.createTown(name, withFirstHouse(world, trade, identity), at);
 
-  return bind(context, town, identity.id, at);
-}
-
-async function bind(
-  context: AppContext,
-  town: TownInfo,
-  houseId: string,
-  at: Date,
-): Promise<{ town: TownInfo; houseId: string; token: string }> {
-  const issued = await issueToken(context.deps.store, town.id, houseId, at);
-
-  return { town, houseId, token: issued.token };
+  return { town, houseId: identity.id };
 }
 
 function sessionBody(player: Player): Record<string, unknown> {

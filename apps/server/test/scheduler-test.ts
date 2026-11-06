@@ -446,6 +446,40 @@ describe('startScheduler', () => {
     expect(await players.findByTokenHash(stays.player.tokenHash)).not.toBeNull();
   });
 
+  it('erases an account a reset left without a house at its deadline', async () => {
+    // Arrange: no town, and one account between towns whose week is over.
+    vi.useFakeTimers();
+    const store = new MemoryWorldStore();
+    const players = new MemoryPlayerStore();
+    const tokenHash = 'a'.repeat(64);
+    await players.insert({
+      tokenHash,
+      townId: null,
+      houseId: null,
+      createdAt: START,
+      lastSeenAt: START,
+      revokedAt: null,
+      deleteAfter: new Date(START.getTime() - HOUR),
+      cursorEventId: 0,
+    });
+    const logs: string[] = [];
+    const scheduler = startScheduler({
+      store,
+      players,
+      logger: createLogger((line) => logs.push(line)),
+      now: () => new Date(START),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(1_000);
+    scheduler.stop();
+
+    // Assert: the account is erased, and the pass says so.
+    expect(await players.findByTokenHash(tokenHash)).toBeNull();
+    expect(logs.join('\n')).toContain('player.deleted_unbound');
+  });
+
   it('stays quiet when there is no town yet', async () => {
     // Arrange: a database with no town, as after the last player left.
     vi.useFakeTimers();

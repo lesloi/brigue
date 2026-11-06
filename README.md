@@ -71,13 +71,13 @@ pnpm --filter @brigue/server dev
 
 When a format change cannot migrate the old schema, the database is reset instead: `pnpm
 --filter @brigue/server reset` drops the town and rebuilds the schema from the migrations,
-carrying the book of kings across. Run it with the application stopped: it drops the schema
-under any writer. The accounts go with the town too, until #69 can give a returning account a
-house again. It shows what it would destroy and asks for `yes` on a terminal;
-`--force` skips the question, and without a terminal it refuses rather than guess. `--check`
-shows the same and changes nothing. `--full` deletes the book of kings as well, and is the only
-reset that touches it. Its test is destructive too and
-therefore runs alone, after the parallel suite:
+carrying the book of kings and the accounts across. Run it with the application stopped: it
+drops the schema under any writer. A carried account keeps its token and its player id and
+loses its house; the next visit asks for a trade and gives it one. It shows what it would
+destroy and asks for `yes` on a terminal; `--force` skips the question, and without a terminal
+it refuses rather than guess. `--check` shows the same and changes nothing. `--full` deletes
+the book of kings and the accounts as well, and is the only reset that touches them. Its test
+is destructive too and therefore runs alone, after the parallel suite:
 `RESET_DATABASE_URL=$DATABASE_URL pnpm exec vitest run apps/server/test/reset-test.ts`.
 
 The PWA runs beside it, and Vite proxies `/api` to `http://localhost:3000`:

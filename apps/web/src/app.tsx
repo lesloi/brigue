@@ -28,7 +28,7 @@ import { Ville } from './views/ville.tsx';
 
 type View =
   | { kind: 'loading' }
-  | { kind: 'create' }
+  | { kind: 'create'; lost: boolean }
   | { kind: 'world'; data: WorldResponse }
   | { kind: 'closing'; after: string }
   | { kind: 'lost' }
@@ -116,11 +116,19 @@ export function App() {
       const session = await readSession();
 
       if (session === null) {
-        setView({ kind: 'create' });
+        setView({ kind: 'create', lost: false });
         return;
       }
+      // The deletion check comes first: a house-less account can be closing
+      // too, and the closing screen is the only move left.
       if (session.deletionAfter !== null) {
         setView({ kind: 'closing', after: session.deletionAfter });
+        return;
+      }
+      // The token survived the reset, the house did not: the trade gives it
+      // one back.
+      if (session.houseId === null) {
+        setView({ kind: 'create', lost: true });
         return;
       }
 
@@ -140,9 +148,18 @@ export function App() {
 
     try {
       const joined = await joinTown(trade);
-      pendingToken.current = joined.token;
+      // A returning account keeps its token: there is nothing new to show.
+      if (joined.token !== undefined) {
+        pendingToken.current = joined.token;
+      }
       await load();
     } catch (error) {
+      if (error instanceof ApiError && (error.code === 'deletion_pending' || error.code === 'house_lost')) {
+        // The account moved while the screen was open: the session knows
+        // which screen it belongs to now.
+        await boot();
+        return;
+      }
       if (error instanceof ApiError && error.code === 'no_free_house') {
         // A half-completed join already set the cookie, or a fast second tap
         // raced the first: recover the session before asking for a token.
@@ -152,6 +169,8 @@ export function App() {
           if (session !== null) {
             if (session.deletionAfter !== null) {
               setView({ kind: 'closing', after: session.deletionAfter });
+            } else if (session.houseId === null) {
+              setView({ kind: 'create', lost: true });
             } else {
               await load();
             }
@@ -205,7 +224,7 @@ export function App() {
     try {
       await load();
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
+      if (error instanceof ApiError && (error.status === 401 || error.code === 'house_lost')) {
         void boot();
         return;
       }
@@ -303,7 +322,7 @@ export function App() {
       await readPending().then(setPending, () => setPending([]));
       showToast(`Heure ${data.world.hour}, comme si une heure était passée.`);
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
+      if (error instanceof ApiError && (error.status === 401 || error.code === 'house_lost')) {
         void boot();
         return;
       }
@@ -322,6 +341,11 @@ export function App() {
 
       if (session.deletionAfter !== null) {
         setView({ kind: 'closing', after: session.deletionAfter });
+        return;
+      }
+      // A token a reset left without a house: the trade gives it one back.
+      if (session.houseId === null) {
+        setView({ kind: 'create', lost: true });
         return;
       }
 
@@ -399,6 +423,7 @@ export function App() {
     <>
       {view.kind === 'loading' ? null : view.kind === 'create' ? (
         <Create
+          lost={view.lost}
           joining={joining}
           error={joinError}
           resuming={resuming}

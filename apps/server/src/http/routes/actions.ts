@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { GOODS, SEATS, type Action, type GoodId, type SeatId } from '@brigue/core';
 
 import { currentHourOf, DuplicateActionError, sessionWorld, type StoredAction } from '../../town/worlds.ts';
-import { identifiedBy, refuseClosing, type AppContext } from '../context.ts';
+import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 
 /**
@@ -45,14 +45,20 @@ export async function listActions(
     return;
   }
 
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
   const actions = await context.deps.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
     const queued: StoredAction[] = [];
 
     queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
 
-    return queued.filter((action) => action.houseId === player.houseId);
-  }, player.townId);
+    return queued.filter((action) => action.houseId === bound.houseId);
+  }, bound.townId);
 
   sendJson(response, 200, { actions: actions.map(pendingView) });
 }
@@ -79,6 +85,12 @@ export async function cancelAction(
     return;
   }
 
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
   const actionId = id.toLowerCase();
   const outcome = await context.deps.worlds.withWorld(async (session) => {
     const { world, hourStartedAt } = session.snapshot;
@@ -86,7 +98,7 @@ export async function cancelAction(
 
     const stored = await session.findAction(actionId);
     // Another house's action is indistinguishable from an unknown one.
-    if (stored === null || stored.houseId !== player.houseId) {
+    if (stored === null || stored.houseId !== bound.houseId) {
       return { kind: 'unknown' as const };
     }
     // Idempotent: a cancellation already won is 204, even if the hour has
@@ -106,7 +118,7 @@ export async function cancelAction(
     await session.cancel(actionId, at);
 
     return { kind: 'cancelled' as const };
-  }, player.townId);
+  }, bound.townId);
 
   switch (outcome.kind) {
     case 'unknown':
@@ -138,6 +150,12 @@ export async function appendAction(
   const at = new Date(context.now());
 
   if (refuseClosing(context, player, response, at)) {
+    return;
+  }
+
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
     return;
   }
 
@@ -175,16 +193,16 @@ export async function appendAction(
 
       const stored: StoredAction = {
         id: submission.id,
-        houseId: player.houseId,
+        houseId: bound.houseId,
         playsAt: submission.hour,
-        action: withHouse(submission.intent, player.houseId),
+        action: withHouse(submission.intent, bound.houseId),
         receivedAt: at,
         cancelledAt: null,
       };
       await session.append(stored);
 
       return { kind: 'appended' as const, stored };
-    }, player.townId);
+    }, bound.townId);
   } catch (error) {
     // The primary key caught an id another hour already used; the pre-check
     // above covers the common path, this covers a race from another world.
@@ -207,8 +225,8 @@ export async function appendAction(
       return;
     case 'appended':
       context.deps.logger.info('action.appended', {
-        townId: player.townId,
-        houseId: player.houseId,
+        townId: bound.townId,
+        houseId: bound.houseId,
         hour: outcome.stored.playsAt,
         action: outcome.stored.action.type,
       });

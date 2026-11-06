@@ -13,6 +13,8 @@ export interface ResetOptions {
 export interface ResetReport {
   /** Kings carried across; zero on a full reset. */
   kings: number;
+  /** Accounts carried across without a house; zero on a full reset. */
+  accounts: number;
   /** Whether the book of kings was deleted too. */
   full: boolean;
   /** The migrations the empty schema was built from. */
@@ -27,13 +29,23 @@ interface SurvivingKing {
   elapsed_hours: number;
 }
 
+/** The identity a reset keeps: everything but the town and the house it lost. */
+interface SurvivingAccount {
+  token_hash: string;
+  player_id: number;
+  created_at: Date;
+  last_seen_at: Date;
+  revoked_at: Date | null;
+  delete_after: Date | null;
+}
+
 /**
  * Drops the whole schema and builds it again from the migrations.
  *
- * The book of kings is copied across, because no ordinary reset touches it. A
- * full reset deletes it too. The town and its accounts always go: the tables
- * that hold the binding are rebuilt, and nothing can bind an account to a new
- * house yet.
+ * The book of kings and the accounts are copied across, because no ordinary
+ * reset touches them: the token is the identity, and a reset takes the house,
+ * not the player. A carried account comes back with no town and no house, and
+ * its player chooses a trade on the next visit. A full reset deletes both.
  *
  * Destructive by design: the caller asks the operator first.
  */
@@ -47,6 +59,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       // Read what survives before anything is dropped. A full reset carries
       // nothing.
       const kings = full ? [] : await survivingKings(client);
+      const accounts = full ? [] : await survivingAccounts(client);
 
       await client.query('DROP SCHEMA public CASCADE');
       await client.query('CREATE SCHEMA public');
@@ -60,10 +73,45 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
         kings.map((king) => [king.player_id, king.house_name, king.person_name, king.crowned_at, king.elapsed_hours]),
       );
 
-      // The rebuilt players sequence starts at one; the carried book must not
-      // hand its ids to a new account. The next account takes max + 1.
-      if (kings.length > 0) {
-        const maxPlayerId = kings.reduce((max, king) => Math.max(max, king.player_id), 0);
+      // The account keeps its id and its dates; the house and the journal
+      // cursor do not cross. `cursor_event_id` restarts at zero because the
+      // rebuilt journal restarts at one.
+      await insertRows(
+        client,
+        'players',
+        [
+          'token_hash',
+          'player_id',
+          'town_id',
+          'house_id',
+          'created_at',
+          'last_seen_at',
+          'revoked_at',
+          'delete_after',
+          'cursor_event_id',
+        ],
+        accounts.map((account) => [
+          account.token_hash,
+          account.player_id,
+          null,
+          null,
+          account.created_at,
+          account.last_seen_at,
+          account.revoked_at,
+          account.delete_after,
+          0,
+        ]),
+        true,
+      );
+
+      // The rebuilt players sequence starts at one; the carried ids must not
+      // be handed to a new account. A king outlives its account, so the book
+      // may hold the highest id of all. The next account takes max + 1.
+      const maxPlayerId = [
+        ...kings.map((king) => king.player_id),
+        ...accounts.map((account) => account.player_id),
+      ].reduce((max, id) => Math.max(max, id), 0);
+      if (maxPlayerId > 0) {
         await client.query(`SELECT setval(pg_get_serial_sequence('players', 'player_id'), $1, false)`, [
           maxPlayerId + 1,
         ]);
@@ -73,7 +121,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       // untouched, and the operator retries.
       await client.query('COMMIT');
 
-      return { kings: kings.length, full, applied };
+      return { kings: kings.length, accounts: accounts.length, full, applied };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -136,7 +184,72 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   }));
 }
 
-async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {
+/**
+ * The accounts an ordinary reset keeps. The token, the player id, the dates and
+ * a pending deletion cross; the town and the house do not, so the player
+ * chooses a trade on the next visit. An accounts table of the older shape (a
+ * world id, no stable player id) cannot be carried, so a non-empty one stops
+ * the reset with a named reason instead of a silent cast.
+ */
+async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]> {
+  const { rows: present } = await client.query<{ present: boolean }>(
+    `SELECT to_regclass('public.players') IS NOT NULL AS present`,
+  );
+
+  if (present[0]?.present !== true) {
+    return [];
+  }
+
+  const { rows: columns } = await client.query<{ column_name: string }>(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'players'`,
+  );
+  const presentColumns = new Set(columns.map((column) => column.column_name));
+  const needed = ['token_hash', 'player_id', 'created_at', 'last_seen_at', 'revoked_at', 'delete_after'];
+
+  if (!needed.every((column) => presentColumns.has(column))) {
+    const { rows: count } = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM players');
+
+    if ((count[0]?.count ?? 0) > 0) {
+      throw new Error(
+        'the accounts have an old shape; delete their rows first, or reset with --full (which also deletes the accounts)',
+      );
+    }
+
+    return [];
+  }
+
+  const { rows } = await client.query<{
+    token_hash: string;
+    player_id: string;
+    created_at: Date;
+    last_seen_at: Date;
+    revoked_at: Date | null;
+    delete_after: Date | null;
+  }>(
+    `SELECT token_hash, player_id, created_at, last_seen_at, revoked_at, delete_after
+     FROM players
+     ORDER BY player_id`,
+  );
+
+  return rows.map((row) => ({
+    token_hash: row.token_hash,
+    player_id: Number(row.player_id),
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    revoked_at: row.revoked_at,
+    delete_after: row.delete_after,
+  }));
+}
+
+async function insertRows(
+  client: PoolClient,
+  table: string,
+  columns: string[],
+  rows: unknown[][],
+  overriding = false,
+): Promise<void> {
   if (rows.length === 0) {
     return;
   }
@@ -152,7 +265,11 @@ async function insertRows(client: PoolClient, table: string, columns: string[], 
     return `(${marks.join(', ')})`;
   });
 
-  await client.query(`INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}`, values);
+  // A carried identity keeps the id it had, which an identity column refuses
+  // unless the insert overrides it.
+  const clause = overriding ? 'OVERRIDING SYSTEM VALUE ' : '';
+
+  await client.query(`INSERT INTO ${table} (${columns.join(', ')}) ${clause}VALUES ${tuples.join(', ')}`, values);
 }
 
 export interface TablePreview {
@@ -167,6 +284,8 @@ export interface ResetPreview {
   full: boolean;
   /** Kings that would survive; zero on a full reset. */
   kings: number;
+  /** Accounts that would survive without a house; zero on a full reset. */
+  accounts: number;
 }
 
 /**
@@ -195,6 +314,7 @@ export async function previewReset(pool: Pool, options: ResetOptions = {}): Prom
     tables: previews,
     full,
     kings: full ? 0 : await countIfPresent(pool, 'kings'),
+    accounts: full ? 0 : await countIfPresent(pool, 'players'),
   };
 }
 

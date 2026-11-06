@@ -4,7 +4,7 @@ import { hashJson, PACING } from '@brigue/core';
 
 import { advanceTown, catchUpTown, type TownAccess } from '../../town/catch-up.ts';
 import { projectWorld } from '../../town/projection.ts';
-import { identifiedBy, refuseClosing, type AppContext } from '../context.ts';
+import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { sendJson, unauthorized } from '../respond.ts';
 
 export async function readWorld(
@@ -24,36 +24,42 @@ export async function readWorld(
     return;
   }
 
-  const outcome = await catchUpTown(townAccess(context), player.townId, player.houseId, player.cursorEventId ?? 0, at);
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
+  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.houseId, bound.cursorEventId ?? 0, at);
 
   if (outcome.kind === 'gone') {
     // The visit arrived after the house was silent for a month: the world has
     // already deleted it and revoked the token. Clear the dead cookie so the
     // client can take the freed place.
-    context.deps.logger.warn('world.session_expired', { townId: player.townId, houseId: player.houseId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, houseId: bound.houseId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
 
   const caught = outcome.result;
-  await context.deps.store.touch(player.tokenHash, at);
+  await context.deps.store.touch(bound.tokenHash, at);
 
   if (caught.skipped > 0) {
     context.deps.logger.warn('world.catch_up_capped', {
-      townId: player.townId,
+      townId: bound.townId,
       skipped: caught.skipped,
     });
   }
   context.deps.logger.info('world.read', {
-    townId: player.townId,
-    houseId: player.houseId,
+    townId: bound.townId,
+    houseId: bound.houseId,
     hour: caught.world.hour,
     hoursPlayed: caught.hours,
     skipped: caught.skipped,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, player.houseId, caught.hourStartedAt);
-  await context.deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
+  const projection = projectWorld(outcome.town, caught.world, bound.houseId, caught.hourStartedAt);
+  await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
     world: projection,
@@ -97,32 +103,38 @@ export async function advanceHour(
     return;
   }
 
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
   const outcome = await advanceTown(
     townAccess(context),
-    player.townId,
-    player.houseId,
-    player.cursorEventId ?? 0,
+    bound.townId,
+    bound.houseId,
+    bound.cursorEventId ?? 0,
     at,
     context.now,
   );
 
   if (outcome.kind === 'gone') {
-    context.deps.logger.warn('world.session_expired', { townId: player.townId, houseId: player.houseId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, houseId: bound.houseId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
 
   const caught = outcome.result;
-  await context.deps.store.touch(player.tokenHash, at);
+  await context.deps.store.touch(bound.tokenHash, at);
 
   context.deps.logger.info('world.advanced', {
-    townId: player.townId,
-    houseId: player.houseId,
+    townId: bound.townId,
+    houseId: bound.houseId,
     hour: caught.world.hour,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, player.houseId, caught.hourStartedAt);
-  await context.deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
+  const projection = projectWorld(outcome.town, caught.world, bound.houseId, caught.hourStartedAt);
+  await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
     world: projection,

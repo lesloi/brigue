@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import type { Player, PlayerStore } from '../identity/players.ts';
+import type { BoundPlayer, Player, PlayerStore } from '../identity/players.ts';
 import { closingOf } from '../identity/players.ts';
 import { authenticate } from '../identity/session.ts';
 import type { Logger } from '../logger.ts';
@@ -67,4 +67,18 @@ export function refuseClosing(context: AppContext, player: Player, response: Ser
 
   sendJson(response, 409, { error: 'deletion_pending', deleteAfter: closing.after.toISOString() });
   return true;
+}
+
+/**
+ * An account a reset left between towns holds a valid token and no house. It
+ * may choose a trade, which is an explicit action, but no read of the town and
+ * no action can be served before that: the token stays, so this is not a 401.
+ */
+export function boundPlayerOf(context: AppContext, player: Player, response: ServerResponse): BoundPlayer | null {
+  if (player.townId === null || player.houseId === null) {
+    sendJson(response, 409, { error: 'house_lost' });
+    return null;
+  }
+
+  return player as BoundPlayer;
 }

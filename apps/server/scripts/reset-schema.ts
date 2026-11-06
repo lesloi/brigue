@@ -3,10 +3,11 @@ import { previewReset, resetDatabase, type ResetPreview } from '../src/db/reset.
 
 /**
  * The schema reset, for the one deployment that changes the shape of the
- * database. It destroys the town — its houses, its actions, its journal, its
- * accounts — and the migrations record, then builds an empty schema from
- * `db/migrations` and carries the book of kings across. With `--full` it
- * deletes the book too: it is the one thing that otherwise outlives a reset.
+ * database. It destroys the town — its houses, its actions, its journal — and
+ * the migrations record, then builds an empty schema from `db/migrations` and
+ * carries the book of kings and the accounts across. A carried account keeps
+ * its token and its player id and loses its house: the next visit chooses a
+ * trade. With `--full` it deletes the book and the accounts too.
  *
  * `--check` shows what the reset would destroy and changes nothing. Without
  * `--force`, the script asks first; with no terminal to ask on, it refuses.
@@ -59,8 +60,8 @@ async function main(): Promise<void> {
     }
     process.stdout.write(
       report.full
-        ? 'database reset: everything deleted, the book of kings included\n'
-        : `database reset: ${report.kings} king(s) kept\n`,
+        ? 'database reset: everything deleted, the book of kings and the accounts included\n'
+        : `database reset: ${count(report.kings, 'king')} and ${count(report.accounts, 'account')} kept\n`,
     );
   } finally {
     await pool.end();
@@ -78,9 +79,13 @@ function printPreview(preview: ResetPreview): void {
 
   process.stdout.write(
     preview.full
-      ? 'the book of kings is deleted too (--full)\n'
+      ? 'the book of kings and the accounts are deleted too (--full)\n'
       : `the book of kings is kept: ${count(preview.kings, 'king')}\n`,
   );
+
+  if (!preview.full) {
+    process.stdout.write(`the accounts are kept, without their house: ${count(preview.accounts, 'account')}\n`);
+  }
 }
 
 function count(value: number, word: string): string {
