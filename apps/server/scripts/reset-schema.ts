@@ -1,4 +1,5 @@
-import { resetDatabase } from '../src/reset.ts';
+import { isConfirmation, parseResetArgs, ResetUsageError } from '../src/reset-args.ts';
+import { previewReset, resetDatabase, type ResetPreview } from '../src/reset.ts';
 
 /**
  * The schema reset, for the one deployment that changes the shape of the
@@ -8,41 +9,51 @@ import { resetDatabase } from '../src/reset.ts';
  * deletes the sealed seasons too: the register and the book of kings are the
  * one thing that otherwise outlives a reset.
  *
- * Nothing happens without `--confirm`: the script names what it would destroy
- * and exits non-zero, so a reset is never silent.
+ * `--check` shows what the reset would destroy and changes nothing. Without
+ * `--force`, the script asks first; with no terminal to ask on, it refuses.
  */
-const args = process.argv.slice(2);
-const known = new Set(['--confirm', '--full']);
-const unknown = args.filter((arg) => !known.has(arg));
 
-if (unknown.length > 0) {
-  throw new Error('usage: reset-schema.ts [--confirm] [--full]');
-}
+async function main(): Promise<void> {
+  let args;
 
-const confirmed = args.includes('--confirm');
-const full = args.includes('--full');
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error('DATABASE_URL is required');
-}
+  try {
+    args = parseResetArgs(process.argv.slice(2));
+  } catch (error) {
+    if (error instanceof ResetUsageError) {
+      process.stderr.write(`${error.message}\n`);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
 
-if (!confirmed) {
-  process.stderr.write(
-    (full
-      ? 'This resets the database completely: the town, its actions, its journal and its\n' +
-        'tokens are deleted, and so are the sealed seasons — the register and the book of\n' +
-        'kings — and schema_migrations.\n'
-      : 'This resets the database: the town, its actions, its journal and its tokens are\n' +
-        'deleted, and schema_migrations with them. The sealed seasons are kept.\n') +
-      'Re-run with --confirm to do it.\n',
-  );
-  process.exitCode = 1;
-} else {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error('DATABASE_URL is required');
+  }
+
   const { Pool } = await import('pg');
   const pool = new Pool({ connectionString });
 
   try {
-    const report = await resetDatabase(pool, { full });
+    // The preview answers both the dry run and the question: the operator
+    // reads what will go before saying yes.
+    if (args.check || !args.force) {
+      printPreview(await previewReset(pool, { full: args.full }));
+
+      if (args.check) {
+        process.stdout.write('nothing was changed (--check)\n');
+        return;
+      }
+
+      if (!(await ask())) {
+        process.stderr.write('nothing was changed\n');
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    const report = await resetDatabase(pool, { full: args.full });
 
     for (const file of report.applied) {
       process.stdout.write(`applied ${file}\n`);
@@ -56,3 +67,44 @@ if (!confirmed) {
     await pool.end();
   }
 }
+
+function printPreview(preview: ResetPreview): void {
+  process.stdout.write(
+    `database ${preview.database}: a reset drops the public schema and rebuilds it from the migrations.\n`,
+  );
+
+  for (const table of preview.tables) {
+    process.stdout.write(`  ${table.name.padEnd(20)} ${count(table.rows, 'row')}\n`);
+  }
+
+  process.stdout.write(
+    preview.full
+      ? 'the sealed seasons are deleted too (--full)\n'
+      : `the sealed seasons are kept: ${count(preview.archivedHouses, 'archived house')}, ` +
+          `${count(preview.kings, 'king')}\n`,
+  );
+}
+
+function count(value: number, word: string): string {
+  return `${value} ${word}${value === 1 ? '' : 's'}`;
+}
+
+/** A terminal question, never a piped answer: a reset has to be signed live. */
+async function ask(): Promise<boolean> {
+  if (process.stdin.isTTY !== true) {
+    process.stderr.write('no terminal to ask on; pass --force to reset without a prompt\n');
+
+    return false;
+  }
+
+  const { createInterface } = await import('node:readline/promises');
+  const readline = createInterface({ input: process.stdin, output: process.stdout });
+
+  try {
+    return isConfirmation(await readline.question('Type "yes" to reset this database: '));
+  } finally {
+    readline.close();
+  }
+}
+
+await main();

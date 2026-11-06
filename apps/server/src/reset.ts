@@ -158,3 +158,62 @@ async function insertRows(client: PoolClient, table: string, columns: string[], 
 
   await client.query(`INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}`, values);
 }
+
+export interface TablePreview {
+  name: string;
+  rows: number;
+}
+
+/** What a reset would destroy, read without touching anything. */
+export interface ResetPreview {
+  database: string;
+  tables: TablePreview[];
+  full: boolean;
+  /** Sealed seasons that would survive; zero on a full reset. */
+  archivedHouses: number;
+  kings: number;
+}
+
+/**
+ * Reads the database the way the reset would see it: every table in `public`
+ * with its row count, and what the sealed seasons hold. Read-only, so it can
+ * answer before a destructive run.
+ */
+export async function previewReset(pool: Pool, options: ResetOptions = {}): Promise<ResetPreview> {
+  const full = options.full === true;
+  const { rows: database } = await pool.query<{ name: string }>('SELECT current_database() AS name');
+  const { rows: tables } = await pool.query<{ table_name: string }>(
+    `SELECT table_name
+     FROM information_schema.tables
+     WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+     ORDER BY table_name`,
+  );
+
+  const previews: TablePreview[] = [];
+  for (const table of tables) {
+    const { rows } = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM "${table.table_name}"`);
+    previews.push({ name: table.table_name, rows: rows[0]?.count ?? 0 });
+  }
+
+  return {
+    database: database[0]?.name ?? 'unknown',
+    tables: previews,
+    full,
+    archivedHouses: full ? 0 : await countIfPresent(pool, 'archive_houses'),
+    kings: full ? 0 : await countIfPresent(pool, 'kings'),
+  };
+}
+
+async function countIfPresent(pool: Pool, table: string): Promise<number> {
+  const { rows: present } = await pool.query<{ present: boolean }>(
+    `SELECT to_regclass('public.${table}') IS NOT NULL AS present`,
+  );
+
+  if (present[0]?.present !== true) {
+    return 0;
+  }
+
+  const { rows } = await pool.query<{ count: number }>(`SELECT count(*)::int AS count FROM ${table}`);
+
+  return rows[0]?.count ?? 0;
+}

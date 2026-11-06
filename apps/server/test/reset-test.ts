@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { resetDatabase } from '../src/reset.ts';
+import { previewReset, resetDatabase } from '../src/reset.ts';
 
 // Runs alone, after the parallel suite: the reset drops the schema the other
 // Postgres tests use, so it is gated on RESET_DATABASE_URL and never part of
@@ -67,6 +67,27 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(kings.rows[0]?.count).toBe(1);
     expect(report).toMatchObject({ archivedHouses: 1, kings: 1, full: false });
     expect(report.applied).toContain('0001_initial.sql');
+  });
+
+  it('previews the tables and the sealed seasons without changing anything', async () => {
+    // Arrange
+    await seed();
+
+    // Act
+    const preview = await previewReset(pool);
+
+    // Assert: the table list and the rows are read, and nothing is touched.
+    const rowsOf = (name: string) => preview.tables.find((table) => table.name === name)?.rows;
+
+    expect(preview.tables.map((table) => table.name)).toContain('players');
+    expect(rowsOf('players')).toBe(1);
+    expect(rowsOf('archive_houses')).toBe(1);
+    expect(preview.archivedHouses).toBe(1);
+    expect(preview.kings).toBe(1);
+    expect(preview.full).toBe(false);
+
+    const players = await pool.query('SELECT count(*)::int AS count FROM players');
+    expect(players.rows[0]?.count).toBe(1);
   });
 
   it('deletes the sealed seasons too when the reset is full', async () => {
