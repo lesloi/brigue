@@ -158,12 +158,16 @@ export const FORMAT_VERSION = 1;
 export const RULES = {
   version: 1,
   /**
-   * A game year is twenty-four hours, and every seat is up at the scrutiny that
-   * closes it: one ceremony a day, fixed and known in advance, rather than a
-   * rotation that fires while the player sleeps. The day is the unit the player
-   * actually plays; the hour is the step.
+   * The founder's starting kit: the first house must buy its input and pay a
+   * few hours of wages before its first sale. Every later arrival starts with
+   * its workshop and nothing else.
    */
-  hearingHours: 6,
+  founderTreasuryCents: 117340,
+  founderInputUnits: 8,
+  /**
+   * A building site takes twelve hours. A hearing has no fixed delay: it is
+   * held at the next noon sitting after the complaint.
+   */
   siteHours: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
@@ -265,14 +269,14 @@ export function createFounder(trade: Trade = 'weaver'): Founder {
       id: 'brigue',
       name: 'Brigue',
       controller: 'human',
-      treasuryCents: 117340,
+      treasuryCents: RULES.founderTreasuryCents,
       debtCents: 0,
       favour: 50,
       prestige: 50,
       career: 0,
       dormant: false,
       workshops: [{ good: chain.output, level: 2, workers: 2 }],
-      stock: { [chain.input]: 8 },
+      stock: { [chain.input]: RULES.founderInputUnits },
     },
     person: {
       id: 'person-brigue',

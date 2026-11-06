@@ -262,18 +262,22 @@ describe('the simulation core', () => {
     expect(queued.world.closedCampaigns.maire).toBeUndefined();
   });
 
-  it('resolves a hearing six hours after the complaint and a site after twelve', () => {
-    for (const [kind, hours] of [
-      ['hearing', RULES.hearingHours],
-      ['site', RULES.siteHours],
+  it('resolves an engagement at its due hour', () => {
+    // The due hour is the caller's business: a hearing falls at the next noon
+    // sitting, a site after twelve hours. This checks the resolver, not the
+    // scheduling.
+    const noon = HOURS_PER_YEAR / 2;
+
+    for (const [kind, dueAt] of [
+      ['hearing', noon],
+      ['site', 1 + RULES.siteHours],
     ] as const) {
-      // Arrange: an engagement due at hour one plus its duration.
+      // Arrange: an engagement due at that hour.
       const world = createWorld(SEED);
-      const dueAt = world.hour + hours;
       world.engagements = [{ id: `engagement-${kind}`, kind, houseId: 'brigue', dueAt }];
 
-      // Act: run to the hour before the due hour, then one tick more.
-      const early = play(world, hours);
+      // Act: run to the due hour, then one tick more.
+      const early = play(world, dueAt - world.hour);
       const due = tick(early.world);
 
       // Assert
