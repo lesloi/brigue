@@ -15,6 +15,19 @@ export interface Player {
   deleteAfter: Date | null;
 }
 
+export type Closing = { kind: 'none' } | { kind: 'pending'; after: Date } | { kind: 'due' };
+
+/** What a deletion state allows: everything, only the way back, or nothing. */
+export function closingOf(player: Player, at: Date): Closing {
+  if (player.deleteAfter === null) {
+    return { kind: 'none' };
+  }
+
+  return player.deleteAfter.getTime() <= at.getTime()
+    ? { kind: 'due' }
+    : { kind: 'pending', after: player.deleteAfter };
+}
+
 export class HouseAlreadyBoundError extends Error {
   constructor(townId: number, houseId: string) {
     super(`house ${townId}/${houseId} already has a live token`);

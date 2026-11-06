@@ -40,6 +40,22 @@ export function sendJson(
   response.end(JSON.stringify(body));
 }
 
+export type BodyRead = { ok: true; body: unknown } | { ok: false };
+
+/** Reads a request body and answers the refusal itself, so a route only sees a body it can use. */
+export async function readBody(request: IncomingMessage, response: ServerResponse): Promise<BodyRead> {
+  try {
+    return { ok: true, body: await readJson(request) };
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      sendJson(response, 413, { error: 'body_too_large' });
+      return { ok: false };
+    }
+    sendJson(response, 400, { error: 'invalid_json' });
+    return { ok: false };
+  }
+}
+
 export function unauthorized(response: ServerResponse, secure: boolean, clearCookie: boolean): void {
   const headers: Record<string, string> = { 'Cache-Control': 'no-store' };
   if (clearCookie) {

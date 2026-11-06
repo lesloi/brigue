@@ -1,18 +1,16 @@
-import {
-  advance,
-  humanHouseOf,
-  FORMAT_VERSION,
-  PACING,
-  RULES,
-  WorldVersionError,
-  type Event,
-  type World,
-} from '@brigue/core';
+import { advance, humanHouseOf, PACING, type Event, type World } from '@brigue/core';
 
 import type { Logger } from '../logger.ts';
 import type { PlayerStore } from '../identity/players.ts';
 import { applyPresence, removeHouse } from './presence.ts';
-import { HOUR_MS, UnknownWorldError, type TownInfo, type WorldSession, type WorldStore } from './worlds.ts';
+import {
+  HOUR_MS,
+  UnknownWorldError,
+  sessionWorld,
+  type TownInfo,
+  type WorldSession,
+  type WorldStore,
+} from './worlds.ts';
 
 export interface Due {
   /** The town after the pass. */
@@ -120,11 +118,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
   async function playTown(town: TownInfo, at: Date): Promise<void> {
     try {
       const outcome = await options.store.withWorld(async (session) => {
-        const world = session.snapshot.world;
-
-        if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
-          throw new WorldVersionError(world);
-        }
+        const world = sessionWorld(session);
 
         // The same silence rule the read path applies, but on its own clock: a
         // town whose last human has gone expires even if nobody comes back.
