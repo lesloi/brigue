@@ -11,11 +11,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   wanted. Revisit if native-only capabilities (push, background work) become the point, or if
   the installed feel is not enough in daily use.
 
-- **One world and one town, not one world per player.** The town is a shared object: twelve seats,
-  held by people, each house controlled by an AI or a human. Solo is the same code with every seat
-  but yours on AI. A world per player would make multiplayer a rewrite instead of an assignment.
-  The seat is held by a **person**, not a house; that is what makes a career and a succession
-  possible. Revisit only if the town proves too small to hold a solo player's pace.
+- **One shared world of several towns, not one world per player.** The world holds several towns;
+  a town is a shared object: twelve seats, held by people, each house controlled by an AI or a
+  human. Solo is the same code with every seat but yours on AI. A town — or a world — per player
+  would make multiplayer a rewrite instead of an assignment. The seat is held by a **person**, not
+  a house; that is what makes a career and a succession possible. Revisit only if the town proves
+  too small to hold a solo player's pace.
 
 - **A silent house is forgotten, not robbed; a human who arrives takes an AI's place.** Silence
   is a state of the town, not a punishment: a house with no visit for a few days — three,
@@ -384,19 +385,21 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   while it cannot; `/healthz` touches nothing. Wired the other way, a database outage would
   restart every pod and turn one problem into two.
 
-- **The world is the database: tables, not a document.** One live world per database and no
-  `world_id` anywhere — houses, people, seats, workshops, stock, laws, engagements, campaigns and
-  the market are the town itself. One row, `state`, carries what belongs to no house: the seed,
-  the generator's cursor, the hour and the year; it is what the writer locks. The simulation still reads and writes the world whole, but the storage keeps it in rows,
-  so a screen can read the market alone and the register is a query. A format change is a
-  migration across those tables; a reset is a wipe of them. What a sealed season keeps is the
-  register, not the town: the seal writes the houses' last columns and the book of kings into an
-  archive that outlives every ordinary reset, a format change included, and the town itself is
-  dropped; only a full reset deletes it.
+- **The towns are the database: tables, not a document.** One database holds several towns, and
+  every town table carries its `town_id` — houses, people, seats, workshops, stock, laws,
+  engagements, campaigns and the market are a town itself. One row per town in `state` carries
+  what belongs to no house: the seed, the generator's cursor, the hour and the year; it is what
+  the writer locks. The simulation still reads and writes a town whole, but the storage keeps it
+  in rows, so a screen can read the market alone and the register is a query. A format change is
+  a migration across those tables; a reset is a wipe of them. Deleting a town cascades its
+  tables; the players and the sealed register, keyed by town and season, outlive it. What a
+  sealed season keeps is the register: the seal writes the houses' last columns and the book of
+  kings into an archive that outlives every ordinary reset, a format change included, and the
+  town itself is dropped; only a full reset deletes it.
   The players outlive a season's seal, which takes the house and keeps the token; this first
   format change rebuilt the tables that hold the binding before that seal existed, so it clears
   the tokens with the town. Once the seal lands, a reset keeps them. Revisit if the archive must
-  hold the whole town, or if one world per database proves too rigid for tests.
+  hold the whole town, or if several towns in one database prove too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
   seed and the generator; published, it would let a client brute-force a young town's seed and
