@@ -192,8 +192,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   players whose history matters, a breaking change ships a migration by default.
 
   This first format resets with `pnpm --filter @brigue/server reset --confirm`: the schema is
-  dropped and rebuilt from the one migration, and the players cross without a house — the token
-  is what carries someone from one town to the next — while the sealed seasons stay untouched.
+  dropped and rebuilt from the one migration, and the sealed seasons stay untouched. The tokens
+  do not cross yet — the tables that hold the binding are rebuilt, and nothing can bind a token
+  to a new house — so a reset clears them with the town until the seal lands.
 
   The next format carries the clock, the scheduler, the journal and the tables, and nothing else:
   the town's politics lands additively inside it, and the floors above the town wait for the
@@ -380,8 +381,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   migration across those tables; a reset is a wipe of them. What a sealed season keeps is the
   register, not the town: the seal writes the houses' last columns and the book of kings into an
   archive that outlives every reset, a format change included, and the town itself is dropped.
-  The players outlive it too: the token is what carries a house from one town to the next. Revisit if the archive must hold
-  the whole town, or if one world per database proves too rigid for tests.
+  The players outlive a season's seal, which takes the house and keeps the token; this first
+  format change rebuilt the tables that hold the binding before that seal existed, so it clears
+  the tokens with the town. Once the seal lands, a reset keeps them. Revisit if the archive must
+  hold the whole town, or if one world per database proves too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
   seed and the generator; published, it would let a client brute-force a young town's seed and
