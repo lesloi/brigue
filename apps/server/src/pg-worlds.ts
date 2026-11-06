@@ -415,7 +415,11 @@ async function readWorld(client: PoolClient, townId: string): Promise<WorldSnaps
 
   for (const good of market.rows) {
     world.market[good.good as GoodId] = good.price_cents;
-    world.marketFlow[good.good as GoodId] = good.flow_units;
+    // The flow map is sparse — a good with no trade is absent from it, not
+    // zeroed — so a town read back is the town that was written.
+    if (good.flow_units !== 0) {
+      world.marketFlow[good.good as GoodId] = good.flow_units;
+    }
   }
 
   for (const point of history.rows) {
@@ -437,19 +441,18 @@ async function readWorld(client: PoolClient, townId: string): Promise<WorldSnaps
  * leave a row behind the way an upsert would.
  */
 async function clearWorld(client: PoolClient, townId: string): Promise<void> {
-  await client.query(
-    `DELETE FROM seats WHERE town_id = $1;
-     DELETE FROM laws WHERE town_id = $1;
-     DELETE FROM engagements WHERE town_id = $1;
-     DELETE FROM campaigns WHERE town_id = $1;
-     DELETE FROM stock WHERE town_id = $1;
-     DELETE FROM workshops WHERE town_id = $1;
-     DELETE FROM people WHERE town_id = $1;
-     DELETE FROM market_history WHERE town_id = $1;
-     DELETE FROM market WHERE town_id = $1;
-     DELETE FROM houses WHERE town_id = $1;`,
-    [townId],
-  );
+  // One statement per table: a parameterised query is sent with the extended
+  // protocol, which refuses several commands at once.
+  await client.query('DELETE FROM seats WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM laws WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM engagements WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM campaigns WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM stock WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM workshops WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM people WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM market_history WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM market WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM houses WHERE town_id = $1', [townId]);
 }
 
 async function writeWorld(client: PoolClient, townId: string, world: World): Promise<void> {
