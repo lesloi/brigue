@@ -22,7 +22,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
   afterEach(async () => {
     // Scoped to this file's world: the other Postgres tests share the database
     // and run in parallel.
-    await pool.query('DELETE FROM players WHERE world_id = $1', ['pg-players']);
+    await pool.query('DELETE FROM players WHERE town_id = $1', [900_001]);
   });
 
   afterAll(async () => {
@@ -33,14 +33,18 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     // Arrange
     const tokenHash = 'a'.repeat(64);
     const after = new Date('2026-12-01T00:00:00.000Z');
-    await store.insert(player(tokenHash));
+    const stored = await store.insert(player(tokenHash));
 
-    // Act and assert: the deadline is stored, cleared, then the rows go.
+    // Act and assert: the assigned account id reads back as a number, and the
+    // deadline is stored, cleared, then the rows go.
+    expect(typeof stored.playerId).toBe('number');
+    expect((await store.findByTokenHash(tokenHash))?.playerId).toBe(stored.playerId);
+    expect((await store.findByTokenHash(tokenHash))?.townId).toBe(900_001);
     await store.markDeletion(tokenHash, after);
     expect((await store.findByTokenHash(tokenHash))?.deleteAfter).toEqual(after);
     await store.cancelDeletion(tokenHash);
     expect((await store.findByTokenHash(tokenHash))?.deleteAfter).toBeNull();
-    await store.deleteHouse('pg-players', 'leclerc');
+    await store.deleteHouse(900_001, 'leclerc');
     expect(await store.findByTokenHash(tokenHash)).toBeNull();
   });
 
@@ -59,12 +63,12 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
   });
 });
 
-function player(tokenHash: string): Player {
+function player(tokenHash: string): Omit<Player, 'playerId'> {
   const at = new Date('2026-11-05T00:00:00.000Z');
 
   return {
     tokenHash,
-    worldId: 'pg-players',
+    townId: 900_001,
     houseId: 'leclerc',
     createdAt: at,
     lastSeenAt: at,

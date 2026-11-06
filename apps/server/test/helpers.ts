@@ -16,7 +16,7 @@ export function tick(world: World, actions: readonly Action[] = []): { world: Wo
 }
 
 /** The fixture town the tests play; production draws and names its own. */
-export const TEST_TOWN: TownInfo = { id: 'saint-aubin', name: 'Saint-Aubin' };
+export const TEST_TOWN: TownInfo = { id: 1, name: 'Saint-Aubin' };
 
 /** The fixture identity the tests play; production draws its own. */
 export const TEST_FIRST_HOUSE: HouseIdentity = {

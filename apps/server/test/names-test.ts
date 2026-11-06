@@ -1,7 +1,7 @@
 import { createWorld, type House } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { drawHouseIdentity, drawTownIdentity, HOUSE_NAMES, PERSON_NAMES, TOWN_NAMES } from '../src/names.ts';
+import { drawHouseIdentity, drawTownName, HOUSE_NAMES, PERSON_NAMES, TOWN_NAMES } from '../src/names.ts';
 
 describe('the first house name', () => {
   it('draws a name the town does not use, and an id from it', () => {
@@ -54,31 +54,10 @@ describe('the first house name', () => {
 });
 
 describe('the town name', () => {
-  it('draws a name no database has spent, and an id from it', () => {
-    // Arrange
-    const taken: string[] = [];
-
-    // Act and assert: every draw takes a free name, and the pool is spent one
-    // name at a time.
-    for (let draw = 0; draw < TOWN_NAMES.length; draw += 1) {
-      const town = drawTownIdentity(taken);
-
-      expect(TOWN_NAMES).toContain(town.name);
-      expect(taken).not.toContain(town.name);
-      expect(town.id).toMatch(/^[a-z0-9-]+$/);
-      taken.push(town.name);
+  it('draws a name from the pool, and nothing else', () => {
+    // Act and assert: every draw is a pool name; the id belongs to the store.
+    for (let draw = 0; draw < 100; draw += 1) {
+      expect(TOWN_NAMES).toContain(drawTownName());
     }
-  });
-
-  it('falls back to the first free numbered place once every name is spent', () => {
-    // Arrange: a database holding the whole pool, and the first fallback.
-    const taken = [...TOWN_NAMES, 'Bourg 1'];
-
-    // Act
-    const town = drawTownIdentity(taken);
-
-    // Assert: a name outside the pool and outside the taken fallbacks.
-    expect(town.name).toBe('Bourg 2');
-    expect(taken).not.toContain(town.name);
   });
 });

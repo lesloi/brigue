@@ -128,12 +128,12 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
         // The same silence rule the read path applies, but on its own clock: a
         // town whose last human has gone expires even if nobody comes back.
-        const players = await options.players.listByWorld(town.id);
+        const players = await options.players.listByTown(town.id);
         const presence = applyPresence(world, players, at.getTime());
 
         for (const houseId of presence.deletedHouseIds) {
           await options.players.revokeHouse(town.id, houseId, at);
-          options.logger.warn('world.house_deleted', { worldId: town.id, houseId });
+          options.logger.warn('world.house_deleted', { townId: town.id, houseId });
         }
 
         // The identities whose week is over go before the hour plays: a house
@@ -150,7 +150,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
         if (humanHouseOf(presence.world) === undefined) {
           await session.clear();
-          options.logger.info('town.deleted', { worldId: town.id });
+          options.logger.info('town.deleted', { townId: town.id });
           return { expired, hour: null };
         }
 
@@ -164,10 +164,10 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
         if (due.skipped > 0) {
-          options.logger.warn('town.catch_up_capped', { worldId: town.id, skipped: due.skipped });
+          options.logger.warn('town.catch_up_capped', { townId: town.id, skipped: due.skipped });
         }
         if (due.hours > 0) {
-          options.logger.info('town.advanced', { worldId: town.id, hours: due.hours });
+          options.logger.info('town.advanced', { townId: town.id, hours: due.hours });
         }
 
         return { expired, hour: due.world.hour };
@@ -177,7 +177,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
       // identity whole, and the next pass tries again.
       for (const houseId of new Set(outcome.expired.map((player) => player.houseId))) {
         await options.players.deleteHouse(town.id, houseId);
-        options.logger.info('player.deleted', { worldId: town.id, houseId });
+        options.logger.info('player.deleted', { townId: town.id, houseId });
       }
 
       // The journal is a feed: what fell out of the window goes, even on a pass
@@ -198,14 +198,14 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
     }
   }
 
-  async function pruneJournal(townId: string, oldestKeptHour: number): Promise<void> {
+  async function pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
     try {
       await options.store.pruneJournal(townId, oldestKeptHour);
     } catch (error) {
       // A journal that cannot be pruned grows, but the town must keep playing:
       // this failure gets its own line and the next pass tries again.
       options.logger.warn('town.journal_prune_failed', {
-        worldId: townId,
+        townId: townId,
         detail: error instanceof Error ? error.message : String(error),
       });
     }
@@ -221,9 +221,9 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
   };
 }
 
-function failure(logger: Logger, worldId: string | undefined, error: unknown): void {
+function failure(logger: Logger, townId: number | undefined, error: unknown): void {
   logger.warn('town.advance_failed', {
-    ...(worldId === undefined ? {} : { worldId }),
+    ...(townId === undefined ? {} : { townId }),
     detail: error instanceof Error ? error.message : String(error),
   });
 }

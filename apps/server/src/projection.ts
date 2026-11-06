@@ -75,7 +75,7 @@ export interface WorldProjection {
   calendar: CalendarView;
   house: OwnHouseView;
   town: {
-    id: string;
+    id: number;
     name: string;
     houses: PublicHouseView[];
     people: PublicPersonView[];

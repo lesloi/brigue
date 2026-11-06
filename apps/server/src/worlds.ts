@@ -10,7 +10,7 @@ export const JOURNAL_PAGE = 50;
 
 /** A town a player can join: the id the rows carry, the name the screen shows. */
 export interface TownInfo {
-  id: string;
+  id: number;
   name: string;
 }
 
@@ -71,17 +71,19 @@ export interface WorldSession {
 }
 
 export interface WorldStore {
-  /** Idempotent per id: creates the town row and its first state. */
-  createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void>;
+  /**
+   * Creates the town row and its first state, and returns the town with the id
+   * the database assigned. It is not idempotent: a second call creates a second
+   * town, so a join calls it once inside `withJoinLock`.
+   */
+  createTown(name: string, world: World, hourStartedAt: Date): Promise<TownInfo>;
   /** Every town, oldest first, so a join can look for a free place. */
   listTowns(): Promise<TownInfo[]>;
-  /** Every place name ever drawn, dead towns included: a name is never reused. */
-  usedTownNames(): Promise<string[]>;
   /**
    * Locks the town for the whole callback — the scheduler and the reader both
    * write, and two passes over the same town would lose one of them.
    */
-  withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T>;
+  withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T>;
   /**
    * Serializes the joins: two newcomers must not take the same freed place, nor
    * found two towns at once. It spans several towns, so it cannot be the lock
@@ -94,7 +96,7 @@ export interface WorldStore {
    * outside the state lock: a prune that fails must not roll back an hour the
    * town already lived.
    */
-  pruneJournal(townId: string, oldestKeptHour: number): Promise<void>;
+  pruneJournal(townId: number, oldestKeptHour: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -126,20 +128,17 @@ interface MemoryWorld {
  * real locking is the `SELECT ... FOR UPDATE` in pg-worlds.ts.
  */
 export class MemoryWorldStore implements WorldStore {
-  private readonly towns = new Map<string, MemoryWorld>();
-  private readonly names = new Set<string>();
+  private readonly towns = new Map<number, MemoryWorld>();
+  private nextTownId = 1;
   private queue: Promise<unknown> = Promise.resolve();
   private joinQueue: Promise<unknown> = Promise.resolve();
 
-  async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
-    if (this.towns.has(town.id)) {
-      return;
-    }
-
-    this.names.add(town.name);
+  async createTown(name: string, world: World, hourStartedAt: Date): Promise<TownInfo> {
+    const town: TownInfo = { id: this.nextTownId, name };
+    this.nextTownId += 1;
     this.towns.set(town.id, {
       snapshot: {
-        town: { ...town },
+        town,
         world: structuredClone(world),
         hourStartedAt: new Date(hourStartedAt),
       },
@@ -147,6 +146,8 @@ export class MemoryWorldStore implements WorldStore {
       events: [],
       nextEventId: 1,
     });
+
+    return { ...town };
   }
 
   async listTowns(): Promise<TownInfo[]> {
@@ -159,11 +160,7 @@ export class MemoryWorldStore implements WorldStore {
       .map((stored) => ({ ...stored.snapshot.town }));
   }
 
-  async usedTownNames(): Promise<string[]> {
-    return [...this.names];
-  }
-
-  async pruneJournal(townId: string, oldestKeptHour: number): Promise<void> {
+  async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
     const stored = this.towns.get(townId);
 
     if (stored === undefined) {
@@ -177,7 +174,7 @@ export class MemoryWorldStore implements WorldStore {
     stored.events = stored.events.filter((entry) => entry.event.at >= oldestKeptHour || entry.id >= keepFrom);
   }
 
-  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
     const previous = this.queue;
     const current = previous.then(async () => {
       const stored = this.towns.get(townId);
@@ -219,7 +216,7 @@ export class MemoryWorldStore implements WorldStore {
 
   async close(): Promise<void> {}
 
-  private sessionOf(townId: string, stored: MemoryWorld): WorldSession {
+  private sessionOf(townId: number, stored: MemoryWorld): WorldSession {
     return {
       snapshot: stored.snapshot,
       actionsBetween: async (from, to) =>

@@ -36,9 +36,10 @@ Two rules keep the chapters honest:
 One world holds several towns. A newcomer takes a free place in the least-filled town that has
 one — a human house no player has taken, or a new human house while the town is below twenty
 houses — the oldest breaking a tie, and a town is founded only when every town is full. A house a
-player has taken stays theirs while it is silent, and a revoked token does not give it away. A town is named when it is founded: a place name is
-drawn from a list, and no name serves twice in the same database. A town whose humans have all
-gone is never offered to a newcomer; it is on its way out.
+player has taken stays theirs while it is silent, and a revoked token does not give it away. A
+town is named when it is founded: a place name is drawn from a list; a name may come back, but
+the id is assigned by the database and never does. A town whose humans have all gone is never
+offered to a newcomer; it is on its way out.
 
 Twenty houses at most, three of them AI at the opening. The town is founded when its first player
 joins: three AI houses and the first player's house are created together, so no town waits empty
@@ -66,9 +67,9 @@ checks on its own rhythm; no visit is needed.
 The cap is the point. Twenty houses for twelve seats is scarcity; twelve seats for twenty houses
 is a queue.
 
-The register, kept at the clerk's office, ranks the houses by column — prestige, offices held,
-titles, generations and wealth — and never sums them into one score. It is the long game, and the
-only place where a merchant, a notable and a dynasty can be compared.
+The book of kings, kept at the clerk's office, lists the crowned: the player, the house, the
+person, the instant and the time it took. It is the long game, and the only record that crosses a
+reset.
 
 ## The council
 
@@ -262,8 +263,8 @@ offices need a knight's title; the bailli and the receveur, a baron's.
 Headed by the king, who must bear the title of prince and have held a county office. The four
 lesser offices need a marquis's title; the chancelier and the argentier, a duke's.
 
-- **Roi** — the ordinance and the staple; crowned, he reigns one day.
-- **Chancelier** — the seal, the ordinances and the register of the kingdom; he may refuse to seal.
+- **Roi** — crowned, he reigns one day.
+- **Chancelier** — the seal; he may refuse to seal.
 - **Argentier** — the coin and the royal chest.
 - **Maréchal** — the royal company and the marshals' provosts on the roads.
 - **Chambellan** — the door: nothing reaches the king without passing him.

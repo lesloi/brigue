@@ -22,7 +22,7 @@ const HOUR = HOUR_MS;
 async function town(options: { at?: Date; world?: World } = {}): Promise<MemoryWorldStore> {
   const store = new MemoryWorldStore();
   const at = options.at ?? START;
-  await store.createTown(TEST_TOWN, options.world ?? playableTown(20261105), at);
+  await store.createTown(TEST_TOWN.name, options.world ?? playableTown(20261105), at);
 
   return store;
 }
@@ -290,7 +290,7 @@ describe('startScheduler', () => {
     // than it. Nothing is due, so the pass has no save to hang a prune on.
     vi.useFakeTimers();
     const store = new MemoryWorldStore();
-    await store.createTown(TEST_TOWN, { ...playableTown(20261105), hour: 200 }, START);
+    await store.createTown(TEST_TOWN.name, { ...playableTown(20261105), hour: 200 }, START);
     await store.withWorld(async (session) => {
       await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 120));
     }, TEST_TOWN.id);
@@ -324,10 +324,10 @@ describe('startScheduler', () => {
     vi.useFakeTimers();
     const store = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
-    await store.createTown({ id: 'a', name: 'A' }, playableTown(20261105), START);
-    await store.createTown({ id: 'b', name: 'B' }, playableTown(20261106), START);
-    await issueToken(players, 'a', TEST_FIRST_HOUSE.id, START);
-    await issueToken(players, 'b', TEST_FIRST_HOUSE.id, START);
+    const a = await store.createTown('A', playableTown(20261105), START);
+    const b = await store.createTown('B', playableTown(20261106), START);
+    await issueToken(players, a.id, TEST_FIRST_HOUSE.id, START);
+    await issueToken(players, b.id, TEST_FIRST_HOUSE.id, START);
     const clock = { now: START.getTime() };
     const scheduler = startScheduler({
       store,
@@ -343,25 +343,24 @@ describe('startScheduler', () => {
     scheduler.stop();
 
     // Assert: both towns lived the hour, each on its own clock.
-    expect((await store.withWorld(async (session) => session.snapshot, 'a')).world.hour).toBe(2);
-    expect((await store.withWorld(async (session) => session.snapshot, 'b')).world.hour).toBe(2);
+    expect((await store.withWorld(async (session) => session.snapshot, a.id)).world.hour).toBe(2);
+    expect((await store.withWorld(async (session) => session.snapshot, b.id)).world.hour).toBe(2);
   });
 
   it('keeps playing the other towns when one fails', async () => {
     // Arrange: a town the store refuses and one it plays.
     vi.useFakeTimers();
     const real = new MemoryWorldStore();
-    await real.createTown({ id: 'bad', name: 'Bad' }, playableTown(20261105), START);
-    await real.createTown({ id: 'good', name: 'Good' }, playableTown(20261106), START);
+    const bad = await real.createTown('Bad', playableTown(20261105), START);
+    const good = await real.createTown('Good', playableTown(20261106), START);
     const players = new MemoryPlayerStore();
-    await issueToken(players, 'bad', TEST_FIRST_HOUSE.id, START);
-    await issueToken(players, 'good', TEST_FIRST_HOUSE.id, START);
+    await issueToken(players, bad.id, TEST_FIRST_HOUSE.id, START);
+    await issueToken(players, good.id, TEST_FIRST_HOUSE.id, START);
     const broken: WorldStore = {
-      createTown: (town, world, hourStartedAt) => real.createTown(town, world, hourStartedAt),
+      createTown: (name, world, hourStartedAt) => real.createTown(name, world, hourStartedAt),
       listTowns: () => real.listTowns(),
-      usedTownNames: () => real.usedTownNames(),
       withWorld: (run, townId) =>
-        townId === 'bad' ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
+        townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       pruneJournal: (townId, oldestKeptHour) => real.pruneJournal(townId, oldestKeptHour),
       close: () => real.close(),
@@ -381,9 +380,9 @@ describe('startScheduler', () => {
     scheduler.stop();
 
     // Assert: the failure is named, and the sound town still moves.
-    expect(logs.some((line) => line.includes('town.advance_failed') && line.includes('bad'))).toBe(true);
-    expect((await real.withWorld(async (session) => session.snapshot, 'good')).world.hour).toBe(2);
-    expect((await real.withWorld(async (session) => session.snapshot, 'bad')).world.hour).toBe(1);
+    expect(logs.some((line) => line.includes('town.advance_failed') && line.includes(String(bad.id)))).toBe(true);
+    expect((await real.withWorld(async (session) => session.snapshot, good.id)).world.hour).toBe(2);
+    expect((await real.withWorld(async (session) => session.snapshot, bad.id)).world.hour).toBe(1);
   });
 
   it('erases an identity whose week is over, and the town with it', async () => {
@@ -414,7 +413,7 @@ describe('startScheduler', () => {
     await expect(store.withWorld(async (session) => session.snapshot, TEST_TOWN.id)).rejects.toBeInstanceOf(
       UnknownWorldError,
     );
-    expect(await players.listByWorld(TEST_TOWN.id)).toEqual([]);
+    expect(await players.listByTown(TEST_TOWN.id)).toEqual([]);
   });
 
   it('erases one house and leaves the town to the others', async () => {
@@ -423,7 +422,7 @@ describe('startScheduler', () => {
     const store = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
     const identity = { id: 'moreau', houseName: 'Moreau', personName: 'Colin Moreau' };
-    await store.createTown(TEST_TOWN, withNewcomer(playableTown(20261105), 'baker', identity), START);
+    await store.createTown(TEST_TOWN.name, withNewcomer(playableTown(20261105), 'baker', identity), START);
     const gone = await issueToken(players, TEST_TOWN.id, TEST_FIRST_HOUSE.id, START);
     const stays = await issueToken(players, TEST_TOWN.id, identity.id, START);
     await players.markDeletion(gone.player.tokenHash, new Date(START.getTime() - HOUR));
@@ -473,11 +472,10 @@ describe('startScheduler', () => {
     // nobody will read the town to notice. The store watches for a prune.
     vi.useFakeTimers();
     const real = await town();
-    const pruned: string[] = [];
+    const pruned: number[] = [];
     const store: WorldStore = {
-      createTown: (info, world, at) => real.createTown(info, world, at),
+      createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
-      usedTownNames: () => real.usedTownNames(),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       pruneJournal: (townId, oldestKeptHour) => {
@@ -512,9 +510,8 @@ describe('startScheduler', () => {
     vi.useFakeTimers();
     const real = await town();
     const guarded: WorldStore = {
-      createTown: (info, world, at) => real.createTown(info, world, at),
+      createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
-      usedTownNames: () => real.usedTownNames(),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       pruneJournal: () => Promise.reject(new Error('the journal is stuck')),
@@ -547,9 +544,8 @@ describe('startScheduler', () => {
     const real = await town();
     let attempts = 0;
     const flaky: WorldStore = {
-      createTown: (town, world, hourStartedAt) => real.createTown(town, world, hourStartedAt),
+      createTown: (name, world, hourStartedAt) => real.createTown(name, world, hourStartedAt),
       listTowns: () => real.listTowns(),
-      usedTownNames: () => real.usedTownNames(),
       withWorld: (run, townId) => {
         attempts += 1;
 

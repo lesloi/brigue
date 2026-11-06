@@ -9,21 +9,21 @@ export interface IssuedToken {
 
 export async function issueToken(
   store: PlayerStore,
-  worldId: string,
+  townId: number,
   houseId: string,
   now: Date = new Date(),
   mint: () => string = mintToken,
 ): Promise<IssuedToken> {
   // A wrong id here is a server bug, not a player's refusal: throw while the
   // server is creating the house, not later when the player logs in.
-  if (worldId.length === 0 || houseId.length === 0) {
-    throw new Error('a token needs a world and a house');
+  if (townId <= 0 || houseId.length === 0) {
+    throw new Error('an account needs a town and a house');
   }
 
   const token = mint();
-  const player: Player = {
+  const player: Omit<Player, 'playerId'> = {
     tokenHash: hashToken(token),
-    worldId,
+    townId,
     houseId,
     createdAt: now,
     lastSeenAt: now,
@@ -31,9 +31,7 @@ export async function issueToken(
     deleteAfter: null,
   };
 
-  await store.insert(player);
-
-  return { token, player };
+  return { token, player: await store.insert(player) };
 }
 
 export async function authenticate(store: PlayerStore, token: string | undefined): Promise<Player | null> {

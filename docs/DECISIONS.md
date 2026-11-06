@@ -21,9 +21,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **A join takes the first free place; a full world gets a new town.** The towns are visited
   least filled first — the one that needs people most — and the oldest breaks a tie. A human house
   no player has ever taken is a free place, and a town below twenty houses takes a new human
-  house; a town whose humans have all gone is left to its deletion, never given to a newcomer. When no town has a place, the join founds one — three AI houses and the
-  newcomer's house — and names it by drawing from a list of places, each name used once per
-  database.
+  house; a town whose humans have all gone is left to its deletion, never given to a newcomer.
+  When no town has a place, the join founds one — three AI houses and the newcomer's house — and
+  names it by drawing from a list of places. A name may come back; its id, assigned by the
+  database, never does.
 
 - **A silent house is forgotten, not robbed; a human who arrives takes an AI's place.** Silence
   is a state of the town, not a punishment: a house with no visit for a few days — three,
@@ -34,7 +35,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   governed by the houses that are there, which is the point of a shared council. After thirty days
   without a visit the house is deleted and the token with it: no return, no vacation mode, and no
   AI ever plays it. When the last human house goes, the town goes with it: the next player starts
-  a new town, and only the sealed register and the book of kings cross. The scheduler applies the
+  a new town, and only the book of kings crosses. The scheduler applies the
   same silence rule on every pass, so a town with no player expires without waiting for a visit.
   The deletion stays an edge rule. A revoked token does not free the house: it waits for its
   owner until the deletion, like a silent one, and no arrival inherits its purse, its stock or
@@ -84,12 +85,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   seven in the county, seven in the kingdom; the mayor heads the town, the count the county, the
   king the kingdom. Each tier holds a right the tier below cannot exercise, never a stronger
   version of it: the town fixes prices, taxes, crimes, the market and the court; the county holds
-  the tolls, the roads, the granary and the appeal against a town; the kingdom holds the coin, the
-  general ordinance and the staple — the staple being the right to force a good through one town
-  before it is sold elsewhere. The pyramid of twelve is the lowest tier, not the
-  whole house. None of it above the town is in the code, and the town comes first: the county and
-  the kingdom wait until the town has a council that votes, a court and a register. Revisit if the
-  tiers end up voting the same thing three times.
+  the tolls, the roads, the granary and the appeal against a town; the kingdom holds the coin.
+  The pyramid of twelve is the lowest tier, not the whole house. None of it above the town is in
+  the code, and the town comes first: the county and the kingdom wait until the town has a council
+  that votes and a court. Revisit if the tiers end up voting the same thing three times.
 
 - **One franchise everywhere.** Every house votes at every tier, at the same scrutiny, with the
   same roll and the same campaign bonus; what changes with the tier is the title required, the
@@ -110,27 +109,23 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   and it has two speeds on purpose: the incumbent accumulates, the newcomer buys a campaign.
   Revisit if one speed swallows the other.
 
-- **The long game is the register, and the register is a chronicle.** One line per house at the
-  clerk's office — prestige, offices held, titles, generations and wealth — shown to everyone. No
-  single number ranks them: the register ranks by column, so a merchant, a notable and a dynasty
-  are each first at something. A cumulative score would put the oldest house ahead forever and
-  turn a story into a points race. While the town lives the register is never wiped: 1407 stays 1407. Revisit if the columns stop saying anything.
+- **The book of kings is the only record that crosses a reset.** One line per reign at the
+  clerk's office: the player, the house, the person, the instant of the crowning and the time it
+  took to crown a king. No register of houses crosses; the town's own houses are the register
+  while it lives, and they go with it. The crown follows the player, not the name: a name taken
+  again inherits nothing. Revisit if the long game needs the houses' columns.
 
 - **The only ending is a won crown, and the crown reigns a day.** No season ends on a clock and no
-  wipe takes the register: a house is reset by death, one at a time, so the register turns over
-  without being erased. The town ends when a king is crowned: the kingdom election is the last
-  election, and its winner reigns one real day — a town year — before the world closes. The day
-  is not a formality: he grants the staple and issues the ordinance, and the town lives under them
-  until midnight. Nobody can depose him: there is no plot and no counter-power, because the season
-  is already over.
+  wipe takes the book: a house is reset by death, one at a time, so the town turns over without
+  being erased. The town ends when a king is crowned: the kingdom election is the last election,
+  and its winner reigns one real day — a town year — before the world closes. The day is a
+  formality: he grants nothing, and the town lives as it did. Nobody can depose him: there is no
+  plot and no counter-power, because the season is already over.
   Neither bell of that last day renews anything — the seal takes their place — and it opens a new
-  town with the same names. What crosses is the record and nothing else: the
-  sealed register is kept and readable, the king enters the book of kings with his house, his day
-  and the line of what he did — the ordinance he gave and the staple he granted — and his line
-  wears the crown there. The crown follows the player, not the name: a name taken again inherits
-  nothing. It is worth no more than the line it writes. No law
-  of his binds the new town, and the good he favoured has no privilege in it. Revisit if the last
-  election is decided before it starts, or if the day goes unwatched.
+  town with the same names. What crosses is the book of kings: the player, the house, the person,
+  the instant of the crowning and the time it took. The crown follows the player, not the name: a
+  name taken again inherits nothing. Revisit if the last election is decided before it starts, or
+  if the day goes unwatched.
 
 - **The residence is one ladder.** The title opens a level, money pays for it, and the level sets
   the prestige cap, the defence of the stock, the warehouse capacity and the number of workshops.
@@ -201,7 +196,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   scheduler keeps pace, `PACING.journalRetentionHours` — keeping the newest fifty whatever their
   age, so the journal always has a page. The cut follows the town's hour, not the wall clock, so a
   frozen town keeps its journal, and the table is bounded by a week of the town's own events. The
-  register carries what lasts; the journal carries only what is new.
+  book of kings carries what lasts; the journal carries only what is new.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new
@@ -214,12 +209,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   players whose history matters, a breaking change ships a migration by default.
 
   This first format resets with `pnpm --filter @brigue/server reset`: the schema is dropped and
-  rebuilt from the one migration, and the sealed seasons stay untouched. `--check` shows what
+  rebuilt from the one migration, and the book of kings stays untouched. `--check` shows what
   would go, `--force` skips the question, and otherwise an operator reads the same report and
   answers `yes` on a terminal; without one, it refuses. A full reset, with `--full`, deletes the
-  sealed seasons too and is the only one that touches the register. The tokens do not cross yet
-  — the tables that hold the binding are rebuilt, and nothing can bind a token to a new house —
-  so a reset clears them with the town until the seal lands.
+  book too and is the only one that touches it. The accounts do not cross yet — the tables that
+  hold the binding are rebuilt, and nothing can bind an account to a new house — so a reset
+  clears them with the town until #69 lands.
 
   The next format carries the clock, the scheduler, the journal and the tables, and nothing else:
   the town's politics lands additively inside it, and the floors above the town wait for the
@@ -405,17 +400,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   engagements, campaigns and the market are a town itself. One row per town in `state` carries
   what belongs to no house: the seed, the generator's cursor, the hour and the year; it is what
   the writer locks. The simulation still reads and writes a town whole, but the storage keeps it
-  in rows, so a screen can read the market alone and the register is a query. A format change is
-  a migration across those tables; a reset is a wipe of them. Deleting a town cascades its
-  tables; the players, the spent place names and the sealed register, keyed by town and season,
-  outlive it. What a
-  sealed season keeps is the register: the seal writes the houses' last columns and the book of
-  kings into an archive that outlives every ordinary reset, a format change included, and the
-  town itself is dropped; only a full reset deletes it.
-  The players outlive a season's seal, which takes the house and keeps the token; this first
+  in rows, so a screen can read the market alone and the book of kings is a query. A format change
+  is a migration across those tables; a reset is a wipe of them. Deleting a town cascades its
+  tables; the accounts and the book of kings outlive it. What a sealed season keeps is the book:
+  the seal writes the crowned player, the house, the person, the instant and the time it took; the
+  town itself is dropped, and only a full reset deletes the book.
+  The accounts outlive a season's seal, which takes the house and keeps the account; this first
   format change rebuilt the tables that hold the binding before that seal existed, so it clears
-  the tokens with the town. Once the seal lands, a reset keeps them. Revisit if the archive must
-  hold the whole town, or if several towns in one database prove too rigid for tests.
+  the accounts with the town. Once #69 lands, a reset keeps them. Revisit if the book must hold
+  the houses' columns, or if several towns in one database prove too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
   seed and the generator; published, it would let a client brute-force a young town's seed and

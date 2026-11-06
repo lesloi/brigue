@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Pool } from 'pg';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createWorld, RULES, WorldVersionError, type Action, type Event, type World } from '@brigue/core';
 
@@ -26,58 +26,46 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     store = new PgWorldStore(pool);
   });
 
-  afterEach(async () => {
-    // Deleting the towns cascades their tables; the sealed seasons stay outside.
-    await pool.query(
-      `DELETE FROM towns;
-       DELETE FROM town_names;
-       DELETE FROM actions;
-       DELETE FROM events;
-       DELETE FROM seats;
-       DELETE FROM laws;
-       DELETE FROM engagements;
-       DELETE FROM campaigns;
-       DELETE FROM stock;
-       DELETE FROM workshops;
-       DELETE FROM people;
-       DELETE FROM market_history;
-       DELETE FROM market;
-       DELETE FROM houses;
-       DELETE FROM state;
-       DELETE FROM archive_houses;
-       DELETE FROM kings;`,
-    );
-    // The player rows live outside the town, so the cascade does not take them.
-    await pool.query('DELETE FROM players WHERE world_id = $1', [TEST_TOWN.id]);
-  });
+  async function clean(): Promise<void> {
+    // The town cascades its tables; the accounts and the book live outside it.
+    // Restarting the identity keeps every case on the same town id; the book is
+    // deleted before the accounts it names, and both are scoped to this fixture
+    // so the parallel account test keeps its own rows.
+    await pool.query('DELETE FROM kings WHERE player_id IN (SELECT player_id FROM players WHERE town_id = $1)', [
+      TEST_TOWN.id,
+    ]);
+    await pool.query('DELETE FROM players WHERE town_id = $1', [TEST_TOWN.id]);
+    await pool.query('TRUNCATE towns RESTART IDENTITY CASCADE');
+  }
+
+  beforeEach(clean);
+  afterEach(clean);
 
   afterAll(async () => {
     // The store owns no pool of its own; the test built this one and closes it.
     await pool.end();
   });
 
-  it('keeps the first world when the same town is created twice', async () => {
+  it('creates a second town when called twice', async () => {
     // Arrange
     const first = { ...createWorld(11), hour: 5 };
     const second = { ...createWorld(22), hour: 9 };
-    const firstAt = new Date(START);
-    const laterAt = new Date(START.getTime() + 60 * 60 * 1000);
 
     // Act
-    await store.createTown(TEST_TOWN, first, firstAt);
-    await store.createTown(TEST_TOWN, second, laterAt);
-    const snapshot = await withWorld(async (session) => session.snapshot);
+    const created = await store.createTown(TEST_TOWN.name, first, START);
+    const again = await store.createTown(TEST_TOWN.name, second, START);
 
-    // Assert
-    expect(snapshot.world).toEqual(first);
-    expect(snapshot.hourStartedAt).toEqual(firstAt);
+    // Assert: an id is assigned, and a second call is a second town.
+    expect(created.id).toBe(TEST_TOWN.id);
+    expect(again.id).not.toBe(created.id);
+    expect(await store.listTowns()).toHaveLength(2);
   });
 
   it('refuses a world it does not hold', async () => {
     // Arrange
 
     // Act
-    const attempt = store.withWorld(async () => null, 'nowhere');
+    const attempt = store.withWorld(async () => null, 999_999);
 
     // Assert
     await expect(attempt).rejects.toBeInstanceOf(UnknownWorldError);
@@ -86,7 +74,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('serialises two writers on the row lock', async () => {
     // Arrange
     const startHour = 5;
-    await store.createTown(TEST_TOWN, { ...createWorld(3), hour: startHour }, START);
+    await store.createTown(TEST_TOWN.name, { ...createWorld(3), hour: startHour }, START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
     const firstEntered = new Promise<void>((resolve) => {
@@ -123,7 +111,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('raises DuplicateActionError on a UUID it already stored', async () => {
     // Arrange
-    await store.createTown(TEST_TOWN, createWorld(4), START);
+    await store.createTown(TEST_TOWN.name, createWorld(4), START);
     const action = storedAction(randomUUID(), 1, buy(2));
     await withWorld(async (session) => session.append(action));
 
@@ -140,7 +128,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: insert the lexically greater UUID first, so only `seq` can put
     // them back in insertion order. Ids are random per run because actions are
     // kept across runs on a developer's database.
-    await store.createTown(TEST_TOWN, createWorld(5), START);
+    await store.createTown(TEST_TOWN.name, createWorld(5), START);
     const [lexicallyFirst, lexicallyLast] = [randomUUID(), randomUUID()].sort();
     const first = storedAction(lexicallyLast, 1, buy(1));
     const second = storedAction(lexicallyFirst, 1, buy(2));
@@ -161,7 +149,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('stops returning an action once it is cancelled, and keeps its row', async () => {
     // Arrange
-    await store.createTown(TEST_TOWN, createWorld(6), START);
+    await store.createTown(TEST_TOWN.name, createWorld(6), START);
     const action = storedAction(randomUUID(), 1, buy(2));
     await withWorld(async (session) => {
       await session.append(action);
@@ -215,7 +203,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       },
     ];
     const hourStartedAt = new Date(START.getTime() + 42_000);
-    await store.createTown(TEST_TOWN, world, START);
+    await store.createTown(TEST_TOWN.name, world, START);
 
     // Act
     await withWorld(async (session) => {
@@ -239,7 +227,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: four town events, one private to another house, read two at a
     // time for this house.
     const world = createWorld(3);
-    await store.createTown(TEST_TOWN, world, START);
+    await store.createTown(TEST_TOWN.name, world, START);
     const events: Event[] = [
       {
         type: 'market.bought',
@@ -295,7 +283,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('clears the town, its queue and its journal, and keeps players and the sealed seasons', async () => {
     // Arrange: a town with an action and an event, plus what lives outside it.
     const world = { ...createWorld(8), hour: 5 };
-    await store.createTown(TEST_TOWN, world, START);
+    await store.createTown(TEST_TOWN.name, world, START);
     await withWorld(async (session) => {
       await session.append(storedAction(randomUUID(), 5, buy(2)));
       await session.save(world, START, [
@@ -312,29 +300,25 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       ]);
     });
     const tokenHash = 'b'.repeat(64);
-    await pool.query(`INSERT INTO players (token_hash, world_id, house_id) VALUES ($1, 'saint-aubin', 'leclerc')`, [
-      tokenHash,
-    ]);
-    await pool.query(
-      `INSERT INTO archive_houses (town_id, season, name, prestige, offices_held, title, generations, wealth_cents)
-       VALUES ('saint-aubin', 1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
+    const { rows: playerRows } = await pool.query<{ player_id: string }>(
+      `INSERT INTO players (token_hash, town_id, house_id) VALUES ($1, $2, 'leclerc') RETURNING player_id`,
+      [tokenHash, TEST_TOWN.id],
     );
     await pool.query(
-      `INSERT INTO kings (town_id, crowned_at, token_hash, house_name, person_name)
-       VALUES ('saint-aubin', now(), $1, 'Leclerc', 'Aubin')`,
-      [tokenHash],
+      `INSERT INTO kings (player_id, house_name, person_name, crowned_at, elapsed_hours)
+       VALUES ($1, 'Leclerc', 'Aubin', now(), 12)`,
+      [Number(playerRows[0]?.player_id)],
     );
 
     // Act
     await withWorld(async (session) => session.clear());
 
-    // Assert: the town is gone whole, the people and the register stay.
+    // Assert: the town is gone whole, the accounts and the book stay.
     const state = await pool.query('SELECT count(*)::int AS count FROM state');
     const houses = await pool.query('SELECT count(*)::int AS count FROM houses');
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
     const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
-    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE world_id = $1', [TEST_TOWN.id]);
-    const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
+    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE town_id = $1', [TEST_TOWN.id]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
     expect(state.rows[0]?.count).toBe(0);
@@ -342,28 +326,27 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(events.rows[0]?.count).toBe(0);
     expect(actions.rows[0]?.count).toBe(0);
     expect(players.rows[0]?.count).toBe(1);
-    expect(archive.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
     await expect(withWorld(async (session) => session.snapshot)).rejects.toBeInstanceOf(UnknownWorldError);
   });
 
   it('keeps two towns apart', async () => {
     // Arrange
-    await store.createTown({ id: 'a', name: 'A' }, { ...createWorld(1), seed: 1 }, START);
-    await store.createTown({ id: 'b', name: 'B' }, { ...createWorld(2), seed: 2 }, START);
+    const a = await store.createTown('A', { ...createWorld(1), seed: 1 }, START);
+    const b = await store.createTown('B', { ...createWorld(2), seed: 2 }, START);
 
     // Act
-    const first = await store.withWorld(async (session) => session.snapshot, 'a');
-    const second = await store.withWorld(async (session) => session.snapshot, 'b');
+    const first = await store.withWorld(async (session) => session.snapshot, a.id);
+    const second = await store.withWorld(async (session) => session.snapshot, b.id);
     const towns = await store.listTowns();
 
     // Assert: each town reads its own state and name.
-    expect(first.town).toEqual({ id: 'a', name: 'A' });
-    expect(second.town).toEqual({ id: 'b', name: 'B' });
+    expect(first.town).toEqual(a);
+    expect(second.town).toEqual(b);
     expect(first.world.seed).toBe(1);
     expect(second.world.seed).toBe(2);
     // Same size, so the older town comes first.
-    expect(towns.map((entry) => entry.id)).toEqual(['a', 'b']);
+    expect(towns.map((entry) => entry.id)).toEqual([a.id, b.id]);
   });
 
   it('serialises two joins on the advisory lock', async () => {
@@ -393,30 +376,31 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(order).toEqual(['first:start', 'first:end', 'second']);
   });
 
-  it('keeps a place name spent when its town is gone', async () => {
+  it('gives a name that comes back a new id', async () => {
     // Arrange
-    await store.createTown({ id: 'a', name: 'Amiens' }, createWorld(1), START);
+    const first = await store.createTown('Amiens', createWorld(1), START);
 
     // Act
-    await store.withWorld(async (session) => session.clear(), 'a');
+    await store.withWorld(async (session) => session.clear(), first.id);
+    const second = await store.createTown('Amiens', createWorld(2), START);
 
-    // Assert: the dead town's name is never drawn again.
-    expect(await store.usedTownNames()).toContain('Amiens');
-    expect(await store.listTowns()).toEqual([]);
+    // Assert: the dead town's name may return, its id may not.
+    expect(second.name).toBe('Amiens');
+    expect(second.id).not.toBe(first.id);
   });
 
   it('lists the least-filled town first, the oldest on a tie', async () => {
     // Arrange: an older town of four houses and a younger one of three.
-    await store.createTown({ id: 'old', name: 'Old' }, town(9), START);
-    await store.createTown({ id: 'new', name: 'New' }, createWorld(8), START);
+    const old = await store.createTown('Old', town(9), START);
+    const young = await store.createTown('New', createWorld(8), START);
 
     // Act and assert: the emptier town comes first, whatever its age.
-    expect((await store.listTowns()).map((entry) => entry.id)).toEqual(['new', 'old']);
+    expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
   });
 
   it('drops the journal older than the cut and keeps the newest page', async () => {
     // Arrange: two pages and a bit of entries, one per hour.
-    await store.createTown(TEST_TOWN, createWorld(4), START);
+    await store.createTown(TEST_TOWN.name, createWorld(4), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 120));
     });
@@ -434,7 +418,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('keeps the entry exactly on the cut', async () => {
     // Arrange
-    await store.createTown(TEST_TOWN, createWorld(5), START);
+    await store.createTown(TEST_TOWN.name, createWorld(5), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 120));
     });
@@ -453,7 +437,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('deletes nothing from a journal shorter than a page', async () => {
     // Arrange: ten entries, all older than the cut.
-    await store.createTown(TEST_TOWN, createWorld(6), START);
+    await store.createTown(TEST_TOWN.name, createWorld(6), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 10));
     });
@@ -470,7 +454,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('rolls the world and the actions back when the callback throws', async () => {
     // Arrange
     const world = { ...createWorld(6), hour: 3 };
-    await store.createTown(TEST_TOWN, world, START);
+    await store.createTown(TEST_TOWN.name, world, START);
     const action = storedAction(randomUUID(), 3, buy(1));
 
     // Act: a catch-up that refuses the world version, after writing both tables.

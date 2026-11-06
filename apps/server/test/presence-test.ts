@@ -19,7 +19,8 @@ const START = Date.parse('2026-11-05T12:00:00.000Z');
 function player(houseId: string, lastSeenAt: Date, revokedAt: Date | null = null): Player {
   return {
     tokenHash: houseId.padEnd(64, '0'),
-    worldId: TEST_TOWN.id,
+    playerId: 1,
+    townId: TEST_TOWN.id,
     houseId,
     createdAt: lastSeenAt,
     lastSeenAt,
@@ -210,7 +211,7 @@ async function start(
     });
   running.push(close);
 
-  await worlds.createTown(TEST_TOWN, world, new Date(now));
+  await worlds.createTown(TEST_TOWN.name, world, new Date(now));
 
   const cookies: Record<string, string> = {};
   for (const entry of players) {
@@ -254,7 +255,7 @@ describe('the thirty-day deletion', () => {
     expect(body.world.town.seats.maire.personId).toBeNull();
     expect(await authenticate(harness.store, caronToken)).toBeNull();
 
-    const rows = (await harness.store.listByWorld(TEST_TOWN.id)).filter((row) => row.houseId === 'caron');
+    const rows = (await harness.store.listByTown(TEST_TOWN.id)).filter((row) => row.houseId === 'caron');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.revokedAt).not.toBeNull();
 

@@ -83,7 +83,7 @@ async function start(
   );
 
   const world = options.world ?? town(20261031);
-  await worlds.createTown(TEST_TOWN, world, new Date(clock.now));
+  await worlds.createTown(TEST_TOWN.name, world, new Date(clock.now));
 
   const houses = options.houses ?? ['leclerc'];
   const cookies: Record<string, string> = {};

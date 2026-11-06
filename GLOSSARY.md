@@ -32,8 +32,8 @@ French in the data and in the interface, and the English here is only how we tal
 - **Maire** — the mayor. Presides, sets the agenda, hears appeals, sets the sales and guild taxes.
   The head of the town, and the lowest tier of the ladder.
 - **Comte** — the count. The head of a county: the company, the roads, the appeal against a town.
-- **Roi** — the head of the kingdom: the ordinance and the staple. The coin belongs to the
-  kingdom's own officers, not to his day. Crowned, he reigns one real day, and then the town closes.
+- **Roi** — the head of the kingdom. The coin belongs to the kingdom's own officers, not to his
+  day. Crowned, he reigns one real day, and then the town closes.
 - **Prévôt** — the provost. Opens investigations, seizes goods, holds the watch, defines crimes.
 - **Échevin du ban** — the alderman of the ban. One of them; fixes the prices of the town's goods,
   and the rents.
@@ -54,10 +54,8 @@ French in the data and in the interface, and the English here is only how we tal
   jury, a vote with the winner) and by visible spending (a gift, a work, a banquet); lost by
   offence.
 - **Prestige** — prestige: what the town thinks of the house; the residence level caps it.
-- **Registre** — the clerk's record of the houses: prestige, offices held, titles, generations and
-  wealth, shown by column rather than summed into one score.
-- **Livre des rois** — the page of the register that lists the crowned kings, their house, their
-  day and the line of what they did, kept across towns.
+- **Livre des rois** — the clerk's record of the crowned kings: their player, house, person, day
+  and the time it took, kept across towns.
 
 ## The law
 
@@ -90,9 +88,9 @@ French in the data and in the interface, and the English here is only how we tal
   town, not a coin: it exists so a tax can be written as "one denier a piece" without introducing
   a fraction of a cent.
 - **Halle** — the market hall, where goods are sold and where a place must be granted.
-- **Étape** — the staple: the right to force a good through one town before it is sold elsewhere.
-  Only the crown grants it, and it is what makes a town rich at its neighbours' expense.
 - **Sceau** — the seal that certifies cloth; also the drawn mark of a place on the map.
+- **Sceau de saison** — the instant a season closes: the crowned king enters the book of kings,
+  and the town is gone.
 - **Drap** — cloth, the good of chapter I.
 - **Laine** — wool, the raw material of cloth.
 - **Blé** — grain, the raw material of bread.

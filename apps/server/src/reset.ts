@@ -4,52 +4,36 @@ import { buildSchema, withMigrationLock } from './migrations.ts';
 
 export interface ResetOptions {
   /**
-   * Also delete the sealed seasons. They outlive every other reset, so this is
-   * the one wipe that takes the register and the book of kings with it.
+   * Also delete the book of kings. It outlives every other reset, so this is
+   * the one wipe that takes it with the town.
    */
   full?: boolean;
 }
 
 export interface ResetReport {
-  /** Sealed seasons carried across; zero on a full reset. */
-  archivedHouses: number;
+  /** Kings carried across; zero on a full reset. */
   kings: number;
-  /** Place names already spent; zero on a full reset. */
-  townNames: number;
-  /** Whether the sealed seasons were deleted too. */
+  /** Whether the book of kings was deleted too. */
   full: boolean;
   /** The migrations the empty schema was built from. */
   applied: string[];
 }
 
-interface SurvivingArchive {
-  town_id: string;
-  season: number;
-  name: string;
-  prestige: number;
-  offices_held: number;
-  title: string;
-  generations: number;
-  wealth_cents: number;
-}
-
 interface SurvivingKing {
-  town_id: string;
-  crowned_at: Date;
-  token_hash: string;
+  player_id: number;
   house_name: string;
   person_name: string;
-  ordinance: string | null;
-  staple_good: string | null;
+  crowned_at: Date;
+  elapsed_hours: number;
 }
 
 /**
  * Drops the whole schema and builds it again from the migrations.
  *
- * The sealed seasons — the register and the book of kings — are copied across,
- * because no ordinary reset touches them. A full reset deletes them too. The
- * town and its players always go: the tables that hold the token binding are
- * rebuilt, and nothing can bind a token to a new house yet.
+ * The book of kings is copied across, because no ordinary reset touches it. A
+ * full reset deletes it too. The town and its accounts always go: the tables
+ * that hold the binding are rebuilt, and nothing can bind an account to a new
+ * house yet.
  *
  * Destructive by design: the caller asks the operator first.
  */
@@ -60,20 +44,9 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
     await client.query('BEGIN');
 
     try {
-      // Read what survives before anything is dropped. The old schema has
-      // neither the archive nor the kings, so each table is read only if it is
-      // there, and a full reset carries nothing.
-      const archivedHouses = full
-        ? []
-        : await survivors<SurvivingArchive>(
-            client,
-            'archive_houses',
-            'town_id, season, name, prestige, offices_held, title, generations, wealth_cents',
-          );
+      // Read what survives before anything is dropped. A full reset carries
+      // nothing.
       const kings = full ? [] : await survivingKings(client);
-      // A spent name stays spent: the archive keeps town ids, and a recycled
-      // name would recycle its id into an archived season.
-      const townNames = full ? [] : await survivors<{ name: string }>(client, 'town_names', 'name');
 
       await client.query('DROP SCHEMA public CASCADE');
       await client.query('CREATE SCHEMA public');
@@ -82,51 +55,25 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
 
       await insertRows(
         client,
-        'archive_houses',
-        ['town_id', 'season', 'name', 'prestige', 'offices_held', 'title', 'generations', 'wealth_cents'],
-        archivedHouses.map((house) => [
-          house.town_id,
-          house.season,
-          house.name,
-          house.prestige,
-          house.offices_held,
-          house.title,
-          house.generations,
-          house.wealth_cents,
-        ]),
-      );
-      await insertRows(
-        client,
         'kings',
-        ['town_id', 'crowned_at', 'token_hash', 'house_name', 'person_name', 'ordinance', 'staple_good'],
-        kings.map((king) => [
-          king.town_id,
-          king.crowned_at,
-          king.token_hash,
-          king.house_name,
-          king.person_name,
-          king.ordinance,
-          king.staple_good,
-        ]),
-      );
-      await insertRows(
-        client,
-        'town_names',
-        ['name'],
-        townNames.map((town) => [town.name]),
+        ['player_id', 'house_name', 'person_name', 'crowned_at', 'elapsed_hours'],
+        kings.map((king) => [king.player_id, king.house_name, king.person_name, king.crowned_at, king.elapsed_hours]),
       );
 
-      // One commit: a crash before it leaves the old town and its tokens
+      // The rebuilt players sequence starts at one; the carried book must not
+      // hand its ids to a new account. The next account takes max + 1.
+      if (kings.length > 0) {
+        const maxPlayerId = kings.reduce((max, king) => Math.max(max, king.player_id), 0);
+        await client.query(`SELECT setval(pg_get_serial_sequence('players', 'player_id'), $1, false)`, [
+          maxPlayerId + 1,
+        ]);
+      }
+
+      // One commit: a crash before it leaves the old town and its accounts
       // untouched, and the operator retries.
       await client.query('COMMIT');
 
-      return {
-        archivedHouses: archivedHouses.length,
-        kings: kings.length,
-        townNames: townNames.length,
-        full,
-        applied,
-      };
+      return { kings: kings.length, full, applied };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -134,25 +81,11 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
   });
 }
 
-async function survivors<T>(client: PoolClient, table: string, columns: string): Promise<T[]> {
-  const { rows } = await client.query<{ present: boolean }>(
-    `SELECT to_regclass('public.${table}') IS NOT NULL AS present`,
-  );
-
-  if (rows[0]?.present !== true) {
-    return [];
-  }
-
-  const survivors = await client.query(`SELECT ${columns} FROM ${table}`);
-
-  return survivors.rows as T[];
-}
-
 /**
- * The book of kings used to hold the town's hour in an integer. A town hour
- * cannot become an instant once the town is dropped, so an old book with rows
- * stops the reset with a named reason instead of a silent cast. The book is
- * empty today, so an empty old table crosses as nothing.
+ * The book of kings used to hold an older shape: a town, a token hash, an
+ * integer instant, no player id. A reset cannot convert those rows, so an old
+ * book with rows stops the reset with a named reason instead of a silent cast.
+ * The book is empty today, so an empty old table crosses as nothing.
  */
 async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   const { rows: present } = await client.query<{ present: boolean }>(
@@ -163,30 +96,44 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
     return [];
   }
 
-  const { rows: columns } = await client.query<{ data_type: string }>(
-    `SELECT data_type
+  const { rows: columns } = await client.query<{ column_name: string; data_type: string }>(
+    `SELECT column_name, data_type
      FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'kings' AND column_name = 'crowned_at'`,
+     WHERE table_schema = 'public' AND table_name = 'kings'`,
   );
+  const types = new Map(columns.map((column) => [column.column_name, column.data_type]));
+  const shape =
+    types.get('player_id') === 'bigint' &&
+    types.get('elapsed_hours') === 'integer' &&
+    types.get('crowned_at') === 'timestamp with time zone';
 
-  if (columns[0]?.data_type !== 'timestamp with time zone') {
+  if (!shape) {
     const { rows: count } = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM kings');
 
     if ((count[0]?.count ?? 0) > 0) {
       throw new Error(
-        'the book of kings holds town hours that cannot be converted to instants; delete its rows first, or reset with --full (which also deletes the register)',
+        'the book of kings has an old shape; delete its rows first, or reset with --full (which also deletes the book)',
       );
     }
 
     return [];
   }
 
-  const { rows } = await client.query(
-    `SELECT town_id, crowned_at, token_hash, house_name, person_name, ordinance, staple_good
-     FROM kings`,
-  );
+  const { rows } = await client.query<{
+    player_id: string;
+    house_name: string;
+    person_name: string;
+    crowned_at: Date;
+    elapsed_hours: number;
+  }>(`SELECT player_id, house_name, person_name, crowned_at, elapsed_hours FROM kings`);
 
-  return rows as SurvivingKing[];
+  return rows.map((row) => ({
+    player_id: Number(row.player_id),
+    house_name: row.house_name,
+    person_name: row.person_name,
+    crowned_at: row.crowned_at,
+    elapsed_hours: row.elapsed_hours,
+  }));
 }
 
 async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {
@@ -218,16 +165,13 @@ export interface ResetPreview {
   database: string;
   tables: TablePreview[];
   full: boolean;
-  /** Sealed seasons that would survive; zero on a full reset. */
-  archivedHouses: number;
+  /** Kings that would survive; zero on a full reset. */
   kings: number;
-  /** Spent place names that would survive; zero on a full reset. */
-  townNames: number;
 }
 
 /**
  * Reads the database the way the reset would see it: every table in `public`
- * with its row count, and what the sealed seasons hold. Read-only, so it can
+ * with its row count, and what the book of kings holds. Read-only, so it can
  * answer before a destructive run.
  */
 export async function previewReset(pool: Pool, options: ResetOptions = {}): Promise<ResetPreview> {
@@ -250,9 +194,7 @@ export async function previewReset(pool: Pool, options: ResetOptions = {}): Prom
     database: database[0]?.name ?? 'unknown',
     tables: previews,
     full,
-    archivedHouses: full ? 0 : await countIfPresent(pool, 'archive_houses'),
     kings: full ? 0 : await countIfPresent(pool, 'kings'),
-    townNames: full ? 0 : await countIfPresent(pool, 'town_names'),
   };
 }
 

@@ -52,21 +52,18 @@ export class PgWorldStore implements WorldStore {
     this.lockConfig = lockConfig;
   }
 
-  async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
+  async createTown(name: string, world: World, hourStartedAt: Date): Promise<TownInfo> {
     const client = await this.pool.connect();
 
     try {
       await client.query('BEGIN');
-      await client.query(`INSERT INTO towns (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`, [
-        town.id,
-        town.name,
-      ]);
-      const { rowCount } = await client.query(
+      const { rows } = await client.query<{ id: string }>(`INSERT INTO towns (name) VALUES ($1) RETURNING id`, [name]);
+      const id = Number(rows[0]?.id);
+      await client.query(
         `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, engagement_seq, hour_started_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         ON CONFLICT (town_id) DO NOTHING`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
-          town.id,
+          id,
           world.formatVersion,
           world.rulesetVersion,
           world.seed,
@@ -77,13 +74,11 @@ export class PgWorldStore implements WorldStore {
           hourStartedAt,
         ],
       );
-
-      if (rowCount === 1) {
-        await writeWorld(client, town.id, world);
-        await client.query(`INSERT INTO town_names (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [town.name]);
-      }
+      await writeWorld(client, id, world);
 
       await client.query('COMMIT');
+
+      return { id, name };
     } catch (error) {
       await rollback(client);
       throw error;
@@ -95,7 +90,7 @@ export class PgWorldStore implements WorldStore {
   async listTowns(): Promise<TownInfo[]> {
     // Least filled first: the join takes the town that needs people most, and
     // the oldest breaks a tie.
-    const { rows } = await this.pool.query<TownInfo>(
+    const { rows } = await this.pool.query<{ id: string; name: string }>(
       `SELECT t.id, t.name
        FROM towns t
        LEFT JOIN houses h ON h.town_id = t.id
@@ -103,16 +98,10 @@ export class PgWorldStore implements WorldStore {
        ORDER BY count(h.id), t.created_at, t.id`,
     );
 
-    return rows;
+    return rows.map((row) => ({ id: Number(row.id), name: row.name }));
   }
 
-  async usedTownNames(): Promise<string[]> {
-    const { rows } = await this.pool.query<{ name: string }>(`SELECT name FROM town_names ORDER BY created_at, name`);
-
-    return rows.map((row) => row.name);
-  }
-
-  async pruneJournal(townId: string, oldestKeptHour: number): Promise<void> {
+  async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
     // The boundary is the id of the newest page's oldest entry; a journal with
     // fewer than a page has none, and `id < NULL` deletes nothing. The index on
     // (town_id, id) serves both the boundary and the walk back from the newest.
@@ -131,7 +120,7 @@ export class PgWorldStore implements WorldStore {
     );
   }
 
-  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
     const client = await this.pool.connect();
 
     try {
@@ -173,9 +162,9 @@ export class PgWorldStore implements WorldStore {
 class PgWorldSession implements WorldSession {
   readonly snapshot: WorldSnapshot;
   private readonly client: PoolClient;
-  private readonly townId: string;
+  private readonly townId: number;
 
-  constructor(client: PoolClient, townId: string, snapshot: WorldSnapshot) {
+  constructor(client: PoolClient, townId: number, snapshot: WorldSnapshot) {
     this.client = client;
     this.townId = townId;
     this.snapshot = snapshot;
@@ -297,7 +286,7 @@ export async function createPgWorldStore(connectionString: string): Promise<PgWo
   return new PgWorldStore(new PgPool({ connectionString }));
 }
 
-async function readWorld(client: PoolClient, townId: string): Promise<WorldSnapshot> {
+async function readWorld(client: PoolClient, townId: number): Promise<WorldSnapshot> {
   const town = await client.query<{ id: string; name: string }>(`SELECT id, name FROM towns WHERE id = $1`, [townId]);
   const townRow = town.rows[0];
   if (!townRow) {
@@ -458,7 +447,7 @@ async function readWorld(client: PoolClient, townId: string): Promise<WorldSnaps
   }
 
   return {
-    town: { id: townRow.id, name: townRow.name },
+    town: { id: Number(townRow.id), name: townRow.name },
     world,
     hourStartedAt: asDate(row.hour_started_at),
   };
@@ -469,7 +458,7 @@ async function readWorld(client: PoolClient, townId: string): Promise<WorldSnaps
  * them again: a house that disappeared, or a stock that fell to zero, cannot
  * leave a row behind the way an upsert would.
  */
-async function clearWorld(client: PoolClient, townId: string): Promise<void> {
+async function clearWorld(client: PoolClient, townId: number): Promise<void> {
   // One statement per table: a parameterised query is sent with the extended
   // protocol, which refuses several commands at once.
   await client.query('DELETE FROM seats WHERE town_id = $1', [townId]);
@@ -484,7 +473,7 @@ async function clearWorld(client: PoolClient, townId: string): Promise<void> {
   await client.query('DELETE FROM houses WHERE town_id = $1', [townId]);
 }
 
-async function writeWorld(client: PoolClient, townId: string, world: World): Promise<void> {
+async function writeWorld(client: PoolClient, townId: number, world: World): Promise<void> {
   const houses = Object.values(world.houses).sort((left, right) => left.id.localeCompare(right.id));
 
   await insertRows(
@@ -612,7 +601,7 @@ function campaignRows(campaigns: World['campaigns'], closed: boolean): [string, 
   );
 }
 
-async function appendEvents(client: PoolClient, townId: string, events: Event[]): Promise<void> {
+async function appendEvents(client: PoolClient, townId: number, events: Event[]): Promise<void> {
   if (events.length === 0) {
     return;
   }

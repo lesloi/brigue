@@ -54,7 +54,7 @@ export interface WorldProjection {
     stockCapacityUnits: number;
   };
   town: {
-    id: string;
+    id: number;
     name: string;
     houses: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
     people: Array<{ id: string; houseId: string; name: string }>;
@@ -106,7 +106,7 @@ export class ApiError extends Error {
 }
 
 export interface SessionInfo {
-  worldId: string;
+  townId: number;
   houseId: string;
   /** Set when a deletion is scheduled: the deadline, in ISO. */
   deletionAfter: string | null;
@@ -126,7 +126,7 @@ export async function readSession(): Promise<SessionInfo | null> {
 }
 
 export interface Joined {
-  worldId: string;
+  townId: number;
   houseId: string;
   token: string;
 }
