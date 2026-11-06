@@ -1,7 +1,18 @@
-import { advance, PACING, type Event, type World } from '@brigue/core';
+import {
+  advance,
+  firstHouseOf,
+  FORMAT_VERSION,
+  PACING,
+  RULES,
+  WorldVersionError,
+  type Event,
+  type World,
+} from '@brigue/core';
 
 import type { Logger } from './logger.ts';
-import { HOUR_MS, UnknownWorldError, type WorldSession, type WorldStore } from './worlds.ts';
+import type { PlayerStore } from './players.ts';
+import { applyPresence } from './presence.ts';
+import { HOUR_MS, UnknownWorldError, WORLD_ID, type WorldSession, type WorldStore } from './worlds.ts';
 
 export interface Due {
   /** The town after the pass. */
@@ -63,7 +74,10 @@ export async function playDue(session: WorldSession, source: Source, now: Date, 
 }
 
 export interface SchedulerOptions {
+  /** The town. */
   store: WorldStore;
+  /** The players, so a silent town expires without waiting for a visit. */
+  players: PlayerStore;
   logger: Logger;
   now: () => Date;
   /** How often the loop looks at the clock. A minute is enough for an hour's step. */
@@ -88,9 +102,35 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
     try {
       await options.store.withWorld(async (session) => {
-        const due = await playDue(session, session.snapshot, options.now());
+        const world = session.snapshot.world;
 
-        if (due.hours > 0) {
+        if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
+          throw new WorldVersionError(world);
+        }
+
+        // The same silence rule the read path applies, but on its own clock: a
+        // town whose last human has gone expires even if nobody comes back.
+        const at = options.now();
+        const presence = applyPresence(world, await options.players.listByWorld(WORLD_ID), at.getTime());
+
+        for (const houseId of presence.deletedHouseIds) {
+          await options.players.revokeHouse(WORLD_ID, houseId, at);
+          options.logger.warn('world.house_deleted', { worldId: WORLD_ID, houseId });
+        }
+
+        if (firstHouseOf(presence.world) === undefined) {
+          await session.clear();
+          options.logger.info('town.deleted', { worldId: WORLD_ID });
+          return;
+        }
+
+        const due = await playDue(
+          session,
+          { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
+          at,
+        );
+
+        if (due.hours > 0 || presence.changed) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
         if (due.skipped > 0) {

@@ -3,9 +3,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PACING, stateHash, type Action, type Event, type World } from '@brigue/core';
 
 import { createLogger } from '../src/logger.ts';
+import { MemoryPlayerStore } from '../src/players.ts';
 import { playDue, startScheduler } from '../src/scheduler.ts';
-import { HOUR_MS, MemoryWorldStore, type StoredAction, type WorldStore } from '../src/worlds.ts';
-import { town as playableTown } from './helpers.ts';
+import { issueToken } from '../src/session.ts';
+import {
+  HOUR_MS,
+  MemoryWorldStore,
+  UnknownWorldError,
+  WORLD_ID,
+  type StoredAction,
+  type WorldStore,
+} from '../src/worlds.ts';
+import { TEST_FIRST_HOUSE, town as playableTown } from './helpers.ts';
 
 const START = new Date('2026-11-05T00:00:00.000Z');
 const HOUR = HOUR_MS;
@@ -16,6 +25,13 @@ async function town(options: { at?: Date; world?: World } = {}): Promise<MemoryW
   await store.createIfAbsent(options.world ?? playableTown(20261105), at, at);
 
   return store;
+}
+
+async function playersWith(houseId = TEST_FIRST_HOUSE.id, at = START): Promise<MemoryPlayerStore> {
+  const players = new MemoryPlayerStore();
+  await issueToken(players, WORLD_ID, houseId, at);
+
+  return players;
 }
 
 /** One pass of the loop: play what is due, then keep it when an hour was lived. */
@@ -203,6 +219,7 @@ describe('startScheduler', () => {
     const logs: string[] = [];
     const scheduler = startScheduler({
       store,
+      players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
       everyMs: 1_000,
@@ -239,6 +256,7 @@ describe('startScheduler', () => {
     const clock = { now: START.getTime() };
     const scheduler = startScheduler({
       store,
+      players: await playersWith(),
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
       everyMs: 1_000,
@@ -260,6 +278,7 @@ describe('startScheduler', () => {
     const logs: string[] = [];
     const scheduler = startScheduler({
       store,
+      players: new MemoryPlayerStore(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(START),
       everyMs: 1_000,
@@ -271,6 +290,29 @@ describe('startScheduler', () => {
 
     // Assert: no town is not a failure.
     expect(logs).toEqual([]);
+  });
+
+  it('deletes a town whose last human has been silent for a month', async () => {
+    // Arrange: the player's last visit is past the deletion threshold, and
+    // nobody will read the town to notice.
+    vi.useFakeTimers();
+    const store = await town();
+    const players = new MemoryPlayerStore();
+    await issueToken(players, WORLD_ID, TEST_FIRST_HOUSE.id, new Date(START.getTime() - 31 * 24 * HOUR));
+    const scheduler = startScheduler({
+      store,
+      players,
+      logger: createLogger(() => {}),
+      now: () => new Date(START),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(1_000);
+    scheduler.stop();
+
+    // Assert: the town went with its last human house, without a read.
+    await expect(store.withWorld(async (session) => session.snapshot)).rejects.toBeInstanceOf(UnknownWorldError);
   });
 
   it('logs a failing pass and keeps looking at the clock', async () => {
@@ -291,6 +333,7 @@ describe('startScheduler', () => {
     const logs: string[] = [];
     const scheduler = startScheduler({
       store: flaky,
+      players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
       everyMs: 1_000,

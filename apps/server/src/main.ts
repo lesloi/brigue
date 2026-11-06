@@ -26,7 +26,7 @@ const store = await createPgPlayerStore(config.databaseUrl);
 const worlds = await createPgWorldStore(config.databaseUrl);
 // The town moves without a reader; a read only catches up when this loop is
 // more than an hour behind.
-const scheduler = startScheduler({ store: worlds, logger, now: () => new Date() });
+const scheduler = startScheduler({ store: worlds, players: store, logger, now: () => new Date() });
 const server = createApp({
   store,
   worlds,
