@@ -47,7 +47,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   every player — the founder included — chooses one of three trades: weaver (wool into cloth),
   baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
   that trade; no assignment balances the town's mix. The founder is the first house, not a
-  political role: same house, no seat, no vote; only the starting kit differs. The three raw
+  political role: same house, no seat, no vote; only the starting kit differs — a workshop of its
+  trade, eight units of its input and a purse, because its first sale is hours away. A human who
+  arrives later, replacing a finished trade, brings its workshop and nothing else; the founder's
+  place, re-founded after its house was deleted, keeps the kit, because it is the opening slot and
+  not a newcomer taking an AI's place. The three raw
   suppliers (wool, grain, wood) stay AI houses forever and are never replaced by a human: they
   are the floor that keeps every chain fed, so a player town cannot lose an input to a newcomer
   who chose another trade. The finished trades are what humans replace. The price signal and
