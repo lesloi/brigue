@@ -35,7 +35,7 @@ export function Create({ lost, joining, error, resuming, resumeError, onChoose, 
         <h1>{lost ? 'Ta maison est perdue' : 'Choisis ton métier'}</h1>
         <p>
           {lost
-            ? 'La ville a été remise à zéro : ta maison, ses ateliers et sa bourse sont partis. Ton compte joueur, lui, est conservé. Choisis un métier pour revenir.'
+            ? 'La ville a été remise à zéro : ta maison, ses ateliers et sa bourse ont disparu. Ton compte joueur, lui, est conservé. Choisis un métier pour revenir.'
             : 'Ton premier atelier est celui de ton métier.'}
         </p>
         <div class="trade-list">

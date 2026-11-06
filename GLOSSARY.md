@@ -117,4 +117,6 @@ French in the data and in the interface, and the English here is only how we tal
 ## Identity
 
 - **Compte joueur** — the player's key to a house, called a token in the code: an opaque secret,
-  shown once, with no email, no password and no recovery. Lost, the house is lost.
+  shown once, with no email, no password and no recovery. A reset never invalidates it: it takes
+  the house and keeps the account, and the next visit asks for a trade again. Lost, the house is
+  lost.
