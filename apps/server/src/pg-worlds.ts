@@ -4,6 +4,7 @@ import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
 import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
   DuplicateActionError,
+  JOURNAL_PAGE,
   UnknownWorldError,
   type JournalPage,
   type StoredAction,
@@ -109,6 +110,25 @@ export class PgWorldStore implements WorldStore {
     const { rows } = await this.pool.query<{ name: string }>(`SELECT name FROM town_names ORDER BY created_at, name`);
 
     return rows.map((row) => row.name);
+  }
+
+  async pruneJournal(townId: string, oldestKeptHour: number): Promise<void> {
+    // The boundary is the id of the newest page's oldest entry; a journal with
+    // fewer than a page has none, and `id < NULL` deletes nothing. The index on
+    // (town_id, id) serves both the boundary and the walk back from the newest.
+    await this.pool.query(
+      `DELETE FROM events
+       WHERE town_id = $1
+         AND at < $2
+         AND id < (
+           SELECT id FROM events
+           WHERE town_id = $1
+           ORDER BY id DESC
+           OFFSET $3
+           LIMIT 1
+         )`,
+      [townId, oldestKeptHour, JOURNAL_PAGE - 1],
+    );
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {

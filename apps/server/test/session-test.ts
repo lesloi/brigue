@@ -273,6 +273,7 @@ describe('joining the town', () => {
         return real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
+      pruneJournal: (townId, oldestKeptHour) => real.pruneJournal(townId, oldestKeptHour),
       close: () => real.close(),
     };
     const harness = await start({ worlds });

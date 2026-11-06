@@ -414,6 +414,59 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual(['new', 'old']);
   });
 
+  it('drops the journal older than the cut and keeps the newest page', async () => {
+    // Arrange: two pages and a bit of entries, one per hour.
+    await store.createTown(TEST_TOWN, createWorld(4), START);
+    await withWorld(async (session) => {
+      await session.save(session.snapshot.world, START, hours(1, 120));
+    });
+
+    // Act: the cut alone would leave twelve entries; the page floor keeps the
+    // newest fifty whatever their age.
+    await store.pruneJournal(TEST_TOWN.id, 109);
+
+    // Assert
+    const page = await withWorld(async (session) => session.eventsSince(0, 100, 'leclerc'));
+    const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
+    expect(page.events.map((event) => event.at)).toEqual(range(71, 120));
+    expect(rows.rows[0]?.count).toBe(50);
+  });
+
+  it('keeps the entry exactly on the cut', async () => {
+    // Arrange
+    await store.createTown(TEST_TOWN, createWorld(5), START);
+    await withWorld(async (session) => {
+      await session.save(session.snapshot.world, START, hours(1, 120));
+    });
+
+    // Act: seventy-one entries are at or after the cut, so the page floor does
+    // not decide the boundary.
+    await store.pruneJournal(TEST_TOWN.id, 50);
+
+    // Assert
+    const rows = await pool.query<{ count: number; oldest: number }>(
+      `SELECT count(*)::int AS count, min(at)::int AS oldest FROM events WHERE town_id = $1`,
+      [TEST_TOWN.id],
+    );
+    expect(rows.rows[0]).toEqual({ count: 71, oldest: 50 });
+  });
+
+  it('deletes nothing from a journal shorter than a page', async () => {
+    // Arrange: ten entries, all older than the cut.
+    await store.createTown(TEST_TOWN, createWorld(6), START);
+    await withWorld(async (session) => {
+      await session.save(session.snapshot.world, START, hours(1, 10));
+    });
+
+    // Act: there is no newer page to protect the entries with, so only the
+    // floor keeps them.
+    await store.pruneJournal(TEST_TOWN.id, 1_000);
+
+    // Assert
+    const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
+    expect(rows.rows[0]?.count).toBe(10);
+  });
+
   it('rolls the world and the actions back when the callback throws', async () => {
     // Arrange
     const world = { ...createWorld(6), hour: 3 };
@@ -444,6 +497,19 @@ function oneHourLater(world: World): World {
 
 function buy(units: number): Action {
   return { type: 'market.buy', houseId: 'leclerc', good: 'wool', units };
+}
+
+/** One town event per hour, so a cut has a visible order to work on. */
+function priceAt(hour: number): Event {
+  return { type: 'market.price_changed', audience: 'town', at: hour, good: 'wool', before: 100, after: 101 };
+}
+
+function hours(from: number, to: number): Event[] {
+  return Array.from({ length: to - from + 1 }, (_, index) => priceAt(from + index));
+}
+
+function range(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, index) => from + index);
 }
 
 function storedAction(id: string, hour: number, action: Action): StoredAction {
