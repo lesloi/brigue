@@ -33,6 +33,12 @@ Two rules keep the chapters honest:
 
 ## The town
 
+One world holds several towns. A newcomer takes a free place in the oldest town that has one — a
+human house with no live token, or a new human house while the town is below twenty houses — and a
+town is founded only when every town is full. A town is named when it is founded: a place name is
+drawn from a list, and no name serves twice in the same database. A town whose humans have all
+gone is never offered to a newcomer; it is on its way out.
+
 Twenty houses at most, three of them AI at the opening. The town is founded when its first player
 joins: three AI houses and the first player's house are created together, so no town waits empty
 for someone. That house takes a name
@@ -43,8 +49,8 @@ every seat is empty, and the pyramid fills from the bottom, one floor per electi
 A human who arrives later chooses a trade and takes a free place with the same kit as the first
 house — the workshop, eight units of its input and a purse — and no seat or career. A human who
 arrives in a full town takes the place of a finished-trade AI house.
-The three AI houses are the finished trades, one per trade. Wool, grain and wood come from the
-at the market at the current price: no house produces them, so every chain is fed whatever the
+The three AI houses are the finished trades, one per trade. Wool, grain and wood are bought at
+the market at the current price: no house produces them, so every chain is fed whatever the
 town's trades. No AI is created after the opening; a freed finished-trade place waits for a
 human.
 

@@ -18,6 +18,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   a house; that is what makes a career and a succession possible. Revisit only if the town proves
   too small to hold a solo player's pace.
 
+- **A join takes the first free place; a full world gets a new town.** The towns are visited
+  oldest first. A human house with no live token is a freed place, and a town below twenty houses
+  takes a new human house; a town whose humans have all gone is left to its deletion, never given
+  to a newcomer. When no town has a place, the join founds one — three AI houses and the
+  newcomer's house — and names it by drawing from a list of places, each name used once per
+  database.
+
 - **A silent house is forgotten, not robbed; a human who arrives takes an AI's place.** Silence
   is a state of the town, not a punishment: a house with no visit for a few days — three,
   calibrated in `PACING` — goes dormant. It keeps its money, its stock, its grudges and its heir,
@@ -31,9 +38,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   same silence rule on every pass, so a town with no player expires without waiting for a visit.
   The deletion stays an edge rule. The reverse is asymmetric: when a full town
   receives a human, the finished-trade AI house ends and the newcomer chooses a trade, starts with
-  the same kit as the first house, and holds no seat or career. No AI is created after the opening; the ten
-  opening families are the opening composition, and a freed finished-trade place waits for a
-  human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
+  the same kit as the first house, and holds no seat or career. No AI is created after the
+  opening: the three AI houses are the opening composition, and a freed finished-trade place
+  waits for a human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
 
 - **The town is capped at twenty houses, three of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
@@ -392,7 +399,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   the writer locks. The simulation still reads and writes a town whole, but the storage keeps it
   in rows, so a screen can read the market alone and the register is a query. A format change is
   a migration across those tables; a reset is a wipe of them. Deleting a town cascades its
-  tables; the players and the sealed register, keyed by town and season, outlive it. What a
+  tables; the players, the spent place names and the sealed register, keyed by town and season,
+  outlive it. What a
   sealed season keeps is the register: the seal writes the houses' last columns and the book of
   kings into an archive that outlives every ordinary reset, a format change included, and the
   town itself is dropped; only a full reset deletes it.
