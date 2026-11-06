@@ -16,8 +16,9 @@ mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 
 By default:
 
-- `tick(world, actions)` returns a new world and the events of the week. It never mutates the
-  world it is given, and the core never reads the clock or `Math.random`; a test guards both.
+- `advance(world, until, actions)` returns a new world and the events up to that instant. It never
+  mutates the world it is given, and the core never reads the clock or `Math.random`; a test
+  guards both.
 - Money is integer cents. There is no float in the simulation, and no amount is ever a string.
 - The core never imports from `apps/*`. It is the one part that must stay replayable without a
   server, a database or a browser.
@@ -29,7 +30,7 @@ By default:
 - A house is held by a controller, `ai` or `human`; a seat is held by a person of that house.
   The simulation never asks who controls the house: solo, multiplayer and a dormant house are the
   same code.
-- A refusal is an event, never a throw: the server replays stored actions weeks later, and one
+- A refusal is an event, never a throw: the server replays stored actions days later, and one
   poisoned action must not be able to stop the town. Only a wrong world version throws.
 - The game speaks French; the code, the commits and the docs speak English.
 
