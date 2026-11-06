@@ -222,13 +222,14 @@ export const RULES = {
  * not refuse an existing world.
  */
 export const PACING = {
-  // The scheduler plays one hour per pass. A month is 720 hours, and the read
-  // path catches up at most that far before the wall clock jumps: the backlog it
-  // cannot replay is not simulated, so the town only counts the hours it lived.
+  // The scheduler plays one hour per pass. Thirty days are 720 hours, and the
+  // read path catches up at most that far before the wall clock jumps: the
+  // backlog it cannot replay is not simulated, so the town only counts the
+  // hours it lived.
   maxCatchUpHours: 744,
   // Three days without a visit is enough to say the player has stopped playing;
-  // the house goes dormant, keeps its estate and loses its seat. Calibration,
-  // not a rule.
+  // the house goes dormant, keeps its estate and its seat, and casts no vote.
+  // Calibration, not a rule.
   dormancyDays: 3,
   // After a month without a visit the house is gone with its tokens: no return,
   // no vacation mode. The boundary is strict, so exactly thirty days still
