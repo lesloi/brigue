@@ -54,6 +54,11 @@ export interface WorldSession {
   cancel(id: string, at: Date): Promise<void>;
   /** Writes the whole town and appends the events of the span. */
   save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
+  /**
+   * Deletes the town — its state, houses, people, actions and journal — and
+   * leaves the players and the sealed seasons. The next join founds a new one.
+   */
+  clear(): Promise<void>;
 }
 
 export interface WorldStore {
@@ -191,6 +196,9 @@ export class MemoryWorldStore implements WorldStore {
           stored.events.push({ id: stored.nextEventId, event: structuredClone(event) });
           stored.nextEventId += 1;
         }
+      },
+      clear: async () => {
+        this.stored = null;
       },
     };
   }

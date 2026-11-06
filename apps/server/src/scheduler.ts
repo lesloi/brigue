@@ -1,7 +1,7 @@
 import { advance, PACING, type Event, type World } from '@brigue/core';
 
 import type { Logger } from './logger.ts';
-import { HOUR_MS, type WorldSession, type WorldStore } from './worlds.ts';
+import { HOUR_MS, UnknownWorldError, type WorldSession, type WorldStore } from './worlds.ts';
 
 export interface Due {
   /** The town after the pass. */
@@ -101,6 +101,12 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         }
       });
     } catch (error) {
+      // A town with no player is no town: the read path deletes it, and the
+      // next join starts a new one. That is not a failure to report.
+      if (error instanceof UnknownWorldError) {
+        return;
+      }
+
       // A stopped scheduler leaves every screen healthy and the town frozen, so
       // the failure is logged on every pass: silence is the failure mode.
       options.logger.warn('town.advance_failed', {

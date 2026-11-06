@@ -181,6 +181,26 @@ class PgWorldSession implements WorldSession {
     );
   }
 
+  async clear(): Promise<void> {
+    // The town goes whole, the journal and the queue with it. Players and the
+    // sealed seasons live outside the town and stay.
+    await this.client.query(
+      `DELETE FROM actions;
+       DELETE FROM events;
+       DELETE FROM seats;
+       DELETE FROM laws;
+       DELETE FROM engagements;
+       DELETE FROM campaigns;
+       DELETE FROM stock;
+       DELETE FROM workshops;
+       DELETE FROM people;
+       DELETE FROM market_history;
+       DELETE FROM market;
+       DELETE FROM houses;
+       DELETE FROM state;`,
+    );
+  }
+
   async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
     await clearWorld(this.client);
     await writeWorld(this.client, world);

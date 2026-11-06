@@ -9,7 +9,7 @@ import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore, type Player } from '../src/players.ts';
 import { applyPresence } from '../src/presence.ts';
 import { authenticate, issueToken } from '../src/session.ts';
-import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
+import { MemoryWorldStore, UnknownWorldError, WORLD_ID } from '../src/worlds.ts';
 import { town } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -58,7 +58,7 @@ describe('dormancy', () => {
     world.campaigns.maire = { caron: 2 };
     world.engagements = [
       { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueAt: world.hour + 4 },
-      { id: 'engagement-brigue', kind: 'hearing', houseId: 'brigue', dueAt: world.hour + 4 },
+      { id: 'engagement-leclerc', kind: 'hearing', houseId: 'leclerc', dueAt: world.hour + 4 },
     ];
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
 
@@ -71,7 +71,7 @@ describe('dormancy', () => {
     expect(presence.world.people['person-caron']).toBeUndefined();
     expect(presence.world.seats.maire.personId).toBeNull();
     expect(presence.world.campaigns.maire).toEqual({});
-    expect(presence.world.engagements.map((engagement) => engagement.id)).toEqual(['engagement-brigue']);
+    expect(presence.world.engagements.map((engagement) => engagement.id)).toEqual(['engagement-leclerc']);
   });
 
   it('still reads a house at exactly the thirty-day boundary', () => {
@@ -122,7 +122,7 @@ describe('dormancy', () => {
     }
 
     // Act
-    const presence = applyPresence(world, [player('brigue', new Date(START))], START);
+    const presence = applyPresence(world, [player('leclerc', new Date(START))], START);
 
     // Assert
     expect(Object.keys(presence.world.houses)).toHaveLength(20);
@@ -137,10 +137,10 @@ describe('dormancy', () => {
     const seen = new Date(START - HOUR);
 
     // Act
-    const presence = applyPresence(world, [player('brigue', seen, seen)], START);
+    const presence = applyPresence(world, [player('leclerc', seen, seen)], START);
 
     // Assert: a closed session leaves the house dormant even after a visit...
-    expect(presence.world.houses.brigue.dormant).toBe(true);
+    expect(presence.world.houses.leclerc.dormant).toBe(true);
     // ...and an AI house is always played.
     expect(presence.world.houses.herse.dormant).toBe(false);
   });
@@ -166,7 +166,7 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [], START);
 
     // Assert
-    expect(presence.world.houses.brigue.dormant).toBe(true);
+    expect(presence.world.houses.leclerc.dormant).toBe(true);
     expect(presence.deletedHouseIds).toEqual([]);
   });
 });
@@ -174,6 +174,7 @@ describe('dormancy', () => {
 interface Harness {
   url: string;
   store: MemoryPlayerStore;
+  worlds: MemoryWorldStore;
   close: () => Promise<void>;
   cookies: Record<string, string>;
 }
@@ -216,7 +217,7 @@ async function start(
     cookies[entry.houseId] = `${SESSION_COOKIE}=${token}`;
   }
 
-  return { url: `http://127.0.0.1:${address.port}`, store, close, cookies };
+  return { url: `http://127.0.0.1:${address.port}`, store, worlds, close, cookies };
 }
 
 function tokenOf(cookie: string): string {
@@ -232,16 +233,16 @@ describe('the thirty-day deletion', () => {
     const harness = await start(
       world,
       [
-        { houseId: 'brigue', lastSeenAt: new Date(START) },
+        { houseId: 'leclerc', lastSeenAt: new Date(START) },
         { houseId: 'caron', lastSeenAt: silentSince },
       ],
       START,
     );
-    const brigueCookie = harness.cookies.brigue as string;
+    const leclercCookie = harness.cookies.leclerc as string;
     const caronToken = tokenOf(harness.cookies.caron as string);
 
     // Act: a living house reads the town, and the silent one is noticed.
-    const response = await fetch(`${harness.url}/api/world`, { headers: { Cookie: brigueCookie } });
+    const response = await fetch(`${harness.url}/api/world`, { headers: { Cookie: leclercCookie } });
     const body = (await response.json()) as {
       world: { town: { houses: Array<{ id: string }>; seats: { maire: { personId: string | null } } } };
     };
@@ -264,11 +265,11 @@ describe('the thirty-day deletion', () => {
     // Arrange: the old house has money and a seat, so a failed respawn would
     // keep them.
     const world = town(20261105);
-    world.houses.brigue.treasuryCents = 999_999;
-    world.seats.maire = { personId: 'person-brigue' };
+    world.houses.leclerc.treasuryCents = 999_999;
+    world.seats.maire = { personId: 'person-leclerc' };
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
-    const harness = await start(world, [{ houseId: 'brigue', lastSeenAt: seen }], START);
-    const oldCookie = harness.cookies.brigue as string;
+    const harness = await start(world, [{ houseId: 'leclerc', lastSeenAt: seen }], START);
+    const oldCookie = harness.cookies.leclerc as string;
 
     // Act: the visit arrives after the silence.
     const expired = await fetch(`${harness.url}/api/world`, { headers: { Cookie: oldCookie } });
@@ -277,6 +278,10 @@ describe('the thirty-day deletion', () => {
     expect(expired.status).toBe(401);
     expect(expired.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=;`))).toBe(true);
     expect(await authenticate(harness.store, tokenOf(oldCookie))).toBeNull();
+    // The last human house went with the silence, and the town with it.
+    await expect(harness.worlds.withWorld(async (session) => session.snapshot.world)).rejects.toBeInstanceOf(
+      UnknownWorldError,
+    );
 
     // Act: the freed place waits for a human, who chooses a trade on arrival.
     const joined = await fetch(`${harness.url}/api/session`, {
@@ -302,7 +307,7 @@ describe('the thirty-day deletion', () => {
     expect(joined.status).toBe(201);
     expect(read.status).toBe(200);
     // A drawn first house, not the deleted one, and none of its money.
-    expect(houseId).not.toBe('brigue');
+    expect(houseId).not.toBe('leclerc');
     expect(body.world.house.id).toBe(houseId);
     expect(body.world.house.treasuryCents).toBe(117340);
     expect(body.world.house.workshops).toEqual([

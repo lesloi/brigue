@@ -36,9 +36,9 @@ async function worldOf(store: MemoryWorldStore) {
 }
 
 function buy(id: string, at: number, units: number): StoredAction {
-  const action: Action = { type: 'market.buy', houseId: 'brigue', good: 'wool', units };
+  const action: Action = { type: 'market.buy', houseId: 'leclerc', good: 'wool', units };
 
-  return { id, houseId: 'brigue', playsAt: at, action, receivedAt: new Date(START), cancelledAt: null };
+  return { id, houseId: 'leclerc', playsAt: at, action, receivedAt: new Date(START), cancelledAt: null };
 }
 
 describe('playDue', () => {
@@ -180,7 +180,7 @@ describe('playDue', () => {
 
     // Assert
     const mine = due.events.flatMap((event) =>
-      event.type === 'market.bought' && event.houseId === 'brigue' ? [{ at: event.at, units: event.units }] : [],
+      event.type === 'market.bought' && event.houseId === 'leclerc' ? [{ at: event.at, units: event.units }] : [],
     );
     expect(mine).toEqual([
       { at: 2, units: 2 },
@@ -251,6 +251,26 @@ describe('startScheduler', () => {
 
     // Assert
     expect((await worldOf(store)).world.hour).toBe(4);
+  });
+
+  it('stays quiet when there is no town yet', async () => {
+    // Arrange: a database with no town, as after the last player left.
+    vi.useFakeTimers();
+    const store = new MemoryWorldStore();
+    const logs: string[] = [];
+    const scheduler = startScheduler({
+      store,
+      logger: createLogger((line) => logs.push(line)),
+      now: () => new Date(START),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(2_000);
+    scheduler.stop();
+
+    // Assert: no town is not a failure.
+    expect(logs).toEqual([]);
   });
 
   it('logs a failing pass and keeps looking at the clock', async () => {

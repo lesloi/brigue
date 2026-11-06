@@ -646,9 +646,17 @@ export function createApp(deps: AppDeps): Server {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(WORLD_ID, world, at);
 
+      // The last human house went with the silence: the town goes too, and the
+      // next join starts a new one. The players and the sealed seasons stay.
+      if (firstHouseOf(presence.world) === undefined) {
+        await session.clear();
+        return { kind: 'gone' as const };
+      }
+
       if (presence.deletedHouseIds.includes(houseId)) {
-        // The house is gone, but the deletion is a real change to the town and
-        // must be kept even though nothing is caught up for this reader.
+        // Another human house is gone, but the town remains: the deletion is a
+        // real change and must be kept even though nothing is caught up for
+        // this reader.
         await session.save(presence.world, session.snapshot.hourStartedAt, []);
         return { kind: 'gone' as const };
       }
@@ -679,6 +687,11 @@ export function createApp(deps: AppDeps): Server {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(WORLD_ID, world, at);
+
+      if (firstHouseOf(presence.world) === undefined) {
+        await session.clear();
+        return { kind: 'gone' as const };
+      }
 
       if (presence.deletedHouseIds.includes(houseId)) {
         await session.save(presence.world, session.snapshot.hourStartedAt, []);

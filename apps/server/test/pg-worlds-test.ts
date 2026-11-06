@@ -184,7 +184,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         type: 'market.bought',
         audience: 'town',
         at: 7,
-        houseId: 'brigue',
+        houseId: 'leclerc',
         good: 'wool',
         units: 2,
         priceCents: 380,
@@ -196,13 +196,13 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         at: 7,
         seatId: 'maire',
         winnerHouseId: 'caron',
-        votes: { brigue: 1, caron: 2 },
+        votes: { leclerc: 1, caron: 2 },
       },
       {
         type: 'workshop.idle',
-        audience: { houseId: 'brigue' },
+        audience: { houseId: 'leclerc' },
         at: 7,
-        houseId: 'brigue',
+        houseId: 'leclerc',
         good: 'cloth',
         input: 'wool',
         missingUnits: 0,
@@ -217,7 +217,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     });
     const read = await store.withWorld(async (session) => ({
       snapshot: session.snapshot,
-      journal: await session.eventsSince(0, 50, 'brigue'),
+      journal: await session.eventsSince(0, 50, 'leclerc'),
     }));
 
     // Assert
@@ -239,7 +239,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         type: 'market.bought',
         audience: 'town',
         at: 1,
-        houseId: 'brigue',
+        houseId: 'leclerc',
         good: 'wool',
         units: 1,
         priceCents: 380,
@@ -247,9 +247,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       },
       {
         type: 'action.refused',
-        audience: { houseId: 'brigue' },
+        audience: { houseId: 'leclerc' },
         at: 2,
-        houseId: 'brigue',
+        houseId: 'leclerc',
         action: 'market.buy',
         reason: 'insufficient_funds',
       },
@@ -263,20 +263,82 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         priceCents: 1240,
         revenueCents: 2480,
       },
-      { type: 'workshop.produced', audience: { houseId: 'brigue' }, at: 4, houseId: 'brigue', good: 'cloth', units: 3 },
+      {
+        type: 'workshop.produced',
+        audience: { houseId: 'leclerc' },
+        at: 4,
+        houseId: 'leclerc',
+        good: 'cloth',
+        units: 3,
+      },
     ];
 
     // Act
     await store.withWorld(async (session) => {
       await session.save(world, START, events);
     });
-    const page = await store.withWorld(async (session) => session.eventsSince(0, 2, 'brigue'));
+    const page = await store.withWorld(async (session) => session.eventsSince(0, 2, 'leclerc'));
 
     // Assert: the last two entries, in time order, and the earlier two counted
     // — one of them a refusal, by reason.
     expect(page.events).toEqual(events.slice(2));
     expect(page.counts).toEqual({ 'market.bought': 1, 'action.refused': 1 });
     expect(page.refusals).toEqual({ insufficient_funds: 1 });
+  });
+
+  it('clears the town, its queue and its journal, and keeps players and the sealed seasons', async () => {
+    // Arrange: a town with an action and an event, plus what lives outside it.
+    const world = { ...createWorld(8), hour: 5 };
+    await store.createIfAbsent(world, START, START);
+    await store.withWorld(async (session) => {
+      await session.append(storedAction(randomUUID(), 5, buy(2)));
+      await session.save(world, START, [
+        {
+          type: 'market.bought',
+          audience: 'town',
+          at: 5,
+          houseId: 'leclerc',
+          good: 'wool',
+          units: 1,
+          priceCents: 380,
+          totalCents: 380,
+        },
+      ]);
+    });
+    const tokenHash = 'b'.repeat(64);
+    await pool.query(`INSERT INTO players (token_hash, world_id, house_id) VALUES ($1, 'saint-aubin', 'leclerc')`, [
+      tokenHash,
+    ]);
+    await pool.query(
+      `INSERT INTO archive_houses (season, name, prestige, offices_held, title, generations, wealth_cents)
+       VALUES (1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
+    );
+    await pool.query(
+      `INSERT INTO kings (season, crowned_at, token_hash, house_name, person_name)
+       VALUES (1, 12, $1, 'Leclerc', 'Aubin')`,
+      [tokenHash],
+    );
+
+    // Act
+    await store.withWorld(async (session) => session.clear());
+
+    // Assert: the town is gone whole, the people and the register stay.
+    const state = await pool.query('SELECT count(*)::int AS count FROM state');
+    const houses = await pool.query('SELECT count(*)::int AS count FROM houses');
+    const events = await pool.query('SELECT count(*)::int AS count FROM events');
+    const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
+    const players = await pool.query('SELECT count(*)::int AS count FROM players');
+    const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
+    const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
+
+    expect(state.rows[0]?.count).toBe(0);
+    expect(houses.rows[0]?.count).toBe(0);
+    expect(events.rows[0]?.count).toBe(0);
+    expect(actions.rows[0]?.count).toBe(0);
+    expect(players.rows[0]?.count).toBe(1);
+    expect(archive.rows[0]?.count).toBe(1);
+    expect(kings.rows[0]?.count).toBe(1);
+    await expect(store.withWorld(async (session) => session.snapshot)).rejects.toBeInstanceOf(UnknownWorldError);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {
@@ -308,11 +370,11 @@ function oneHourLater(world: World): World {
 }
 
 function buy(units: number): Action {
-  return { type: 'market.buy', houseId: 'brigue', good: 'wool', units };
+  return { type: 'market.buy', houseId: 'leclerc', good: 'wool', units };
 }
 
 function storedAction(id: string, hour: number, action: Action): StoredAction {
-  return { id, houseId: 'brigue', playsAt: hour, action, receivedAt: new Date(START), cancelledAt: null };
+  return { id, houseId: 'leclerc', playsAt: hour, action, receivedAt: new Date(START), cancelledAt: null };
 }
 
 function delay(ms: number): Promise<void> {
