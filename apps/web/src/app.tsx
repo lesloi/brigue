@@ -442,8 +442,6 @@ export function App() {
 
       {deleteOpen && view.kind === 'world' ? (
         <DeleteAccountDialog
-          town={view.data.world.town.name}
-          house={view.data.world.house.name}
           busy={deleting}
           error={deleteError}
           onCancel={() => {

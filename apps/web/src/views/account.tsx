@@ -4,8 +4,6 @@ import { Seal } from '../icons.tsx';
 import { Modal } from './modal.tsx';
 
 interface DeleteAccountDialogProps {
-  town: string;
-  house: string;
   busy: boolean;
   error: string | null;
   onCancel(): void;
@@ -14,10 +12,9 @@ interface DeleteAccountDialogProps {
 
 /**
  * The one destructive action of the game: it schedules the erasure of the
- * identity, so it asks by name and says what goes with it and when it can be
- * called off.
+ * identity, so the safe choice is focused and the copy stays short.
  */
-export function DeleteAccountDialog({ town, house, busy, error, onCancel, onConfirm }: DeleteAccountDialogProps) {
+export function DeleteAccountDialog({ busy, error, onCancel, onConfirm }: DeleteAccountDialogProps) {
   const cancelButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -36,12 +33,8 @@ export function DeleteAccountDialog({ town, house, busy, error, onCancel, onConf
       }}
     >
       <Seal size={34} />
-      <h2 id="delete-title">Supprimer votre maison ?</h2>
-      <p>
-        <b>Maison {house}</b> quitte {town} : la suppression est programmée. Vous pourrez revenir sur votre décision
-        avant l'échéance ; ensuite, le jeton, la maison, sa cassette et ses actions en attente disparaissent, et la
-        ville part avec son dernier habitant.
-      </p>
+      <h2 id="delete-title">Supprimer votre compte</h2>
+      <p>Le compte et la maison seront supprimés. Vous pourrez revenir avant l'échéance.</p>
       {error !== null ? <p class="warn">{error}</p> : null}
       <div class="dialog-actions">
         <button class="btn outline" type="button" ref={cancelButton} disabled={busy} onClick={onCancel}>
@@ -70,16 +63,14 @@ export function ClosingHouse({ after, busy, error, onRestore }: ClosingHouseProp
     <div class="gate">
       <div class="gate-card">
         <Seal size={38} />
-        <h1>Votre maison est en sursis</h1>
+        <h1>Votre compte est en sursis</h1>
         <p>
-          La suppression est programmée pour le <b>{deadline}</b>. D'ici là, la ville ne vous répond plus. Revenez sur
-          votre décision pour reprendre la partie ; sinon, le jeton, la maison et sa file seront effacés à l'échéance.
+          Suppression le <b>{deadline}</b>. D'ici là, la ville ne répond plus.
         </p>
         <button class="btn wide" type="button" disabled={busy} onClick={onRestore}>
-          {busy ? 'Retour…' : 'Revenir sur ma décision'}
+          {busy ? 'Revenir…' : 'Revenir'}
         </button>
         {error !== null ? <p class="gate-error">{error}</p> : null}
-        <p class="gate-note">Le jeton reste valable jusqu'à l'échéance : c'est lui qui vous permet de revenir.</p>
       </div>
     </div>
   );
