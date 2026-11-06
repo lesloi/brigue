@@ -8,6 +8,7 @@ import {
   PACING,
   RULES,
   TRADES,
+  withFounder,
   WorldVersionError,
   type Trade,
   type World,
@@ -15,7 +16,6 @@ import {
 
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
-import { withFounder } from './founder.ts';
 import type { Logger } from './logger.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
@@ -299,7 +299,7 @@ export function createApp(deps: AppDeps): Server {
     try {
       // One town, created by the first player; the next ones find it and only
       // take the house binding. The trade is what the founder chose.
-      await deps.worlds.createIfAbsent(createWorld(randomSeed(), trade), at, at);
+      await deps.worlds.createIfAbsent(withFounder(createWorld(randomSeed()), trade), at, at);
       await assertWorldVersion();
       // A freed place waits for a human: the founder's house may have been
       // deleted after thirty days of silence, and the binding must point at a

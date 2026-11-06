@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, FORMAT_VERSION, hashJson, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
+import { FORMAT_VERSION, hashJson, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
@@ -10,6 +10,7 @@ import { playDue } from '../src/scheduler.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
 import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
+import { town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -81,7 +82,7 @@ async function start(
       }),
   );
 
-  const world = options.world ?? createWorld(20261031);
+  const world = options.world ?? town(20261031);
   await worlds.createIfAbsent(world, new Date(clock.now), new Date(clock.now));
 
   const houses = options.houses ?? ['brigue'];
@@ -284,7 +285,7 @@ describe('GET /api/world', () => {
 
   it('answers a wrong world version clearly, without replaying', async () => {
     // Arrange
-    const world = { ...createWorld(7), rulesetVersion: RULES.version + 1 };
+    const world = { ...town(7), rulesetVersion: RULES.version + 1 };
     const harness = await start({ world });
     const before = stateHash(world);
     await harness.advance(2 * HOUR);
@@ -308,7 +309,7 @@ describe('GET /api/world', () => {
   it('refuses a world of the previous format at the door', async () => {
     // Arrange: format 2 is what this build replaced; it is refused before any
     // replay, so the town is never read through the wrong shape.
-    const world = { ...createWorld(7), formatVersion: 2 };
+    const world = { ...town(7), formatVersion: 2 };
     const harness = await start({ world });
     const before = stateHash(world);
     await harness.advance(2 * HOUR);
@@ -350,7 +351,7 @@ describe('GET /api/world', () => {
   it('returns a house its own ledger and not another house’s', async () => {
     // Arrange: both houses read the same last hour, so the second read is
     // served from the stored events of the first.
-    const world = createWorld(20261031);
+    const world = town(20261031);
     world.houses.caron.controller = 'human';
     const harness = await start({ world, houses: ['brigue', 'caron'] });
     await harness.advance(HOUR);
@@ -371,7 +372,7 @@ describe('GET /api/world', () => {
 
   it('projects and ticks a town of twenty houses', async () => {
     // Arrange
-    const base = createWorld(20261031);
+    const base = town(20261031);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
     for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
@@ -568,7 +569,7 @@ describe('POST /api/actions', () => {
 
   it('refuses an action on a world whose rules changed', async () => {
     // Arrange
-    const world = { ...createWorld(7), rulesetVersion: RULES.version + 1 };
+    const world = { ...town(7), rulesetVersion: RULES.version + 1 };
     const harness = await start({ world });
 
     // Act

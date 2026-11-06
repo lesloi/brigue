@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockUnits, type World } from '@brigue/core';
-import { tick } from './helpers.ts';
+import { GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockUnits, type World } from '@brigue/core';
 
 import { projectWorld } from '../src/projection.ts';
+import { tick, town } from './helpers.ts';
 
 const SEED = 20261105;
 const START = new Date('2026-11-05T12:00:00.000Z');
@@ -22,7 +22,7 @@ function play(world: World, hours: number): World {
 describe('the projection calendar', () => {
   it('agrees with the world on the hour and the year it derives', () => {
     // Arrange: twenty-four ticks make a year.
-    const world = play(createWorld(SEED), HOURS_PER_YEAR);
+    const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
     const projection = projectWorld(world, 'brigue', START);
@@ -36,7 +36,7 @@ describe('the projection calendar', () => {
 
   it('tells the screen where the year stands without making it derive a date', () => {
     // Arrange: the first hour of the first year.
-    const projection = projectWorld(createWorld(SEED), 'brigue', START);
+    const projection = projectWorld(town(SEED), 'brigue', START);
 
     // Act and assert
     expect(projection.calendar).toEqual({
@@ -49,7 +49,7 @@ describe('the projection calendar', () => {
 
   it('counts the partial year down to the end of the scrutiny hour', () => {
     // Arrange: the fifth hour of the first year.
-    const world = play(createWorld(SEED), 4);
+    const world = play(town(SEED), 4);
 
     // Act
     const projection = projectWorld(world, 'brigue', START);
@@ -64,7 +64,7 @@ describe('the projection calendar', () => {
 
   it('ends the scrutiny hour with the hour it closes', () => {
     // Arrange: the town is playing the last hour of its first year.
-    const world = play(createWorld(SEED), HOURS_PER_YEAR - 1);
+    const world = play(town(SEED), HOURS_PER_YEAR - 1);
 
     // Act
     const projection = projectWorld(world, 'brigue', START);
@@ -77,7 +77,7 @@ describe('the projection calendar', () => {
 
   it('carries the workshop chain and weekly figures so the client derives no rule', () => {
     // Arrange
-    const world = createWorld(SEED, 'baker');
+    const world = town(SEED, 'baker');
 
     // Act
     const projection = projectWorld(world, 'brigue', START);
@@ -98,7 +98,7 @@ describe('the projection calendar', () => {
 
   it('carries zero input for a raw workshop', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [{ good: 'wool', level: 2, workers: 1 }];
 
     // Act
@@ -118,7 +118,7 @@ describe('the projection calendar', () => {
 
   it('scales the weekly figures with the level and the workers', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
 
     // Act
@@ -138,7 +138,7 @@ describe('the projection calendar', () => {
 
   it('carries six prices, the stock and the warehouse capacity', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
 
     // Act
     const projection = projectWorld(world, 'brigue', START);
@@ -152,7 +152,7 @@ describe('the projection calendar', () => {
 
   it('carries the year of prices and their references', () => {
     // Arrange
-    const world = createWorld(SEED, 'baker');
+    const world = town(SEED, 'baker');
 
     // Act
     const projection = projectWorld(world, 'brigue', START);
@@ -166,7 +166,7 @@ describe('the projection calendar', () => {
 
   it('projects a field-less world with an empty history', () => {
     // Arrange: a world stored before the history field existed.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     delete world.marketHistory;
 
     // Act
@@ -179,7 +179,7 @@ describe('the projection calendar', () => {
 
   it('points at the next year once a scrutiny has closed the last one', () => {
     // Arrange: the first hour of the second year.
-    const world = play(createWorld(SEED), HOURS_PER_YEAR);
+    const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
     const projection = projectWorld(world, 'brigue', START);

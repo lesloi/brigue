@@ -1,5 +1,5 @@
-import { advance } from '../src/index.ts';
-import type { Action, Event, World } from '../src/index.ts';
+import { advance, createWorld, withFounder } from '../src/index.ts';
+import type { Action, Event, Trade, World } from '../src/index.ts';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -30,4 +30,9 @@ export function playHalfDay(world: World, actions: readonly Action[] = []): { wo
   const first = tick(world, actions);
 
   return playUntil(first.world, nextBell(first.world.hour - 1));
+}
+
+/** The playable town: the AI houses plus the first player's house. */
+export function town(seed: number, trade: Trade = 'weaver'): World {
+  return withFounder(createWorld(seed), trade);
 }

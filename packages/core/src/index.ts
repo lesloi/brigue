@@ -14,6 +14,8 @@ export {
 export {
   createFounder,
   createWorld,
+  withFounder,
+  FOUNDER_HOUSE_ID,
   FORMAT_VERSION,
   GOODS,
   PACING,

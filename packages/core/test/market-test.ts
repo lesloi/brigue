@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
-import { playHalfDay, tick } from './helpers.ts';
+import { GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
+import { playHalfDay, tick, town } from './helpers.ts';
 
 const SEED = 20261029;
 
@@ -76,7 +76,7 @@ describe('nextPriceCents', () => {
 describe('the market of a hour', () => {
   it('holds its price until the first bell', () => {
     // Arrange: a fresh world has no hour behind it, so nothing has been traded.
-    const { world } = playWeek(createWorld(SEED));
+    const { world } = playWeek(town(SEED));
 
     // Assert: only the hour's own drift moved the prices.
     for (const good of GOODS) {
@@ -87,7 +87,7 @@ describe('the market of a hour', () => {
 
   it('records the flow the next bell will price', () => {
     // Arrange
-    const { world } = playWeek(createWorld(SEED));
+    const { world } = playWeek(town(SEED));
 
     // Act and assert: sold minus bought, per good. The founder produces but
     // does not sell; every AI house sells what it produced.
@@ -103,7 +103,7 @@ describe('the market of a hour', () => {
 
   it('takes a sale into the flow, not the price', () => {
     // Arrange: a house with cloth to sell and no workshop of its own.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [];
     world.houses.brigue.stock = { cloth: 20 };
 
@@ -117,8 +117,8 @@ describe('the market of a hour', () => {
 
   it('lets a purchase raise the price the following hour', () => {
     // Arrange
-    const control = playPeriod(createWorld(SEED));
-    const bought = playPeriod(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 20 }]);
+    const control = playPeriod(town(SEED));
+    const bought = playPeriod(town(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 20 }]);
 
     // Act: twenty fewer wool on the market than in the control hour.
     const difference = bought.market.wool - control.market.wool;
@@ -135,8 +135,8 @@ describe('the market of a hour', () => {
   it('lets an unclaimed wool glut lower the price', () => {
     // Arrange: Vandermeersch sells four wool a hour; here the weaver buys four,
     // so the town's wool balance is closer to level and the glut is smaller.
-    const glut = playPeriod(createWorld(SEED));
-    const balanced = playPeriod(createWorld(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
+    const glut = playPeriod(town(SEED));
+    const balanced = playPeriod(town(SEED), [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
 
     // Act: four units of imbalance, half a scale of four.
     const difference = balanced.market.wool - glut.market.wool;
@@ -152,10 +152,10 @@ describe('the market of a hour', () => {
 
   it('prices a sale against the town that did not sell', () => {
     // Arrange: one town sells twenty cloth, the other keeps it in the warehouse.
-    const selling = createWorld(SEED);
+    const selling = town(SEED);
     selling.houses.brigue.workshops = [];
     selling.houses.brigue.stock = { cloth: 20 };
-    const control = createWorld(SEED);
+    const control = town(SEED);
 
     // Act: twenty extra cloth on the market, against a market that absorbs ten.
     const withSale = playPeriod(selling, [{ type: 'market.sell', houseId: 'brigue', good: 'cloth', units: 20 }]);
@@ -188,7 +188,7 @@ describe('the market of a hour', () => {
 describe('the warehouse', () => {
   it('credits production to the stock, not to the purse', () => {
     // Arrange: a workshop with no wages, so only production could move money.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [{ good: 'cloth', level: 2, workers: 0 }];
     world.houses.brigue.stock = { wool: 8 };
     const treasuryCents = world.houses.brigue.treasuryCents;
@@ -213,7 +213,7 @@ describe('the warehouse', () => {
 
   it("credits a sale at the hour's price", () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [];
     world.houses.brigue.stock = { cloth: 10 };
     world.houses.brigue.treasuryCents = 0;
@@ -242,7 +242,7 @@ describe('the warehouse', () => {
 
   it('refuses a sale of more stock than the house holds', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [];
     world.houses.brigue.stock = { cloth: 2 };
     const treasuryCents = world.houses.brigue.treasuryCents;
@@ -268,7 +268,7 @@ describe('the warehouse', () => {
 
   it('refuses a purchase that would overflow the warehouse', () => {
     // Arrange: a full warehouse and a purse that could pay.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [];
     world.houses.brigue.stock = { cloth: RULES.stockCapacityUnits };
     world.houses.brigue.treasuryCents = 1_000_000;
@@ -294,7 +294,7 @@ describe('the warehouse', () => {
 
   it('refuses production that does not fit in the warehouse', () => {
     // Arrange: a raw workshop with one unit of room left.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [{ good: 'wool', level: 2, workers: 0 }];
     world.houses.brigue.stock = { cloth: RULES.stockCapacityUnits - 1 };
 
@@ -317,7 +317,7 @@ describe('the warehouse', () => {
 
   it('lets a full house make room by selling, then produce again', () => {
     // Arrange: a warehouse full of cloth and a loom that cannot start.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.workshops = [{ good: 'cloth', level: 2, workers: 0 }];
     world.houses.brigue.stock = { cloth: RULES.stockCapacityUnits };
     world.houses.brigue.treasuryCents = 1_000_000;
@@ -343,7 +343,7 @@ describe('the warehouse', () => {
     for (const type of ['market.buy', 'market.sell'] as const) {
       // Arrange: a poisoned stored action, which a database and a JSON parser
       // can still hand to the tick. No wages, so only the action could move money.
-      const world = createWorld(SEED);
+      const world = town(SEED);
       world.houses.brigue.workshops = [{ good: 'cloth', level: 2, workers: 0 }];
       const treasuryCents = world.houses.brigue.treasuryCents;
       const malformed = { type, houseId: 'brigue', good: 'gold', units: 1 } as unknown as Action;
@@ -369,7 +369,7 @@ describe('the warehouse', () => {
 describe('an AI house', () => {
   it('buys the input its chain lacks instead of idling', () => {
     // Arrange: Caron has no wool, Fournier no grain, Charpentier no wood.
-    const { events, world } = playWeek(createWorld(SEED));
+    const { events, world } = playWeek(town(SEED));
 
     // Assert
     expect(events).toContainEqual(
@@ -388,7 +388,7 @@ describe('an AI house', () => {
 
   it('sells its whole stock every hour', () => {
     // Arrange
-    let current = createWorld(SEED);
+    let current = town(SEED);
 
     // Act and assert: no AI house holds a unit across the hour.
     for (let hour = 0; hour < 10; hour += 1) {
@@ -403,7 +403,7 @@ describe('an AI house', () => {
 
   it("does not sell a human house's stock", () => {
     // Arrange: the founder is the weaver and must keep its bet.
-    const { world, events } = playWeek(createWorld(SEED));
+    const { world, events } = playWeek(town(SEED));
 
     // Assert
     expect(world.houses.brigue.stock.cloth).toBe(4);
@@ -413,7 +413,7 @@ describe('an AI house', () => {
 
   it("does not sell a dormant house's stock", () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.caron.dormant = true;
     world.houses.caron.stock = { cloth: 5 };
 
@@ -427,7 +427,7 @@ describe('an AI house', () => {
 
   it('never idles once it can pay for its input', () => {
     // Arrange
-    let current = createWorld(SEED);
+    let current = town(SEED);
     const idles: Event[] = [];
 
     // Act: a long run, because a demand that switches on and off would show here.
@@ -443,7 +443,7 @@ describe('an AI house', () => {
 
   it('settles the prices instead of making them saw', () => {
     // Arrange
-    let current = createWorld(SEED);
+    let current = town(SEED);
 
     // Act
     for (let hour = 0; hour < 200; hour += 1) {
@@ -476,7 +476,7 @@ describe('an AI house', () => {
 
   it('stays idle, without buying, when it cannot pay', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.caron.treasuryCents = 0;
     world.houses.caron.stock = {};
 
@@ -499,7 +499,7 @@ describe('an AI house', () => {
 
   it('never buys an input it does not need', () => {
     // Arrange
-    let current = createWorld(SEED);
+    let current = town(SEED);
     const bought = new Map<string, Set<string>>();
 
     // Act
@@ -525,7 +525,7 @@ describe('an AI house', () => {
 
   it('pays the same price as the player does in the same hour', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     const priceCents = world.market.wool;
 
     // Act

@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, PACING, type World } from '@brigue/core';
+import { PACING, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
@@ -10,6 +10,7 @@ import { MemoryPlayerStore, type Player } from '../src/players.ts';
 import { applyPresence } from '../src/presence.ts';
 import { authenticate, issueToken } from '../src/session.ts';
 import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
+import { town } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -27,7 +28,7 @@ function player(houseId: string, lastSeenAt: Date, revokedAt: Date | null = null
 }
 
 function aHumanWorld(): World {
-  const world = createWorld(20261105);
+  const world = town(20261105);
   world.houses.caron.controller = 'human';
 
   return world;
@@ -100,7 +101,7 @@ describe('dormancy', () => {
 
   it('walks a twenty-house town without changing it', () => {
     // Arrange
-    const base = createWorld(20261105);
+    const base = town(20261105);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
     for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
@@ -147,7 +148,7 @@ describe('dormancy', () => {
   it('revokes a player row whose house the world no longer holds', () => {
     // Arrange: a token outlived a house whose deletion was saved but whose
     // revocation failed.
-    const world = createWorld(20261105);
+    const world = town(20261105);
     delete world.houses.caron;
 
     // Act
@@ -262,7 +263,7 @@ describe('the thirty-day deletion', () => {
   it('makes a returning founder start a fresh house after more than thirty days', async () => {
     // Arrange: the old house has money and a seat, so a failed respawn would
     // keep them.
-    const world = createWorld(20261105);
+    const world = town(20261105);
     world.houses.brigue.treasuryCents = 999_999;
     world.seats.maire = { personId: 'person-brigue' };
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));

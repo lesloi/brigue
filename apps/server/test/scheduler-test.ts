@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { createWorld, PACING, stateHash, type Action, type Event, type World } from '@brigue/core';
+import { PACING, stateHash, type Action, type Event, type World } from '@brigue/core';
 
 import { createLogger } from '../src/logger.ts';
 import { playDue, startScheduler } from '../src/scheduler.ts';
 import { HOUR_MS, MemoryWorldStore, type StoredAction, type WorldStore } from '../src/worlds.ts';
+import { town as playableTown } from './helpers.ts';
 
 const START = new Date('2026-11-05T00:00:00.000Z');
 const HOUR = HOUR_MS;
@@ -12,7 +13,7 @@ const HOUR = HOUR_MS;
 async function town(options: { at?: Date; world?: World } = {}): Promise<MemoryWorldStore> {
   const store = new MemoryWorldStore();
   const at = options.at ?? START;
-  await store.createIfAbsent(options.world ?? createWorld(20261105), at, at);
+  await store.createIfAbsent(options.world ?? playableTown(20261105), at, at);
 
   return store;
 }

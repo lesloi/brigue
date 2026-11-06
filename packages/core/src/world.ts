@@ -256,17 +256,21 @@ export interface Founder {
   person: Person;
 }
 
+/** The id of the first house, the one the first player takes. */
+export const FOUNDER_HOUSE_ID = 'brigue';
+
 /**
- * The house a new player starts with: a loom, a little money, no seat and no
- * career. `createWorld` opens with it, and the server puts it back into a freed
- * place so a deleted founder cannot brick the join path.
+ * The house a new player starts with: the workshop of its trade, a little
+ * money, its first input, no seat and no career. The town is built without it;
+ * `withFounder` adds it when the first player joins, and puts it back into a
+ * freed place so a deleted founder cannot brick the join path.
  */
 export function createFounder(trade: Trade = 'weaver'): Founder {
   const chain = TRADE_CHAINS[trade];
 
   return {
     house: {
-      id: 'brigue',
+      id: FOUNDER_HOUSE_ID,
       name: 'Brigue',
       controller: 'human',
       treasuryCents: RULES.founderTreasuryCents,
@@ -287,6 +291,24 @@ export function createFounder(trade: Trade = 'weaver'): Founder {
       alive: true,
     },
   };
+}
+
+/**
+ * The first house: the town is built without it, and it is added when the first
+ * player joins — or when a deleted founder's place waits for a human. It is
+ * never a political role, and adding it twice is a no-op.
+ */
+export function withFounder(world: World, trade: Trade): World {
+  if (world.houses[FOUNDER_HOUSE_ID] !== undefined) {
+    return world;
+  }
+
+  const next = structuredClone(world);
+  const { house, person } = createFounder(trade);
+  next.houses[house.id] = house;
+  next.people[person.id] = person;
+
+  return next;
 }
 
 export type SeatRefusal = 'unknown_house' | 'unknown_person' | 'person_of_another_house' | 'person_dead';
@@ -333,9 +355,7 @@ export function stockUnits(house: House): number {
   return total;
 }
 
-export function createWorld(seed: number, trade: Trade = 'weaver'): World {
-  const founder = createFounder(trade);
-
+export function createWorld(seed: number): World {
   return {
     formatVersion: FORMAT_VERSION,
     rulesetVersion: RULES.version,
@@ -344,7 +364,6 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
     hour: 1,
     year: START_YEAR,
     houses: {
-      [founder.house.id]: founder.house,
       caron: {
         id: 'caron',
         name: 'Caron',
@@ -425,7 +444,6 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
       },
     },
     people: {
-      [founder.person.id]: founder.person,
       'person-caron': {
         id: 'person-caron',
         houseId: 'caron',

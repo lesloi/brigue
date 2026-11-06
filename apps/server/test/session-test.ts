@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, RULES } from '@brigue/core';
+import { RULES } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp, type AppDeps } from '../src/http.ts';
@@ -9,6 +9,7 @@ import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
 import { MemoryWorldStore } from '../src/worlds.ts';
+import { town } from './helpers.ts';
 
 interface Harness {
   url: string;
@@ -198,11 +199,7 @@ describe('joining the town', () => {
 
   it('refuses to hand out a token for a world the current rules cannot read', async () => {
     const harness = await start();
-    await harness.worlds.createIfAbsent(
-      { ...createWorld(7), rulesetVersion: RULES.version + 1 },
-      new Date(),
-      new Date(),
-    );
+    await harness.worlds.createIfAbsent({ ...town(7), rulesetVersion: RULES.version + 1 }, new Date(), new Date());
 
     const response = await join(harness);
 
@@ -245,7 +242,7 @@ describe('joining the town', () => {
   it('does not change the trade when a token resumes', async () => {
     // Arrange
     const harness = await start();
-    await harness.worlds.createIfAbsent(createWorld(7, 'baker'), new Date(), new Date());
+    await harness.worlds.createIfAbsent(town(7, 'baker'), new Date(), new Date());
     const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
 
     // Act

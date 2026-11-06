@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 import {
   advanceRng,
   canonicalJson,
-  createWorld,
   FORMAT_VERSION,
   RULES,
   SEATS,
@@ -16,8 +15,8 @@ import {
   HOURS_PER_YEAR,
   WorldVersionError,
 } from '../src/index.ts';
-import { tick } from './helpers.ts';
 import type { Action, Event, World } from '../src/index.ts';
+import { tick, town } from './helpers.ts';
 
 const SEED = 20261029;
 const HOURS = 200;
@@ -44,21 +43,21 @@ function scripted(hour: number): Action[] {
 
 describe('the simulation core', () => {
   it('gives the same world for the same seed and the same actions', () => {
-    const first = play(createWorld(SEED), HOURS, scripted);
-    const second = play(createWorld(SEED), HOURS, scripted);
+    const first = play(town(SEED), HOURS, scripted);
+    const second = play(town(SEED), HOURS, scripted);
 
     expect(stateHash(first.world)).toBe(stateHash(second.world));
     expect(canonicalJson(first.world)).toBe(canonicalJson(second.world));
   });
 
   it('gives a different world for a different seed', () => {
-    expect(stateHash(play(createWorld(SEED), HOURS, scripted).world)).not.toBe(
-      stateHash(play(createWorld(1), HOURS, scripted).world),
+    expect(stateHash(play(town(SEED), HOURS, scripted).world)).not.toBe(
+      stateHash(play(town(1), HOURS, scripted).world),
     );
   });
 
   it('never mutates the world it is given', () => {
-    const world = createWorld(SEED);
+    const world = town(SEED);
     const before = canonicalJson(world);
 
     tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 2 }]);
@@ -67,7 +66,7 @@ describe('the simulation core', () => {
   });
 
   it('refuses an action the house cannot pay for, and says so', () => {
-    const world = createWorld(SEED);
+    const world = town(SEED);
     const refused = tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 10_000 }]);
     const control = tick(world, []);
 
@@ -84,20 +83,20 @@ describe('the simulation core', () => {
   });
 
   it('refuses an action from a house that does not exist instead of throwing', () => {
-    const { events } = tick(createWorld(SEED), [{ type: 'market.buy', houseId: 'ghost', good: 'wool', units: 1 }]);
+    const { events } = tick(town(SEED), [{ type: 'market.buy', houseId: 'ghost', good: 'wool', units: 1 }]);
 
     expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_house' });
   });
 
   it('refuses an action type it does not know, instead of skipping it', () => {
     const malformed = { type: 'market.invent', houseId: 'brigue', good: 'wool' } as unknown as Action;
-    const { events } = tick(createWorld(SEED), [malformed]);
+    const { events } = tick(town(SEED), [malformed]);
 
     expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_action', houseId: 'unknown' });
   });
 
   it('credits the output to the stock instead of the purse', () => {
-    const { world } = tick(createWorld(SEED));
+    const { world } = tick(town(SEED));
 
     expect(world.houses.brigue.stock.cloth).toBe(4);
     expect(world.houses.brigue.stock.wool).toBe(4);
@@ -106,7 +105,7 @@ describe('the simulation core', () => {
   });
 
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
-    const first = play(createWorld(SEED), 3);
+    const first = play(town(SEED), 3);
 
     expect(first.events).toContainEqual(
       expect.objectContaining({
@@ -128,7 +127,7 @@ describe('the simulation core', () => {
 
   it('holds one scrutiny per game year and puts every seat up', () => {
     // Arrange: five houses, so five seats can actually be filled, and two years.
-    const base = createWorld(SEED);
+    const base = town(SEED);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
     world.houses.quint = {
       ...base.houses.herse,
@@ -174,7 +173,7 @@ describe('the simulation core', () => {
 
   it('makes twenty-four ticks a year and derives the year from the hour', () => {
     // Arrange: twenty-three hours are still the first year.
-    const almost = play(createWorld(SEED), HOURS_PER_YEAR - 1).world;
+    const almost = play(town(SEED), HOURS_PER_YEAR - 1).world;
 
     // Act: the twenty-fourth tick closes it.
     const after = tick(almost).world;
@@ -188,7 +187,7 @@ describe('the simulation core', () => {
 
   it('advances a living person one year per twenty-four ticks', () => {
     // Arrange: the founder enters at twenty.
-    const before = play(createWorld(SEED), HOURS_PER_YEAR - 1).world;
+    const before = play(town(SEED), HOURS_PER_YEAR - 1).world;
 
     // Act
     const after = tick(before).world;
@@ -200,7 +199,7 @@ describe('the simulation core', () => {
 
   it('seats a person of the house and refuses another house’s person', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     const brigue = world.people['person-brigue'];
     const caron = world.people['person-caron'];
 
@@ -211,7 +210,7 @@ describe('the simulation core', () => {
 
   it('keeps every filled seat on a living person of the house that holds it', () => {
     // Arrange and act: enough hours to fill every seat once.
-    const { world } = play(createWorld(SEED), HOURS_PER_YEAR * 6);
+    const { world } = play(town(SEED), HOURS_PER_YEAR * 6);
 
     // Assert
     for (const seat of Object.values(world.seats)) {
@@ -227,7 +226,7 @@ describe('the simulation core', () => {
 
   it('lodges a candidacy at once and the noon bell closes it for the scrutiny', () => {
     // Arrange: lodged during hour one, before any noon.
-    const queued = tick(createWorld(SEED), [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }]);
+    const queued = tick(town(SEED), [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }]);
 
     // Assert: the bonus is in the open map at once, and the event says which
     // scrutiny it counts for.
@@ -249,7 +248,7 @@ describe('the simulation core', () => {
 
   it('counts a candidacy lodged after the noon bell for the next scrutiny', () => {
     // Arrange: the town is past noon on its first day.
-    const world = { ...createWorld(SEED), hour: HOURS_PER_YEAR / 2 + 1 };
+    const world = { ...town(SEED), hour: HOURS_PER_YEAR / 2 + 1 };
 
     // Act
     const queued = tick(world, [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }]);
@@ -273,7 +272,7 @@ describe('the simulation core', () => {
       ['site', 1 + RULES.siteHours],
     ] as const) {
       // Arrange: an engagement due at that hour.
-      const world = createWorld(SEED);
+      const world = town(SEED);
       world.engagements = [{ id: `engagement-${kind}`, kind, houseId: 'brigue', dueAt }];
 
       // Act: run to the due hour, then one tick more.
@@ -292,7 +291,7 @@ describe('the simulation core', () => {
   it('resolves an engagement behind the town clock by the next tick instead of dropping it', () => {
     // Arrange: an older state can leave the counter past a due hour. A cap jump
     // moves only the wall clock, so this is the defensive path, not the normal one.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.hour = 900;
     world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'brigue', dueAt: 800 }];
 
@@ -314,8 +313,8 @@ describe('the simulation core', () => {
 
   it('keeps a campaign for one seat out of another seat vote', () => {
     // Arrange: both worlds reach the same scrutiny, one with a campaign for the treasury.
-    const control = play(createWorld(SEED), HOURS_PER_YEAR);
-    const campaigned = play(createWorld(SEED), HOURS_PER_YEAR, (hour) =>
+    const control = play(town(SEED), HOURS_PER_YEAR);
+    const campaigned = play(town(SEED), HOURS_PER_YEAR, (hour) =>
       hour === 0 ? [{ type: 'council.campaign', houseId: 'brigue', seatId: 'tresorier' }] : [],
     );
 
@@ -331,7 +330,7 @@ describe('the simulation core', () => {
   });
 
   it('turns unpaid wages into a debt instead of erasing them', () => {
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.treasuryCents = 0;
     world.houses.brigue.stock = {};
     world.houses.brigue.workshops = [{ good: 'wool', level: 0, workers: 3 }];
@@ -351,7 +350,7 @@ describe('the simulation core', () => {
 
   it('refuses an action from a dormant house instead of running it', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.houses.brigue.dormant = true;
 
     // Act
@@ -372,7 +371,7 @@ describe('the simulation core', () => {
 
   it('keeps a dormant house’s seat, stops its trade and keeps it out of the vote', () => {
     // Arrange: one election fills the mayoralty, then its holder goes dormant.
-    const elected = play(createWorld(SEED), HOURS_PER_YEAR).world;
+    const elected = play(town(SEED), HOURS_PER_YEAR).world;
     const personId = elected.seats.maire.personId as string;
     const holder = elected.people[personId];
     const house = elected.houses[holder.houseId];
@@ -405,7 +404,7 @@ describe('the simulation core', () => {
 
   it('shows a house-ledger event to that house only', () => {
     // Arrange
-    const { events } = tick(createWorld(SEED));
+    const { events } = tick(town(SEED));
 
     // Act
     const forBrigue = visibleTo(events, 'brigue');
@@ -421,7 +420,7 @@ describe('the simulation core', () => {
 
   it('ticks a town of twenty houses', () => {
     // Arrange
-    const base = createWorld(SEED);
+    const base = town(SEED);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
     for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
@@ -450,7 +449,7 @@ describe('the simulation core', () => {
   });
 
   it('refuses a world written by another ruleset', () => {
-    const world = createWorld(SEED);
+    const world = town(SEED);
     world.rulesetVersion += 1;
 
     expect(() => tick(world)).toThrow(WorldVersionError);
@@ -458,7 +457,7 @@ describe('the simulation core', () => {
 
   it('refuses a world of the previous format instead of guessing it', () => {
     // Arrange
-    const world = { ...createWorld(SEED), formatVersion: FORMAT_VERSION - 1 };
+    const world = { ...town(SEED), formatVersion: FORMAT_VERSION - 1 };
 
     // Act and assert
     expect(FORMAT_VERSION).toBe(1);
@@ -466,7 +465,7 @@ describe('the simulation core', () => {
   });
 
   it('keeps the ledger in integer cents', () => {
-    const { world } = play(createWorld(SEED), 20);
+    const { world } = play(town(SEED), 20);
 
     for (const house of Object.values(world.houses)) {
       expect(Number.isInteger(house.treasuryCents)).toBe(true);
