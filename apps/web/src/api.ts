@@ -2,9 +2,9 @@ import type { Event, GoodId, Law, SeatId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
-  weeksPerYear: number;
-  weekOfYear: number;
-  nextScrutinyWeek: number;
+  hoursPerYear: number;
+  hourOfYear: number;
+  nextScrutinyHour: number;
   nextScrutinyAt: string;
 }
 
@@ -14,10 +14,10 @@ export interface TradeIntent {
   good: GoodId;
 }
 
-/** One action the server holds for the current or next week. */
+/** One action the server holds for the current or next hour. */
 export interface PendingActionView {
   id: string;
-  week: number;
+  hour: number;
   type: 'market.buy' | 'market.sell' | 'council.campaign';
   good?: GoodId;
   units?: number;
@@ -30,13 +30,13 @@ export interface ProjectedWorkshop {
   level: number;
   workers: number;
   input: GoodId | null;
-  outputUnitsPerWeek: number;
-  inputUnitsPerWeek: number;
-  wagesCentsPerWeek: number;
+  outputUnitsPerHour: number;
+  inputUnitsPerHour: number;
+  wagesCentsPerHour: number;
 }
 
 export interface WorldProjection {
-  week: number;
+  hour: number;
   year: number;
   calendar: CalendarView;
   house: {
@@ -62,15 +62,15 @@ export interface WorldProjection {
     marketHistory: Partial<Record<GoodId, number[]>>;
     marketReferences: Record<GoodId, number>;
   };
-  /** The instant the current week ends, so the client can show the next week. */
-  nextTickAt: string;
+  /** The instant the current hour ends, so the client can show the next bell. */
+  nextBellAt: string;
 }
 
 export interface CatchUpSummary {
-  weeksPlayed: number;
-  skippedWeeks: number;
-  counts: Partial<Record<Event['type'], number>>;
-  refusals: Partial<Record<string, number>>;
+  hours: number;
+  skipped: number;
+  /** Journal entries beyond the page this read returned. */
+  remaining: number;
 }
 
 export interface WorldResponse {
@@ -78,7 +78,7 @@ export interface WorldResponse {
   events: Event[];
   summary: CatchUpSummary;
   stateHash: string;
-  /** Set only by a server started for local development: it exposes `advanceWeek`. */
+  /** Set only by a server started for local development: it exposes `advanceHour`. */
   dev?: boolean;
 }
 
@@ -138,20 +138,20 @@ export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
 }
 
-/** Local development only: plays the next week now. The server refuses in production. */
-export function advanceWeek(): Promise<WorldResponse> {
+/** Local development only: plays the next hour now. The server refuses in production. */
+export function advanceHour(): Promise<WorldResponse> {
   return send('/api/dev/advance', { method: 'POST' });
 }
 
-export function sendAction(week: number, action: ActionIntent): Promise<{ id: string; week: number; houseId: string }> {
+export function sendAction(hour: number, action: ActionIntent): Promise<{ id: string; hour: number; houseId: string }> {
   return send('/api/actions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: actionId(), week, action }),
+    body: JSON.stringify({ id: actionId(), hour, action }),
   });
 }
 
-/** The actions the server still holds for this house, current and next week. */
+/** The actions the server still holds for this house, current and next hour. */
 export async function readPending(): Promise<PendingActionView[]> {
   const body = await send<{ actions: PendingActionView[] }>('/api/actions');
 

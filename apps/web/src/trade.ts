@@ -24,7 +24,7 @@ export function netPendingFor(good: GoodId, pending: readonly PendingActionView[
   return total;
 }
 
-/** The net cash the queued market actions will move at the week's prices. */
+/** The net cash the queued market actions will move at the town's prices. */
 export function pendingCashCents(pending: readonly PendingActionView[], prices: Record<GoodId, number>): number {
   let total = 0;
   for (const action of pending) {

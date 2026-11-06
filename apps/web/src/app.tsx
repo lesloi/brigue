@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import {
   ApiError,
-  advanceWeek,
+  advanceHour,
   cancelAction,
   hasSession,
   joinTown,
@@ -203,16 +203,16 @@ export function App() {
         kind === 'buy'
           ? ({ type: 'market.buy', good, units } as const)
           : ({ type: 'market.sell', good, units } as const);
-      const sent = await sendAction(view.data.world.week, intent);
+      await sendAction(view.data.world.hour, intent);
       await readPending().then(setPending, () => setPending([]));
       const quantity = goodQuantity(units, good);
       showToast(
         kind === 'buy'
-          ? `Achat de ${quantity} envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`
-          : `Vente de ${quantity} envoyée pour la semaine ${sent.week}. Elle apparaîtra à la prochaine lecture.`,
+          ? `Achat de ${quantity} envoyé. Il apparaîtra à la prochaine lecture.`
+          : `Vente de ${quantity} envoyée. Elle apparaîtra à la prochaine lecture.`,
       );
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'stale_week') {
+      if (error instanceof ApiError && error.code === 'stale_hour') {
         showToast(actionErrorText(error.code), true);
         await refresh();
       } else {
@@ -229,7 +229,7 @@ export function App() {
       await cancelAction(id);
       setPending((current) => current.filter((action) => action.id !== id));
     } catch (error) {
-      if (error instanceof ApiError && (error.code === 'stale_week' || error.code === 'unknown_action')) {
+      if (error instanceof ApiError && (error.code === 'stale_hour' || error.code === 'unknown_action')) {
         showToast(actionErrorText(error.code), true);
         await refresh();
       } else {
@@ -267,7 +267,7 @@ export function App() {
     setTab(next);
   }
 
-  async function advanceOneWeek(): Promise<void> {
+  async function advanceOneHour(): Promise<void> {
     // A repaint replaces the town, and the token dialog lives above it: same
     // guard as a refresh.
     if (token !== null) {
@@ -276,11 +276,11 @@ export function App() {
 
     setAdvancing(true);
     try {
-      const data = await advanceWeek();
+      const data = await advanceHour();
       setNow(Date.now());
       setView({ kind: 'world', data });
       await readPending().then(setPending, () => setPending([]));
-      showToast(`Semaine ${data.world.week}, comme si une heure était passée.`);
+      showToast(`Heure ${data.world.hour}, comme si une heure était passée.`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         void boot();
@@ -344,7 +344,7 @@ export function App() {
               pending={pending}
               onRefresh={() => void refresh()}
               onGoMarket={() => selectTab('marche')}
-              onAdvance={() => void advanceOneWeek()}
+              onAdvance={() => void advanceOneHour()}
             />
           ) : (
             <Marche

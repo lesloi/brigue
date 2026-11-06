@@ -2,13 +2,13 @@ import type { Action, Event } from '@brigue/core';
 
 import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
 
-/** The three cuts of the week's ledger: the house's own story, everything, the prices. */
+/** The three cuts of the journal: the house's own story, everything, the prices. */
 export type LedgerFilter = 'house' | 'all' | 'prices';
 
 /**
  * The default is the house's own story plus the town's politics; the AI's
  * market noise and the price lines stay behind the other cuts. `prices` is
- * where chapter I's lesson lives; `all` is the whole last week.
+ * where chapter I's lesson lives; `all` is the whole page.
  */
 export function ledgerEvents(events: readonly Event[], houseId: string, filter: LedgerFilter): Event[] {
   switch (filter) {
@@ -106,21 +106,15 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
     case 'council.campaigned':
       return {
         tone: 'council',
-        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez dépensé', 'a dépensé')} ${formatCount(event.favourSpent)} de faveur pour la ${seatName(event.seatId)} ; la campagne aboutit semaine ${formatCount(event.dueWeek)}.`,
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; elle compte au prochain scrutin.`,
       };
 
     case 'engagement.resolved': {
       const late =
-        event.resolvedWeek === event.dueWeek
+        event.resolvedAt === event.dueAt
           ? ''
-          : ` (${formatCount(event.resolvedWeek - event.dueWeek)} semaine${event.resolvedWeek - event.dueWeek > 1 ? 's' : ''} de retard)`;
+          : ` (${formatCount(event.resolvedAt - event.dueAt)} heure${event.resolvedAt - event.dueAt > 1 ? 's' : ''} de retard)`;
 
-      if (event.kind === 'campaign') {
-        return {
-          tone: 'council',
-          text: `La campagne de ${subject(event.houseId)} pour la ${event.seatId === undefined ? 'charge' : seatName(event.seatId)} aboutit${late}.`,
-        };
-      }
       if (event.kind === 'hearing') {
         return {
           tone: 'council',

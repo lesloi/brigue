@@ -19,6 +19,7 @@ import {
   goodName,
   goodQuantity,
   pendingActionText,
+  pendingHourText,
   readErrorText,
   refusalText,
   seatName,
@@ -26,7 +27,7 @@ import {
   tradeName,
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
-import { countdownText, scrutinyText } from '../src/views/ville.tsx';
+import { catchUpText, countdownText, lawAgeText, scrutinyText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
   brigue: 'Brigue',
@@ -42,6 +43,8 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'market.bought',
       audience: 'town',
+
+      at: 0,
       houseId: 'brigue',
       good: 'wool',
       units: 10,
@@ -63,6 +66,8 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'market.bought',
       audience: 'town',
+
+      at: 0,
       houseId: 'caron',
       good: 'wool',
       units: 1,
@@ -82,6 +87,8 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'action.refused',
       audience: { houseId: 'brigue' },
+
+      at: 0,
       action: 'market.buy',
       houseId: 'brigue',
       reason: 'insufficient_funds',
@@ -100,12 +107,16 @@ describe('eventLine', () => {
     const own: Event = {
       type: 'house.penniless',
       audience: { houseId: 'brigue' },
+
+      at: 0,
       houseId: 'brigue',
       shortfallCents: 240,
     };
     const other: Event = {
       type: 'house.penniless',
       audience: { houseId: 'caron' },
+
+      at: 0,
       houseId: 'caron',
       shortfallCents: 240,
     };
@@ -124,6 +135,8 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'workshop.produced',
       audience: { houseId: 'brigue' },
+
+      at: 0,
       houseId: 'brigue',
       good: 'cloth',
       units: 4,
@@ -142,6 +155,8 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'workshop.overflow',
       audience: { houseId: 'brigue' },
+
+      at: 0,
       houseId: 'brigue',
       good: 'wool',
       refusedUnits: 3,
@@ -152,6 +167,48 @@ describe('eventLine', () => {
 
     // Assert
     expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
+  });
+
+  it('reads a candidacy as counting at the next scrutiny', () => {
+    // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
+    const event: Event = {
+      type: 'council.campaigned',
+      audience: { houseId: 'brigue' },
+      at: 0,
+      houseId: 'brigue',
+      seatId: 'maire',
+      favourSpent: 3,
+      countsAt: 24,
+    };
+
+    // Act
+    const line = eventLine(event, 'brigue', nameOf);
+
+    // Assert
+    expect(line.tone).toBe('council');
+    expect(line.text).toContain('candidature à la mairie');
+    expect(line.text).toContain('prochain scrutin');
+  });
+
+  it('counts a late engagement in hours', () => {
+    // Arrange: heard three hours after it fell due.
+    const event: Event = {
+      type: 'engagement.resolved',
+      audience: { houseId: 'brigue' },
+      at: 8,
+      engagementId: 'e1',
+      kind: 'hearing',
+      houseId: 'brigue',
+      dueAt: 5,
+      resolvedAt: 8,
+    };
+
+    // Act
+    const line = eventLine(event, 'brigue', nameOf);
+
+    // Assert
+    expect(line.text).toContain("L'audience de Vous est tenue");
+    expect(line.text).toContain('3 heures de retard');
   });
 });
 
@@ -189,7 +246,7 @@ describe('format helpers', () => {
   });
 
   it('separates action failures from read failures', () => {
-    expect(actionErrorText('stale_week')).toContain('déjà passée');
+    expect(actionErrorText('stale_hour')).toContain('déjà passée');
     expect(actionErrorText(null)).toBe("L'action n'a pas pu être envoyée.");
     expect(readErrorText('world_version')).toContain('plus compatible');
     expect(readErrorText(null)).toBe("La ville n'a pas pu être relue.");
@@ -200,17 +257,15 @@ describe('countdownText', () => {
   const start = Date.parse('2026-01-01T00:00:00.000Z');
 
   it('shows minutes and seconds under an hour', () => {
-    expect(countdownText(new Date(start + 90_000).toISOString(), start)).toBe('semaine dans 1:30');
+    expect(countdownText(new Date(start + 90_000).toISOString(), start)).toBe('cloche dans 1:30');
   });
 
   it('switches to hours and minutes above an hour', () => {
-    expect(countdownText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe(
-      'semaine dans 2 h 05',
-    );
+    expect(countdownText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe('cloche dans 2 h 05');
   });
 
   it('does not go negative', () => {
-    expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('semaine imminente');
+    expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('cloche imminente');
   });
 });
 
@@ -223,6 +278,32 @@ describe('scrutinyText', () => {
 
   it('never goes negative', () => {
     expect(scrutinyText(new Date(start - 1_000).toISOString(), start)).toBe('scrutin imminent');
+  });
+});
+
+describe('lawAgeText', () => {
+  it('says a law in hours from the town clock', () => {
+    expect(lawAgeText(12, 12)).toBe('cette heure');
+    expect(lawAgeText(12, 13)).toBe('il y a 1 heure');
+    expect(lawAgeText(9, 12)).toBe('il y a 3 heures');
+  });
+});
+
+describe('catchUpText', () => {
+  it('agrees with a single hour and a single entry', () => {
+    expect(catchUpText({ hours: 1, skipped: 0, remaining: 0 })).toBe('1 heure vécue depuis votre dernière visite.');
+    expect(catchUpText({ hours: 1, skipped: 1, remaining: 1 })).toContain('1 heure sautée');
+    expect(catchUpText({ hours: 1, skipped: 1, remaining: 1 })).toContain('1 entrée de plus');
+  });
+
+  it('pluralises above one', () => {
+    expect(catchUpText({ hours: 2, skipped: 0, remaining: 0 })).toBe('2 heures vécues depuis votre dernière visite.');
+    expect(catchUpText({ hours: 0, skipped: 2, remaining: 3 })).toContain('2 heures sautées');
+    expect(catchUpText({ hours: 0, skipped: 2, remaining: 3 })).toContain('3 entrées de plus');
+  });
+
+  it('says nothing when the visit owes nothing', () => {
+    expect(catchUpText({ hours: 0, skipped: 0, remaining: 0 })).toBeNull();
   });
 });
 
@@ -256,6 +337,8 @@ describe('the ledger filter', () => {
     {
       type: 'market.sold',
       audience: 'town',
+
+      at: 0,
       houseId: 'brigue',
       good: 'cloth',
       units: 2,
@@ -265,15 +348,17 @@ describe('the ledger filter', () => {
     {
       type: 'market.bought',
       audience: 'town',
+
+      at: 0,
       houseId: 'caron',
       good: 'wool',
       units: 6,
       priceCents: 380,
       totalCents: 2280,
     },
-    { type: 'council.election_held', audience: 'town', seatId: 'maire', winnerHouseId: 'caron', votes: {} },
-    { type: 'market.price_changed', audience: 'town', good: 'cloth', before: 1240, after: 1250 },
-    { type: 'house.wages_paid', audience: { houseId: 'brigue' }, houseId: 'brigue', amountCents: 240 },
+    { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerHouseId: 'caron', votes: {} },
+    { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
+    { type: 'house.wages_paid', audience: { houseId: 'brigue' }, at: 0, houseId: 'brigue', amountCents: 240 },
   ];
 
   it('keeps the house and the town politics by default', () => {
@@ -295,11 +380,11 @@ describe('the ledger filter', () => {
 
 describe('pending actions', () => {
   const pending: PendingActionView[] = [
-    { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
-    { id: 'b', week: 3, type: 'market.buy', good: 'grain', units: 10 },
-    { id: 'c', week: 3, type: 'market.sell', good: 'grain', units: 4 },
-    { id: 'd', week: 3, type: 'market.buy', good: 'wool', units: 2 },
-    { id: 'e', week: 3, type: 'council.campaign', seatId: 'maire' },
+    { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+    { id: 'b', hour: 3, type: 'market.buy', good: 'grain', units: 10 },
+    { id: 'c', hour: 3, type: 'market.sell', good: 'grain', units: 4 },
+    { id: 'd', hour: 3, type: 'market.buy', good: 'wool', units: 2 },
+    { id: 'e', hour: 3, type: 'council.campaign', seatId: 'maire' },
   ];
 
   it('nets the market actions of one good', () => {
@@ -315,12 +400,17 @@ describe('pending actions', () => {
     expect(pendingActionText(pending[4] as PendingActionView)).toBe('Candidature à la mairie');
   });
 
-  it("values the queued actions at the week's prices", () => {
+  it('says where a queued action lands against the clock', () => {
+    expect(pendingHourText(pending[0] as PendingActionView, 3)).toBe('cette heure');
+    expect(pendingHourText({ ...pending[0], hour: 4 } as PendingActionView, 3)).toBe("l'heure suivante");
+  });
+
+  it("values the queued actions at the town's prices", () => {
     // Arrange
     const prices = { wool: 380, cloth: 1240, grain: 260, bread: 520, wood: 300, planks: 980 };
     const queued: PendingActionView[] = [
-      { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
-      { id: 'b', week: 3, type: 'market.sell', good: 'bread', units: 3 },
+      { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+      { id: 'b', hour: 3, type: 'market.sell', good: 'bread', units: 3 },
     ];
 
     // Act and assert: -5 × 260 + 3 × 520, and 5 − 3 units net.
