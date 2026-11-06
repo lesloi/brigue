@@ -173,6 +173,8 @@ export function actionErrorText(code: string | null): string {
       return "Cette ville n'a plus de maison libre.";
     case 'deletion_pending':
       return 'Cette maison est en cours de suppression.';
+    case 'house_lost':
+      return "Ta maison n'existe plus : choisis un métier pour revenir.";
     default:
       return "L'action n'a pas pu être envoyée.";
   }
@@ -191,6 +193,10 @@ export function readErrorText(code: string | null): string {
       return "Cette ville n'est plus compatible avec le serveur.";
     case 'not_found':
       return "Le serveur n'a pas trouvé cette ville.";
+    case 'house_lost':
+      return "Ta maison n'existe plus : choisis un métier pour revenir.";
+    case 'deletion_pending':
+      return 'Ce compte est en cours de suppression.';
     default:
       return "La ville n'a pas pu être relue.";
   }

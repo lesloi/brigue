@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, RULES } from '@brigue/core';
+import { createWorld, RULES, stateHash } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/http/cookies.ts';
 import { createApp, type AppDeps } from '../src/http/app.ts';
@@ -62,6 +62,23 @@ function join(harness: Harness, trade = 'weaver'): Promise<Response> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ trade }),
   });
+}
+
+/** The trade choice of an account that already holds a session cookie. */
+function choose(harness: Harness, trade: string, cookie: string): Promise<Response> {
+  return fetch(`${harness.url}/api/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ trade }),
+  });
+}
+
+/** An account an ordinary reset left between towns: the token and the id stay. */
+async function afterReset(harness: Harness, houseId = TEST_FIRST_HOUSE.id) {
+  const { token, player } = await issueToken(harness.store, TEST_TOWN.id, houseId);
+  harness.store.resetAccounts();
+
+  return { token, player, cookie: `${SESSION_COOKIE}=${token}` };
 }
 
 function cookieOf(response: Response): string | undefined {
@@ -585,6 +602,144 @@ describe('the session cookie', () => {
     const response = await login(harness, token);
 
     expect(cookieOf(response)).not.toContain('Secure');
+  });
+});
+
+describe('a token a reset left without a house', () => {
+  it('answers its session without a house, and keeps the token', async () => {
+    // Arrange
+    const harness = await start();
+    const { cookie } = await afterReset(harness);
+
+    // Act
+    const response = await fetch(`${harness.url}/api/session`, { headers: { Cookie: cookie } });
+
+    // Assert: the account is known, the house is not there yet.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ townId: null, houseId: null, deletionAfter: null });
+  });
+
+  it('reads nothing and writes nothing until the trade is chosen', async () => {
+    // Arrange: a town that a house-less account could reach if a read bound it.
+    const harness = await start();
+    await harness.worlds.createTown(TEST_TOWN.name, town(7), new Date());
+    const { cookie } = await afterReset(harness);
+    const before = await harness.worlds.withWorld(async (session) => stateHash(session.snapshot.world), TEST_TOWN.id);
+
+    // Act
+    const world = await fetch(`${harness.url}/api/world`, { headers: { Cookie: cookie } });
+    const actions = await fetch(`${harness.url}/api/actions`, { headers: { Cookie: cookie } });
+
+    // Assert: a named refusal, not a 500, and the town is exactly as it was.
+    expect(world.status).toBe(409);
+    expect(await world.json()).toEqual({ error: 'house_lost' });
+    expect(actions.status).toBe(409);
+    const after = await harness.worlds.withWorld(async (session) => stateHash(session.snapshot.world), TEST_TOWN.id);
+    expect(after).toBe(before);
+  });
+
+  it('founds a town with the trade chosen now, and returns no new token', async () => {
+    // Arrange
+    const harness = await start();
+    const { token, player, cookie } = await afterReset(harness);
+
+    // Act: the trade is the explicit choice, not the lost house's.
+    const response = await choose(harness, 'baker', cookie);
+    const body = (await response.json()) as { townId: number; houseId: string; token?: string };
+
+    // Assert: a new town whose first house is the returning account's.
+    expect(response.status).toBe(200);
+    expect(body.token).toBeUndefined();
+    const towns = await harness.worlds.listTowns();
+    expect(towns).toHaveLength(1);
+    expect(body.townId).toBe(towns[0]?.id);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, body.townId);
+    expect(world.houses[body.houseId]?.controller).toBe('human');
+    expect(world.houses[body.houseId]?.workshops[0]?.good).toBe('bread');
+
+    // The identity is the same, and the token still opens it.
+    const found = await harness.store.findByTokenHash(player.tokenHash);
+    expect(found?.playerId).toBe(player.playerId);
+    expect(found?.houseId).toBe(body.houseId);
+    const again = await login(harness, token);
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ townId: body.townId, houseId: body.houseId });
+  });
+
+  it('takes a free house when a town has one', async () => {
+    // Arrange: a town whose first house no account holds.
+    const harness = await start();
+    await harness.worlds.createTown(TEST_TOWN.name, town(7), new Date());
+    const { cookie } = await afterReset(harness);
+
+    // Act
+    const response = await choose(harness, 'carpenter', cookie);
+    const body = (await response.json()) as { townId: number; houseId: string };
+
+    // Assert: the free place, and no house added.
+    expect(response.status).toBe(200);
+    expect(body.townId).toBe(TEST_TOWN.id);
+    expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
+    expect(Object.keys(world.houses)).toHaveLength(Object.keys(town(7).houses).length);
+  });
+
+  it('binds a double tap once, without spending a second place', async () => {
+    // Arrange
+    const harness = await start();
+    const { player, cookie } = await afterReset(harness);
+
+    // Act: two choices in flight at once, as a fast double tap sends them.
+    const responses = await Promise.all([choose(harness, 'baker', cookie), choose(harness, 'weaver', cookie)]);
+
+    // Assert: both answer, one town, one human house, one binding.
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(await harness.worlds.listTowns()).toHaveLength(1);
+    const found = await harness.store.findByTokenHash(player.tokenHash);
+    expect(found?.houseId).not.toBeNull();
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, found?.townId as number);
+    const humans = Object.values(world.houses).filter((house) => house.controller === 'human');
+    expect(humans).toHaveLength(1);
+  });
+
+  it('keeps a scheduled deletion across the reset, then re-binds once it is called off', async () => {
+    // Arrange: the week the player asked for crossed the reset.
+    const harness = await start();
+    const { player, cookie } = await afterReset(harness);
+    await harness.store.markDeletion(player.tokenHash, new Date(Date.now() + HOUR));
+
+    // Act: the choice is refused while the account is closing.
+    const refused = await choose(harness, 'baker', cookie);
+
+    // Assert
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ error: 'deletion_pending' });
+
+    // Act: the player comes back, then chooses.
+    const cancelled = await fetch(`${harness.url}/api/player/deletion`, {
+      method: 'DELETE',
+      headers: { Cookie: cookie },
+    });
+    const rebound = await choose(harness, 'baker', cookie);
+
+    // Assert
+    expect(cancelled.status).toBe(204);
+    expect(rebound.status).toBe(200);
+    expect(await harness.store.findByTokenHash(player.tokenHash)).toMatchObject({ deleteAfter: null });
+  });
+
+  it('refuses the choice once the deletion deadline has passed', async () => {
+    // Arrange
+    const harness = await start();
+    const { player, cookie } = await afterReset(harness);
+    await harness.store.markDeletion(player.tokenHash, new Date(Date.now() - HOUR));
+
+    // Act
+    const response = await choose(harness, 'baker', cookie);
+
+    // Assert: the account is gone, and the dead cookie is cleared.
+    expect(response.status).toBe(401);
+    expect(cookieOf(response)).toContain('Max-Age=0');
   });
 });
 

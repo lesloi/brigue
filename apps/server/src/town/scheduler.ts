@@ -1,7 +1,7 @@
 import { advance, humanHouseOf, PACING, type Event, type World } from '@brigue/core';
 
 import type { Logger } from '../logger.ts';
-import type { PlayerStore } from '../identity/players.ts';
+import type { Player, PlayerStore } from '../identity/players.ts';
 import { applyPresence, removeHouse } from './presence.ts';
 import {
   HOUR_MS,
@@ -101,6 +101,11 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
     try {
       const at = options.now();
+
+      // An account a reset left between towns belongs to none, so the per-town
+      // sweep never sees it: its own deadline is checked once per pass.
+      await eraseUnboundAccounts(options.players, at, options.logger);
+
       const towns = await options.store.listTowns();
 
       for (const town of towns) {
@@ -133,7 +138,8 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         // The identities whose week is over go before the hour plays: a house
         // being erased must not act again.
         const expired = players.filter(
-          (player) => player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
+          (player): player is Player & { houseId: string } =>
+            player.houseId !== null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
         );
         const houses = new Set(expired.map((player) => player.houseId));
 
@@ -213,6 +219,25 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
   return {
     stop: () => clearInterval(timer),
   };
+}
+
+/**
+ * The accounts a reset left without a house: their deletion deadline is the
+ * same promise as a house's, and the erasure is the row itself. A failure here
+ * must not stop the towns, so it gets its own line and the next pass retries.
+ */
+async function eraseUnboundAccounts(players: PlayerStore, at: Date, logger: Logger): Promise<void> {
+  try {
+    const erased = await players.deleteUnboundDue(at);
+
+    if (erased > 0) {
+      logger.info('player.deleted_unbound', { count: erased });
+    }
+  } catch (error) {
+    logger.warn('player.erase_failed', {
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 function failure(logger: Logger, townId: number | undefined, error: unknown): void {

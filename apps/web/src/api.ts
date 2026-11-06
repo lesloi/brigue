@@ -106,8 +106,9 @@ export class ApiError extends Error {
 }
 
 export interface SessionInfo {
-  townId: number;
-  houseId: string;
+  /** Empty for an account a reset left between towns, until it chooses again. */
+  townId: number | null;
+  houseId: string | null;
   /** Set when a deletion is scheduled: the deadline, in ISO. */
   deletionAfter: string | null;
 }
@@ -128,9 +129,14 @@ export async function readSession(): Promise<SessionInfo | null> {
 export interface Joined {
   townId: number;
   houseId: string;
-  token: string;
+  /** Only a new account gets a token: a returning one keeps its own. */
+  token?: string;
 }
 
+/**
+ * A trade either founds a house for a new account or gives one back to an
+ * account a reset left without one; the session cookie says which.
+ */
 export function joinTown(trade: Trade): Promise<Joined> {
   return send<Joined>('/api/session', {
     method: 'POST',

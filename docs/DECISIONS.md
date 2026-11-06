@@ -154,10 +154,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   is not part of the world because the world is versioned, replayed and hashed; a login is not a
   game rule, and a format change must never be able to lock a player out. The last visit lives
   there for the same reason: the thirty-day deletion is an edge rule, not a simulation rule, and
-  it must happen whether or not the town is being played. Authorisation is checked
-  once, at the edge, before the world is loaded. One live token per house for now, enforced by a
-  partial unique index; the release that allows several tokens per house lifts it and adds a
-  revoke-all.
+  it must happen whether or not the town is being played. A reset takes the house and keeps the
+  account, so the binding may be empty between the two: the token is the identity, and only an
+  explicit revoke ends it. Authorisation is checked once, at the edge, before the world is
+  loaded. One live token per house for now, enforced by a partial unique index; the release that
+  allows several tokens per house lifts it and adds a revoke-all.
 
 ## State
 
@@ -214,12 +215,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   players whose history matters, a breaking change ships a migration by default.
 
   This first format resets with `pnpm --filter @brigue/server reset`: the schema is dropped and
-  rebuilt from the one migration, and the book of kings stays untouched. `--check` shows what
+  rebuilt from the migrations, and the book of kings and the accounts stay. `--check` shows what
   would go, `--force` skips the question, and otherwise an operator reads the same report and
   answers `yes` on a terminal; without one, it refuses. A full reset, with `--full`, deletes the
-  book too and is the only one that touches it. The accounts do not cross yet — the tables that
-  hold the binding are rebuilt, and nothing can bind an account to a new house — so a reset
-  clears them with the town until #69 lands.
+  book and the accounts too and is the only one that touches them. A carried account keeps its
+  token, its player id and its dates, and loses its town and its house: the next visit asks for a
+  trade, which gives it a house again — the first player to come back founds the town, the others
+  take a place. A scheduled deletion keeps its deadline, and the scheduler erases the account
+  when it passes.
 
   The next format carries the clock, the scheduler, the journal and the tables, and nothing else:
   the town's politics lands additively inside it, and the floors above the town wait for the
@@ -410,10 +413,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   tables; the accounts and the book of kings outlive it. What a sealed season keeps is the book:
   the seal writes the crowned player, the house, the person, the instant and the time it took; the
   town itself is dropped, and only a full reset deletes the book.
-  The accounts outlive a season's seal, which takes the house and keeps the account; this first
-  format change rebuilt the tables that hold the binding before that seal existed, so it clears
-  the accounts with the town. Once #69 lands, a reset keeps them. Revisit if the book must hold
-  the houses' columns, or if several towns in one database prove too rigid for tests.
+  The accounts outlive a season's seal, which takes the house and keeps the account; an ordinary
+  reset does the same, and the first visit after it asks for a trade. Revisit if the book must
+  hold the houses' columns, or if several towns in one database prove too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
   seed and the generator; published, it would let a client brute-force a young town's seed and

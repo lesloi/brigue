@@ -27,6 +27,11 @@ export function applyPresence(world: World, players: readonly Player[], now: num
   const live = new Set<string>();
 
   for (const player of players) {
+    // An account between towns has no house to wake or to measure.
+    if (player.houseId === null) {
+      continue;
+    }
+
     const seen = player.lastSeenAt.getTime();
     latestSeen.set(player.houseId, Math.max(latestSeen.get(player.houseId) ?? Number.NEGATIVE_INFINITY, seen));
     if (player.revokedAt === null) {
