@@ -34,14 +34,14 @@ export function DeleteAccountDialog({ busy, error, onCancel, onConfirm }: Delete
     >
       <Seal size={34} />
       <h2 id="delete-title">Supprimer votre compte</h2>
-      <p>Le compte et la maison seront supprimés. Vous pourrez revenir avant l'échéance.</p>
+      <p>Le compte et la maison seront supprimés. Vous pourrez le restaurer avant l'échéance.</p>
       {error !== null ? <p class="warn">{error}</p> : null}
       <div class="dialog-actions">
         <button class="btn outline" type="button" ref={cancelButton} disabled={busy} onClick={onCancel}>
           Annuler
         </button>
         <button class="btn" type="button" disabled={busy} onClick={onConfirm}>
-          {busy ? 'Programmation…' : 'Programmer'}
+          {busy ? 'Suppression…' : 'Supprimer'}
         </button>
       </div>
     </Modal>
@@ -65,10 +65,11 @@ export function ClosingHouse({ after, busy, error, onRestore }: ClosingHouseProp
         <Seal size={38} />
         <h1>Votre compte est en sursis</h1>
         <p>
-          Suppression le <b>{deadline}</b>. D'ici là, la ville ne répond plus.
+          La suppression est programmée pour le <b>{deadline}</b>. D'ici là, vous ne pouvez plus accéder à votre compte.
+          Sans action de votre part, votre compte sera effacé à l'échéance.
         </p>
         <button class="btn wide" type="button" disabled={busy} onClick={onRestore}>
-          {busy ? 'Revenir…' : 'Revenir'}
+          {busy ? 'Restauration…' : 'Restaurer'}
         </button>
         {error !== null ? <p class="gate-error">{error}</p> : null}
       </div>
