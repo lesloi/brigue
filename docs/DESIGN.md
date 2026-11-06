@@ -44,7 +44,7 @@ A human who arrives later chooses a trade and takes a free place with the same k
 house — the workshop, eight units of its input and a purse — and no seat or career. A human who
 arrives in a full town takes the place of a finished-trade AI house.
 The three AI houses are the finished trades, one per trade. Wool, grain and wood come from the
-outside the town at the market price: no house produces them, so every chain is fed whatever the
+at the market at the current price: no house produces them, so every chain is fed whatever the
 town's trades. No AI is created after the opening; a freed finished-trade place waits for a
 human.
 
@@ -143,9 +143,8 @@ Six goods, three
 chains: wool into cloth, grain into bread, wood into planks. The town eats bread, builds with
 planks and wears cloth. Holding a good for a better bell is a bet: the price is pushed by what the
 town sold and bought since the last bell, pulled a quarter of the way back to its reference at
-each bell, and jittered by chance. The raw goods are the exception: the outside supply meets the
-town's demand at the current price, so their price drifts by chance and pulls home, never from
-the town's flow. Dumping a large stock moves the price down for everyone, including the
+each bell, and jittered by chance. The raw goods are the exception: they are bought at the market, and their price drifts by
+chance and pulls home, never from the town's flow. Dumping a large stock moves the price down for everyone, including the
 dumper's neighbour. The AI houses sell their whole stock every hour at the market price: they
 take the price, they do not time it, so the flow stays regular and the price readable. The
 Marché marks the prices that have left their band around the reference, so the flow is visible,

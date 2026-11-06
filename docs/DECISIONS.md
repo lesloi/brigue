@@ -41,11 +41,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   seven of kingdom, shared across their towns: the higher the tier, the scarcer the seat. The AI
   cap keeps the town human: a shared world is mostly people, and a solo world is three AI and one
   human house. The town opens with three AI houses, one per finished trade; the raw goods come
-  from outside the town, not from a house. A human arriving when the town is full replaces a
+  at the market, not from a house. A human arriving when the town is full replaces a
   finished-trade AI, and the AI count only falls as humans arrive; three is the opening
   composition, not a floor. Revisit if a whole kingdom proves too small at twenty houses a town.
 
-- **The player chooses a trade at creation; the raw goods come from outside.** At the first launch,
+- **The player chooses a trade at creation; the raw goods are bought at the market.** At the first launch,
   every player chooses one of three trades: weaver (wool into cloth),
   baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
   that trade; no assignment balances the town's mix. No house is a political
@@ -55,7 +55,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   town waits empty for someone. Its name is drawn from the town's names at that moment — nothing
   about it is fixed — and the player may rename it later (not built yet). A human who arrives
   later joins with the same kit, in a free place; the first house's place, re-founded after a
-  deletion, keeps it too. Wool, grain and wood come from outside the town at the market price; no
+  deletion, keeps it too. Wool, grain and wood are bought at the market at the current price; no
   house produces them, so every chain is fed whatever the town's trades. The three AI houses are
   the finished trades, one per trade; a human replaces one when the town is full (not built yet).
   The price signal and the trade conversion of the residence work let a player move into a missing
@@ -273,9 +273,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   instead of becoming the new normal. The lag is on purpose: the price you see is the town you
   were, and what you do now moves the price you will sell at after the next bell. The town also
   has a standing demand per good, so a good nobody makes climbs and a good it takes nothing of
-  sits on its reference. The raw goods are the exception: the outside supply meets the town's demand
-  at the current price, so their price carries no flow — only chance and the pull home. Buying or
-  dumping wool, grain or wood moves nothing.
+  sits on its reference. The raw goods are the exception: they are bought at the market, and
+  their price carries no town flow — only chance and the pull home. Buying or dumping wool, grain
+  or wood moves nothing.
 
 - **Engagements have durations; there are no action points.** A building site takes twelve hours,
   a campaign is a candidacy lodged before the noon bell — its old run is gone, because one that
