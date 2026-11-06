@@ -288,10 +288,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   exceptional measures — a public work, a loan, an amnesty, a requisition, the gates — with a
   quorum of seven, a majority of the votes cast (abstentions excluded) and at least four yes. A
   recoinage is not the town's to vote: the tier above holds the coin. The vote is public; the mayor convenes, and four of the seven offices can force a
-  sitting outside the bells. A dormant house holds no seat, so a sitting counts only the seats
-  that are there, and a boycott of six blocks it just the same. This is Europe 1400's model, with
-  a parliament kept for the big things: the five seats without a lever become the swing vote.
-  Revisit if the council never meets.
+  sitting outside the bells. A dormant house keeps its seat but casts no vote, so a sitting counts
+  only the seats that answer, and a boycott of six blocks it just the same. This is Europe 1400's
+  model, with a parliament kept for the big things: the five seats without a lever become the
+  swing vote. Revisit if the council never meets.
 
 - **The court is a jury of five random houses, voting in secret, and a judge who does not vote.**
   A complaint is filed at the clerk's office with evidence — a visible crime leaves a proof to its
