@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { PACING, RULES, type World } from '@brigue/core';
 
-import { SESSION_COOKIE } from '../src/cookies.ts';
-import { createApp } from '../src/http.ts';
+import { SESSION_COOKIE } from '../src/http/cookies.ts';
+import { createApp } from '../src/http/app.ts';
 import { createLogger } from '../src/logger.ts';
-import { MemoryPlayerStore, type Player } from '../src/players.ts';
-import { applyPresence } from '../src/presence.ts';
-import { authenticate, issueToken } from '../src/session.ts';
-import { MemoryWorldStore, UnknownWorldError } from '../src/worlds.ts';
+import { MemoryPlayerStore, type Player } from '../src/identity/players.ts';
+import { applyPresence } from '../src/town/presence.ts';
+import { authenticate, issueToken } from '../src/identity/session.ts';
+import { MemoryWorldStore, UnknownWorldError } from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;

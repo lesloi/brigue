@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createApp, type AppDeps } from '../src/http.ts';
+import { createApp, type AppDeps } from '../src/http/app.ts';
 import { createLogger } from '../src/logger.ts';
-import { MemoryPlayerStore } from '../src/players.ts';
-import { MemoryWorldStore } from '../src/worlds.ts';
+import { MemoryPlayerStore } from '../src/identity/players.ts';
+import { MemoryWorldStore } from '../src/town/worlds.ts';
 
 interface Harness {
   url: string;

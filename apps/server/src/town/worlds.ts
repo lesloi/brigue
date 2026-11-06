@@ -1,9 +1,26 @@
-import { isVisibleTo, type Action, type Event, type RefusalReason, type World } from '@brigue/core';
+import {
+  FORMAT_VERSION,
+  isVisibleTo,
+  PACING,
+  RULES,
+  WorldVersionError,
+  type Action,
+  type Event,
+  type RefusalReason,
+  type World,
+} from '@brigue/core';
 
 import { countEvent, emptyTally } from './journal.ts';
 
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
+
+/** Where a catch-up read would land; the cap bounds what it actually plays. */
+export function currentHourOf(world: World, hourStartedAt: Date, at: Date): number {
+  const elapsed = Math.max(0, Math.floor((at.getTime() - hourStartedAt.getTime()) / HOUR_MS));
+
+  return world.hour + Math.min(elapsed, PACING.maxCatchUpHours);
+}
 
 /** A read returns at most this many journal entries; the rest is counted. */
 export const JOURNAL_PAGE = 50;
@@ -68,6 +85,19 @@ export interface WorldSession {
    * leaves the players and the sealed seasons. The next join founds a new one.
    */
   clear(): Promise<void>;
+}
+
+/**
+ * The loaded town must be the format and ruleset this code plays: wake no house
+ * and revoke no token before the world is known readable.
+ */
+export function sessionWorld(session: WorldSession): World {
+  const world = session.snapshot.world;
+  if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
+    throw new WorldVersionError(world);
+  }
+
+  return world;
 }
 
 export interface WorldStore {

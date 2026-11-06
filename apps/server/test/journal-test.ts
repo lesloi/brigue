@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { countEvent, emptyTally, foldGrouped } from '../src/journal.ts';
+import { countEvent, emptyTally, foldGrouped } from '../src/town/journal.ts';
 
 describe('the journal tally', () => {
   it('counts a refusal by type and by reason', () => {

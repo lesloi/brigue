@@ -1,14 +1,26 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyMigrations, pendingMigrations } from '../src/migrations.ts';
+import { applyMigrations, defaultMigrationsDirectory, pendingMigrations } from '../src/db/migrations.ts';
 
 const databaseUrl = process.env.DATABASE_URL ?? '';
 const directories: string[] = [];
+
+// The move of this module into `src/db` is what the path depends on: the
+// command the image runs has no database to prove it, so the file system does.
+describe('the default migration directory', () => {
+  it('holds the migrations the image ships', async () => {
+    // Act
+    const files = await readdir(defaultMigrationsDirectory());
+
+    // Assert
+    expect(files).toContain('0001_initial.sql');
+  });
+});
 
 // Skips as a whole when there is no database to talk to, like the store test.
 describe.runIf(databaseUrl !== '')('migrations', () => {

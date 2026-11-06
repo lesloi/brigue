@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createWorld, RULES } from '@brigue/core';
 
-import { SESSION_COOKIE } from '../src/cookies.ts';
-import { createApp, type AppDeps } from '../src/http.ts';
+import { SESSION_COOKIE } from '../src/http/cookies.ts';
+import { createApp, type AppDeps } from '../src/http/app.ts';
 import { createLogger } from '../src/logger.ts';
-import { MemoryPlayerStore } from '../src/players.ts';
-import { issueToken } from '../src/session.ts';
-import { MemoryWorldStore, UnknownWorldError, type WorldStore } from '../src/worlds.ts';
+import { MemoryPlayerStore } from '../src/identity/players.ts';
+import { issueToken } from '../src/identity/session.ts';
+import { MemoryWorldStore, UnknownWorldError, type WorldStore } from '../src/town/worlds.ts';
 import { TEST_FIRST_HOUSE, TEST_TOWN, town } from './helpers.ts';
 
 interface Harness {

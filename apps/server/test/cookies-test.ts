@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { clearedSessionCookie, readSessionCookie, sessionCookie } from '../src/cookies.ts';
+import { clearedSessionCookie, readSessionCookie, sessionCookie } from '../src/http/cookies.ts';
 
 describe('the session cookie', () => {
   it('is httpOnly, Secure, SameSite=Strict and lasts like the token does', () => {

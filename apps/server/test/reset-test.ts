@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { previewReset, resetDatabase } from '../src/reset.ts';
+import { previewReset, resetDatabase } from '../src/db/reset.ts';
 
 // Runs alone, after the parallel suite: the reset drops the schema the other
 // Postgres tests use, so it is gated on RESET_DATABASE_URL and never part of

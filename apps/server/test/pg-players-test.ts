@@ -1,9 +1,9 @@
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyMigrations } from '../src/migrations.ts';
-import { PgPlayerStore } from '../src/pg-players.ts';
-import type { Player } from '../src/players.ts';
+import { applyMigrations } from '../src/db/migrations.ts';
+import { PgPlayerStore } from '../src/identity/pg-players.ts';
+import type { Player } from '../src/identity/players.ts';
 
 const databaseUrl = process.env.DATABASE_URL ?? '';
 

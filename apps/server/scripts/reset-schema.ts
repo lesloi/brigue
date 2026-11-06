@@ -1,5 +1,5 @@
-import { isConfirmation, parseResetArgs, ResetUsageError } from '../src/reset-args.ts';
-import { previewReset, resetDatabase, type ResetPreview } from '../src/reset.ts';
+import { isConfirmation, parseResetArgs, ResetUsageError } from '../src/db/reset-args.ts';
+import { previewReset, resetDatabase, type ResetPreview } from '../src/db/reset.ts';
 
 /**
  * The schema reset, for the one deployment that changes the shape of the

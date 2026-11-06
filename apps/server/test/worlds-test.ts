@@ -1,7 +1,7 @@
 import { createWorld, type Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { MemoryWorldStore, UnknownWorldError } from '../src/worlds.ts';
+import { MemoryWorldStore, UnknownWorldError } from '../src/town/worlds.ts';
 import { town } from './helpers.ts';
 
 /** One town event per hour, so a cut has a visible order to work on. */

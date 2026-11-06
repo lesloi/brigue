@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { MemoryPlayerStore } from '../src/players.ts';
-import { authenticate, issueToken } from '../src/session.ts';
-import { hashToken, isTokenShaped, mintToken, TOKEN_BYTES, TOKEN_PREFIX } from '../src/tokens.ts';
+import { MemoryPlayerStore } from '../src/identity/players.ts';
+import { authenticate, issueToken } from '../src/identity/session.ts';
+import { hashToken, isTokenShaped, mintToken, TOKEN_BYTES, TOKEN_PREFIX } from '../src/identity/tokens.ts';
 
 describe('the token', () => {
   it('carries 256 bits behind a recognisable prefix', () => {
