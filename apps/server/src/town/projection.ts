@@ -84,7 +84,7 @@ export interface WorldProjection {
     market: Record<GoodId, number>;
     /** The last prices per good, so the Marché can draw them. */
     marketHistory: Partial<Record<GoodId, number[]>>;
-    /** The reference each good returns to; the chart draws it as a guide. */
+    /** The centre of the band each good's price is pulled around; the chart draws it as a guide. */
     marketReferences: Record<GoodId, number>;
   };
   /** The instant the next bell rings, so the client can show when the town moves. */

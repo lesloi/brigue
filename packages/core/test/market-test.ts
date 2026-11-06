@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
-import { playHalfDay, tick, town } from './helpers.ts';
+import { playHalfDay, playUntil, tick, town } from './helpers.ts';
 
 const SEED = 20261029;
 
@@ -64,8 +64,8 @@ describe('nextPriceCents', () => {
   });
 
   it("prices the town's standing demand, not just what is offered", () => {
-    // Arrange: bread is absorbed ten a hour. A hour with nothing offered and
-    // nothing bought is a hour in which the town went short.
+    // Arrange: bread's absorption is ten in this table. A hour with nothing
+    // offered and nothing bought is a hour in which the town went short.
     const bread = { ...base, priceCents: 520, referenceCents: 520 };
 
     // Act and assert: a full scale of shortage is a tenth of the reference.
@@ -171,7 +171,8 @@ describe('the market of a hour', () => {
     selling.houses.leclerc.stock = { cloth: 20 };
     const control = town(SEED);
 
-    // Act: twenty extra cloth on the market, against a market that absorbs ten.
+    // Act: twenty extra cloth on the market, against a market that absorbs
+    // eight.
     const withSale = playPeriod(selling, [{ type: 'market.sell', houseId: 'leclerc', good: 'cloth', units: 20 }]);
     const withoutSale = playPeriod(control);
 
@@ -196,6 +197,102 @@ describe('the market of a hour', () => {
       nextPriceCents({ ...rule, priceCents: RULES.market.cloth.referenceCents, flowUnits: 6 * hours + 20 });
 
     expect(withoutSale.market.cloth - withSale.market.cloth).toBe(expected);
+  });
+});
+
+describe('the prices of a month', () => {
+  const halfDay = HOURS_PER_YEAR / 2;
+  const monthHours = 30 * HOURS_PER_YEAR;
+  const finishedGoods = GOODS.filter((good) => RULES.recipes[good] !== null);
+
+  it('turns the finished prices around their reference in a one-player town', () => {
+    // Arrange: the issue's town, a baker who never trades, played for thirty
+    // days. The three AI houses alone are short of the town's demand, so the
+    // chains nobody works sit in the upper half of the badge's band.
+    let world = town(SEED, 'baker');
+    const prices = finishedGoods.map(() => [] as number[]);
+
+    // Act
+    for (let bell = halfDay; bell <= monthHours; bell += halfDay) {
+      world = playUntil(world, bell).world;
+      finishedGoods.forEach((good, index) => prices[index].push(world.market[good]));
+    }
+
+    // Assert
+    finishedGoods.forEach((good, index) => {
+      const reference = RULES.market[good].referenceCents;
+      const bells = prices[index];
+      const sum = bells.reduce((total, price) => total + price, 0);
+
+      // The mean sits a little above the reference: the town is one workshop
+      // short, and a player working the chain is what closes the gap.
+      expect(sum * 100).toBeGreaterThan(reference * 105 * bells.length);
+      expect(sum * 100).toBeLessThan(reference * 112 * bells.length);
+
+      // Every bell stays inside a twenty-per-cent band around the reference,
+      // both sides included; the badge, at ten, marks the edges the town's own
+      // flow pushes past.
+      for (const price of bells) {
+        expect(Math.abs(price - reference) * 100).toBeLessThanOrEqual(reference * 20);
+      }
+    });
+  });
+
+  it('lets the badge mark both sides of the reference in a normal month', () => {
+    // Arrange: the same town, played as a standing order — the player sells the
+    // bread the workshop made and buys the grain it needs, every hour.
+    let world = town(SEED, 'baker');
+    const cheap = new Set<string>();
+    const dear = new Set<string>();
+    const refusals: Event[] = [];
+    const breadPrices: number[] = [];
+
+    // Act
+    for (let hour = 1; hour <= monthHours; hour += 1) {
+      const house = world.houses.leclerc;
+      const wanted = house.workshops[0].level * RULES.outputPerLevel;
+      const actions: Action[] = [];
+      const bread = house.stock.bread ?? 0;
+      const missing = wanted - (house.stock.grain ?? 0);
+
+      if (bread > 0) {
+        actions.push({ type: 'market.sell', houseId: 'leclerc', good: 'bread', units: bread });
+      }
+      if (missing > 0) {
+        actions.push({ type: 'market.buy', houseId: 'leclerc', good: 'grain', units: missing });
+      }
+
+      const result = tick(world, actions);
+      world = result.world;
+      refusals.push(...result.events.filter((event) => event.type === 'action.refused' && event.houseId === 'leclerc'));
+      if (hour % halfDay !== 0) {
+        continue;
+      }
+
+      breadPrices.push(world.market.bread);
+      for (const good of finishedGoods) {
+        const reference = RULES.market[good].referenceCents;
+        if (world.market[good] * 100 <= reference * 90) {
+          cheap.add(good);
+        }
+        if (world.market[good] * 100 >= reference * 110) {
+          dear.add(good);
+        }
+      }
+    }
+
+    // Assert: the orders always filled, so the prices below are the ones the
+    // player actually faced.
+    expect(refusals).toEqual([]);
+
+    // The bread the player sold glutted its chain, while a chain nobody worked
+    // stayed dear: both edges of the badge fire in the same month. The worked
+    // chain also sits at or below its reference, as the decision says.
+    const breadReference = RULES.market.bread.referenceCents;
+    const breadSum = breadPrices.reduce((total, price) => total + price, 0);
+    expect(breadSum * 100).toBeLessThanOrEqual(breadReference * 100 * breadPrices.length);
+    expect(cheap.size).toBeGreaterThan(0);
+    expect(dear.size).toBeGreaterThan(0);
   });
 });
 
@@ -464,24 +561,25 @@ describe('an AI house', () => {
       current = playWeek(current).world;
     }
 
-    // Assert: the equilibria are derived from the weekly flows and the price
-    // rule. Caron makes six cloth against an absorption of ten, so the cloth
-    // pressure is +49 and its pull closes a quarter of the gap: 1240 + 4 × 49.
-    // Wool is two short of six bought, so 380 + 4 × 19; bread and planks run
-    // the same arithmetic; grain and wood are level and sit on their reference.
-    // The drift is ±30 and the reversion keeps it within about four drifts.
+    // Assert: the equilibria are derived from the half-day's flows and the
+    // price rule. Caron makes six cloth against an absorption of eight, so the
+    // cloth pressure is +24 and the pull closes a quarter of the gap:
+    // 1240 + 4 × 24. Fournier makes four bread against six, so 520 + 4 × 10;
+    // Charpentier four planks against six, so 980 + 4 × 24. Wool, grain and
+    // wood carry no flow and only drift around their references. The drift is
+    // ±30 and the reversion keeps it within about four drifts.
     expect(current.market.wool).toBeGreaterThan(300);
     expect(current.market.wool).toBeLessThan(620);
-    expect(current.market.cloth).toBeGreaterThan(1230);
-    expect(current.market.cloth).toBeLessThan(1650);
+    expect(current.market.cloth).toBeGreaterThan(1240);
+    expect(current.market.cloth).toBeLessThan(1430);
     expect(current.market.grain).toBeGreaterThan(110);
     expect(current.market.grain).toBeLessThan(410);
-    expect(current.market.bread).toBeGreaterThan(490);
-    expect(current.market.bread).toBeLessThan(800);
+    expect(current.market.bread).toBeGreaterThan(500);
+    expect(current.market.bread).toBeLessThan(620);
     expect(current.market.wood).toBeGreaterThan(150);
     expect(current.market.wood).toBeLessThan(450);
-    expect(current.market.planks).toBeGreaterThan(970);
-    expect(current.market.planks).toBeLessThan(1390);
+    expect(current.market.planks).toBeGreaterThan(990);
+    expect(current.market.planks).toBeLessThan(1160);
     for (const price of Object.values(current.market)) {
       expect(price).toBeGreaterThan(RULES.priceFloorCents);
       expect(price).toBeLessThan(RULES.priceCeilCents);

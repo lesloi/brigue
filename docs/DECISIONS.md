@@ -291,9 +291,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   instead of becoming the new normal. The lag is on purpose: the price you see is the town you
   were, and what you do now moves the price you will sell at after the next bell. The town also
   has a standing demand per good, so a good nobody makes climbs and a good it takes nothing of
-  sits on its reference. The raw goods are the exception: they are bought at the market, and
-  their price carries no town flow — only chance and the pull home. Buying or dumping wool, grain
-  or wood moves nothing.
+  sits on its reference. That demand is calibrated to the middle of the town's two states — the
+  three AI houses alone, and the same town with one player working the chain — so an unworked
+  chain sits a little above its reference and a worked chain at it or below: the reference is the
+  centre of the band, not a price a short-handed town rests on. The raw goods are the exception:
+  they are bought at the market, and their price carries no town flow — only chance and the pull
+  home. Buying or dumping wool, grain or wood moves nothing.
 
 - **Engagements have durations; there are no action points.** A building site takes twelve hours,
   a campaign is a candidacy lodged before the noon bell — its old run is gone, because one that

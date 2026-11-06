@@ -156,7 +156,7 @@ export interface World {
 export const FORMAT_VERSION = 1;
 
 export const RULES = {
-  version: 1,
+  version: 2,
   /**
    * The starting kit: a house must buy its input and pay a few hours of wages
    * before its first sale. Every house gets it, the first as much as a later
@@ -181,19 +181,24 @@ export const RULES = {
    * `absorbedUnits` is the town's standing demand at the reference price: the
    * volume it takes every hour whether or not anyone makes the good. Where that
    * demand is nil, a good nobody touches sits on its reference; where it is not,
-   * a good nobody makes climbs. `scaleUnits` is the imbalance that moves the
-   * price by a tenth of it (`pricePressureDivisor`); `priceReversionDivisor` is
-   * how many hours the gap back to the reference takes to close. Wool has no
-   * absorption because what is made of it is bought by the workshops, which
-   * shows up as demand, not as the town's own trade.
+   * a good nobody makes climbs. The demand is calibrated to the middle of the
+   * town's two states — the three AI houses alone, and the same town with one
+   * player's workshop working the chain — so an unworked chain sits a little
+   * above its reference and a worked chain at it or below: the reference is the
+   * centre of the band, not a price a short-handed town rests on. `scaleUnits`
+   * is the imbalance that moves the price by a tenth of it
+   * (`pricePressureDivisor`); `priceReversionDivisor` is how many hours the gap
+   * back to the reference takes to close. Wool has no absorption because what
+   * is made of it is bought by the workshops, which shows up as demand, not as
+   * the town's own trade.
    */
   market: {
     wool: { referenceCents: 380, absorbedUnits: 0, scaleUnits: 4 },
-    cloth: { referenceCents: 1240, absorbedUnits: 10, scaleUnits: 10 },
+    cloth: { referenceCents: 1240, absorbedUnits: 8, scaleUnits: 10 },
     grain: { referenceCents: 260, absorbedUnits: 0, scaleUnits: 4 },
-    bread: { referenceCents: 520, absorbedUnits: 10, scaleUnits: 10 },
+    bread: { referenceCents: 520, absorbedUnits: 6, scaleUnits: 10 },
     wood: { referenceCents: 300, absorbedUnits: 0, scaleUnits: 4 },
-    planks: { referenceCents: 980, absorbedUnits: 8, scaleUnits: 8 },
+    planks: { referenceCents: 980, absorbedUnits: 6, scaleUnits: 8 },
   } satisfies Record<GoodId, { referenceCents: number; absorbedUnits: number; scaleUnits: number }>,
   pricePressureDivisor: 10,
   priceReversionDivisor: 4,
