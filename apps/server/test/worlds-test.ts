@@ -1,8 +1,21 @@
-import { createWorld } from '@brigue/core';
+import { createWorld, type Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
 import { MemoryWorldStore, UnknownWorldError, type TownInfo } from '../src/worlds.ts';
 import { town } from './helpers.ts';
+
+/** One town event per hour, so a cut has a visible order to work on. */
+function priceAt(hour: number): Event {
+  return { type: 'market.price_changed', audience: 'town', at: hour, good: 'wool', before: 100, after: 101 };
+}
+
+function hours(from: number, to: number): Event[] {
+  return Array.from({ length: to - from + 1 }, (_, index) => priceAt(from + index));
+}
+
+function range(from: number, to: number): number[] {
+  return Array.from({ length: to - from + 1 }, (_, index) => from + index);
+}
 
 describe('the town store', () => {
   it('keeps two towns apart and clears one without the other', async () => {
@@ -66,5 +79,57 @@ describe('the town store', () => {
     const snapshot = await store.withWorld(async (session) => session.snapshot, 'a');
     expect(snapshot.town.name).toBe('A');
     expect(snapshot.world.seed).toBe(1);
+  });
+
+  it('drops the journal older than the cut and keeps the newest page', async () => {
+    // Arrange: two pages and a bit of entries, one per hour.
+    const store = new MemoryWorldStore();
+    await store.createTown({ id: 'a', name: 'A' }, createWorld(1), new Date());
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 120));
+    }, 'a');
+
+    // Act: the cut alone would leave twelve entries; the page floor keeps the
+    // newest fifty whatever their age.
+    await store.pruneJournal('a', 109);
+
+    // Assert: the page still reads, and nothing older than it survives.
+    const page = await store.withWorld(async (session) => session.eventsSince(0, 100, 'leclerc'), 'a');
+    expect(page.events.map((event) => event.at)).toEqual(range(71, 120));
+  });
+
+  it('keeps an entry exactly on the cut, and counts what the page leaves', async () => {
+    // Arrange
+    const store = new MemoryWorldStore();
+    await store.createTown({ id: 'a', name: 'A' }, createWorld(1), new Date());
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 120));
+    }, 'a');
+
+    // Act: seventy-one entries are at or after the cut, so the page floor does
+    // not decide the boundary.
+    await store.pruneJournal('a', 50);
+
+    // Assert: the strict cut keeps its own hour; the page counts the rest.
+    const page = await store.withWorld(async (session) => session.eventsSince(0, 10, 'leclerc'), 'a');
+    expect(page.events.map((event) => event.at)).toEqual(range(111, 120));
+    expect(page.counts).toEqual({ 'market.price_changed': 61 });
+  });
+
+  it('keeps a journal shorter than a page whole', async () => {
+    // Arrange: ten entries, all older than the cut.
+    const store = new MemoryWorldStore();
+    await store.createTown({ id: 'a', name: 'A' }, createWorld(1), new Date());
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 10));
+    }, 'a');
+
+    // Act: there is no newer page to protect the entries with, so only the
+    // floor keeps them.
+    await store.pruneJournal('a', 1_000);
+
+    // Assert
+    const page = await store.withWorld(async (session) => session.eventsSince(0, 100, 'leclerc'), 'a');
+    expect(page.events.map((event) => event.at)).toEqual(range(1, 10));
   });
 });

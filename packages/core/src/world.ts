@@ -233,6 +233,11 @@ export const PACING = {
   // backlog it cannot replay is not simulated, so the town only counts the
   // hours it lived.
   maxCatchUpHours: 744,
+  // 168 town hours, seven days when the scheduler keeps pace: the journal
+  // keeps what a reader back after a silence could still want. The cut follows
+  // the town's own clock, so a town the scheduler stopped keeps its journal.
+  // Calibration, not a rule.
+  journalRetentionHours: 7 * 24,
   // Three days without a visit is enough to say the player has stopped playing;
   // the house goes dormant, keeps its estate and its seat, and casts no vote.
   // Calibration, not a rule.

@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { FORMAT_VERSION, hashJson, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
+import { FORMAT_VERSION, hashJson, PACING, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
@@ -95,12 +95,15 @@ async function start(
   // The scheduler's pass, minus the timer: what the loop would do on its own.
   const play = async (): Promise<void> => {
     try {
-      await worlds.withWorld(async (session) => {
+      const hour = await worlds.withWorld(async (session) => {
         const due = await playDue(session, session.snapshot, new Date(clock.now));
         if (due.hours > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
+
+        return due.world.hour;
       }, TEST_TOWN.id);
+      await worlds.pruneJournal(TEST_TOWN.id, hour - PACING.journalRetentionHours);
     } catch (error) {
       // The loop logs a refused world and leaves it for the reader to report.
       if (!(error instanceof WorldVersionError)) {

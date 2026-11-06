@@ -119,7 +119,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
   async function playTown(town: TownInfo, at: Date): Promise<void> {
     try {
-      const erased = await options.store.withWorld(async (session) => {
+      const outcome = await options.store.withWorld(async (session) => {
         const world = session.snapshot.world;
 
         if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
@@ -151,7 +151,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         if (humanHouseOf(presence.world) === undefined) {
           await session.clear();
           options.logger.info('town.deleted', { worldId: town.id });
-          return expired;
+          return { expired, hour: null };
         }
 
         const due = await playDue(
@@ -170,14 +170,20 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           options.logger.info('town.advanced', { worldId: town.id, hours: due.hours });
         }
 
-        return expired;
+        return { expired, hour: due.world.hour };
       }, town.id);
 
       // The rows go once the world has committed: a failed save leaves the
       // identity whole, and the next pass tries again.
-      for (const houseId of new Set(erased.map((player) => player.houseId))) {
+      for (const houseId of new Set(outcome.expired.map((player) => player.houseId))) {
         await options.players.deleteHouse(town.id, houseId);
         options.logger.info('player.deleted', { worldId: town.id, houseId });
+      }
+
+      // The journal is a feed: what fell out of the window goes, even on a pass
+      // that played nothing. A town that was just deleted carries no hour.
+      if (outcome.hour !== null) {
+        await pruneJournal(town.id, outcome.hour - PACING.journalRetentionHours);
       }
     } catch (error) {
       // A town deleted between the list and the lock is no town: the next join
@@ -189,6 +195,19 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
       // A stopped scheduler leaves every screen healthy and the town frozen, so
       // the failure is logged on every pass: silence is the failure mode.
       failure(options.logger, town.id, error);
+    }
+  }
+
+  async function pruneJournal(townId: string, oldestKeptHour: number): Promise<void> {
+    try {
+      await options.store.pruneJournal(townId, oldestKeptHour);
+    } catch (error) {
+      // A journal that cannot be pruned grows, but the town must keep playing:
+      // this failure gets its own line and the next pass tries again.
+      options.logger.warn('town.journal_prune_failed', {
+        worldId: townId,
+        detail: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

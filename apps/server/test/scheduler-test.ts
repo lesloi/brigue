@@ -62,6 +62,15 @@ function buy(id: string, at: number, units: number): StoredAction {
   return { id, houseId: 'leclerc', playsAt: at, action, receivedAt: new Date(START), cancelledAt: null };
 }
 
+/** One town event per hour, so a cut has a visible order to work on. */
+function priceAt(hour: number): Event {
+  return { type: 'market.price_changed', audience: 'town', at: hour, good: 'wool', before: 100, after: 101 };
+}
+
+function hours(from: number, to: number): Event[] {
+  return Array.from({ length: to - from + 1 }, (_, index) => priceAt(from + index));
+}
+
 describe('playDue', () => {
   it('plays nothing while the current hour is not over', async () => {
     // Arrange
@@ -276,6 +285,40 @@ describe('startScheduler', () => {
     expect((await worldOf(store)).world.hour).toBe(4);
   });
 
+  it('prunes the journal past the window on a pass that plays nothing', async () => {
+    // Arrange: a town whose clock is past the window, holding entries older
+    // than it. Nothing is due, so the pass has no save to hang a prune on.
+    vi.useFakeTimers();
+    const store = new MemoryWorldStore();
+    await store.createTown(TEST_TOWN, { ...playableTown(20261105), hour: 200 }, START);
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 120));
+    }, TEST_TOWN.id);
+    const scheduler = startScheduler({
+      store,
+      players: await playersWith(),
+      logger: createLogger(() => {}),
+      now: () => new Date(START),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(1_000);
+    scheduler.stop();
+
+    // Assert: the town did not move, and nothing older than the window is left.
+    const read = await store.withWorld(
+      async (session) => ({
+        hour: session.snapshot.world.hour,
+        page: await session.eventsSince(0, 200, TEST_FIRST_HOUSE.id),
+      }),
+      TEST_TOWN.id,
+    );
+    expect(read.hour).toBe(200);
+    expect(read.page.events[0]?.at).toBe(32);
+    expect(read.page.events).toHaveLength(89);
+  });
+
   it('plays every town in the same pass', async () => {
     // Arrange: two towns, each with a player.
     vi.useFakeTimers();
@@ -320,6 +363,7 @@ describe('startScheduler', () => {
       withWorld: (run, townId) =>
         townId === 'bad' ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
+      pruneJournal: (townId, oldestKeptHour) => real.pruneJournal(townId, oldestKeptHour),
       close: () => real.close(),
     };
     const clock = { now: START.getTime() + HOUR };
@@ -424,11 +468,25 @@ describe('startScheduler', () => {
     expect(logs).toEqual([]);
   });
 
-  it('deletes a town whose last human has been silent for a month', async () => {
+  it('deletes a town whose last human has been silent for a month, and does not prune it', async () => {
     // Arrange: the player's last visit is past the deletion threshold, and
-    // nobody will read the town to notice.
+    // nobody will read the town to notice. The store watches for a prune.
     vi.useFakeTimers();
-    const store = await town();
+    const real = await town();
+    const pruned: string[] = [];
+    const store: WorldStore = {
+      createTown: (info, world, at) => real.createTown(info, world, at),
+      listTowns: () => real.listTowns(),
+      usedTownNames: () => real.usedTownNames(),
+      withWorld: (run, townId) => real.withWorld(run, townId),
+      withJoinLock: (run) => real.withJoinLock(run),
+      pruneJournal: (townId, oldestKeptHour) => {
+        pruned.push(townId);
+
+        return real.pruneJournal(townId, oldestKeptHour);
+      },
+      close: () => real.close(),
+    };
     const players = new MemoryPlayerStore();
     await issueToken(players, TEST_TOWN.id, TEST_FIRST_HOUSE.id, new Date(START.getTime() - 31 * 24 * HOUR));
     const scheduler = startScheduler({
@@ -443,8 +501,44 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     scheduler.stop();
 
-    // Assert: the town went with its last human house, without a read.
-    await expect(withTown(store, async (session) => session.snapshot)).rejects.toBeInstanceOf(UnknownWorldError);
+    // Assert: the town went with its last human house, without a read, and its
+    // journal went with it, so there was nothing left to prune.
+    await expect(withTown(real, async (session) => session.snapshot)).rejects.toBeInstanceOf(UnknownWorldError);
+    expect(pruned).toEqual([]);
+  });
+
+  it('keeps the town moving when the journal cannot be pruned', async () => {
+    // Arrange: a store whose journal fails on every pass.
+    vi.useFakeTimers();
+    const real = await town();
+    const guarded: WorldStore = {
+      createTown: (info, world, at) => real.createTown(info, world, at),
+      listTowns: () => real.listTowns(),
+      usedTownNames: () => real.usedTownNames(),
+      withWorld: (run, townId) => real.withWorld(run, townId),
+      withJoinLock: (run) => real.withJoinLock(run),
+      pruneJournal: () => Promise.reject(new Error('the journal is stuck')),
+      close: () => real.close(),
+    };
+    const clock = { now: START.getTime() + HOUR };
+    const logs: string[] = [];
+    const scheduler = startScheduler({
+      store: guarded,
+      players: await playersWith(),
+      logger: createLogger((line) => logs.push(line)),
+      now: () => new Date(clock.now),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(1_000);
+    scheduler.stop();
+
+    // Assert: the hour played, and the prune failure is its own line, not the
+    // town's.
+    expect((await worldOf(real)).world.hour).toBe(2);
+    expect(logs.some((line) => line.includes('town.journal_prune_failed'))).toBe(true);
+    expect(logs.some((line) => line.includes('town.advance_failed'))).toBe(false);
   });
 
   it('logs a failing pass and keeps looking at the clock', async () => {
@@ -462,6 +556,7 @@ describe('startScheduler', () => {
         return attempts === 1 ? Promise.reject(new Error('the database is down')) : real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
+      pruneJournal: (townId, oldestKeptHour) => real.pruneJournal(townId, oldestKeptHour),
       close: () => real.close(),
     };
     const clock = { now: START.getTime() + HOUR };

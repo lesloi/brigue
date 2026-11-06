@@ -5,6 +5,9 @@ import { countEvent, emptyTally } from './journal.ts';
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
 
+/** A read returns at most this many journal entries; the rest is counted. */
+export const JOURNAL_PAGE = 50;
+
 /** A town a player can join: the id the rows carry, the name the screen shows. */
 export interface TownInfo {
   id: string;
@@ -85,6 +88,13 @@ export interface WorldStore {
    * of one `state` row.
    */
   withJoinLock<T>(run: () => Promise<T>): Promise<T>;
+  /**
+   * Drops the journal older than `oldestKeptHour`, keeping the newest page
+   * whatever its age, so the journal always has one to show. Its own statement,
+   * outside the state lock: a prune that fails must not roll back an hour the
+   * town already lived.
+   */
+  pruneJournal(townId: string, oldestKeptHour: number): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -151,6 +161,20 @@ export class MemoryWorldStore implements WorldStore {
 
   async usedTownNames(): Promise<string[]> {
     return [...this.names];
+  }
+
+  async pruneJournal(townId: string, oldestKeptHour: number): Promise<void> {
+    const stored = this.towns.get(townId);
+
+    if (stored === undefined) {
+      return;
+    }
+
+    // The page floor is by id, like the SQL boundary: the newest entries stay
+    // even when every one of them predates the cut.
+    const pageStart = Math.max(0, stored.events.length - JOURNAL_PAGE);
+    const keepFrom = stored.events[pageStart]?.id ?? Number.POSITIVE_INFINITY;
+    stored.events = stored.events.filter((entry) => entry.event.at >= oldestKeptHour || entry.id >= keepFrom);
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {

@@ -195,10 +195,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The journal is a feed, not an archive.** A scheduler writes events nobody is reading, so every
   event carries its instant and its audience, the log has growing ids, and the filter by audience
-  happens at read time. Each player holds a cursor outside the world, like the
-  last visit. A read returns the newest fifty events since that cursor in detail, and counts the
-  rest by type and by refusal; raw events are dropped after a few days (not built yet). The register carries what
-  lasts; the journal carries only what is new.
+  happens at read time. Each player holds a cursor outside the world, like the last visit. A read
+  returns the newest fifty events since that cursor in detail, and counts the rest by type and by
+  refusal. Every town pass drops the events older than 168 town hours — seven days when the
+  scheduler keeps pace, `PACING.journalRetentionHours` — keeping the newest fifty whatever their
+  age, so the journal always has a page. The cut follows the town's hour, not the wall clock, so a
+  frozen town keeps its journal, and the table is bounded by a week of the town's own events. The
+  register carries what lasts; the journal carries only what is new.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new

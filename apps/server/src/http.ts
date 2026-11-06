@@ -31,6 +31,7 @@ import { assertWebRoot, serveStatic } from './static.ts';
 import {
   DuplicateActionError,
   HOUR_MS,
+  JOURNAL_PAGE,
   UnknownWorldError,
   type JournalPage,
   type StoredAction,
@@ -47,8 +48,6 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
  * client clock that cannot be reconciled with this town.
  */
 const QUEUE_AHEAD_HOURS = 1;
-/** A read returns at most this many journal entries; the rest is counted. */
-const JOURNAL_PAGE = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface AppDeps {
