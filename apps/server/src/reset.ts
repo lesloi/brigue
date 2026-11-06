@@ -14,6 +14,8 @@ export interface ResetReport {
   /** Sealed seasons carried across; zero on a full reset. */
   archivedHouses: number;
   kings: number;
+  /** Place names already spent; zero on a full reset. */
+  townNames: number;
   /** Whether the sealed seasons were deleted too. */
   full: boolean;
   /** The migrations the empty schema was built from. */
@@ -76,6 +78,9 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
             'kings',
             'town_id, season, crowned_at, token_hash, house_name, person_name, ordinance, staple_good',
           );
+      // A spent name stays spent: the archive keeps town ids, and a recycled
+      // name would recycle its id into an archived season.
+      const townNames = full ? [] : await survivors<{ name: string }>(client, 'town_names', 'name');
 
       await client.query('DROP SCHEMA public CASCADE');
       await client.query('CREATE SCHEMA public');
@@ -112,6 +117,12 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
           king.staple_good,
         ]),
       );
+      await insertRows(
+        client,
+        'town_names',
+        ['name'],
+        townNames.map((town) => [town.name]),
+      );
 
       // One commit: a crash before it leaves the old town and its tokens
       // untouched, and the operator retries.
@@ -120,6 +131,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       return {
         archivedHouses: archivedHouses.length,
         kings: kings.length,
+        townNames: townNames.length,
         full,
         applied,
       };
@@ -176,6 +188,8 @@ export interface ResetPreview {
   /** Sealed seasons that would survive; zero on a full reset. */
   archivedHouses: number;
   kings: number;
+  /** Spent place names that would survive; zero on a full reset. */
+  townNames: number;
 }
 
 /**
@@ -205,6 +219,7 @@ export async function previewReset(pool: Pool, options: ResetOptions = {}): Prom
     full,
     archivedHouses: full ? 0 : await countIfPresent(pool, 'archive_houses'),
     kings: full ? 0 : await countIfPresent(pool, 'kings'),
+    townNames: full ? 0 : await countIfPresent(pool, 'town_names'),
   };
 }
 

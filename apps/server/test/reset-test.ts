@@ -40,10 +40,12 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
        VALUES ('saint-aubin', 1, 12, $1, 'Leclerc', 'Aubin')`,
       [tokenHash],
     );
+    await pool.query(`INSERT INTO towns (id, name) VALUES ('saint-aubin', 'Saint-Aubin')`);
     await pool.query(
-      `INSERT INTO state (format_version, ruleset_version, seed, rng, hour, year, hour_started_at)
-       VALUES (1, 1, 7, 7, 1, 1, now())`,
+      `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, hour_started_at)
+       VALUES ('saint-aubin', 1, 1, 7, 7, 1, 1, now())`,
     );
+    await pool.query(`INSERT INTO town_names (name) VALUES ('Saint-Aubin')`);
 
     return tokenHash;
   }
@@ -60,12 +62,14 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     const players = await pool.query('SELECT count(*)::int AS count FROM players');
     const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
+    const names = await pool.query('SELECT count(*)::int AS count FROM town_names');
 
     expect(state.rows[0]?.count).toBe(0);
     expect(players.rows[0]?.count).toBe(0);
     expect(archive.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
-    expect(report).toMatchObject({ archivedHouses: 1, kings: 1, full: false });
+    expect(names.rows[0]?.count).toBe(1);
+    expect(report).toMatchObject({ archivedHouses: 1, kings: 1, townNames: 1, full: false });
     expect(report.applied).toContain('0001_initial.sql');
   });
 
@@ -84,6 +88,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(rowsOf('archive_houses')).toBe(1);
     expect(preview.archivedHouses).toBe(1);
     expect(preview.kings).toBe(1);
+    expect(preview.townNames).toBe(1);
     expect(preview.full).toBe(false);
 
     const players = await pool.query('SELECT count(*)::int AS count FROM players');
@@ -100,11 +105,13 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     // Assert: nothing is carried, and the schema is ready again.
     const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
+    const names = await pool.query('SELECT count(*)::int AS count FROM town_names');
     const migrations = await pool.query('SELECT count(*)::int AS count FROM schema_migrations');
 
     expect(archive.rows[0]?.count).toBe(0);
     expect(kings.rows[0]?.count).toBe(0);
+    expect(names.rows[0]?.count).toBe(0);
     expect(migrations.rows[0]?.count).toBeGreaterThan(0);
-    expect(report).toMatchObject({ archivedHouses: 0, kings: 0, full: true });
+    expect(report).toMatchObject({ archivedHouses: 0, kings: 0, townNames: 0, full: true });
   });
 });

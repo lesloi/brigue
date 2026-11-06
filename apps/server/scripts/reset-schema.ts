@@ -61,7 +61,8 @@ async function main(): Promise<void> {
     process.stdout.write(
       report.full
         ? 'database reset: everything deleted, the sealed seasons included\n'
-        : `database reset: ${report.archivedHouses} archived house(s), ${report.kings} king(s) kept\n`,
+        : `database reset: ${report.archivedHouses} archived house(s), ${report.kings} king(s) and ` +
+            `${report.townNames} place name(s) kept\n`,
     );
   } finally {
     await pool.end();
@@ -81,7 +82,7 @@ function printPreview(preview: ResetPreview): void {
     preview.full
       ? 'the sealed seasons are deleted too (--full)\n'
       : `the sealed seasons are kept: ${count(preview.archivedHouses, 'archived house')}, ` +
-          `${count(preview.kings, 'king')}\n`,
+          `${count(preview.kings, 'king')}, ${count(preview.townNames, 'place name')}\n`,
   );
 }
 
