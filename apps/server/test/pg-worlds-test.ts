@@ -17,7 +17,6 @@ const databaseUrl = process.env.DATABASE_URL ?? '';
 describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   let pool: Pool;
   let store: PgWorldStore;
-  const worldIds: string[] = [];
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
@@ -26,9 +25,24 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   afterEach(async () => {
-    for (const id of worldIds.splice(0)) {
-      await pool.query('DELETE FROM worlds WHERE id = $1', [id]);
-    }
+    // One town per database: clearing the tables is a reset, not a delete by id.
+    await pool.query(
+      `DELETE FROM actions;
+       DELETE FROM events;
+       DELETE FROM seats;
+       DELETE FROM laws;
+       DELETE FROM engagements;
+       DELETE FROM campaigns;
+       DELETE FROM stock;
+       DELETE FROM workshops;
+       DELETE FROM people;
+       DELETE FROM market_history;
+       DELETE FROM market;
+       DELETE FROM houses;
+       DELETE FROM state;
+       DELETE FROM archive_houses;
+       DELETE FROM kings;`,
+    );
   });
 
   afterAll(async () => {
@@ -36,16 +50,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await pool.end();
   });
 
-  function newWorldId(): string {
-    const id = randomUUID();
-    worldIds.push(id);
-
-    return id;
-  }
-
   it('keeps the first world when createIfAbsent is called twice', async () => {
     // Arrange
-    const id = newWorldId();
     const first = { ...createWorld(11), hour: 5 };
     const second = { ...createWorld(22), hour: 9 };
     const firstAt = new Date(START);
@@ -63,7 +69,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('refuses a world it does not hold', async () => {
     // Arrange
-    const id = newWorldId();
 
     // Act
     const attempt = store.withWorld(async () => null);
@@ -74,9 +79,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('serialises two writers on the row lock', async () => {
     // Arrange
-    const id = newWorldId();
-    const startWeek = 5;
-    await store.createIfAbsent({ ...createWorld(3), hour: startWeek }, START, START);
+    const startHour = 5;
+    await store.createIfAbsent({ ...createWorld(3), hour: startHour }, START, START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
     const firstEntered = new Promise<void>((resolve) => {
@@ -107,13 +111,12 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(order).toEqual(['first:start', 'first:end', 'second:start', 'second:end']);
     const world = await store.withWorld(async (session) => session.snapshot.world);
     // Two saves of +1 applied on top of each other: the second saw the first's
-    // commit. A missing lock would leave both at startWeek + 1.
-    expect(world.hour).toBe(startWeek + 2);
+    // commit. A missing lock would leave both at startHour + 1.
+    expect(world.hour).toBe(startHour + 2);
   });
 
   it('raises DuplicateActionError on a UUID it already stored', async () => {
     // Arrange
-    const id = newWorldId();
     await store.createIfAbsent(createWorld(4), START, START);
     const action = storedAction(randomUUID(), 1, buy(2));
     await store.withWorld(async (session) => session.append(action));
@@ -131,16 +134,15 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: insert the lexically greater UUID first, so only `seq` can put
     // them back in insertion order. Ids are random per run because actions are
     // kept across runs on a developer's database.
-    const id = newWorldId();
     await store.createIfAbsent(createWorld(5), START, START);
     const [lexicallyFirst, lexicallyLast] = [randomUUID(), randomUUID()].sort();
     const first = storedAction(lexicallyLast, 1, buy(1));
     const second = storedAction(lexicallyFirst, 1, buy(2));
-    const otherWeek = storedAction(randomUUID(), 2, buy(3));
+    const otherHour = storedAction(randomUUID(), 2, buy(3));
     await store.withWorld(async (session) => {
       await session.append(first);
       await session.append(second);
-      await session.append(otherWeek);
+      await session.append(otherHour);
     });
 
     // Act
@@ -153,7 +155,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('stops returning an action once it is cancelled, and keeps its row', async () => {
     // Arrange
-    const id = newWorldId();
     await store.createIfAbsent(createWorld(6), START, START);
     const action = storedAction(randomUUID(), 1, buy(2));
     await store.withWorld(async (session) => {
@@ -229,7 +230,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('rolls the world and the actions back when the callback throws', async () => {
     // Arrange
-    const id = newWorldId();
     const world = { ...createWorld(6), hour: 3 };
     await store.createIfAbsent(world, START, START);
     const action = storedAction(randomUUID(), 3, buy(1));

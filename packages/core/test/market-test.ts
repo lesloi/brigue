@@ -156,7 +156,6 @@ describe('the market of a hour', () => {
     selling.houses.brigue.workshops = [];
     selling.houses.brigue.stock = { cloth: 20 };
     const control = createWorld(SEED);
-    const firstBell = playPeriod(createWorld(SEED)).market.cloth;
 
     // Act: twenty extra cloth on the market, against a market that absorbs ten.
     const withSale = playPeriod(selling, [{ type: 'market.sell', houseId: 'brigue', good: 'cloth', units: 20 }]);
