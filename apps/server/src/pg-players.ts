@@ -55,7 +55,7 @@ export class PgPlayerStore implements PlayerStore {
     await this.pool.query(
       `UPDATE players
        SET cursor_event_id = GREATEST(cursor_event_id, $2)
-       WHERE token_hash = `,
+       WHERE token_hash = $1`,
       [tokenHash, cursor],
     );
   }

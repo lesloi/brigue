@@ -128,8 +128,8 @@ class PgWorldSession implements WorldSession {
     const { rows: rest } = await this.client.query(
       `SELECT count(*)::int AS remaining
        FROM events
-       WHERE id > $3 AND (audience = 'town' OR (audience = 'house' AND house_id = $2))`,
-      [afterId, houseId, lastId],
+       WHERE id > $1 AND (audience = 'town' OR (audience = 'house' AND house_id = $2))`,
+      [lastId, houseId],
     );
 
     return { events, lastId, remaining: rest[0]?.remaining ?? 0 };
