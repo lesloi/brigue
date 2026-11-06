@@ -16,7 +16,7 @@ export function LostHouse({ busy, error, onResume }: LostHouseProps) {
       <div class="gate-card">
         <Seal size={38} />
         <h1>Cette ville a déjà son joueur</h1>
-        <p>La maison Brigue est liée à un jeton. Collez-le pour reprendre la partie.</p>
+        <p>Votre maison est liée à un jeton. Collez-le pour reprendre la partie.</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
