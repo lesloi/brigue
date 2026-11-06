@@ -21,6 +21,7 @@ export interface ResetReport {
 }
 
 interface SurvivingArchive {
+  town_id: string;
   season: number;
   name: string;
   prestige: number;
@@ -31,6 +32,7 @@ interface SurvivingArchive {
 }
 
 interface SurvivingKing {
+  town_id: string;
   season: number;
   crowned_at: number;
   token_hash: string;
@@ -65,14 +67,14 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
         : await survivors<SurvivingArchive>(
             client,
             'archive_houses',
-            'season, name, prestige, offices_held, title, generations, wealth_cents',
+            'town_id, season, name, prestige, offices_held, title, generations, wealth_cents',
           );
       const kings = full
         ? []
         : await survivors<SurvivingKing>(
             client,
             'kings',
-            'season, crowned_at, token_hash, house_name, person_name, ordinance, staple_good',
+            'town_id, season, crowned_at, token_hash, house_name, person_name, ordinance, staple_good',
           );
 
       await client.query('DROP SCHEMA public CASCADE');
@@ -83,8 +85,9 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'archive_houses',
-        ['season', 'name', 'prestige', 'offices_held', 'title', 'generations', 'wealth_cents'],
+        ['town_id', 'season', 'name', 'prestige', 'offices_held', 'title', 'generations', 'wealth_cents'],
         archivedHouses.map((house) => [
+          house.town_id,
           house.season,
           house.name,
           house.prestige,
@@ -97,8 +100,9 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'kings',
-        ['season', 'crowned_at', 'token_hash', 'house_name', 'person_name', 'ordinance', 'staple_good'],
+        ['town_id', 'season', 'crowned_at', 'token_hash', 'house_name', 'person_name', 'ordinance', 'staple_good'],
         kings.map((king) => [
+          king.town_id,
           king.season,
           king.crowned_at,
           king.token_hash,

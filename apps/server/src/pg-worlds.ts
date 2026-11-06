@@ -3,10 +3,12 @@ import type { Pool, PoolClient } from 'pg';
 import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
 import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
+  DEFAULT_TOWN,
   DuplicateActionError,
   UnknownWorldError,
   type JournalPage,
   type StoredAction,
+  type TownInfo,
   type WorldSession,
   type WorldSnapshot,
   type WorldStore,
@@ -24,9 +26,9 @@ interface StateRow {
 }
 
 /**
- * The town is the database: one row per thing, no world id, and the `state` row
- * is what the writer locks. The scheduler and the reader both write, so the
- * lock covers load, advance and save.
+ * The towns are the database: one row per thing, keyed by town, and each
+ * town's `state` row is what the writer locks. The scheduler and the reader
+ * both write, so the lock covers load, advance and save.
  *
  * `pg` is imported lazily so the HTTP tests stay database-free.
  */
@@ -38,15 +40,25 @@ export class PgWorldStore implements WorldStore {
   }
 
   async createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void> {
+    await this.createTown(DEFAULT_TOWN, world, hourStartedAt);
+    void at;
+  }
+
+  async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
     const client = await this.pool.connect();
 
     try {
       await client.query('BEGIN');
+      await client.query(`INSERT INTO towns (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING`, [
+        town.id,
+        town.name,
+      ]);
       const { rowCount } = await client.query(
-        `INSERT INTO state (id, format_version, ruleset_version, seed, rng, hour, year, engagement_seq, hour_started_at)
-         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, engagement_seq, hour_started_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT (town_id) DO NOTHING`,
         [
+          town.id,
           world.formatVersion,
           world.rulesetVersion,
           world.seed,
@@ -59,7 +71,7 @@ export class PgWorldStore implements WorldStore {
       );
 
       if (rowCount === 1) {
-        await writeWorld(client, world);
+        await writeWorld(client, town.id, world);
       }
 
       await client.query('COMMIT');
@@ -69,17 +81,21 @@ export class PgWorldStore implements WorldStore {
     } finally {
       client.release();
     }
-
-    void at;
   }
 
-  async withWorld<T>(run: (session: WorldSession) => Promise<T>): Promise<T> {
+  async listTowns(): Promise<TownInfo[]> {
+    const { rows } = await this.pool.query<TownInfo>(`SELECT id, name FROM towns ORDER BY created_at, id`);
+
+    return rows;
+  }
+
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId = DEFAULT_TOWN.id): Promise<T> {
     const client = await this.pool.connect();
 
     try {
       await client.query('BEGIN');
-      const snapshot = await readWorld(client);
-      const result = await run(new PgWorldSession(client, snapshot));
+      const snapshot = await readWorld(client, townId);
+      const result = await run(new PgWorldSession(client, townId, snapshot));
       await client.query('COMMIT');
 
       return result;
@@ -97,9 +113,11 @@ export class PgWorldStore implements WorldStore {
 class PgWorldSession implements WorldSession {
   readonly snapshot: WorldSnapshot;
   private readonly client: PoolClient;
+  private readonly townId: string;
 
-  constructor(client: PoolClient, snapshot: WorldSnapshot) {
+  constructor(client: PoolClient, townId: string, snapshot: WorldSnapshot) {
     this.client = client;
+    this.townId = townId;
     this.snapshot = snapshot;
   }
 
@@ -107,9 +125,9 @@ class PgWorldSession implements WorldSession {
     const { rows } = await this.client.query(
       `SELECT id, house_id, plays_at, action, received_at, cancelled_at
        FROM actions
-       WHERE plays_at BETWEEN $1 AND $2 AND cancelled_at IS NULL
+       WHERE town_id = $3 AND plays_at BETWEEN $1 AND $2 AND cancelled_at IS NULL
        ORDER BY plays_at, seq`,
-      [from, to],
+      [from, to, this.townId],
     );
 
     return rows.map(rowToStoredAction);
@@ -121,10 +139,10 @@ class PgWorldSession implements WorldSession {
     const { rows } = await this.client.query(
       `SELECT id, at, audience, house_id, type, payload
        FROM events
-       WHERE id > $1 AND ${visible}
+       WHERE town_id = $4 AND id > $1 AND ${visible}
        ORDER BY id DESC
        LIMIT $3`,
-      [afterId, houseId, limit],
+      [afterId, houseId, limit, this.townId],
     );
     // The query walks back from the newest; the page reads forward in time.
     const newest = rows.slice().reverse();
@@ -137,9 +155,9 @@ class PgWorldSession implements WorldSession {
       const { rows: grouped } = await this.client.query(
         `SELECT type, payload->>'reason' AS reason, count(*)::int AS count
          FROM events
-         WHERE id > $1 AND id < $3 AND ${visible}
+         WHERE town_id = $4 AND id > $1 AND id < $3 AND ${visible}
          GROUP BY type, payload->>'reason'`,
-        [afterId, houseId, oldest],
+        [afterId, houseId, oldest, this.townId],
       );
       foldGrouped(tally, grouped.map(toGroupedCount));
     }
@@ -160,9 +178,9 @@ class PgWorldSession implements WorldSession {
   async append(action: StoredAction): Promise<void> {
     try {
       await this.client.query(
-        `INSERT INTO actions (id, house_id, plays_at, action, received_at)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [action.id, action.houseId, action.playsAt, json(action.action), action.receivedAt],
+        `INSERT INTO actions (id, town_id, house_id, plays_at, action, received_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [action.id, this.townId, action.houseId, action.playsAt, json(action.action), action.receivedAt],
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -182,34 +200,21 @@ class PgWorldSession implements WorldSession {
   }
 
   async clear(): Promise<void> {
-    // The town goes whole, the journal and the queue with it. Players and the
-    // sealed seasons live outside the town and stay.
-    await this.client.query(
-      `DELETE FROM actions;
-       DELETE FROM events;
-       DELETE FROM seats;
-       DELETE FROM laws;
-       DELETE FROM engagements;
-       DELETE FROM campaigns;
-       DELETE FROM stock;
-       DELETE FROM workshops;
-       DELETE FROM people;
-       DELETE FROM market_history;
-       DELETE FROM market;
-       DELETE FROM houses;
-       DELETE FROM state;`,
-    );
+    // The town goes whole — its state, houses, actions and journal — and the
+    // player rows and the sealed seasons, which live outside it, stay. Deleting
+    // the town row cascades every town table.
+    await this.client.query(`DELETE FROM towns WHERE id = $1`, [this.townId]);
   }
 
   async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
-    await clearWorld(this.client);
-    await writeWorld(this.client, world);
+    await clearWorld(this.client, this.townId);
+    await writeWorld(this.client, this.townId, world);
     await this.client.query(
-      `UPDATE state SET hour = $1, year = $2, rng = $3, engagement_seq = $4, hour_started_at = $5
-       WHERE id = 1`,
-      [world.hour, world.year, world.rng, world.engagementSeq, hourStartedAt],
+      `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, hour_started_at = $6
+       WHERE town_id = $1`,
+      [this.townId, world.hour, world.year, world.rng, world.engagementSeq, hourStartedAt],
     );
-    await appendEvents(this.client, events);
+    await appendEvents(this.client, this.townId, events);
   }
 }
 
@@ -219,12 +224,19 @@ export async function createPgWorldStore(connectionString: string): Promise<PgWo
   return new PgWorldStore(new PgPool({ connectionString }));
 }
 
-async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
+async function readWorld(client: PoolClient, townId: string): Promise<WorldSnapshot> {
+  const town = await client.query<{ id: string; name: string }>(`SELECT id, name FROM towns WHERE id = $1`, [townId]);
+  const townRow = town.rows[0];
+  if (!townRow) {
+    throw new UnknownWorldError();
+  }
+
   const state = await client.query<StateRow>(
     `SELECT format_version, ruleset_version, seed, rng, hour, year, engagement_seq, hour_started_at
      FROM state
-     WHERE id = 1
+     WHERE town_id = $1
      FOR UPDATE`,
+    [townId],
   );
   const row = state.rows[0];
   if (!row) {
@@ -233,17 +245,34 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
 
   const [houses, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all([
     client.query(
-      `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, career, dormant FROM houses ORDER BY id`,
+      `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, career, dormant FROM houses WHERE town_id = $1 ORDER BY id`,
+      [townId],
     ),
-    client.query(`SELECT id, house_id, name, age, artisanat, parole, intrigue, alive FROM people ORDER BY id`),
-    client.query(`SELECT house_id, position, good, level, workers FROM workshops ORDER BY house_id, position`),
-    client.query(`SELECT house_id, good, units FROM stock ORDER BY house_id, good`),
-    client.query(`SELECT seat_id, person_id FROM seats ORDER BY seat_id`),
-    client.query(`SELECT id, position, title, sponsor_house_id, enacted_at FROM laws ORDER BY position`),
-    client.query(`SELECT id, kind, house_id, due_at, position FROM engagements ORDER BY position`),
-    client.query(`SELECT seat_id, house_id, closed, votes FROM campaigns ORDER BY seat_id, house_id`),
-    client.query(`SELECT good, price_cents, flow_units FROM market ORDER BY good`),
-    client.query(`SELECT good, position, price_cents FROM market_history ORDER BY good, position`),
+    client.query(
+      `SELECT id, house_id, name, age, artisanat, parole, intrigue, alive FROM people WHERE town_id = $1 ORDER BY id`,
+      [townId],
+    ),
+    client.query(
+      `SELECT house_id, position, good, level, workers FROM workshops WHERE town_id = $1 ORDER BY house_id, position`,
+      [townId],
+    ),
+    client.query(`SELECT house_id, good, units FROM stock WHERE town_id = $1 ORDER BY house_id, good`, [townId]),
+    client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
+    client.query(
+      `SELECT id, position, title, sponsor_house_id, enacted_at FROM laws WHERE town_id = $1 ORDER BY position`,
+      [townId],
+    ),
+    client.query(`SELECT id, kind, house_id, due_at, position FROM engagements WHERE town_id = $1 ORDER BY position`, [
+      townId,
+    ]),
+    client.query(
+      `SELECT seat_id, house_id, closed, votes FROM campaigns WHERE town_id = $1 ORDER BY seat_id, house_id`,
+      [townId],
+    ),
+    client.query(`SELECT good, price_cents, flow_units FROM market WHERE town_id = $1 ORDER BY good`, [townId]),
+    client.query(`SELECT good, position, price_cents FROM market_history WHERE town_id = $1 ORDER BY good, position`, [
+      townId,
+    ]),
   ]);
 
   const world: World = {
@@ -351,7 +380,11 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
     prices.push(point.price_cents);
   }
 
-  return { world, hourStartedAt: asDate(row.hour_started_at) };
+  return {
+    town: { id: townRow.id, name: townRow.name },
+    world,
+    hourStartedAt: asDate(row.hour_started_at),
+  };
 }
 
 /**
@@ -359,29 +392,31 @@ async function readWorld(client: PoolClient): Promise<WorldSnapshot> {
  * them again: a house that disappeared, or a stock that fell to zero, cannot
  * leave a row behind the way an upsert would.
  */
-async function clearWorld(client: PoolClient): Promise<void> {
+async function clearWorld(client: PoolClient, townId: string): Promise<void> {
   await client.query(
-    `DELETE FROM seats;
-     DELETE FROM laws;
-     DELETE FROM engagements;
-     DELETE FROM campaigns;
-     DELETE FROM stock;
-     DELETE FROM workshops;
-     DELETE FROM people;
-     DELETE FROM market_history;
-     DELETE FROM market;
-     DELETE FROM houses;`,
+    `DELETE FROM seats WHERE town_id = $1;
+     DELETE FROM laws WHERE town_id = $1;
+     DELETE FROM engagements WHERE town_id = $1;
+     DELETE FROM campaigns WHERE town_id = $1;
+     DELETE FROM stock WHERE town_id = $1;
+     DELETE FROM workshops WHERE town_id = $1;
+     DELETE FROM people WHERE town_id = $1;
+     DELETE FROM market_history WHERE town_id = $1;
+     DELETE FROM market WHERE town_id = $1;
+     DELETE FROM houses WHERE town_id = $1;`,
+    [townId],
   );
 }
 
-async function writeWorld(client: PoolClient, world: World): Promise<void> {
+async function writeWorld(client: PoolClient, townId: string, world: World): Promise<void> {
   const houses = Object.values(world.houses).sort((left, right) => left.id.localeCompare(right.id));
 
   await insertRows(
     client,
     'houses',
-    ['id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige', 'career', 'dormant'],
+    ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige', 'career', 'dormant'],
     houses.map((house) => [
+      townId,
       house.id,
       house.name,
       house.controller,
@@ -398,8 +433,9 @@ async function writeWorld(client: PoolClient, world: World): Promise<void> {
   await insertRows(
     client,
     'people',
-    ['id', 'house_id', 'name', 'age', 'artisanat', 'parole', 'intrigue', 'alive'],
+    ['town_id', 'id', 'house_id', 'name', 'age', 'artisanat', 'parole', 'intrigue', 'alive'],
     people.map((person) => [
+      townId,
       person.id,
       person.houseId,
       person.name,
@@ -414,9 +450,10 @@ async function writeWorld(client: PoolClient, world: World): Promise<void> {
   await insertRows(
     client,
     'workshops',
-    ['house_id', 'position', 'good', 'level', 'workers'],
+    ['town_id', 'house_id', 'position', 'good', 'level', 'workers'],
     houses.flatMap((house) =>
       house.workshops.map((workshop, position) => [
+        townId,
         house.id,
         position,
         workshop.good,
@@ -429,29 +466,30 @@ async function writeWorld(client: PoolClient, world: World): Promise<void> {
   await insertRows(
     client,
     'stock',
-    ['house_id', 'good', 'units'],
-    houses.flatMap((house) => Object.entries(house.stock).map(([good, units]) => [house.id, good, units ?? 0])),
+    ['town_id', 'house_id', 'good', 'units'],
+    houses.flatMap((house) => Object.entries(house.stock).map(([good, units]) => [townId, house.id, good, units ?? 0])),
   );
 
   await insertRows(
     client,
     'seats',
-    ['seat_id', 'person_id'],
-    Object.entries(world.seats).map(([seatId, seat]) => [seatId, seat.personId]),
+    ['town_id', 'seat_id', 'person_id'],
+    Object.entries(world.seats).map(([seatId, seat]) => [townId, seatId, seat.personId]),
   );
 
   await insertRows(
     client,
     'laws',
-    ['id', 'position', 'title', 'sponsor_house_id', 'enacted_at'],
-    world.laws.map((law, position) => [law.id, position, law.title, law.sponsorHouseId, law.enactedAt]),
+    ['town_id', 'id', 'position', 'title', 'sponsor_house_id', 'enacted_at'],
+    world.laws.map((law, position) => [townId, law.id, position, law.title, law.sponsorHouseId, law.enactedAt]),
   );
 
   await insertRows(
     client,
     'engagements',
-    ['id', 'kind', 'house_id', 'due_at', 'position'],
+    ['town_id', 'id', 'kind', 'house_id', 'due_at', 'position'],
     world.engagements.map((engagement, position) => [
+      townId,
       engagement.id,
       engagement.kind,
       engagement.houseId,
@@ -463,23 +501,26 @@ async function writeWorld(client: PoolClient, world: World): Promise<void> {
   await insertRows(
     client,
     'campaigns',
-    ['seat_id', 'house_id', 'closed', 'votes'],
-    [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)],
+    ['town_id', 'seat_id', 'house_id', 'closed', 'votes'],
+    [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)].map((row) => [
+      townId,
+      ...row,
+    ]),
   );
 
   await insertRows(
     client,
     'market',
-    ['good', 'price_cents', 'flow_units'],
-    Object.entries(world.market).map(([good, price]) => [good, price, world.marketFlow[good as GoodId] ?? 0]),
+    ['town_id', 'good', 'price_cents', 'flow_units'],
+    Object.entries(world.market).map(([good, price]) => [townId, good, price, world.marketFlow[good as GoodId] ?? 0]),
   );
 
   await insertRows(
     client,
     'market_history',
-    ['good', 'position', 'price_cents'],
+    ['town_id', 'good', 'position', 'price_cents'],
     Object.entries(world.marketHistory ?? {}).flatMap(([good, prices]) =>
-      (prices ?? []).map((price, position) => [good, position, price]),
+      (prices ?? []).map((price, position) => [townId, good, position, price]),
     ),
   );
 }
@@ -495,7 +536,7 @@ function campaignRows(campaigns: World['campaigns'], closed: boolean): [string, 
   );
 }
 
-async function appendEvents(client: PoolClient, events: Event[]): Promise<void> {
+async function appendEvents(client: PoolClient, townId: string, events: Event[]): Promise<void> {
   if (events.length === 0) {
     return;
   }
@@ -503,11 +544,12 @@ async function appendEvents(client: PoolClient, events: Event[]): Promise<void> 
   await insertRows(
     client,
     'events',
-    ['at', 'audience', 'house_id', 'type', 'payload'],
+    ['town_id', 'at', 'audience', 'house_id', 'type', 'payload'],
     events.map((event) => {
       const { audience, at, type, ...body } = event;
 
       return [
+        townId,
         at,
         typeof audience === 'string' ? audience : 'house',
         typeof audience === 'string' ? null : audience.houseId,

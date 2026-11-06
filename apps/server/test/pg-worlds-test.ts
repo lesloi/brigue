@@ -25,9 +25,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   afterEach(async () => {
-    // One town per database: clearing the tables is a reset, not a delete by id.
+    // Deleting the towns cascades their tables; the sealed seasons stay outside.
     await pool.query(
-      `DELETE FROM actions;
+      `DELETE FROM towns;
+       DELETE FROM actions;
        DELETE FROM events;
        DELETE FROM seats;
        DELETE FROM laws;
@@ -310,12 +311,12 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       tokenHash,
     ]);
     await pool.query(
-      `INSERT INTO archive_houses (season, name, prestige, offices_held, title, generations, wealth_cents)
-       VALUES (1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
+      `INSERT INTO archive_houses (town_id, season, name, prestige, offices_held, title, generations, wealth_cents)
+       VALUES ('saint-aubin', 1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
     );
     await pool.query(
-      `INSERT INTO kings (season, crowned_at, token_hash, house_name, person_name)
-       VALUES (1, 12, $1, 'Leclerc', 'Aubin')`,
+      `INSERT INTO kings (town_id, season, crowned_at, token_hash, house_name, person_name)
+       VALUES ('saint-aubin', 1, 12, $1, 'Leclerc', 'Aubin')`,
       [tokenHash],
     );
 
@@ -339,6 +340,24 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(archive.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
     await expect(store.withWorld(async (session) => session.snapshot)).rejects.toBeInstanceOf(UnknownWorldError);
+  });
+
+  it('keeps two towns apart', async () => {
+    // Arrange
+    await store.createTown({ id: 'a', name: 'A' }, { ...createWorld(1), seed: 1 }, START);
+    await store.createTown({ id: 'b', name: 'B' }, { ...createWorld(2), seed: 2 }, START);
+
+    // Act
+    const first = await store.withWorld(async (session) => session.snapshot, 'a');
+    const second = await store.withWorld(async (session) => session.snapshot, 'b');
+    const towns = await store.listTowns();
+
+    // Assert: each town reads its own state and name.
+    expect(first.town).toEqual({ id: 'a', name: 'A' });
+    expect(second.town).toEqual({ id: 'b', name: 'B' });
+    expect(first.world.seed).toBe(1);
+    expect(second.world.seed).toBe(2);
+    expect(towns.map((town) => town.id).sort()).toEqual(['a', 'b']);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {

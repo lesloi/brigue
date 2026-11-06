@@ -32,12 +32,12 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       tokenHash,
     ]);
     await pool.query(
-      `INSERT INTO archive_houses (season, name, prestige, offices_held, title, generations, wealth_cents)
-       VALUES (1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
+      `INSERT INTO archive_houses (town_id, season, name, prestige, offices_held, title, generations, wealth_cents)
+       VALUES ('saint-aubin', 1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
     );
     await pool.query(
-      `INSERT INTO kings (season, crowned_at, token_hash, house_name, person_name)
-       VALUES (1, 12, $1, 'Leclerc', 'Aubin')`,
+      `INSERT INTO kings (town_id, season, crowned_at, token_hash, house_name, person_name)
+       VALUES ('saint-aubin', 1, 12, $1, 'Leclerc', 'Aubin')`,
       [tokenHash],
     );
     await pool.query(

@@ -322,6 +322,8 @@ describe('startScheduler', () => {
     let attempts = 0;
     const flaky: WorldStore = {
       createIfAbsent: (world, hourStartedAt, at) => real.createIfAbsent(world, hourStartedAt, at),
+      createTown: (town, world, hourStartedAt) => real.createTown(town, world, hourStartedAt),
+      listTowns: () => real.listTowns(),
       withWorld: (run) => {
         attempts += 1;
 

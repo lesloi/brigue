@@ -5,8 +5,15 @@ import { countEvent, emptyTally } from './journal.ts';
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
 
-/** The players table still keys its binding by a world name; the town itself does not. */
+/** The town the single-town path still uses; a join picks or creates its own. */
 export const WORLD_ID = 'saint-aubin';
+
+export interface TownInfo {
+  id: string;
+  name: string;
+}
+
+export const DEFAULT_TOWN: TownInfo = { id: WORLD_ID, name: 'Saint-Aubin' };
 
 export interface StoredAction {
   /** Client-generated; the database primary key is what makes a retry a duplicate. */
@@ -36,6 +43,7 @@ export interface JournalPage {
 }
 
 export interface WorldSnapshot {
+  town: TownInfo;
   world: World;
   /** When the town's current hour began, in real time. */
   hourStartedAt: Date;
@@ -64,11 +72,16 @@ export interface WorldSession {
 export interface WorldStore {
   /** Idempotent: a town that already exists keeps its state and its seed. */
   createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void>;
+  /** Idempotent per id: creates the town row and its first state. */
+  createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void>;
+  /** Every town, oldest first, so a join can look for a free place. */
+  listTowns(): Promise<TownInfo[]>;
   /**
    * Locks the town for the whole callback — the scheduler and the reader both
-   * write, and two passes over the same town would lose one of them.
+   * write, and two passes over the same town would lose one of them. Omitted,
+   * the town is the single-town path's default.
    */
-  withWorld<T>(run: (session: WorldSession) => Promise<T>): Promise<T>;
+  withWorld<T>(run: (session: WorldSession) => Promise<T>, townId?: string): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -87,6 +100,7 @@ export class DuplicateActionError extends Error {
 }
 
 interface MemoryWorld {
+  town: TownInfo;
   snapshot: WorldSnapshot;
   actions: StoredAction[];
   events: { id: number; event: Event }[];
@@ -100,36 +114,50 @@ interface MemoryWorld {
  * real locking is the `SELECT ... FOR UPDATE` in pg-worlds.ts.
  */
 export class MemoryWorldStore implements WorldStore {
-  private stored: MemoryWorld | null = null;
+  private readonly towns = new Map<string, MemoryWorld>();
   private queue: Promise<unknown> = Promise.resolve();
 
   async createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void> {
-    if (this.stored !== null) {
-      return;
-    }
-
-    this.stored = {
-      snapshot: { world: structuredClone(world), hourStartedAt: new Date(hourStartedAt) },
-      actions: [],
-      events: [],
-      nextEventId: 1,
-    };
+    await this.createTown(DEFAULT_TOWN, world, hourStartedAt);
     void at;
   }
 
-  async withWorld<T>(run: (session: WorldSession) => Promise<T>): Promise<T> {
+  async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
+    if (this.towns.has(town.id)) {
+      return;
+    }
+
+    this.towns.set(town.id, {
+      town: { ...town },
+      snapshot: {
+        town: { ...town },
+        world: structuredClone(world),
+        hourStartedAt: new Date(hourStartedAt),
+      },
+      actions: [],
+      events: [],
+      nextEventId: 1,
+    });
+  }
+
+  async listTowns(): Promise<TownInfo[]> {
+    return [...this.towns.values()].map((stored) => ({ ...stored.town }));
+  }
+
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId = DEFAULT_TOWN.id): Promise<T> {
     const previous = this.queue;
     const current = previous.then(async () => {
-      if (this.stored === null) {
+      const stored = this.towns.get(townId);
+      if (stored === undefined) {
         throw new UnknownWorldError();
       }
 
-      const backup = structuredClone(this.stored);
+      const backup = structuredClone(stored);
 
       try {
-        return await run(this.sessionOf(this.stored));
+        return await run(this.sessionOf(townId, stored));
       } catch (error) {
-        this.stored = backup;
+        this.towns.set(townId, backup);
         throw error;
       }
     });
@@ -146,7 +174,7 @@ export class MemoryWorldStore implements WorldStore {
 
   async close(): Promise<void> {}
 
-  private sessionOf(stored: MemoryWorld): WorldSession {
+  private sessionOf(townId: string, stored: MemoryWorld): WorldSession {
     return {
       snapshot: stored.snapshot,
       actionsBetween: async (from, to) =>
@@ -189,6 +217,7 @@ export class MemoryWorldStore implements WorldStore {
       },
       save: async (world, hourStartedAt, events) => {
         stored.snapshot = {
+          town: stored.town,
           world: structuredClone(world),
           hourStartedAt: new Date(hourStartedAt),
         };
@@ -198,7 +227,7 @@ export class MemoryWorldStore implements WorldStore {
         }
       },
       clear: async () => {
-        this.stored = null;
+        this.towns.delete(townId);
       },
     };
   }
