@@ -40,11 +40,9 @@ drawn from the town's names, and may be renamed later (not built yet). Its offic
 exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
-A human who arrives in a full town takes the place of a finished-trade AI house. The AI line
-ends; the newcomer chooses a trade, starts with its workshop and no money, no seat, no career. The
-first house is the exception of the opening: it starts with eight units of its input and a
-purse, because its first sale is hours away, and the place is re-founded with that kit after a
-deletion.
+A human who arrives later chooses a trade and takes a free place with the same kit as the first
+house — the workshop, eight units of its input and a purse — and no seat or career. A human who
+arrives in a full town takes the place of a finished-trade AI house.
 The three raw suppliers — wool, grain and wood — stay AI forever: they are the floor that feeds
 every chain, and a human never replaces one. No AI is created after the opening: the ten opening
 families are the opening composition, not a pump, and a freed finished-trade place waits for a

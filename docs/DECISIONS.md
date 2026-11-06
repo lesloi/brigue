@@ -30,7 +30,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   same silence rule on every pass, so a town with no player expires without waiting for a visit.
   The deletion stays an edge rule. The reverse is asymmetric: when a full town
   receives a human, the finished-trade AI house ends and the newcomer chooses a trade, starts with
-  its workshop and no money, no seat, no career. No AI is created after the opening; the ten
+  the same kit as the first house, and holds no seat or career. No AI is created after the opening; the ten
   opening families are the opening composition, and a freed finished-trade place waits for a
   human. The three raw suppliers are permanent AI. An absence must not be a betrayal, and an
   arrival must not inherit a mayoralty.
@@ -48,15 +48,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **The player chooses a trade at creation; the raw suppliers stay AI.** At the first launch,
   every player chooses one of three trades: weaver (wool into cloth),
   baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
-  that trade; no assignment balances the town's mix. The first house is not a political
-  role: it holds no seat and no vote, and only its starting kit differs — a workshop of its
-  trade, eight units of its input and a purse, because its first sale is hours away. The town is
-  built without it: the first house is added when the first player joins, so no town waits empty
-  for someone. Its name is drawn from the town's names at that moment — nothing about the first
-  house is fixed — and the player may rename it later (not built yet). A human who
-  arrives later, replacing a finished trade, brings its workshop and nothing else; the first house's
-  place, re-founded after a deletion, keeps the kit, because it is the opening slot and
-  not a newcomer taking an AI's place. The three raw
+  that trade; no assignment balances the town's mix. No house is a political
+  role: none holds a seat or a vote at the start. Every house begins with the same kit — a
+  workshop of its trade, eight units of its input and a purse, because its first sale is hours
+  away. The town is built without the first house: it is added when the first player joins, so no
+  town waits empty for someone. Its name is drawn from the town's names at that moment — nothing
+  about it is fixed — and the player may rename it later (not built yet). A human who arrives
+  later joins with the same kit, in a free place; the first house's place, re-founded after a
+  deletion, keeps it too. The three raw
   suppliers (wool, grain, wood) stay AI houses forever and are never replaced by a human: they
   are the floor that keeps every chain fed, so a player town cannot lose an input to a newcomer
   who chose another trade. The finished trades are what humans replace. The price signal and
