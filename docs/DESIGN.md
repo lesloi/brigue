@@ -33,9 +33,9 @@ Two rules keep the chapters honest:
 
 ## The town
 
-Twenty houses at most, ten of them AI at the opening. The town is founded when its first player
-joins: ten AI houses and the first player's house are created together, so no town waits empty for
-someone — six AI today, until the finished trades are filled. That house takes a name
+Twenty houses at most, three of them AI at the opening. The town is founded when its first player
+joins: three AI houses and the first player's house are created together, so no town waits empty
+for someone. That house takes a name
 drawn from the town's names, and may be renamed later (not built yet). Its offices do not
 exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
@@ -43,9 +43,9 @@ every seat is empty, and the pyramid fills from the bottom, one floor per electi
 A human who arrives later chooses a trade and takes a free place with the same kit as the first
 house — the workshop, eight units of its input and a purse — and no seat or career. A human who
 arrives in a full town takes the place of a finished-trade AI house.
-The three raw suppliers — wool, grain and wood — stay AI forever: they are the floor that feeds
-every chain, and a human never replaces one. No AI is created after the opening: the ten opening
-families are the opening composition, not a pump, and a freed finished-trade place waits for a
+The three AI houses are the finished trades, one per trade. Wool, grain and wood come from the
+countryside at the market price: no house produces them, so every chain is fed whatever the
+town's trades. No AI is created after the opening; a freed finished-trade place waits for a
 human.
 
 A player who stops playing leaves a **dormant** house. It keeps its money, its seat and its
@@ -143,7 +143,9 @@ Six goods, three
 chains: wool into cloth, grain into bread, wood into planks. The town eats bread, builds with
 planks and wears cloth. Holding a good for a better bell is a bet: the price is pushed by what the
 town sold and bought since the last bell, pulled a quarter of the way back to its reference at
-each bell, and jittered by chance. Dumping a large stock moves the price down for everyone, including the
+each bell, and jittered by chance. The raw goods are the exception: the countryside meets the
+town's demand at the current price, so their price drifts by chance and pulls home, never from
+the town's flow. Dumping a large stock moves the price down for everyone, including the
 dumper's neighbour. The AI houses sell their whole stock every hour at the market price: they
 take the price, they do not time it, so the flow stays regular and the price readable. The
 Marché marks the prices that have left their band around the reference, so the flow is visible,

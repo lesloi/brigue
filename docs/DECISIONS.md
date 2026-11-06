@@ -32,20 +32,19 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   receives a human, the finished-trade AI house ends and the newcomer chooses a trade, starts with
   the same kit as the first house, and holds no seat or career. No AI is created after the opening; the ten
   opening families are the opening composition, and a freed finished-trade place waits for a
-  human. The three raw suppliers are permanent AI. An absence must not be a betrayal, and an
-  arrival must not inherit a mayoralty.
+  human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
 
-- **The town is capped at twenty houses, ten of them AI.** The cap is what makes a seat scarce:
+- **The town is capped at twenty houses, three of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
   town outgrows its seats. Above the town, the same houses compete for seven seats of county and
   seven of kingdom, shared across their towns: the higher the tier, the scarcer the seat. The AI
-  cap keeps the town human: a shared world is mostly people, and a solo world is ten AI and one human house. The town opens with ten AI in the target — three permanent raw suppliers and seven
-  finished trades — and six today (three raw, three finished). A human arriving when it is full
-  replaces a finished-trade AI, never a raw supplier; the AI count only falls as humans arrive,
-  and "ten" is the opening composition, not a floor. Revisit if a whole kingdom proves too small
-  at twenty houses a town.
+  cap keeps the town human: a shared world is mostly people, and a solo world is three AI and one
+  human house. The town opens with three AI houses, one per finished trade; the raw goods come
+  from the countryside, not from a house. A human arriving when the town is full replaces a
+  finished-trade AI, and the AI count only falls as humans arrive; three is the opening
+  composition, not a floor. Revisit if a whole kingdom proves too small at twenty houses a town.
 
-- **The player chooses a trade at creation; the raw suppliers stay AI.** At the first launch,
+- **The player chooses a trade at creation; the countryside supplies the raw goods.** At the first launch,
   every player chooses one of three trades: weaver (wool into cloth),
   baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
   that trade; no assignment balances the town's mix. No house is a political
@@ -55,13 +54,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   town waits empty for someone. Its name is drawn from the town's names at that moment — nothing
   about it is fixed — and the player may rename it later (not built yet). A human who arrives
   later joins with the same kit, in a free place; the first house's place, re-founded after a
-  deletion, keeps it too. The three raw
-  suppliers (wool, grain, wood) stay AI houses forever and are never replaced by a human: they
-  are the floor that keeps every chain fed, so a player town cannot lose an input to a newcomer
-  who chose another trade. The finished trades are what humans replace. The price signal and
-  the trade conversion of the residence work let a player move into a missing finished good; a
-  town of weavers will have cheap cloth and dear bread, which is the market working, not a bug.
-  Revisit if the raw floor makes the town feel like a diorama rather than a player economy.
+  deletion, keeps it too. Wool, grain and wood come from the countryside at the market price; no
+  house produces them, so every chain is fed whatever the town's trades. The three AI houses are
+  the finished trades, one per trade; a human replaces one when the town is full (not built yet).
+  The price signal and the trade conversion of the residence work let a player move into a missing
+  finished good; a town of weavers will have cheap cloth and dear bread, which is the market
+  working, not a bug.
 
 - **The town's council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and
   each floor holds a different right rather than a stronger version of the one below. One office per
@@ -274,7 +272,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   instead of becoming the new normal. The lag is on purpose: the price you see is the town you
   were, and what you do now moves the price you will sell at after the next bell. The town also
   has a standing demand per good, so a good nobody makes climbs and a good it takes nothing of
-  sits on its reference.
+  sits on its reference. The raw goods are the exception: the countryside meets the town's demand
+  at the current price, so their price carries no flow — only chance and the pull home. Buying or
+  dumping wool, grain or wood moves nothing.
 
 - **Engagements have durations; there are no action points.** A building site takes twelve hours,
   a campaign is a candidacy lodged before the noon bell — its old run is gone, because one that
