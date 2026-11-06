@@ -72,9 +72,10 @@ pnpm --filter @brigue/server dev
 When a format change cannot migrate the old schema, the database is reset instead: `pnpm
 --filter @brigue/server reset --confirm` drops the town and rebuilds the schema from the
 migrations, carrying the sealed seasons across. The tokens go with the town too, until the seal
-can give a returning token a house again. It does nothing without `--confirm`. Its test is
-destructive too and therefore runs alone, after the parallel suite:
-`RESET_DATABASE_URL=$DATABASE_URL pnpm exec vitest run apps/server/test/reset-test.ts`.
+can give a returning token a house again. `--full` deletes the sealed seasons as well — the
+register and the book of kings — and is the only reset that touches them. It does nothing
+without `--confirm`. Its test is destructive too and therefore runs alone, after the parallel
+suite: `RESET_DATABASE_URL=$DATABASE_URL pnpm exec vitest run apps/server/test/reset-test.ts`.
 
 The PWA runs beside it, and Vite proxies `/api` to `http://localhost:3000`:
 

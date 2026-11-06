@@ -192,9 +192,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   players whose history matters, a breaking change ships a migration by default.
 
   This first format resets with `pnpm --filter @brigue/server reset --confirm`: the schema is
-  dropped and rebuilt from the one migration, and the sealed seasons stay untouched. The tokens
-  do not cross yet — the tables that hold the binding are rebuilt, and nothing can bind a token
-  to a new house — so a reset clears them with the town until the seal lands.
+  dropped and rebuilt from the one migration, and the sealed seasons stay untouched. A full
+  reset, with `--full`, deletes them too and is the only one that touches the register. The
+  tokens do not cross yet — the tables that hold the binding are rebuilt, and nothing can bind a
+  token to a new house — so a reset clears them with the town until the seal lands.
 
   The next format carries the clock, the scheduler, the journal and the tables, and nothing else:
   the town's politics lands additively inside it, and the floors above the town wait for the
@@ -380,7 +381,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   so a screen can read the market alone and the register is a query. A format change is a
   migration across those tables; a reset is a wipe of them. What a sealed season keeps is the
   register, not the town: the seal writes the houses' last columns and the book of kings into an
-  archive that outlives every reset, a format change included, and the town itself is dropped.
+  archive that outlives every ordinary reset, a format change included, and the town itself is
+  dropped; only a full reset deletes it.
   The players outlive a season's seal, which takes the house and keeps the token; this first
   format change rebuilt the tables that hold the binding before that seal existed, so it clears
   the tokens with the town. Once the seal lands, a reset keeps them. Revisit if the archive must
