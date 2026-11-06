@@ -4,10 +4,9 @@ import { previewReset, resetDatabase, type ResetPreview } from '../src/reset.ts'
 /**
  * The schema reset, for the one deployment that changes the shape of the
  * database. It destroys the town — its houses, its actions, its journal, its
- * tokens — and the migrations record, then builds an empty schema from
- * `db/migrations` and carries the sealed seasons across. With `--full` it
- * deletes the sealed seasons too: the register and the book of kings are the
- * one thing that otherwise outlives a reset.
+ * accounts — and the migrations record, then builds an empty schema from
+ * `db/migrations` and carries the book of kings across. With `--full` it
+ * deletes the book too: it is the one thing that otherwise outlives a reset.
  *
  * `--check` shows what the reset would destroy and changes nothing. Without
  * `--force`, the script asks first; with no terminal to ask on, it refuses.
@@ -60,9 +59,8 @@ async function main(): Promise<void> {
     }
     process.stdout.write(
       report.full
-        ? 'database reset: everything deleted, the sealed seasons included\n'
-        : `database reset: ${report.archivedHouses} archived house(s), ${report.kings} king(s) and ` +
-            `${report.townNames} place name(s) kept\n`,
+        ? 'database reset: everything deleted, the book of kings included\n'
+        : `database reset: ${report.kings} king(s) kept\n`,
     );
   } finally {
     await pool.end();
@@ -80,9 +78,8 @@ function printPreview(preview: ResetPreview): void {
 
   process.stdout.write(
     preview.full
-      ? 'the sealed seasons are deleted too (--full)\n'
-      : `the sealed seasons are kept: ${count(preview.archivedHouses, 'archived house')}, ` +
-          `${count(preview.kings, 'king')}, ${count(preview.townNames, 'place name')}\n`,
+      ? 'the book of kings is deleted too (--full)\n'
+      : `the book of kings is kept: ${count(preview.kings, 'king')}\n`,
   );
 }
 

@@ -7,29 +7,25 @@
 -- migrations were deleted with their test towns, so this file starts at one.
 
 -- A town is a place a player can join. Its name is what the screen shows; the
--- id is what the rows carry.
+-- id is assigned by the database and is what the rows carry. A name may come
+-- back: the id never does, so a dead town's accounts can never point at a new
+-- one.
 CREATE TABLE towns (
-  id text PRIMARY KEY CHECK (length(id) > 0),
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name text NOT NULL CHECK (length(name) > 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- A place name is spent for good. A dead town's name does not come back, and no
--- id is ever recycled into a sealed season. It carries no town_id and no
--- cascade: the point is that it outlives the towns.
-CREATE TABLE town_names (
-  name text PRIMARY KEY CHECK (length(name) > 0),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- A token bound to a house, outside the town: the town is versioned and
--- replayed, a login is not a game rule. `world_id` is the town the token
--- belongs to. A season's seal keeps the player and takes the house, which is
--- why `house_id` may be empty for exactly that moment; until the seal exists, a
--- reset clears the tokens with the towns.
+-- An account bound to a house, outside the town: the town is versioned and
+-- replayed, a login is not a game rule. `town_id` is the town the account
+-- belongs to; `player_id` is the stable identity the book of kings keeps. A
+-- season's seal keeps the account and takes the house, which is why `house_id`
+-- may be empty for exactly that moment; until the seal exists, a reset clears
+-- the accounts with the towns.
 CREATE TABLE players (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
-  world_id text NOT NULL CHECK (length(world_id) > 0),
+  player_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+  town_id bigint NOT NULL,
   house_id text CHECK (length(house_id) > 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
@@ -43,16 +39,16 @@ CREATE TABLE players (
   cursor_event_id bigint NOT NULL DEFAULT 0
 );
 
--- One live token per house today. "Several tokens per house" is a later
+-- One live account per house today. "Several accounts per house" is a later
 -- release, with a revoke-all; it lifts this partial index in its own migration.
-CREATE UNIQUE INDEX players_live_house ON players (world_id, house_id) WHERE revoked_at IS NULL;
+CREATE UNIQUE INDEX players_live_house ON players (town_id, house_id) WHERE revoked_at IS NULL;
 
-CREATE INDEX players_house ON players (world_id, house_id);
+CREATE INDEX players_house ON players (town_id, house_id);
 
 CREATE TABLE state (
   -- One row per town. It is the row the writer locks, so the key is not
   -- decoration: two rows for one town would be two towns.
-  town_id text PRIMARY KEY REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint PRIMARY KEY REFERENCES towns (id) ON DELETE CASCADE,
   format_version integer NOT NULL,
   ruleset_version integer NOT NULL,
   seed integer NOT NULL,
@@ -66,7 +62,7 @@ CREATE TABLE state (
 );
 
 CREATE TABLE houses (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
   name text NOT NULL CHECK (length(name) > 0),
   controller text NOT NULL CHECK (controller IN ('ai', 'human')),
@@ -81,7 +77,7 @@ CREATE TABLE houses (
 );
 
 CREATE TABLE people (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
   house_id text NOT NULL,
   name text NOT NULL,
@@ -100,7 +96,7 @@ CREATE INDEX people_house ON people (town_id, house_id);
 -- and an array is part of the state hash. Loading in a different order would
 -- give the same town two hashes.
 CREATE TABLE workshops (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   house_id text NOT NULL,
   position integer NOT NULL,
   good text NOT NULL,
@@ -111,7 +107,7 @@ CREATE TABLE workshops (
 );
 
 CREATE TABLE stock (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   house_id text NOT NULL,
   good text NOT NULL,
   units integer NOT NULL CHECK (units >= 0),
@@ -120,7 +116,7 @@ CREATE TABLE stock (
 );
 
 CREATE TABLE seats (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   seat_id text NOT NULL,
   person_id text,
   PRIMARY KEY (town_id, seat_id),
@@ -128,7 +124,7 @@ CREATE TABLE seats (
 );
 
 CREATE TABLE laws (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
   position integer NOT NULL,
   title text NOT NULL,
@@ -141,7 +137,7 @@ CREATE TABLE laws (
 -- A hearing and a site still have a duration, so they carry the instant they
 -- fall due.
 CREATE TABLE engagements (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
   kind text NOT NULL CHECK (kind IN ('hearing', 'site')),
   house_id text NOT NULL,
@@ -158,7 +154,7 @@ CREATE INDEX engagements_due ON engagements (town_id, due_at);
 -- says which scrutiny the votes land on: a candidacy lodged after the bell
 -- waits for the next one.
 CREATE TABLE campaigns (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   seat_id text NOT NULL,
   house_id text NOT NULL,
   closed boolean NOT NULL DEFAULT false,
@@ -168,7 +164,7 @@ CREATE TABLE campaigns (
 );
 
 CREATE TABLE market (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   good text NOT NULL,
   price_cents integer NOT NULL CHECK (price_cents > 0),
   flow_units integer NOT NULL DEFAULT 0,
@@ -176,7 +172,7 @@ CREATE TABLE market (
 );
 
 CREATE TABLE market_history (
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   good text NOT NULL,
   position integer NOT NULL,
   price_cents integer NOT NULL CHECK (price_cents > 0),
@@ -190,7 +186,7 @@ CREATE TABLE market_history (
 -- player, not here.
 CREATE TABLE events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   at integer NOT NULL,
   audience text NOT NULL CHECK (audience IN ('town', 'court', 'house')),
   house_id text,
@@ -211,7 +207,7 @@ CREATE INDEX events_town_id ON events (town_id, id);
 CREATE TABLE actions (
   seq bigserial UNIQUE,
   id text PRIMARY KEY CHECK (id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
-  town_id text NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
+  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   house_id text NOT NULL CHECK (length(house_id) > 0),
   plays_at integer NOT NULL CHECK (plays_at >= 1),
   action jsonb NOT NULL,
@@ -224,31 +220,16 @@ CREATE TABLE actions (
 
 CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, seq);
 
--- The sealed season keeps the register and the book of kings, and no ordinary
--- reset touches them; a full reset deletes them too. The register is keyed by
--- town and season: two towns can seal a season in the same year. The book of
--- kings is keyed by the player and the instant: the crown follows the player,
--- and a town's hour means nothing once the town is gone. No foreign key to
--- `towns`: a town's death must not take its chronicle with it.
-CREATE TABLE archive_houses (
-  town_id text NOT NULL,
-  season integer NOT NULL,
-  name text NOT NULL,
-  prestige integer NOT NULL,
-  offices_held integer NOT NULL,
-  title text NOT NULL,
-  generations integer NOT NULL,
-  wealth_cents integer NOT NULL,
-  PRIMARY KEY (town_id, season, name)
-);
-
+-- The book of kings is the only record that crosses a reset; a full reset
+-- deletes it too. It is keyed by the player and the instant: the crown follows
+-- the player, and a town's hour means nothing once the town is gone. No foreign
+-- key to `players`: the book outlives the account.
 CREATE TABLE kings (
-  town_id text NOT NULL,
-  crowned_at timestamptz NOT NULL,
-  token_hash text NOT NULL,
+  player_id bigint NOT NULL,
   house_name text NOT NULL,
   person_name text NOT NULL,
-  ordinance text,
-  staple_good text,
-  PRIMARY KEY (token_hash, crowned_at)
+  crowned_at timestamptz NOT NULL,
+  -- The town's age at the crowning, in hours from `createWorld`'s first hour.
+  elapsed_hours integer NOT NULL,
+  PRIMARY KEY (player_id, crowned_at)
 );

@@ -4,7 +4,8 @@ import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players
 
 interface PlayerRow {
   token_hash: string;
-  world_id: string;
+  player_id: string;
+  town_id: string;
   house_id: string;
   created_at: Date | string;
   last_seen_at: Date | string;
@@ -25,16 +26,19 @@ export class PgPlayerStore implements PlayerStore {
     this.pool = pool;
   }
 
-  async insert(player: Player): Promise<void> {
+  async insert(player: Omit<Player, 'playerId'>): Promise<Player> {
     try {
-      await this.pool.query(
-        `INSERT INTO players (token_hash, world_id, house_id, created_at, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [player.tokenHash, player.worldId, player.houseId, player.createdAt, player.lastSeenAt],
+      const { rows } = await this.pool.query<{ player_id: string }>(
+        `INSERT INTO players (token_hash, town_id, house_id, created_at, last_seen_at)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING player_id`,
+        [player.tokenHash, player.townId, player.houseId, player.createdAt, player.lastSeenAt],
       );
+
+      return { ...player, playerId: Number(rows[0]?.player_id) };
     } catch (error) {
       if (isLiveHouseViolation(error)) {
-        throw new HouseAlreadyBoundError(player.worldId, player.houseId);
+        throw new HouseAlreadyBoundError(player.townId, player.houseId);
       }
       throw error;
     }
@@ -42,7 +46,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
+      `SELECT token_hash, player_id, town_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
        FROM players
        WHERE token_hash = $1`,
       [tokenHash],
@@ -80,24 +84,24 @@ export class PgPlayerStore implements PlayerStore {
     );
   }
 
-  async listByWorld(worldId: string): Promise<Player[]> {
+  async listByTown(townId: number): Promise<Player[]> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
+      `SELECT token_hash, player_id, town_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
        FROM players
-       WHERE world_id = $1
+       WHERE town_id = $1
        ORDER BY created_at, token_hash`,
-      [worldId],
+      [townId],
     );
 
     return rows.map(rowToPlayer);
   }
 
-  async revokeHouse(worldId: string, houseId: string, at: Date): Promise<void> {
+  async revokeHouse(townId: number, houseId: string, at: Date): Promise<void> {
     await this.pool.query(
       `UPDATE players
        SET revoked_at = $3
-       WHERE world_id = $1 AND house_id = $2 AND revoked_at IS NULL`,
-      [worldId, houseId, at],
+       WHERE town_id = $1 AND house_id = $2 AND revoked_at IS NULL`,
+      [townId, houseId, at],
     );
   }
 
@@ -114,8 +118,8 @@ export class PgPlayerStore implements PlayerStore {
     await this.pool.query('UPDATE players SET delete_after = NULL WHERE token_hash = $1', [tokenHash]);
   }
 
-  async deleteHouse(worldId: string, houseId: string): Promise<void> {
-    await this.pool.query('DELETE FROM players WHERE world_id = $1 AND house_id = $2', [worldId, houseId]);
+  async deleteHouse(townId: number, houseId: string): Promise<void> {
+    await this.pool.query('DELETE FROM players WHERE town_id = $1 AND house_id = $2', [townId, houseId]);
   }
 
   /** Readiness only: one round trip proves the pool can still reach its server. */
@@ -137,7 +141,9 @@ export async function createPgPlayerStore(connectionString: string): Promise<PgP
 function rowToPlayer(row: PlayerRow): Player {
   return {
     tokenHash: row.token_hash,
-    worldId: row.world_id,
+    // bigint comes back as a string.
+    playerId: Number(row.player_id),
+    townId: Number(row.town_id),
     houseId: row.house_id,
     createdAt: asDate(row.created_at),
     lastSeenAt: asDate(row.last_seen_at),

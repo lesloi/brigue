@@ -19,7 +19,7 @@ import {
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
-import { drawHouseIdentity, drawTownIdentity } from './names.ts';
+import { drawHouseIdentity, drawTownName } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
@@ -297,12 +297,12 @@ export function createApp(deps: AppDeps): Server {
     }
 
     if (closingOf(player, new Date(now())).kind === 'due') {
-      deps.logger.warn('session.deletion_due', { ip, worldId: player.worldId, houseId: player.houseId });
+      deps.logger.warn('session.deletion_due', { ip, townId: player.townId, houseId: player.houseId });
       unauthorized(response, secureCookies, true);
       return;
     }
 
-    deps.logger.info('session.opened', { ip, worldId: player.worldId, houseId: player.houseId });
+    deps.logger.info('session.opened', { ip, townId: player.townId, houseId: player.houseId });
     sendJson(response, 200, sessionBody(player), { 'Set-Cookie': sessionCookie(token, secureCookies) });
   }
 
@@ -314,7 +314,6 @@ export function createApp(deps: AppDeps): Server {
       // same freed place, nor read an empty database and found two towns.
       const joined = await deps.worlds.withJoinLock(async () => {
         const towns = await deps.worlds.listTowns();
-        const names = await deps.worlds.usedTownNames();
 
         for (const town of towns) {
           let houseId: string | null;
@@ -337,14 +336,14 @@ export function createApp(deps: AppDeps): Server {
           }
         }
 
-        return foundTown(names, trade, at);
+        return foundTown(trade, at);
       });
 
-      deps.logger.info('session.joined', { ip, worldId: joined.town.id, houseId: joined.houseId });
+      deps.logger.info('session.joined', { ip, townId: joined.town.id, houseId: joined.houseId });
       sendJson(
         response,
         201,
-        { worldId: joined.town.id, houseId: joined.houseId, token: joined.token },
+        { townId: joined.town.id, houseId: joined.houseId, token: joined.token },
         { 'Set-Cookie': sessionCookie(joined.token, secureCookies) },
       );
     } catch (error) {
@@ -366,7 +365,7 @@ export function createApp(deps: AppDeps): Server {
    * nothing; the join moves on. A town whose last human house has gone is on
    * its way out, and is left alone.
    */
-  async function takePlace(townId: string, trade: Trade): Promise<string | null> {
+  async function takePlace(townId: number, trade: Trade): Promise<string | null> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
 
@@ -374,7 +373,7 @@ export function createApp(deps: AppDeps): Server {
         return null;
       }
 
-      const players = await deps.store.listByWorld(townId);
+      const players = await deps.store.listByTown(townId);
       const taken = new Set(players.map((player) => player.houseId));
       const free = Object.values(world.houses).find((house) => house.controller === 'human' && !taken.has(house.id));
 
@@ -393,16 +392,11 @@ export function createApp(deps: AppDeps): Server {
   }
 
   /** No town has a free place: the newcomer founds one, named from the places left. */
-  async function foundTown(
-    names: readonly string[],
-    trade: Trade,
-    at: Date,
-  ): Promise<{ town: TownInfo; houseId: string; token: string }> {
-    const town = drawTownIdentity(names);
+  async function foundTown(trade: Trade, at: Date): Promise<{ town: TownInfo; houseId: string; token: string }> {
+    const name = drawTownName();
     const world = createWorld(randomSeed());
     const identity = drawHouseIdentity(world);
-
-    await deps.worlds.createTown(town, withFirstHouse(world, trade, identity), at);
+    const town = await deps.worlds.createTown(name, withFirstHouse(world, trade, identity), at);
 
     return bind(town, identity.id, at);
   }
@@ -459,7 +453,7 @@ export function createApp(deps: AppDeps): Server {
     if (closing.kind === 'none') {
       await deps.store.markDeletion(player.tokenHash, after);
       deps.logger.info('player.deletion_scheduled', {
-        worldId: player.worldId,
+        townId: player.townId,
         houseId: player.houseId,
         deleteAfter: after.toISOString(),
       });
@@ -485,7 +479,7 @@ export function createApp(deps: AppDeps): Server {
 
     if (closing.kind === 'pending') {
       await deps.store.cancelDeletion(player.tokenHash);
-      deps.logger.info('player.deletion_cancelled', { worldId: player.worldId, houseId: player.houseId });
+      deps.logger.info('player.deletion_cancelled', { townId: player.townId, houseId: player.houseId });
     }
 
     response.writeHead(204, { 'Cache-Control': 'no-store' });
@@ -494,7 +488,7 @@ export function createApp(deps: AppDeps): Server {
 
   function sessionBody(player: Player): Record<string, unknown> {
     return {
-      worldId: player.worldId,
+      townId: player.townId,
       houseId: player.houseId,
       deletionAfter: player.deleteAfter?.toISOString() ?? null,
     };
@@ -513,13 +507,13 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    const outcome = await catchUpTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
+    const outcome = await catchUpTown(player.townId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       // The visit arrived after the house was silent for a month: the world has
       // already deleted it and revoked the token. Clear the dead cookie so the
       // client can take the freed place.
-      deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
+      deps.logger.warn('world.session_expired', { townId: player.townId, houseId: player.houseId });
       unauthorized(response, secureCookies, true);
       return;
     }
@@ -529,12 +523,12 @@ export function createApp(deps: AppDeps): Server {
 
     if (caught.skipped > 0) {
       deps.logger.warn('world.catch_up_capped', {
-        worldId: player.worldId,
+        townId: player.townId,
         skipped: caught.skipped,
       });
     }
     deps.logger.info('world.read', {
-      worldId: player.worldId,
+      townId: player.townId,
       houseId: player.houseId,
       hour: caught.world.hour,
       hoursPlayed: caught.hours,
@@ -582,10 +576,10 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    const outcome = await advanceTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
+    const outcome = await advanceTown(player.townId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
-      deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
+      deps.logger.warn('world.session_expired', { townId: player.townId, houseId: player.houseId });
       unauthorized(response, secureCookies, true);
       return;
     }
@@ -594,7 +588,7 @@ export function createApp(deps: AppDeps): Server {
     await deps.store.touch(player.tokenHash, at);
 
     deps.logger.info('world.advanced', {
-      worldId: player.worldId,
+      townId: player.townId,
       houseId: player.houseId,
       hour: caught.world.hour,
     });
@@ -656,7 +650,7 @@ export function createApp(deps: AppDeps): Server {
       queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
 
       return queued.filter((action) => action.houseId === player.houseId);
-    }, player.worldId);
+    }, player.townId);
 
     sendJson(response, 200, { actions: actions.map(pendingView) });
   }
@@ -705,7 +699,7 @@ export function createApp(deps: AppDeps): Server {
       await session.cancel(actionId, at);
 
       return { kind: 'cancelled' as const };
-    }, player.worldId);
+    }, player.townId);
 
     switch (outcome.kind) {
       case 'unknown':
@@ -779,7 +773,7 @@ export function createApp(deps: AppDeps): Server {
         await session.append(stored);
 
         return { kind: 'appended' as const, stored };
-      }, player.worldId);
+      }, player.townId);
     } catch (error) {
       // The primary key caught an id another hour already used; the pre-check
       // above covers the common path, this covers a race from another world.
@@ -802,7 +796,7 @@ export function createApp(deps: AppDeps): Server {
         return;
       case 'appended':
         deps.logger.info('action.appended', {
-          worldId: player.worldId,
+          townId: player.townId,
           houseId: player.houseId,
           hour: outcome.stored.playsAt,
           action: outcome.stored.action.type,
@@ -815,7 +809,7 @@ export function createApp(deps: AppDeps): Server {
     }
   }
 
-  function catchUpTown(townId: string, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
+  function catchUpTown(townId: number, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(townId, world, at);
@@ -857,7 +851,7 @@ export function createApp(deps: AppDeps): Server {
     }, townId);
   }
 
-  function advanceTown(townId: string, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
+  function advanceTown(townId: number, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(townId, world, at);
@@ -898,13 +892,13 @@ export function createApp(deps: AppDeps): Server {
     }, townId);
   }
 
-  async function synchronisePresence(worldId: string, world: World, at: Date): Promise<Presence> {
-    const players = await deps.store.listByWorld(worldId);
+  async function synchronisePresence(townId: number, world: World, at: Date): Promise<Presence> {
+    const players = await deps.store.listByTown(townId);
     const presence = applyPresence(world, players, at.getTime());
 
     for (const houseId of presence.deletedHouseIds) {
-      await deps.store.revokeHouse(worldId, houseId, at);
-      deps.logger.warn('world.house_deleted', { worldId, houseId });
+      await deps.store.revokeHouse(townId, houseId, at);
+      deps.logger.warn('world.house_deleted', { townId, houseId });
     }
 
     return presence;

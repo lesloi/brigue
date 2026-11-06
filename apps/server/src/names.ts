@@ -2,11 +2,9 @@ import { randomInt } from 'node:crypto';
 
 import type { HouseIdentity, World } from '@brigue/core';
 
-import type { TownInfo } from './worlds.ts';
-
 /**
- * The places a town can take. A name is drawn once per database: two towns
- * with one name would make the register unreadable.
+ * The places a town can take. A name may come back; the id is assigned by the
+ * database and never does.
  */
 export const TOWN_NAMES = [
   'Amiens',
@@ -131,27 +129,12 @@ function uniqueHouseId(world: World, base: string): string {
 }
 
 /**
- * The identity of a new town, drawn when a join finds no free place anywhere:
- * a name no database has spent yet, and an id derived from it. Names are never
- * reused, so neither are ids. Once the pool is spent, the fallback is a
- * numbered place — reachable only by exhausting it.
+ * The name of a new town, drawn when a join founds one. Names may repeat: the
+ * id is assigned by the database, so a dead town's name can come back without
+ * bringing its id with it.
  */
-export function drawTownIdentity(taken: readonly string[]): TownInfo {
-  const used = new Set(taken.map((name) => name.toLowerCase()));
-  const free = TOWN_NAMES.filter((name) => !used.has(name.toLowerCase()));
-  const name = free.length > 0 ? free[randomInt(free.length)] : nextBourg(used);
-
-  return { id: slug(name), name };
-}
-
-function nextBourg(used: Set<string>): string {
-  let index = 1;
-
-  while (used.has(`bourg ${index}`)) {
-    index += 1;
-  }
-
-  return `Bourg ${index}`;
+export function drawTownName(): string {
+  return TOWN_NAMES[randomInt(TOWN_NAMES.length)];
 }
 
 function slug(name: string): string {

@@ -1,7 +1,9 @@
 export interface Player {
   /** SHA-256 of the raw token, never the token itself. */
   tokenHash: string;
-  worldId: string;
+  /** The stable identity the book of kings keeps; the store assigns it. */
+  playerId: number;
+  townId: number;
   houseId: string;
   createdAt: Date;
   /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
@@ -14,30 +16,31 @@ export interface Player {
 }
 
 export class HouseAlreadyBoundError extends Error {
-  constructor(worldId: string, houseId: string) {
-    super(`house ${worldId}/${houseId} already has a live token`);
+  constructor(townId: number, houseId: string) {
+    super(`house ${townId}/${houseId} already has a live token`);
     this.name = 'HouseAlreadyBoundError';
   }
 }
 
 export interface PlayerStore {
-  insert(player: Player): Promise<void>;
+  /** Creates the account and returns it with the id the store assigned. */
+  insert(player: Omit<Player, 'playerId'>): Promise<Player>;
   findByTokenHash(tokenHash: string): Promise<Player | null>;
   revoke(tokenHash: string, at: Date): Promise<void>;
   /** Records a visit without reopening a revoked session. */
   touch(tokenHash: string, at: Date): Promise<void>;
   /** Moves the reader's journal cursor forward; it never goes back. */
   advanceCursor(tokenHash: string, cursor: number): Promise<void>;
-  /** Every row of a world, live or revoked, so presence can see the last visit. */
-  listByWorld(worldId: string): Promise<Player[]>;
-  /** Revokes every live token of a house, for the thirty-day deletion. */
-  revokeHouse(worldId: string, houseId: string, at: Date): Promise<void>;
+  /** Every account of a town, live or revoked, so presence can see the last visit. */
+  listByTown(townId: number): Promise<Player[]>;
+  /** Revokes every live account of a house, for the thirty-day deletion. */
+  revokeHouse(townId: number, houseId: string, at: Date): Promise<void>;
   /** Schedules the erasure of an identity; a second request keeps the first. */
   markDeletion(tokenHash: string, at: Date): Promise<void>;
   /** Cancels a scheduled erasure: the player came back. */
   cancelDeletion(tokenHash: string): Promise<void>;
   /** Deletes every row of a house, for an identity the scheduler erased. */
-  deleteHouse(worldId: string, houseId: string): Promise<void>;
+  deleteHouse(townId: number, houseId: string): Promise<void>;
 }
 
 /**
@@ -47,19 +50,24 @@ export interface PlayerStore {
  */
 export class MemoryPlayerStore implements PlayerStore {
   private readonly players = new Map<string, Player>();
+  private nextPlayerId = 1;
 
-  async insert(player: Player): Promise<void> {
+  async insert(player: Omit<Player, 'playerId'>): Promise<Player> {
     if (this.players.has(player.tokenHash)) {
-      throw new HouseAlreadyBoundError(player.worldId, player.houseId);
+      throw new HouseAlreadyBoundError(player.townId, player.houseId);
     }
 
     for (const existing of this.players.values()) {
-      if (existing.revokedAt === null && existing.worldId === player.worldId && existing.houseId === player.houseId) {
-        throw new HouseAlreadyBoundError(player.worldId, player.houseId);
+      if (existing.revokedAt === null && existing.townId === player.townId && existing.houseId === player.houseId) {
+        throw new HouseAlreadyBoundError(player.townId, player.houseId);
       }
     }
 
-    this.players.set(player.tokenHash, { ...player });
+    const stored: Player = { ...player, playerId: this.nextPlayerId };
+    this.nextPlayerId += 1;
+    this.players.set(stored.tokenHash, stored);
+
+    return { ...stored };
   }
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
@@ -90,13 +98,13 @@ export class MemoryPlayerStore implements PlayerStore {
     }
   }
 
-  async listByWorld(worldId: string): Promise<Player[]> {
-    return [...this.players.values()].filter((player) => player.worldId === worldId).map((player) => ({ ...player }));
+  async listByTown(townId: number): Promise<Player[]> {
+    return [...this.players.values()].filter((player) => player.townId === townId).map((player) => ({ ...player }));
   }
 
-  async revokeHouse(worldId: string, houseId: string, at: Date): Promise<void> {
+  async revokeHouse(townId: number, houseId: string, at: Date): Promise<void> {
     for (const [tokenHash, player] of this.players) {
-      if (player.worldId === worldId && player.houseId === houseId && player.revokedAt === null) {
+      if (player.townId === townId && player.houseId === houseId && player.revokedAt === null) {
         this.players.set(tokenHash, { ...player, revokedAt: at });
       }
     }
@@ -118,9 +126,9 @@ export class MemoryPlayerStore implements PlayerStore {
     }
   }
 
-  async deleteHouse(worldId: string, houseId: string): Promise<void> {
+  async deleteHouse(townId: number, houseId: string): Promise<void> {
     for (const [tokenHash, player] of this.players) {
-      if (player.worldId === worldId && player.houseId === houseId) {
+      if (player.townId === townId && player.houseId === houseId) {
         this.players.delete(tokenHash);
       }
     }
