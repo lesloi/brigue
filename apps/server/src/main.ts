@@ -3,6 +3,7 @@ import { createApp } from './http.ts';
 import { createLogger } from './logger.ts';
 import { createPgPlayerStore } from './pg-players.ts';
 import { createPgWorldStore } from './pg-worlds.ts';
+import { startScheduler } from './scheduler.ts';
 
 const config = loadConfig(process.env);
 const logger = createLogger((line) => process.stdout.write(`${line}\n`));
@@ -23,6 +24,9 @@ if (config.devAdvance) {
 
 const store = await createPgPlayerStore(config.databaseUrl);
 const worlds = await createPgWorldStore(config.databaseUrl);
+// The town moves without a reader; a read only catches up when this loop is
+// more than an hour behind.
+const scheduler = startScheduler({ store: worlds, players: store, logger, now: () => new Date() });
 const server = createApp({
   store,
   worlds,
@@ -40,6 +44,7 @@ server.listen(config.port, config.host, () => {
 
 async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   logger.info('server.stopping', { signal });
+  scheduler.stop();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await store.close();
   await worlds.close();

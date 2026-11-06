@@ -20,7 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * seats become vacant.
  *
  * A house with no player row at all is dormant but not deleted: there is no
- * visit to measure the silence from, and the join path puts the founder back.
+ * visit to measure the silence from, and the join path puts the first house back.
  */
 export function applyPresence(world: World, players: readonly Player[], now: number): Presence {
   const latestSeen = new Map<string, number>();
@@ -81,7 +81,7 @@ export function applyPresence(world: World, players: readonly Player[], now: num
 }
 
 /** Removes a house, its people and their seats, and its queued campaign votes. */
-function removeHouse(world: World, houseId: string): void {
+export function removeHouse(world: World, houseId: string): void {
   const removedPeople = new Set<string>();
 
   for (const [personId, person] of Object.entries(world.people)) {
@@ -97,8 +97,10 @@ function removeHouse(world: World, houseId: string): void {
     }
   }
 
-  for (const byHouse of Object.values(world.campaigns)) {
-    delete byHouse?.[houseId];
+  for (const map of [world.campaigns, world.closedCampaigns]) {
+    for (const byHouse of Object.values(map)) {
+      delete byHouse?.[houseId];
+    }
   }
 
   // A house that is gone owes nothing: its queued engagements must not resolve

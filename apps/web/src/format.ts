@@ -105,6 +105,11 @@ export function pendingActionText(action: PendingActionView): string {
   }
 }
 
+/** Where a queued action lands, said against the town's clock. */
+export function pendingHourText(action: PendingActionView, currentHour: number): string {
+  return action.hour <= currentHour ? 'cette heure' : "l'heure suivante";
+}
+
 export function seatName(seat: SeatId): string {
   switch (seat) {
     case 'maire':
@@ -148,10 +153,10 @@ export function refusalText(reason: RefusalReason): string {
 /** Server error codes for an action, said the way the screen would say them. */
 export function actionErrorText(code: string | null): string {
   switch (code) {
-    case 'stale_week':
-      return 'Cette semaine est déjà passée. Le monde va être relu.';
-    case 'future_week':
-      return "Cette semaine n'a pas encore commencé.";
+    case 'stale_hour':
+      return 'Cette heure est déjà passée. Le monde va être relu.';
+    case 'future_hour':
+      return "Cette heure n'a pas encore commencé.";
     case 'duplicate_action':
       return 'Cette action a déjà été envoyée.';
     case 'unknown_action':
@@ -166,6 +171,8 @@ export function actionErrorText(code: string | null): string {
       return "Cette ville n'est plus compatible avec le serveur.";
     case 'no_free_house':
       return "Cette ville n'a plus de maison libre.";
+    case 'deletion_pending':
+      return 'Cette maison est en cours de suppression.';
     default:
       return "L'action n'a pas pu être envoyée.";
   }

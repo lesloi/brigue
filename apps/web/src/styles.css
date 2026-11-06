@@ -541,7 +541,7 @@ button:disabled {
   padding: 12px 14px 11px;
 }
 
-.weeks {
+.hours {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -550,7 +550,7 @@ button:disabled {
   gap: 4px;
 }
 
-.weeks li {
+.hours li {
   height: 25px;
   display: grid;
   place-items: center;
@@ -562,17 +562,17 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
-.weeks li.now {
+.hours li.now {
   background: var(--accent);
   color: #fff;
 }
 
-.weeks li.scrutiny {
+.hours li.scrutiny {
   box-shadow: inset 0 0 0 1px var(--gold);
   color: #8a5f14;
 }
 
-.weeks li.now.scrutiny {
+.hours li.now.scrutiny {
   box-shadow: inset 0 0 0 2px #f0d59a;
   color: #fff;
 }
@@ -1119,6 +1119,23 @@ button:disabled {
   color: var(--mut);
 }
 
+.gate-card .resume {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.gate-card .resume summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.gate-card .resume form {
+  margin-top: 10px;
+}
+
 .gate-card .gate-error {
   margin: 10px 0 0;
   color: var(--accent);
@@ -1191,6 +1208,26 @@ button:disabled {
   margin-top: 14px;
 }
 
+.dialog p.warn {
+  color: var(--accent);
+}
+
+.account {
+  margin: 22px 8px 0;
+  text-align: center;
+}
+
+.account button {
+  background: none;
+  border: 0;
+  padding: 8px;
+  color: var(--mut);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @media (min-width: 600px) {
   .hero {
     height: 260px;
@@ -1224,7 +1261,7 @@ button:disabled {
     margin-right: 20px;
   }
 
-  .weeks {
+  .hours {
     grid-template-columns: repeat(24, 1fr);
   }
 

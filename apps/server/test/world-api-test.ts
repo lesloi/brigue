@@ -1,14 +1,16 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, FORMAT_VERSION, hashJson, RULES, stateHash, type World } from '@brigue/core';
+import { FORMAT_VERSION, hashJson, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
 import { createLogger } from '../src/logger.ts';
+import { playDue } from '../src/scheduler.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
-import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
+import { MemoryWorldStore } from '../src/worlds.ts';
+import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -17,6 +19,10 @@ const ID_B = '00000000-0000-4000-8000-00000000000b';
 
 interface Harness {
   url: string;
+  /** Moves the clock and plays the hours the scheduler would, as the loop does. */
+  advance(ms: number): Promise<void>;
+  /** Moves the clock without playing: a scheduler that never ran. */
+  lapse(ms: number): Promise<void>;
   store: MemoryPlayerStore;
   worlds: MemoryWorldStore;
   logs: string[];
@@ -27,18 +33,18 @@ interface Harness {
 
 interface WorldBody {
   world: {
-    week: number;
+    hour: number;
     year: number;
     house: { id: string; stock: Record<string, number>; favour: number };
     town: { houses: Array<Record<string, unknown>> };
-    nextTickAt: string;
+    nextBellAt: string;
   };
   events: Array<Record<string, unknown> & { type: string; houseId?: string; units?: number }>;
   summary: {
-    weeksPlayed: number;
-    skippedWeeks: number;
-    counts: Record<string, number>;
-    refusals: Record<string, number>;
+    hours: number;
+    skipped: number;
+    counts: Partial<Record<string, number>>;
+    refusals: Partial<Record<string, number>>;
   };
   stateHash: string;
   dev?: boolean;
@@ -76,18 +82,42 @@ async function start(
       }),
   );
 
-  const world = options.world ?? createWorld(20261031);
-  await worlds.createIfAbsent(WORLD_ID, world, new Date(clock.now), new Date(clock.now));
+  const world = options.world ?? town(20261031);
+  await worlds.createTown(TEST_TOWN, world, new Date(clock.now));
 
-  const houses = options.houses ?? ['brigue'];
+  const houses = options.houses ?? ['leclerc'];
   const cookies: Record<string, string> = {};
   for (const houseId of houses) {
-    const { token } = await issueToken(store, WORLD_ID, houseId, new Date(clock.now));
+    const { token } = await issueToken(store, TEST_TOWN.id, houseId, new Date(clock.now));
     cookies[houseId] = `${SESSION_COOKIE}=${token}`;
   }
 
+  // The scheduler's pass, minus the timer: what the loop would do on its own.
+  const play = async (): Promise<void> => {
+    try {
+      await worlds.withWorld(async (session) => {
+        const due = await playDue(session, session.snapshot, new Date(clock.now));
+        if (due.hours > 0) {
+          await session.save(due.world, due.hourStartedAt, due.events);
+        }
+      }, TEST_TOWN.id);
+    } catch (error) {
+      // The loop logs a refused world and leaves it for the reader to report.
+      if (!(error instanceof WorldVersionError)) {
+        throw error;
+      }
+    }
+  };
+
   return {
     url: `http://127.0.0.1:${address.port}`,
+    advance: async (ms: number) => {
+      clock.now += ms;
+      await play();
+    },
+    lapse: async (ms: number) => {
+      clock.now += ms;
+    },
     store,
     worlds,
     logs,
@@ -122,7 +152,7 @@ async function worldBodyAs(harness: Harness, houseId: string): Promise<WorldBody
 }
 
 function postAction(harness: Harness, body: unknown): Promise<Response> {
-  return postActionAs(harness, 'brigue', body);
+  return postActionAs(harness, 'leclerc', body);
 }
 
 function postActionAs(harness: Harness, houseId: string, body: unknown): Promise<Response> {
@@ -133,23 +163,23 @@ function postActionAs(harness: Harness, houseId: string, body: unknown): Promise
   });
 }
 
-function getPending(harness: Harness, houseId = 'brigue'): Promise<Response> {
+function getPending(harness: Harness, houseId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[houseId] as string } });
 }
 
-function cancelPending(harness: Harness, id: string, houseId = 'brigue'): Promise<Response> {
+function cancelPending(harness: Harness, id: string, houseId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions/${id}`, {
     method: 'DELETE',
     headers: { Cookie: harness.cookies[houseId] as string },
   });
 }
 
-function buyWool(id: string, week: number, units: number, extra: Record<string, unknown> = {}): unknown {
-  return { id, week, action: { type: 'market.buy', good: 'wool', units, ...extra } };
+function buyWool(id: string, hour: number, units: number, extra: Record<string, unknown> = {}): unknown {
+  return { id, hour, action: { type: 'market.buy', good: 'wool', units, ...extra } };
 }
 
-function sellWool(id: string, week: number, units: number): unknown {
-  return { id, week, action: { type: 'market.sell', good: 'wool', units } };
+function sellWool(id: string, hour: number, units: number): unknown {
+  return { id, hour, action: { type: 'market.sell', good: 'wool', units } };
 }
 
 describe('GET /api/world', () => {
@@ -173,47 +203,92 @@ describe('GET /api/world', () => {
     // Assert
     expect(first.stateHash).toBe(second.stateHash);
     expect(first.events).toEqual(second.events);
-    expect(first.world.week).toBe(1);
+    expect(first.world.hour).toBe(1);
   });
 
-  it('catches a month up in one request and summarises the rest', async () => {
-    // Arrange
+  it('catches a month up when the scheduler never ran, and counts what it left behind', async () => {
+    // Arrange: the loop is down; a visit is the only thing that wakes the town.
     const harness = await start();
-    harness.clock.now += 30 * 24 * HOUR;
+    await harness.lapse(30 * 24 * HOUR);
 
     // Act
     const body = await worldBody(harness);
 
     // Assert
-    expect(body.summary.weeksPlayed).toBe(720);
-    expect(body.summary.skippedWeeks).toBe(0);
-    expect(body.world.week).toBe(721);
-    expect(body.events.length).toBeLessThan(100);
-    expect(body.summary.counts['market.sold']).toBeGreaterThan(0);
+    expect(body.summary.hours).toBe(720);
+    expect(body.summary.skipped).toBe(0);
+    expect(body.world.hour).toBe(721);
+    // The page is the newest fifty, in time order, up to the last hour lived.
+    expect(body.events).toHaveLength(50);
+    expect(Number(body.events.at(-1)?.at)).toBe(720);
+    // The rest is counted, not sent.
+    expect(body.summary.counts['market.bought']).toBeGreaterThan(50);
   });
 
-  it('keeps the last week on the following read that has nothing to play', async () => {
-    // Arrange
+  it('keeps the last hour on the following read that has nothing to play', async () => {
+    // Arrange: the read is the backstop and only wakes a town more than an
+    // hour behind, so the loop must have missed two.
     const harness = await start();
-    harness.clock.now += HOUR;
+    await harness.lapse(2 * HOUR);
     const first = await worldBody(harness);
 
     // Act
     const second = await worldBody(harness);
 
-    // Assert
-    expect(first.summary.weeksPlayed).toBe(1);
+    // Assert: the cursor consumed the page; the hours are neither played nor
+    // shown twice.
+    expect(first.summary.hours).toBe(2);
     expect(first.events.length).toBeGreaterThan(0);
-    expect(second.events).toEqual(first.events);
+    expect(second.events).toEqual([]);
+    expect(second.summary.hours).toBe(0);
+    expect(second.summary.counts).toEqual({});
     expect(second.stateHash).toBe(first.stateHash);
+  });
+
+  it('shows the newest page and forgets what it counted', async () => {
+    // Arrange: a month of entries, far more than one page.
+    const harness = await start();
+    await harness.lapse(30 * 24 * HOUR);
+    const first = await worldBody(harness);
+
+    // Act
+    const second = await worldBody(harness);
+
+    // Assert: the cursor jumped to the newest entry, so the counted entries
+    // are never shown again, and a second read has nothing left.
+    expect(first.events).toHaveLength(50);
+    expect(second.events).toEqual([]);
+    expect(second.summary.hours).toBe(0);
+    expect(second.summary.counts).toEqual({});
+  });
+
+  it('leaves a town one hour behind to the scheduler', async () => {
+    // Arrange: the loop is down for a single hour.
+    const harness = await start();
+    await harness.lapse(HOUR);
+
+    // Act: a read may leave that hour to the loop.
+    const lazy = await worldBody(harness);
+
+    // Assert
+    expect(lazy.summary.hours).toBe(0);
+    expect(lazy.world.hour).toBe(1);
+
+    // Act: two more hours pass without the loop.
+    await harness.lapse(2 * HOUR);
+    const awake = await worldBody(harness);
+
+    // Assert: the read is the backstop, and plays the whole backlog.
+    expect(awake.summary.hours).toBe(3);
+    expect(awake.world.hour).toBe(4);
   });
 
   it('answers a wrong world version clearly, without replaying', async () => {
     // Arrange
-    const world = { ...createWorld(7), rulesetVersion: RULES.version + 1 };
+    const world = { ...town(7), rulesetVersion: RULES.version + 1 };
     const harness = await start({ world });
     const before = stateHash(world);
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
 
     // Act
     const response = await getWorld(harness);
@@ -226,17 +301,18 @@ describe('GET /api/world', () => {
       rulesetVersion: RULES.version + 1,
       expected: { formatVersion: world.formatVersion, rulesetVersion: RULES.version },
     });
-    const after = await harness.worlds.withWorld(WORLD_ID, async (session) => session.snapshot.world);
+    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
     expect(stateHash(after)).toBe(before);
-    expect(after.week).toBe(1);
+    expect(after.hour).toBe(1);
   });
 
   it('refuses a world of the previous format at the door', async () => {
-    // Arrange: a format-1 world is refused before any replay.
-    const world = { ...createWorld(7), formatVersion: 1 };
+    // Arrange: format 2 is what this build replaced; it is refused before any
+    // replay, so the town is never read through the wrong shape.
+    const world = { ...town(7), formatVersion: 2 };
     const harness = await start({ world });
     const before = stateHash(world);
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
 
     // Act
     const response = await getWorld(harness);
@@ -245,13 +321,13 @@ describe('GET /api/world', () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       error: 'world_version',
-      formatVersion: 1,
+      formatVersion: 2,
       rulesetVersion: RULES.version,
       expected: { formatVersion: FORMAT_VERSION, rulesetVersion: RULES.version },
     });
-    const after = await harness.worlds.withWorld(WORLD_ID, async (session) => session.snapshot.world);
+    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
     expect(stateHash(after)).toBe(before);
-    expect(after.week).toBe(1);
+    expect(after.hour).toBe(1);
   });
 
   it('shows its own house in full, the town without the seed or other purses', async () => {
@@ -263,53 +339,53 @@ describe('GET /api/world', () => {
     const serialised = JSON.stringify(body);
 
     // Assert
-    expect(body.world.house.id).toBe('brigue');
+    expect(body.world.house.id).toBe('leclerc');
     expect(serialised).not.toContain('"seed"');
     expect(serialised).not.toContain('"rng"');
     expect(body.world.town.houses.every((house) => !('treasuryCents' in house))).toBe(true);
-    expect(new Date(body.world.nextTickAt).getTime()).toBe(START + HOUR);
+    expect(new Date(body.world.nextBellAt).getTime()).toBe(START + 12 * HOUR);
     // The hash covers the projection, not the seed-bearing world.
     expect(body.stateHash).toBe(hashJson(body.world));
   });
 
   it('returns a house its own ledger and not another house’s', async () => {
-    // Arrange: both houses read the same last week, so the second read is
+    // Arrange: both houses read the same last hour, so the second read is
     // served from the stored events of the first.
-    const world = createWorld(20261031);
+    const world = town(20261031);
     world.houses.caron.controller = 'human';
-    const harness = await start({ world, houses: ['brigue', 'caron'] });
-    harness.clock.now += HOUR;
+    const harness = await start({ world, houses: ['leclerc', 'caron'] });
+    await harness.advance(HOUR);
 
     // Act
-    const brigue = await worldBodyAs(harness, 'brigue');
+    const leclerc = await worldBodyAs(harness, 'leclerc');
     const caron = await worldBodyAs(harness, 'caron');
 
     // Assert
     const wagesOf = (body: WorldBody, houseId: string) =>
       body.events.filter((event) => event.type === 'house.wages_paid' && event.houseId === houseId);
 
-    expect(wagesOf(brigue, 'brigue').length).toBeGreaterThan(0);
-    expect(wagesOf(brigue, 'caron')).toEqual([]);
+    expect(wagesOf(leclerc, 'leclerc').length).toBeGreaterThan(0);
+    expect(wagesOf(leclerc, 'caron')).toEqual([]);
     expect(wagesOf(caron, 'caron').length).toBeGreaterThan(0);
-    expect(wagesOf(caron, 'brigue')).toEqual([]);
+    expect(wagesOf(caron, 'leclerc')).toEqual([]);
   });
 
   it('projects and ticks a town of twenty houses', async () => {
     // Arrange
-    const base = createWorld(20261031);
+    const base = town(20261031);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
     for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {
-        ...base.houses.herse,
+        ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ good: 'grain', level: 1, workers: 1 }],
         stock: {},
       };
       world.people[personId] = {
-        ...base.people['person-herse'],
+        ...base.people['person-fournier'],
         id: personId,
         houseId: id,
         name: `Nom ${index}`,
@@ -319,12 +395,12 @@ describe('GET /api/world', () => {
 
     // Act
     const first = await worldBody(harness);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const next = await worldBody(harness);
 
     // Assert
     expect(first.world.town.houses).toHaveLength(20);
-    expect(next.world.week).toBe(2);
+    expect(next.world.hour).toBe(2);
   });
 });
 
@@ -341,21 +417,21 @@ describe('POST /api/actions', () => {
     expect(response.status).toBe(401);
   });
 
-  it('queues an action for the current week and applies it before the tick', async () => {
+  it('queues an action for the current hour and applies it before the tick', async () => {
     // Arrange
     const harness = await start();
 
     // Act
     const response = await postAction(harness, buyWool(ID_A, 1, 2));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ id: ID_A, week: 1, houseId: 'brigue' });
+    expect(await response.json()).toEqual({ id: ID_A, hour: 1, houseId: 'leclerc' });
     expect(body.events[0]).toMatchObject({
       type: 'market.bought',
-      houseId: 'brigue',
+      houseId: 'leclerc',
       good: 'wool',
       units: 2,
       priceCents: 380,
@@ -364,19 +440,19 @@ describe('POST /api/actions', () => {
     expect(body.world.house.stock.wool).toBe(6);
   });
 
-  it("queues a sale at the week's price", async () => {
+  it("queues a sale at the hour's price", async () => {
     // Arrange
     const harness = await start();
 
     // Act
     const response = await postAction(harness, sellWool(ID_A, 1, 2));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert: two of the eight wool are sold, four are woven, two remain.
     expect(response.status).toBe(201);
     expect(body.events).toContainEqual(
-      expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'wool', units: 2, priceCents: 380 }),
+      expect.objectContaining({ type: 'market.sold', houseId: 'leclerc', good: 'wool', units: 2, priceCents: 380 }),
     );
     expect(body.world.house.stock.wool).toBe(2);
   });
@@ -389,7 +465,7 @@ describe('POST /api/actions', () => {
     // Act
     const first = await postAction(harness, submitted);
     const replay = await postAction(harness, submitted);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
@@ -399,31 +475,32 @@ describe('POST /api/actions', () => {
     expect(body.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);
   });
 
-  it('refuses a retry once the week it belonged to has been played', async () => {
+  it('refuses a retry once the hour it belonged to has been played', async () => {
     // Arrange
     const harness = await start();
     const submitted = buyWool(ID_A, 1, 2);
     await postAction(harness, submitted);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const applied = await worldBody(harness);
 
     // Act
     const replay = await postAction(harness, submitted);
     const body = await worldBody(harness);
 
-    // Assert
+    // Assert: the hour is not replayed, and the cursor has already consumed
+    // the page that carried the first application.
     expect(replay.status).toBe(409);
-    expect(await replay.json()).toEqual({ error: 'stale_week', currentWeek: 2 });
-    expect(body.events).toEqual(applied.events);
+    expect(await replay.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
+    expect(body.events).toEqual([]);
     expect(body.stateHash).toBe(applied.stateHash);
-    expect(body.summary.weeksPlayed).toBe(0);
-    expect(body.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);
+    expect(body.summary.hours).toBe(0);
+    expect(applied.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);
   });
 
-  it('refuses a week that has already been played', async () => {
+  it('refuses a hour that has already been played', async () => {
     // Arrange
     const harness = await start();
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
     await worldBody(harness);
 
     // Act
@@ -431,10 +508,10 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'stale_week', currentWeek: 3 });
+    expect(await response.json()).toEqual({ error: 'stale_hour', currentHour: 3 });
   });
 
-  it('refuses a week too far ahead of the town clock', async () => {
+  it('refuses a hour too far ahead of the town clock', async () => {
     // Arrange
     const harness = await start();
 
@@ -443,37 +520,37 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'future_week', currentWeek: 1 });
+    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 1 });
   });
 
-  it('refuses a week the catch-up cap will not reach', async () => {
+  it('refuses a hour the catch-up cap will not reach', async () => {
     // Arrange: a world well over a month behind, so catch-up will skip.
     const harness = await start();
-    harness.clock.now += 1000 * HOUR;
+    await harness.advance(1000 * HOUR);
 
-    // Act: a GET would land on week 745, not week 1001.
+    // Act: a GET would land on hour 745, not hour 1001.
     const response = await postAction(harness, buyWool(ID_A, 1000, 1));
 
     // Assert
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'future_week', currentWeek: 745 });
+    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 745 });
   });
 
-  it('accepts the next week when the client read just before the hour turned', async () => {
+  it('accepts the next hour when the client read just before the hour turned', async () => {
     // Arrange
     const harness = await start();
 
     // Act
     const response = await postAction(harness, buyWool(ID_A, 2, 3));
-    harness.clock.now += 2 * HOUR;
+    await harness.advance(2 * HOUR);
     const body = await worldBody(harness);
 
     // Assert
     expect(response.status).toBe(201);
-    expect(body.events[0]).toMatchObject({ type: 'market.bought', units: 3 });
-    // The first week still counts only the three AI purchases; the queued
-    // action belongs to the second week and is not applied early.
-    expect(body.summary.counts['market.bought']).toBe(3);
+    // The queued action plays on its own hour, not on the one before.
+    const buys = body.events.filter((event) => event.type === 'market.bought' && event.houseId === 'leclerc');
+    expect(buys).toHaveLength(1);
+    expect(buys[0]).toMatchObject({ units: 3, at: 2 });
   });
 
   it('never takes the house from the body', async () => {
@@ -482,17 +559,17 @@ describe('POST /api/actions', () => {
 
     // Act
     const response = await postAction(harness, buyWool(ID_A, 1, 1, { houseId: 'caron' }));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
     expect(response.status).toBe(201);
-    expect(body.events[0]).toMatchObject({ type: 'market.bought', houseId: 'brigue' });
+    expect(body.events[0]).toMatchObject({ type: 'market.bought', houseId: 'leclerc' });
   });
 
   it('refuses an action on a world whose rules changed', async () => {
     // Arrange
-    const world = { ...createWorld(7), rulesetVersion: RULES.version + 1 };
+    const world = { ...town(7), rulesetVersion: RULES.version + 1 };
     const harness = await start({ world });
 
     // Act
@@ -501,22 +578,22 @@ describe('POST /api/actions', () => {
     // Assert
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: 'world_version' });
-    expect(await harness.worlds.withWorld(WORLD_ID, async (session) => session.findAction(ID_A))).toBeNull();
+    expect(await harness.worlds.withWorld(async (session) => session.findAction(ID_A), TEST_TOWN.id)).toBeNull();
   });
 
   it('rejects a malformed action before it reaches the world', async () => {
     // Arrange
     const harness = await start();
     const invalid = [
-      { week: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
-      { id: 'nope', week: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
-      { id: ID_A, week: 0, action: { type: 'market.buy', good: 'wool', units: 1 } },
-      { id: ID_A, week: 1, action: { type: 'market.buy', good: 'silk', units: 1 } },
-      { id: ID_A, week: 1, action: { type: 'market.buy', good: 'wool', units: 0 } },
-      { id: ID_A, week: 1, action: { type: 'market.sell', good: 'silk', units: 1 } },
-      { id: ID_A, week: 1, action: { type: 'market.sell', good: 'wool', units: 0 } },
-      { id: ID_A, week: 1, action: { type: 'council.campaign', seatId: 'roi' } },
-      { id: ID_A, week: 1, action: { type: 'market.short', good: 'wool', units: 1 } },
+      { hour: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
+      { id: 'nope', hour: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
+      { id: ID_A, hour: 0, action: { type: 'market.buy', good: 'wool', units: 1 } },
+      { id: ID_A, hour: 1, action: { type: 'market.buy', good: 'silk', units: 1 } },
+      { id: ID_A, hour: 1, action: { type: 'market.buy', good: 'wool', units: 0 } },
+      { id: ID_A, hour: 1, action: { type: 'market.sell', good: 'silk', units: 1 } },
+      { id: ID_A, hour: 1, action: { type: 'market.sell', good: 'wool', units: 0 } },
+      { id: ID_A, hour: 1, action: { type: 'council.campaign', seatId: 'roi' } },
+      { id: ID_A, hour: 1, action: { type: 'market.short', good: 'wool', units: 1 } },
     ];
 
     // Act
@@ -531,7 +608,7 @@ describe('POST /api/actions', () => {
 });
 
 describe('the queued actions', () => {
-  it('lists and cancels an action before its week ticks', async () => {
+  it('lists and cancels an action before its hour ticks', async () => {
     // Arrange
     const harness = await start();
     const empty = await getPending(harness);
@@ -541,12 +618,12 @@ describe('the queued actions', () => {
     // Act
     const listed = await getPending(harness);
     const cancelled = await cancelPending(harness, ID_A);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
     expect(await listed.json()).toEqual({
-      actions: [{ id: ID_A, week: 1, type: 'market.buy', good: 'wool', units: 2 }],
+      actions: [{ id: ID_A, hour: 1, type: 'market.buy', good: 'wool', units: 2 }],
     });
     expect(cancelled.status).toBe(204);
     expect(await (await getPending(harness)).json()).toEqual({ actions: [] });
@@ -578,12 +655,12 @@ describe('the queued actions', () => {
     expect((await cancelPending(harness, ID_A)).status).toBe(204);
   });
 
-  it('keeps a cancellation already won even after the week ticks', async () => {
-    // Arrange: cancel, then let the world catch up over the action's week.
+  it('keeps a cancellation already won even after the hour ticks', async () => {
+    // Arrange: cancel, then let the world catch up over the action's hour.
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
     await cancelPending(harness, ID_A);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const warmed = await worldBody(harness);
 
     // Act
@@ -594,11 +671,11 @@ describe('the queued actions', () => {
     expect((await worldBody(harness)).stateHash).toBe(warmed.stateHash);
   });
 
-  it('refuses a cancellation once the week has ticked', async () => {
+  it('refuses a cancellation once the hour has ticked', async () => {
     // Arrange
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const applied = await worldBody(harness);
 
     // Act
@@ -607,16 +684,16 @@ describe('the queued actions', () => {
     // Assert: the buy was applied (eight plus two, less four woven).
     expect(applied.world.house.stock.wool).toBe(6);
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'stale_week', currentWeek: 2 });
+    expect(await response.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
   });
 
   it("does not cancel another house's action", async () => {
     // Arrange
-    const harness = await start({ houses: ['brigue', 'caron'] });
+    const harness = await start({ houses: ['leclerc', 'caron'] });
     await postActionAs(harness, 'caron', buyWool(ID_A, 1, 2));
 
     // Act
-    const foreign = await cancelPending(harness, ID_A, 'brigue');
+    const foreign = await cancelPending(harness, ID_A, 'leclerc');
     const own = await cancelPending(harness, ID_A, 'caron');
 
     // Assert
@@ -628,14 +705,14 @@ describe('the queued actions', () => {
   it('lists and cancels a campaign', async () => {
     // Arrange
     const harness = await start();
-    await postAction(harness, { id: ID_A, week: 1, action: { type: 'council.campaign', seatId: 'maire' } });
+    await postAction(harness, { id: ID_A, hour: 1, action: { type: 'council.campaign', seatId: 'maire' } });
     const listed = (await (await getPending(harness)).json()) as {
       actions: Array<{ type: string; seatId?: string }>;
     };
 
     // Act
     await cancelPending(harness, ID_A);
-    harness.clock.now += HOUR;
+    await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert: no favour was spent and no campaign was queued.
@@ -643,18 +720,18 @@ describe('the queued actions', () => {
     expect(body.world.house.favour).toBe(50);
   });
 
-  it('lists an action queued for the next week', async () => {
+  it('lists an action queued for the next hour', async () => {
     // Arrange
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 2, 2));
 
     // Act
     const listed = (await (await getPending(harness)).json()) as {
-      actions: Array<{ id: string; week: number }>;
+      actions: Array<{ id: string; hour: number }>;
     };
 
     // Assert
-    expect(listed.actions).toContainEqual(expect.objectContaining({ id: ID_A, week: 2 }));
+    expect(listed.actions).toContainEqual(expect.objectContaining({ id: ID_A, hour: 2 }));
   });
 
   it('refuses an unknown or malformed id', async () => {
@@ -720,7 +797,7 @@ describe('POST /api/dev/advance', () => {
     expect(devBody.stateHash).toBe(plainBody.stateHash);
   });
 
-  it('plays exactly one week and leaves the next natural tick an hour away', async () => {
+  it('plays exactly one hour and leaves the next natural tick an hour away', async () => {
     // Arrange
     const harness = await start({ devAdvance: true });
     const before = await worldBody(harness);
@@ -731,9 +808,19 @@ describe('POST /api/dev/advance', () => {
 
     // Assert
     expect(response.status).toBe(200);
-    expect(after.world.week).toBe(before.world.week + 1);
-    expect(new Date(after.world.nextTickAt).getTime()).toBe(harness.clock.now + HOUR);
+    expect(after.world.hour).toBe(before.world.hour + 1);
+    // The simulated hour is saved at the real now: the next natural hour is an
+    // hour away, not already owed.
+    const anchor = await harness.worlds.withWorld(async (session) => session.snapshot.hourStartedAt, TEST_TOWN.id);
+    expect(anchor.getTime()).toBe(harness.clock.now);
     expect(after.dev).toBe(true);
+
+    // Act: an hour later the town plays exactly one more, not a backlog.
+    await harness.advance(HOUR);
+    const read = await worldBody(harness);
+
+    // Assert
+    expect(read.world.hour).toBe(after.world.hour + 1);
   });
 
   it('does not advance again on a plain read, and the hashes agree', async () => {
@@ -745,22 +832,22 @@ describe('POST /api/dev/advance', () => {
     const read = await worldBody(harness);
 
     // Assert
-    expect(read.world.week).toBe(advanced.world.week);
+    expect(read.world.hour).toBe(advanced.world.hour);
     expect(read.stateHash).toBe(advanced.stateHash);
   });
 
-  it('applies the action queued for the week it plays', async () => {
+  it('applies the action queued for the hour it plays', async () => {
     // Arrange
     const harness = await start({ devAdvance: true });
     const before = await worldBody(harness);
-    await postAction(harness, buyWool(ID_A, before.world.week, 10));
+    await postAction(harness, buyWool(ID_A, before.world.hour, 10));
 
     // Act
     const advanced = (await (await postAdvance(harness)).json()) as WorldBody;
 
     // Assert
     expect(advanced.events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', houseId: 'brigue', units: 10 }),
+      expect.objectContaining({ type: 'market.bought', houseId: 'leclerc', units: 10 }),
     );
   });
 
@@ -774,7 +861,7 @@ describe('POST /api/dev/advance', () => {
     const second = (await (await postAdvance(harness)).json()) as WorldBody;
 
     // Assert
-    expect(second.world.week).toBe(before.world.week + 2);
+    expect(second.world.hour).toBe(before.world.hour + 2);
   });
 
   it('refuses without a session', async () => {

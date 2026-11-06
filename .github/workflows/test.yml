@@ -48,5 +48,9 @@ jobs:
       # exercises the CLI through the package script a developer uses.
       - run: pnpm --filter @brigue/server migrate
       - run: pnpm test
+      # The reset drops the schema, so it runs in its own pass, once the parallel suite has finished.
+      - run: pnpm exec vitest run apps/server/test/reset-test.ts
+        env:
+          RESET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/brigue
       # The build is the check that the service worker and the manifest are produced.
       - run: pnpm run build

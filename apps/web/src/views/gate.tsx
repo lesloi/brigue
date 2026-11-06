@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 import { Seal } from '../icons.tsx';
+import { Modal } from './modal.tsx';
 
 interface LostHouseProps {
   busy: boolean;
@@ -16,7 +17,7 @@ export function LostHouse({ busy, error, onResume }: LostHouseProps) {
       <div class="gate-card">
         <Seal size={38} />
         <h1>Cette ville a déjà son joueur</h1>
-        <p>La maison Brigue est liée à un jeton. Collez-le pour reprendre la partie.</p>
+        <p>Votre maison est liée à un jeton. Collez-le pour reprendre la partie.</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -78,7 +79,6 @@ interface TokenDialogProps {
 
 export function TokenDialog({ token, onClose, onCopied, onCopyError }: TokenDialogProps) {
   const copyButton = useRef<HTMLButtonElement>(null);
-  const dialog = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     // Focus once, when the dialog opens. Depending on onClose here would run
@@ -87,67 +87,29 @@ export function TokenDialog({ token, onClose, onCopied, onCopyError }: TokenDial
   }, []);
 
   return (
-    <div
-      class="overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="token-title"
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault();
-          onClose();
-          return;
-        }
-        if (event.key !== 'Tab') {
-          return;
-        }
-
-        const focusables = Array.from(
-          dialog.current?.querySelectorAll<HTMLElement>('button, [href], input, [tabindex]:not([tabindex="-1"])') ?? [],
-        );
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (first === undefined || last === undefined) {
-          return;
-        }
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }}
-    >
-      <div class="dialog" ref={dialog}>
-        <Seal size={34} />
-        <h2 id="token-title">Votre jeton</h2>
-        <p>
-          Il ne sera plus affiché. Notez-le : c'est la seule façon de retrouver cette maison depuis un autre appareil.
-        </p>
-        <code id="token-value">{token}</code>
-        <div class="dialog-actions">
-          <button
-            class="btn"
-            id="copy-token"
-            type="button"
-            ref={copyButton}
-            onClick={() => {
-              void navigator.clipboard.writeText(token).then(onCopied, onCopyError);
-            }}
-          >
-            Copier
-          </button>
-          <button class="btn outline" id="close-token" type="button" onClick={onClose}>
-            J'ai noté
-          </button>
-        </div>
+    <Modal titleId="token-title" onClose={onClose}>
+      <Seal size={34} />
+      <h2 id="token-title">Votre jeton</h2>
+      <p>
+        Il ne sera plus affiché. Notez-le : c'est la seule façon de retrouver cette maison depuis un autre appareil.
+      </p>
+      <code id="token-value">{token}</code>
+      <div class="dialog-actions">
+        <button
+          class="btn"
+          id="copy-token"
+          type="button"
+          ref={copyButton}
+          onClick={() => {
+            void navigator.clipboard.writeText(token).then(onCopied, onCopyError);
+          }}
+        >
+          Copier
+        </button>
+        <button class="btn outline" id="close-token" type="button" onClick={onClose}>
+          J'ai noté
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }

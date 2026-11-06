@@ -7,9 +7,9 @@ import type { Pool, PoolClient } from 'pg';
  * One Postgres advisory lock guards a migration run: two deploy runners can
  * start together, and only one of them may look at the schema at a time.
  * Arbitrary but stable, so two deployments of two versions meet on the same
- * key.
+ * key. Shared with the reset, which destroys the schema the runners watch.
  */
-const MIGRATION_LOCK = 4_211_902;
+export const MIGRATION_LOCK = 4_211_902;
 
 function defaultDirectory(): string {
   return join(import.meta.dirname, '..', 'db', 'migrations');
@@ -55,6 +55,24 @@ export function applyMigrations(pool: Pool, directory = defaultDirectory()): Pro
 }
 
 /**
+ * Builds the schema inside a transaction the caller owns: every migration is
+ * applied in order and recorded, against an empty schema. The reset uses it so
+ * the drop, the rebuild and the surviving rows commit together.
+ */
+export async function buildSchema(client: PoolClient, directory = defaultDirectory()): Promise<string[]> {
+  await ensureMigrationsTable(client);
+
+  const files = await migrationFiles(directory);
+
+  for (const file of files) {
+    await client.query(await readFile(join(directory, file), 'utf8'));
+    await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+  }
+
+  return files;
+}
+
+/**
  * What a deploy's schema gate asks: does this image carry a migration the
  * database does not have yet? If so the release must not serve, and the
  * migrations have either not run or not finished. Waiting for the lock means a
@@ -70,7 +88,7 @@ export function pendingMigrations(pool: Pool, directory = defaultDirectory()): P
   });
 }
 
-async function withMigrationLock<T>(pool: Pool, run: (client: PoolClient) => Promise<T>): Promise<T> {
+export async function withMigrationLock<T>(pool: Pool, run: (client: PoolClient) => Promise<T>): Promise<T> {
   // One connection for the lock and the whole run: a second connection would
   // need a slot in the pool while this one is already taken.
   const client = await pool.connect();

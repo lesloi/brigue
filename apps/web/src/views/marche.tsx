@@ -2,7 +2,7 @@ import type { GoodId } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
-import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
+import { formatCents, formatCount, goodName, pendingActionText, pendingHourText } from '../format.ts';
 import {
   buyMax,
   FINISHED_GOODS,
@@ -34,8 +34,8 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
   const house = world.house;
   const [open, setOpen] = useState<GoodId | null>(null);
 
-  // Only this week's queued trades change what this week's action can do.
-  const currentPending = pending.filter((action) => action.week === world.week);
+  // Only this hour's queued trades change what this hour's action can do.
+  const currentPending = pending.filter((action) => action.hour === world.hour);
   const queuedCashCents = pendingCashCents(currentPending, world.town.market);
   const queuedUnits = pendingUnits(currentPending);
 
@@ -115,11 +115,13 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
       <header class="mhead">
         <Seal />
         <div>
-          <div class="eyebrow">Saint-Aubin &middot; an {world.year}</div>
+          <div class="eyebrow">
+            {world.town.name} &middot; an {world.year}
+          </div>
           <h1>Le marché</h1>
         </div>
         <div class="wk">
-          sem. {world.calendar.weekOfYear}/{world.calendar.weeksPerYear}
+          h. {world.calendar.hourOfYear}/{world.calendar.hoursPerYear}
         </div>
       </header>
 
@@ -152,7 +154,7 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
                 <div class="wait" key={action.id}>
                   <div class="nm">
                     <b>{pendingActionText(action)}</b>
-                    <p>semaine {action.week}</p>
+                    <p>{pendingHourText(action, world.hour)}</p>
                   </div>
                   <button
                     class="btn outline"
@@ -170,8 +172,8 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
 
         <section class="sec" aria-label="Les denrées">
           <p class="note">
-            Le marché achète et vend au prix de la semaine. La pastille signale une denrée nettement plus chère ou moins
-            chère que son prix de référence. Touche une denrée pour ouvrir sa fiche.
+            Le marché achète et vend au prix courant, réglé aux deux cloches. La pastille signale une denrée nettement
+            plus chère ou moins chère que son prix de référence. Touche une denrée pour ouvrir sa fiche.
           </p>
           <div class="market-group">
             <div class="h">

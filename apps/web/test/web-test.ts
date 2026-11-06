@@ -19,6 +19,7 @@ import {
   goodName,
   goodQuantity,
   pendingActionText,
+  pendingHourText,
   readErrorText,
   refusalText,
   seatName,
@@ -26,10 +27,10 @@ import {
   tradeName,
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
-import { countdownText, scrutinyText } from '../src/views/ville.tsx';
+import { catchUpText, countdownText, lawAgeText, scrutinyText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
-  brigue: 'Brigue',
+  leclerc: 'Leclerc',
   caron: 'Caron',
   herse: 'de Herse',
 };
@@ -42,7 +43,9 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'market.bought',
       audience: 'town',
-      houseId: 'brigue',
+
+      at: 0,
+      houseId: 'leclerc',
       good: 'wool',
       units: 10,
       priceCents: 380,
@@ -50,7 +53,7 @@ describe('eventLine', () => {
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('loss');
@@ -63,6 +66,8 @@ describe('eventLine', () => {
     const event: Event = {
       type: 'market.bought',
       audience: 'town',
+
+      at: 0,
       houseId: 'caron',
       good: 'wool',
       units: 1,
@@ -71,7 +76,7 @@ describe('eventLine', () => {
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.text).toContain('Caron a acheté 1 laine');
@@ -81,14 +86,16 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'action.refused',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
+
+      at: 0,
       action: 'market.buy',
-      houseId: 'brigue',
+      houseId: 'leclerc',
       reason: 'insufficient_funds',
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('refusal');
@@ -99,20 +106,24 @@ describe('eventLine', () => {
     // Arrange
     const own: Event = {
       type: 'house.penniless',
-      audience: { houseId: 'brigue' },
-      houseId: 'brigue',
+      audience: { houseId: 'leclerc' },
+
+      at: 0,
+      houseId: 'leclerc',
       shortfallCents: 240,
     };
     const other: Event = {
       type: 'house.penniless',
       audience: { houseId: 'caron' },
+
+      at: 0,
       houseId: 'caron',
       shortfallCents: 240,
     };
 
     // Act
-    const ownLine = eventLine(own, 'brigue', nameOf);
-    const otherLine = eventLine(other, 'brigue', nameOf);
+    const ownLine = eventLine(own, 'leclerc', nameOf);
+    const otherLine = eventLine(other, 'leclerc', nameOf);
 
     // Assert
     expect(ownLine.text).toBe("Vous n'avez pas pu payer 2,4 écus de gages.");
@@ -123,14 +134,16 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.produced',
-      audience: { houseId: 'brigue' },
-      houseId: 'brigue',
+      audience: { houseId: 'leclerc' },
+
+      at: 0,
+      houseId: 'leclerc',
       good: 'cloth',
       units: 4,
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('gain');
@@ -141,17 +154,62 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.overflow',
-      audience: { houseId: 'brigue' },
-      houseId: 'brigue',
+      audience: { houseId: 'leclerc' },
+
+      at: 0,
+      houseId: 'leclerc',
       good: 'wool',
       refusedUnits: 3,
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
+  });
+
+  it('says when the scrutiny that counts a candidacy is held', () => {
+    // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
+    const event: Event = {
+      type: 'council.campaigned',
+      audience: { houseId: 'leclerc' },
+      at: 12,
+      houseId: 'leclerc',
+      seatId: 'maire',
+      favourSpent: 3,
+      countsAt: 48,
+    };
+
+    // Act
+    const line = eventLine(event, 'leclerc', nameOf);
+
+    // Assert: the screen does not claim the coming scrutiny when the noon bell
+    // has already closed this year's.
+    expect(line.tone).toBe('council');
+    expect(line.text).toContain('candidature à la mairie');
+    expect(line.text).toContain('dans 36 heures');
+  });
+
+  it('counts a late engagement in hours', () => {
+    // Arrange: heard three hours after it fell due.
+    const event: Event = {
+      type: 'engagement.resolved',
+      audience: { houseId: 'leclerc' },
+      at: 8,
+      engagementId: 'e1',
+      kind: 'hearing',
+      houseId: 'leclerc',
+      dueAt: 5,
+      resolvedAt: 8,
+    };
+
+    // Act
+    const line = eventLine(event, 'leclerc', nameOf);
+
+    // Assert
+    expect(line.text).toContain("L'audience de Vous est tenue");
+    expect(line.text).toContain('3 heures de retard');
   });
 });
 
@@ -189,7 +247,7 @@ describe('format helpers', () => {
   });
 
   it('separates action failures from read failures', () => {
-    expect(actionErrorText('stale_week')).toContain('déjà passée');
+    expect(actionErrorText('stale_hour')).toContain('déjà passée');
     expect(actionErrorText(null)).toBe("L'action n'a pas pu être envoyée.");
     expect(readErrorText('world_version')).toContain('plus compatible');
     expect(readErrorText(null)).toBe("La ville n'a pas pu être relue.");
@@ -200,17 +258,15 @@ describe('countdownText', () => {
   const start = Date.parse('2026-01-01T00:00:00.000Z');
 
   it('shows minutes and seconds under an hour', () => {
-    expect(countdownText(new Date(start + 90_000).toISOString(), start)).toBe('semaine dans 1:30');
+    expect(countdownText(new Date(start + 90_000).toISOString(), start)).toBe('cloche dans 1:30');
   });
 
   it('switches to hours and minutes above an hour', () => {
-    expect(countdownText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe(
-      'semaine dans 2 h 05',
-    );
+    expect(countdownText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe('cloche dans 2 h 05');
   });
 
   it('does not go negative', () => {
-    expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('semaine imminente');
+    expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('cloche imminente');
   });
 });
 
@@ -223,6 +279,49 @@ describe('scrutinyText', () => {
 
   it('never goes negative', () => {
     expect(scrutinyText(new Date(start - 1_000).toISOString(), start)).toBe('scrutin imminent');
+  });
+});
+
+describe('lawAgeText', () => {
+  it('says a law in hours from the town clock', () => {
+    expect(lawAgeText(12, 12)).toBe('cette heure');
+    expect(lawAgeText(12, 13)).toBe('il y a 1 heure');
+    expect(lawAgeText(9, 12)).toBe('il y a 3 heures');
+  });
+});
+
+describe('catchUpText', () => {
+  const nothing = { counts: {}, refusals: {} };
+
+  it('agrees with a single hour', () => {
+    expect(catchUpText({ hours: 1, skipped: 0, ...nothing })).toBe('1 heure vécue depuis votre dernière visite.');
+    expect(catchUpText({ hours: 1, skipped: 1, ...nothing })).toContain('1 heure sautée');
+  });
+
+  it('pluralises above one', () => {
+    expect(catchUpText({ hours: 2, skipped: 0, ...nothing })).toBe('2 heures vécues depuis votre dernière visite.');
+    expect(catchUpText({ hours: 0, skipped: 2, ...nothing })).toContain('2 heures sautées');
+  });
+
+  it('counts what the page left behind, refusals by reason', () => {
+    // Act
+    const text = catchUpText({
+      hours: 30,
+      skipped: 0,
+      counts: { 'market.bought': 312, 'market.sold': 40, 'action.refused': 12 },
+      refusals: { insufficient_funds: 5, stock_full: 7 },
+    });
+
+    // Assert: the refusal is not also listed as a type.
+    expect(text).toContain('30 heures vécues');
+    expect(text).toContain('312 achats');
+    expect(text).toContain('40 ventes');
+    expect(text).toContain('12 refus (7 entrepôt plein, 5 fonds insuffisants)');
+    expect(text).not.toContain('12 refus,');
+  });
+
+  it('says nothing when the visit owes nothing', () => {
+    expect(catchUpText({ hours: 0, skipped: 0, ...nothing })).toBeNull();
   });
 });
 
@@ -256,7 +355,9 @@ describe('the ledger filter', () => {
     {
       type: 'market.sold',
       audience: 'town',
-      houseId: 'brigue',
+
+      at: 0,
+      houseId: 'leclerc',
       good: 'cloth',
       units: 2,
       priceCents: 1240,
@@ -265,41 +366,43 @@ describe('the ledger filter', () => {
     {
       type: 'market.bought',
       audience: 'town',
+
+      at: 0,
       houseId: 'caron',
       good: 'wool',
       units: 6,
       priceCents: 380,
       totalCents: 2280,
     },
-    { type: 'council.election_held', audience: 'town', seatId: 'maire', winnerHouseId: 'caron', votes: {} },
-    { type: 'market.price_changed', audience: 'town', good: 'cloth', before: 1240, after: 1250 },
-    { type: 'house.wages_paid', audience: { houseId: 'brigue' }, houseId: 'brigue', amountCents: 240 },
+    { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerHouseId: 'caron', votes: {} },
+    { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
+    { type: 'house.wages_paid', audience: { houseId: 'leclerc' }, at: 0, houseId: 'leclerc', amountCents: 240 },
   ];
 
   it('keeps the house and the town politics by default', () => {
     // Act
-    const filtered = ledgerEvents(events, 'brigue', 'house');
+    const filtered = ledgerEvents(events, 'leclerc', 'house');
 
     // Assert
     expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.wages_paid']);
   });
 
   it('keeps only the prices in the prices cut', () => {
-    expect(ledgerEvents(events, 'brigue', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
+    expect(ledgerEvents(events, 'leclerc', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
   });
 
   it('keeps everything in the full cut', () => {
-    expect(ledgerEvents(events, 'brigue', 'all')).toEqual(events);
+    expect(ledgerEvents(events, 'leclerc', 'all')).toEqual(events);
   });
 });
 
 describe('pending actions', () => {
   const pending: PendingActionView[] = [
-    { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
-    { id: 'b', week: 3, type: 'market.buy', good: 'grain', units: 10 },
-    { id: 'c', week: 3, type: 'market.sell', good: 'grain', units: 4 },
-    { id: 'd', week: 3, type: 'market.buy', good: 'wool', units: 2 },
-    { id: 'e', week: 3, type: 'council.campaign', seatId: 'maire' },
+    { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+    { id: 'b', hour: 3, type: 'market.buy', good: 'grain', units: 10 },
+    { id: 'c', hour: 3, type: 'market.sell', good: 'grain', units: 4 },
+    { id: 'd', hour: 3, type: 'market.buy', good: 'wool', units: 2 },
+    { id: 'e', hour: 3, type: 'council.campaign', seatId: 'maire' },
   ];
 
   it('nets the market actions of one good', () => {
@@ -315,12 +418,17 @@ describe('pending actions', () => {
     expect(pendingActionText(pending[4] as PendingActionView)).toBe('Candidature à la mairie');
   });
 
-  it("values the queued actions at the week's prices", () => {
+  it('says where a queued action lands against the clock', () => {
+    expect(pendingHourText(pending[0] as PendingActionView, 3)).toBe('cette heure');
+    expect(pendingHourText({ ...pending[0], hour: 4 } as PendingActionView, 3)).toBe("l'heure suivante");
+  });
+
+  it("values the queued actions at the town's prices", () => {
     // Arrange
     const prices = { wool: 380, cloth: 1240, grain: 260, bread: 520, wood: 300, planks: 980 };
     const queued: PendingActionView[] = [
-      { id: 'a', week: 3, type: 'market.buy', good: 'grain', units: 5 },
-      { id: 'b', week: 3, type: 'market.sell', good: 'bread', units: 3 },
+      { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+      { id: 'b', hour: 3, type: 'market.sell', good: 'bread', units: 3 },
     ];
 
     // Act and assert: -5 × 260 + 3 × 520, and 5 − 3 units net.

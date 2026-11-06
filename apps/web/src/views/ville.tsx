@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import type { CalendarView, PendingActionView, WorldResponse } from '../api.ts';
-import { eventLine, ledgerEvents, type LedgerFilter } from '../events.ts';
+import { eventLine, journalCountsText, ledgerEvents, type LedgerFilter } from '../events.ts';
 import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
@@ -13,15 +13,25 @@ interface VilleProps {
   data: WorldResponse;
   now: number;
   advancing: boolean;
-  /** Actions the server holds for the current and next week. */
+  /** Actions the server holds for the current and next hour. */
   pending: PendingActionView[];
   onRefresh(): void;
   onGoMarket(): void;
   onAdvance(): void;
+  onDeleteAccount(): void;
 }
 
-/** The Ville screen, rendered only from the projection and last week's events. */
-export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, onAdvance }: VilleProps) {
+/** The Ville screen, rendered only from the projection and the journal page. */
+export function Ville({
+  data,
+  now,
+  advancing,
+  pending,
+  onRefresh,
+  onGoMarket,
+  onAdvance,
+  onDeleteAccount,
+}: VilleProps) {
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('house');
   const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
@@ -35,26 +45,28 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
 
   return (
     <main class="screen">
-      <section class="hero" aria-label="Saint-Aubin">
+      <section class="hero" aria-label={world.town.name}>
         <HeroScene />
         <div class="scrim"></div>
         <div class="id">
           <Seal />
           <div>
             <div class="nm">Maison {house.name}</div>
-            <div class="pl">Saint-Aubin &middot; an {world.year}</div>
+            <div class="pl">
+              {world.town.name} &middot; an {world.year}
+            </div>
           </div>
           <div class="wk">
-            sem. {world.calendar.weekOfYear}/{world.calendar.weeksPerYear}
+            h. {world.calendar.hourOfYear}/{world.calendar.hoursPerYear}
           </div>
         </div>
         <div class="cap">
           <div>
             <div class="sub">une ville de la hanse</div>
-            <h1>Saint-Aubin</h1>
+            <h1>{world.town.name}</h1>
           </div>
           <button class="tick" id="refresh" type="button" aria-label="Rafraîchir la ville" onClick={onRefresh}>
-            <span id="tick-countdown">{countdownText(world.nextTickAt, now)}</span>
+            <span id="tick-countdown">{countdownText(world.nextBellAt, now)}</span>
             <svg
               width="13"
               height="13"
@@ -127,7 +139,7 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
                       ? 0
                       : netPendingFor(
                           workshop.input,
-                          pending.filter((action) => action.week === world.week),
+                          pending.filter((action) => action.hour === world.hour),
                         )
                   }
                   onGoMarket={onGoMarket}
@@ -141,7 +153,7 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
                 </div>
                 <div class="nm">
                   <b>Dette</b>
-                  <p>À rembourser sur les prochaines semaines.</p>
+                  <p>À rembourser sur les prochaines heures.</p>
                 </div>
                 <div class="act">
                   <span class="price owed">
@@ -153,9 +165,9 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
           </div>
         </section>
 
-        <section class="sec" aria-labelledby="week-title">
+        <section class="sec" aria-labelledby="journal-title">
           <div class="h">
-            <b id="week-title">La semaine dernière</b>
+            <b id="journal-title">Le journal</b>
             <span>
               {ledger.length} ligne{ledger.length > 1 ? 's' : ''}
             </span>
@@ -202,8 +214,8 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
             {ledger.length === 0 ? (
               <div class="row empty">
                 <div class="nm">
-                  <b>Rien au registre</b>
-                  <p>Rien pour ce filtre cette semaine.</p>
+                  <b>Rien au journal</b>
+                  <p>Rien pour ce filtre depuis votre dernière visite.</p>
                 </div>
               </div>
             ) : (
@@ -247,7 +259,8 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
                   <b>{law.title}</b>
                   <span class="pill">vigueur</span>
                   <p>
-                    portée par <span>{nameOf(law.sponsorHouseId)}</span> &middot; semaine {law.enactedWeek}
+                    portée par <span>{nameOf(law.sponsorHouseId)}</span> &middot;{' '}
+                    {lawAgeText(law.enactedAt, world.hour)}
                   </p>
                 </div>
               ))
@@ -255,6 +268,11 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
           </div>
         </section>
       </div>
+      <footer class="account">
+        <button type="button" onClick={onDeleteAccount}>
+          Supprimer mon compte
+        </button>
+      </footer>
     </main>
   );
 }
@@ -267,13 +285,13 @@ function DevBar({ busy, onAdvance }: { busy: boolean; onAdvance(): void }) {
   return (
     <div class="dev">
       <button
-        id="advance-week"
+        id="advance-hour"
         type="button"
         title="Mode développement : simule une heure"
         disabled={busy}
         onClick={onAdvance}
       >
-        Semaine suivante
+        Heure suivante
       </button>
     </div>
   );
@@ -286,14 +304,14 @@ export function houseName(world: WorldResponse['world']): (houseId: string) => s
   return (houseId) => names.get(houseId) ?? 'une maison inconnue';
 }
 
-export function countdownText(nextTickAt: string, now: number): string {
-  const remaining = new Date(nextTickAt).getTime() - now;
+export function countdownText(nextBellAt: string, now: number): string {
+  const remaining = new Date(nextBellAt).getTime() - now;
 
   if (!Number.isFinite(remaining) || remaining <= 0) {
-    return 'semaine imminente';
+    return 'cloche imminente';
   }
 
-  return `semaine dans ${durationText(remaining)}`;
+  return `cloche dans ${durationText(remaining)}`;
 }
 
 /** The same countdown for the scrutiny the projection dates, never a computed one. */
@@ -305,6 +323,17 @@ export function scrutinyText(nextScrutinyAt: string, now: number): string {
   }
 
   return `scrutin dans ${durationText(remaining)}`;
+}
+
+/** How long ago the town enacted a law, said in hours from its own clock. */
+export function lawAgeText(enactedAt: number, currentHour: number): string {
+  const age = currentHour - enactedAt;
+
+  if (age <= 0) {
+    return 'cette heure';
+  }
+
+  return `il y a ${formatCount(age)} heure${age > 1 ? 's' : ''}`;
 }
 
 function durationText(remaining: number): string {
@@ -321,26 +350,32 @@ function durationText(remaining: number): string {
 }
 
 function Calendar({ calendar, year, now }: { calendar: CalendarView; year: number; now: number }) {
-  const weeks = Array.from({ length: calendar.weeksPerYear }, (_, index) => index + 1);
+  const hours = Array.from({ length: calendar.hoursPerYear }, (_, index) => index + 1);
+  // The projection dates the next scrutiny by its absolute hour; the cell is
+  // that hour's place in the year, so a scrutiny moved earlier still lands on
+  // the right cell.
+  const scrutinyHourOfYear = ((calendar.nextScrutinyHour - 1) % calendar.hoursPerYear) + 1;
 
   return (
     <section class="cal" aria-labelledby="cal-title">
       <div class="h">
         <b id="cal-title">Le calendrier</b>
         <span>
-          an {year} &middot; semaine {calendar.weekOfYear} sur {calendar.weeksPerYear}
+          an {year} &middot; heure {calendar.hourOfYear} sur {calendar.hoursPerYear}
         </span>
       </div>
       <div class="cal-card">
-        <ol class="weeks" aria-label={`Semaine ${calendar.weekOfYear} sur ${calendar.weeksPerYear}`}>
-          {weeks.map((week) => (
+        <ol class="hours" aria-label={`Heure ${calendar.hourOfYear} sur ${calendar.hoursPerYear}`}>
+          {hours.map((hour) => (
             <li
-              key={week}
-              class={week === calendar.weekOfYear ? 'now' : week === calendar.weeksPerYear ? 'scrutiny' : ''}
-              aria-current={week === calendar.weekOfYear ? 'true' : undefined}
-              title={week === calendar.weeksPerYear ? 'Scrutin' : `Semaine ${week}`}
+              key={hour}
+              class={[hour === calendar.hourOfYear ? 'now' : '', hour === scrutinyHourOfYear ? 'scrutiny' : '']
+                .filter(Boolean)
+                .join(' ')}
+              aria-current={hour === calendar.hourOfYear ? 'true' : undefined}
+              title={hour === scrutinyHourOfYear ? 'Scrutin' : `Heure ${hour}`}
             >
-              <span>{week}</span>
+              <span>{hour}</span>
             </li>
           ))}
         </ol>
@@ -368,13 +403,13 @@ function WorkshopRow({
   const input = workshop.input;
   const held = input === null ? 0 : (stock[input] ?? 0);
   const effectiveHeld = Math.max(0, held + pendingInput);
-  const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerWeek - effectiveHeld);
+  const missing = input === null ? 0 : Math.max(0, workshop.inputUnitsPerHour - effectiveHeld);
   const pendingBuy = input !== null && pendingInput > 0 ? pendingInput : 0;
   const pendingSell = input !== null && pendingInput < 0 ? -pendingInput : 0;
   // What the warehouse already covers: the workshop eats its input at one rate
-  // a week, so every week of input is one week of production, no more.
-  const reserveWeeks =
-    input === null || workshop.inputUnitsPerWeek <= 0 ? null : Math.floor(effectiveHeld / workshop.inputUnitsPerWeek);
+  // an hour, so every hour of input is one hour of production, no more.
+  const reserveHours =
+    input === null || workshop.inputUnitsPerHour <= 0 ? null : Math.floor(effectiveHeld / workshop.inputUnitsPerHour);
 
   return (
     <div class="row">
@@ -386,33 +421,33 @@ function WorkshopRow({
           {workshopName(workshop.good)}
           <span class="lv">niv. {workshop.level}</span>
         </b>
-        {/* The chain and its weekly rate in one line: what it eats, what it
+        {/* The chain and its hourly rate in one line: what it eats, what it
             makes, and how fast. The badge above carries the level, and the
             workers only ever set the wages, which the ledger writes. */}
         <p>
           {input === null
-            ? `${goodQuantity(workshop.outputUnitsPerWeek, workshop.good)} par semaine`
-            : `${goodQuantity(workshop.inputUnitsPerWeek, input)} → ${goodQuantity(
-                workshop.outputUnitsPerWeek,
+            ? `${goodQuantity(workshop.outputUnitsPerHour, workshop.good)} par heure`
+            : `${goodQuantity(workshop.inputUnitsPerHour, input)} → ${goodQuantity(
+                workshop.outputUnitsPerHour,
                 workshop.good,
-              )} par semaine`}
+              )} par heure`}
         </p>
-        {reserveWeeks !== null && reserveWeeks > 0 ? (
+        {reserveHours !== null && reserveHours > 0 ? (
           <p>
-            réserve : {reserveWeeks} semaine{reserveWeeks > 1 ? 's' : ''}
+            réserve : {reserveHours} heure{reserveHours > 1 ? 's' : ''}
           </p>
         ) : null}
         {missing > 0 && input !== null ? (
           <p class="warn">
             {pendingBuy > 0 ? 'Il manque toujours ' : 'Il manque '}
-            {goodQuantity(missing, input)} pour produire cette semaine.
+            {goodQuantity(missing, input)} pour produire cette heure.
           </p>
         ) : null}
         {input !== null && pendingBuy > 0 ? (
-          <p class="pending">Achat de {goodQuantity(pendingBuy, input)} en attente pour cette semaine.</p>
+          <p class="pending">Achat de {goodQuantity(pendingBuy, input)} en attente pour cette heure.</p>
         ) : null}
         {input !== null && pendingSell > 0 ? (
-          <p class="pending">Vente de {goodQuantity(pendingSell, input)} en attente pour cette semaine.</p>
+          <p class="pending">Vente de {goodQuantity(pendingSell, input)} en attente pour cette heure.</p>
         ) : null}
       </div>
       <div class="act">
@@ -434,17 +469,31 @@ function WorkshopRow({
 }
 
 function CatchUpNote({ summary }: { summary: WorldResponse['summary'] }) {
-  if (summary.weeksPlayed <= 1 && summary.skippedWeeks === 0) {
+  const text = catchUpText(summary);
+
+  if (text === null) {
     return null;
   }
 
+  return <p class="note">{text}</p>;
+}
+
+/** What the journal page does not show, said with the grammar of its count. */
+export function catchUpText(summary: WorldResponse['summary']): string | null {
   const parts: string[] = [];
-  if (summary.weeksPlayed > 1) {
-    parts.push(`${summary.weeksPlayed} semaines vécues depuis votre dernière visite, la dernière seule est détaillée.`);
+  const hours = (count: number) => `${formatCount(count)} heure${count > 1 ? 's' : ''}`;
+
+  if (summary.hours >= 1) {
+    parts.push(`${hours(summary.hours)} vécue${summary.hours > 1 ? 's' : ''} depuis votre dernière visite.`);
   }
-  if (summary.skippedWeeks > 0) {
-    parts.push(`${summary.skippedWeeks} semaines sautées faute de place dans le rattrapage.`);
+  if (summary.skipped > 0) {
+    parts.push(`${hours(summary.skipped)} sautée${summary.skipped > 1 ? 's' : ''} faute de place dans le rattrapage.`);
   }
 
-  return <p class="note">{parts.join(' ')}</p>;
+  const counted = journalCountsText(summary.counts, summary.refusals);
+  if (counted !== null) {
+    parts.push(`En dehors de cette page : ${counted}.`);
+  }
+
+  return parts.length === 0 ? null : parts.join(' ');
 }

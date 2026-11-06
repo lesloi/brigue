@@ -3,34 +3,38 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import {
   createWorld,
+  humanHouseOf,
   FORMAT_VERSION,
   hashJson,
   PACING,
   RULES,
   TRADES,
+  withFirstHouse,
+  withNewcomer,
   WorldVersionError,
   type Trade,
   type World,
 } from '@brigue/core';
 
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
-import { catchUp, WEEK_MS, type CatchUpResult } from './catch-up.ts';
-import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
-import { withFounder } from './founder.ts';
+import { readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
+import { drawHouseIdentity, drawTownIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
 import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
+import { playDue, type Due } from './scheduler.ts';
 import { authenticate, issueToken } from './session.ts';
 import { assertWebRoot, serveStatic } from './static.ts';
 import {
   DuplicateActionError,
-  FIRST_HOUSE_ID,
+  HOUR_MS,
   UnknownWorldError,
-  WORLD_ID,
+  type JournalPage,
   type StoredAction,
+  type TownInfo,
   type WorldSession,
   type WorldStore,
 } from './worlds.ts';
@@ -38,11 +42,14 @@ import {
 const SESSION_ATTEMPTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 /**
- * The action may target the week being played, or the next one when an hour
+ * The action may target the hour being played, or the next one when an hour
  * boundary fell between the client's read and its POST. Further ahead is a
  * client clock that cannot be reconciled with this town.
  */
-const QUEUE_AHEAD_WEEKS = 1;
+const QUEUE_AHEAD_HOURS = 1;
+/** A read returns at most this many journal entries; the rest is counted. */
+const JOURNAL_PAGE = 50;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface AppDeps {
   store: PlayerStore;
@@ -154,11 +161,21 @@ export function createApp(deps: AppDeps): Server {
           case 'GET':
             await readSession(request, response);
             return;
+          default:
+            methodNotAllowed(response, 'GET, POST');
+            return;
+        }
+
+      case '/api/player/deletion':
+        switch (request.method) {
+          case 'POST':
+            await requestDeletion(request, response);
+            return;
           case 'DELETE':
-            await closeSession(request, response);
+            await cancelDeletion(request, response);
             return;
           default:
-            methodNotAllowed(response, 'GET, POST, DELETE');
+            methodNotAllowed(response, 'POST, DELETE');
             return;
         }
 
@@ -194,7 +211,7 @@ export function createApp(deps: AppDeps): Server {
           methodNotAllowed(response, 'POST');
           return;
         }
-        await advanceWeek(request, response);
+        await advanceHour(request, response);
         return;
 
       default:
@@ -280,35 +297,56 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
+    if (closingOf(player, new Date(now())).kind === 'due') {
+      deps.logger.warn('session.deletion_due', { ip, worldId: player.worldId, houseId: player.houseId });
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
     deps.logger.info('session.opened', { ip, worldId: player.worldId, houseId: player.houseId });
-    sendJson(
-      response,
-      200,
-      { worldId: player.worldId, houseId: player.houseId },
-      { 'Set-Cookie': sessionCookie(token, secureCookies) },
-    );
+    sendJson(response, 200, sessionBody(player), { 'Set-Cookie': sessionCookie(token, secureCookies) });
   }
 
   async function joinTown(response: ServerResponse, ip: string, trade: Trade): Promise<void> {
     const at = new Date(now());
 
     try {
-      // One town, created by the first player; the next ones find it and only
-      // take the house binding. The trade is what the founder chose.
-      await deps.worlds.createIfAbsent(WORLD_ID, createWorld(randomSeed(), trade), at, at);
-      await assertWorldVersion();
-      // A freed place waits for a human: the founder's house may have been
-      // deleted after thirty days of silence, and the binding must point at a
-      // house the world still holds.
-      await ensureFounder(at, trade);
+      // The join is one critical section: two newcomers must not both take the
+      // same freed place, nor read an empty database and found two towns.
+      const joined = await deps.worlds.withJoinLock(async () => {
+        const towns = await deps.worlds.listTowns();
+        const names = await deps.worlds.usedTownNames();
 
-      const issued = await issueToken(deps.store, WORLD_ID, FIRST_HOUSE_ID, at);
-      deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId: FIRST_HOUSE_ID });
+        for (const town of towns) {
+          let houseId: string | null;
+
+          try {
+            houseId = await takePlace(town.id, trade);
+          } catch (error) {
+            // The town went between the list and its lock, or the scheduler
+            // deleted it: the next join will not see it either.
+            if (error instanceof UnknownWorldError) {
+              continue;
+            }
+            // A town of another version is refused, and stops the join: the
+            // format belongs to the database, not to one town.
+            throw error;
+          }
+
+          if (houseId !== null) {
+            return bind(town, houseId, at);
+          }
+        }
+
+        return foundTown(names, trade, at);
+      });
+
+      deps.logger.info('session.joined', { ip, worldId: joined.town.id, houseId: joined.houseId });
       sendJson(
         response,
         201,
-        { worldId: WORLD_ID, houseId: FIRST_HOUSE_ID, token: issued.token },
-        { 'Set-Cookie': sessionCookie(issued.token, secureCookies) },
+        { worldId: joined.town.id, houseId: joined.houseId, token: joined.token },
+        { 'Set-Cookie': sessionCookie(joined.token, secureCookies) },
       );
     } catch (error) {
       if (error instanceof HouseAlreadyBoundError) {
@@ -320,6 +358,66 @@ export function createApp(deps: AppDeps): Server {
     }
   }
 
+  /**
+   * The place a newcomer takes in a town: a human house no player has ever
+   * taken (the one the town was just created with, or a place whose token was
+   * never issued), else a new human house until the town is full. A house a
+   * player has taken stays theirs while it is silent — a revoked token does not
+   * give it away — until the silence rule deletes it. A full town offers
+   * nothing; the join moves on. A town whose last human house has gone is on
+   * its way out, and is left alone.
+   */
+  async function takePlace(townId: string, trade: Trade): Promise<string | null> {
+    return deps.worlds.withWorld(async (session) => {
+      const world = sessionWorld(session);
+
+      if (humanHouseOf(world) === undefined) {
+        return null;
+      }
+
+      const players = await deps.store.listByWorld(townId);
+      const taken = new Set(players.map((player) => player.houseId));
+      const free = Object.values(world.houses).find((house) => house.controller === 'human' && !taken.has(house.id));
+
+      if (free !== undefined) {
+        return free.id;
+      }
+      if (Object.keys(world.houses).length >= RULES.houseCap) {
+        return null;
+      }
+
+      const identity = drawHouseIdentity(world);
+      await session.save(withNewcomer(world, trade, identity), session.snapshot.hourStartedAt, []);
+
+      return identity.id;
+    }, townId);
+  }
+
+  /** No town has a free place: the newcomer founds one, named from the places left. */
+  async function foundTown(
+    names: readonly string[],
+    trade: Trade,
+    at: Date,
+  ): Promise<{ town: TownInfo; houseId: string; token: string }> {
+    const town = drawTownIdentity(names);
+    const world = createWorld(randomSeed());
+    const identity = drawHouseIdentity(world);
+
+    await deps.worlds.createTown(town, withFirstHouse(world, trade, identity), at);
+
+    return bind(town, identity.id, at);
+  }
+
+  async function bind(
+    town: TownInfo,
+    houseId: string,
+    at: Date,
+  ): Promise<{ town: TownInfo; houseId: string; token: string }> {
+    const issued = await issueToken(deps.store, town.id, houseId, at);
+
+    return { town, houseId, token: issued.token };
+  }
+
   async function readSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
@@ -327,24 +425,80 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    sendJson(response, 200, { worldId: player.worldId, houseId: player.houseId });
+    if (closingOf(player, new Date(now())).kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    sendJson(response, 200, sessionBody(player));
   }
 
-  async function closeSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  /**
+   * The player asks to delete their identity. The request is scheduled, not
+   * immediate: the token stays valid so they can come back, and the scheduler
+   * erases the house, its queue and the row at the deadline. A second request
+   * keeps the first deadline.
+   */
+  async function requestDeletion(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
     if (player === null) {
       return;
     }
 
-    await deps.store.revoke(player.tokenHash, new Date(now()));
-    deps.logger.info('session.revoked', { worldId: player.worldId, houseId: player.houseId });
+    const at = new Date(now());
+    const closing = closingOf(player, at);
 
-    response.writeHead(204, {
-      'Cache-Control': 'no-store',
-      'Set-Cookie': clearedSessionCookie(secureCookies),
-    });
+    if (closing.kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    const after =
+      closing.kind === 'pending' ? closing.after : new Date(at.getTime() + PACING.deletionGraceDays * DAY_MS);
+
+    if (closing.kind === 'none') {
+      await deps.store.markDeletion(player.tokenHash, after);
+      deps.logger.info('player.deletion_scheduled', {
+        worldId: player.worldId,
+        houseId: player.houseId,
+        deleteAfter: after.toISOString(),
+      });
+    }
+
+    sendJson(response, 200, { deleteAfter: after.toISOString() });
+  }
+
+  /** The player comes back before the deadline: the scheduled erasure is off. */
+  async function cancelDeletion(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+
+    const closing = closingOf(player, new Date(now()));
+
+    if (closing.kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    if (closing.kind === 'pending') {
+      await deps.store.cancelDeletion(player.tokenHash);
+      deps.logger.info('player.deletion_cancelled', { worldId: player.worldId, houseId: player.houseId });
+    }
+
+    response.writeHead(204, { 'Cache-Control': 'no-store' });
     response.end();
+  }
+
+  function sessionBody(player: Player): Record<string, unknown> {
+    return {
+      worldId: player.worldId,
+      houseId: player.houseId,
+      deletionAfter: player.deleteAfter?.toISOString() ?? null,
+    };
   }
 
   async function readWorld(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -355,7 +509,12 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const outcome = await catchUpTown(player.worldId, player.houseId, at);
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
+
+    const outcome = await catchUpTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       // The visit arrived after the house was silent for a month: the world has
@@ -369,29 +528,38 @@ export function createApp(deps: AppDeps): Server {
     const caught = outcome.result;
     await deps.store.touch(player.tokenHash, at);
 
-    if (caught.summary.skippedWeeks > 0) {
+    if (caught.skipped > 0) {
       deps.logger.warn('world.catch_up_capped', {
         worldId: player.worldId,
-        skippedWeeks: caught.summary.skippedWeeks,
+        skipped: caught.skipped,
       });
     }
     deps.logger.info('world.read', {
       worldId: player.worldId,
       houseId: player.houseId,
-      week: caught.world.week,
-      weeksPlayed: caught.summary.weeksPlayed,
-      skippedWeeks: caught.summary.skippedWeeks,
+      hour: caught.world.hour,
+      hoursPlayed: caught.hours,
+      skipped: caught.skipped,
     });
 
-    const projection = projectWorld(caught.world, player.houseId, caught.weekStartedAt);
+    const projection = projectWorld(outcome.town, caught.world, player.houseId, caught.hourStartedAt);
+    await deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
 
     sendJson(response, 200, {
       world: projection,
-      events: caught.events,
-      summary: caught.summary,
+      events: outcome.journal.events,
+      summary: {
+        hours: caught.hours,
+        skipped: caught.skipped,
+        counts: outcome.journal.counts,
+        refusals: outcome.journal.refusals,
+      },
       // The projected state, not the world: hashing the world would reveal the
       // seed and with it every future the town has not lived yet.
       stateHash: hashJson(projection),
+      // A pacing rule, not town state: the screen says how long a deletion
+      // waits without deciding it.
+      deletionGraceDays: PACING.deletionGraceDays,
       // Outside the projection on purpose: the hash must not depend on how a
       // deployment was started.
       ...(deps.devAdvance === true ? { dev: true } : {}),
@@ -399,10 +567,10 @@ export function createApp(deps: AppDeps): Server {
   }
 
   /**
-   * Local development only: plays the next week now instead of waiting for the
+   * Local development only: plays the next hour now instead of waiting for the
    * hour to pass. The world clock jumps, the wall clock does not.
    */
-  async function advanceWeek(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  async function advanceHour(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
     if (player === null) {
@@ -410,7 +578,12 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const outcome = await advanceTown(player.worldId, player.houseId, at);
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
+
+    const outcome = await advanceTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
@@ -424,25 +597,32 @@ export function createApp(deps: AppDeps): Server {
     deps.logger.info('world.advanced', {
       worldId: player.worldId,
       houseId: player.houseId,
-      week: caught.world.week,
+      hour: caught.world.hour,
     });
 
-    const projection = projectWorld(caught.world, player.houseId, caught.weekStartedAt);
+    const projection = projectWorld(outcome.town, caught.world, player.houseId, caught.hourStartedAt);
+    await deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
 
     sendJson(response, 200, {
       world: projection,
-      events: caught.events,
-      summary: caught.summary,
+      events: outcome.journal.events,
+      summary: {
+        hours: caught.hours,
+        skipped: caught.skipped,
+        counts: outcome.journal.counts,
+        refusals: outcome.journal.refusals,
+      },
       stateHash: hashJson(projection),
+      deletionGraceDays: PACING.deletionGraceDays,
       dev: true,
     });
   }
 
   /** Where a catch-up read would land; the cap bounds what it actually plays. */
-  function currentWeekOf(world: World, weekStartedAt: Date, at: Date): number {
-    const elapsed = Math.max(0, Math.floor((at.getTime() - weekStartedAt.getTime()) / WEEK_MS));
+  function currentHourOf(world: World, hourStartedAt: Date, at: Date): number {
+    const elapsed = Math.max(0, Math.floor((at.getTime() - hourStartedAt.getTime()) / HOUR_MS));
 
-    return world.week + Math.min(elapsed, PACING.maxCatchUpWeeks);
+    return world.hour + Math.min(elapsed, PACING.maxCatchUpHours);
   }
 
   function pendingView(stored: StoredAction): Record<string, unknown> {
@@ -450,7 +630,7 @@ export function createApp(deps: AppDeps): Server {
 
     return {
       id: stored.id,
-      week: stored.week,
+      hour: stored.playsAt,
       type: action.type,
       ...(action.type === 'market.buy' || action.type === 'market.sell'
         ? { good: action.good, units: action.units }
@@ -466,16 +646,18 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    const actions = await deps.worlds.withWorld(player.worldId, async (session) => {
+    if (refuseClosing(player, response, new Date(now()))) {
+      return;
+    }
+
+    const actions = await deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const queued: StoredAction[] = [];
 
-      for (let offset = 0; offset <= QUEUE_AHEAD_WEEKS; offset += 1) {
-        queued.push(...(await session.actionsFor(world.week + offset)));
-      }
+      queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
 
       return queued.filter((action) => action.houseId === player.houseId);
-    });
+    }, player.worldId);
 
     sendJson(response, 200, { actions: actions.map(pendingView) });
   }
@@ -486,15 +668,20 @@ export function createApp(deps: AppDeps): Server {
     if (player === null) {
       return;
     }
+
+    const at = new Date(now());
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
     if (!ACTION_ID_PATTERN.test(id)) {
       sendJson(response, 404, { error: 'unknown_action' });
       return;
     }
 
-    const at = new Date(now());
     const actionId = id.toLowerCase();
-    const outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
-      const { world, weekStartedAt } = session.snapshot;
+    const outcome = await deps.worlds.withWorld(async (session) => {
+      const { world, hourStartedAt } = session.snapshot;
       sessionWorld(session);
 
       const stored = await session.findAction(actionId);
@@ -502,34 +689,34 @@ export function createApp(deps: AppDeps): Server {
       if (stored === null || stored.houseId !== player.houseId) {
         return { kind: 'unknown' as const };
       }
-      // Idempotent: a cancellation already won is 204, even if the week has
+      // Idempotent: a cancellation already won is 204, even if the hour has
       // ticked since; the row stays for dedup and replay.
       if (stored.cancelledAt !== null) {
         return { kind: 'cancelled' as const };
       }
-      if (stored.week < world.week) {
-        return { kind: 'stale' as const, currentWeek: currentWeekOf(world, weekStartedAt, at) };
+      if (stored.playsAt < world.hour) {
+        return { kind: 'stale' as const, currentHour: currentHourOf(world, hourStartedAt, at) };
       }
 
-      const currentWeek = currentWeekOf(world, weekStartedAt, at);
-      if (stored.week > currentWeek + QUEUE_AHEAD_WEEKS) {
-        return { kind: 'future' as const, currentWeek };
+      const currentHour = currentHourOf(world, hourStartedAt, at);
+      if (stored.playsAt > currentHour + QUEUE_AHEAD_HOURS) {
+        return { kind: 'future' as const, currentHour };
       }
 
       await session.cancel(actionId, at);
 
       return { kind: 'cancelled' as const };
-    });
+    }, player.worldId);
 
     switch (outcome.kind) {
       case 'unknown':
         sendJson(response, 404, { error: 'unknown_action' });
         return;
       case 'stale':
-        sendJson(response, 409, { error: 'stale_week', currentWeek: outcome.currentWeek });
+        sendJson(response, 409, { error: 'stale_hour', currentHour: outcome.currentHour });
         return;
       case 'future':
-        sendJson(response, 409, { error: 'future_week', currentWeek: outcome.currentWeek });
+        sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
         return;
       case 'cancelled':
         response.writeHead(204, { 'Cache-Control': 'no-store' });
@@ -544,6 +731,12 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
+    const at = new Date(now());
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
+
     const read = await readBody(request, response);
     if (!read.ok) {
       return;
@@ -555,23 +748,22 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    const at = new Date(now());
     let outcome: ActionOutcome;
     try {
-      outcome = await deps.worlds.withWorld(player.worldId, async (session) => {
+      outcome = await deps.worlds.withWorld(async (session) => {
         sessionWorld(session);
-        const { world, weekStartedAt } = session.snapshot;
+        const { world, hourStartedAt } = session.snapshot;
 
-        // The action names a week, not a house: the house is the session's.
-        // A week that already ticked can never be replayed, and the town clock
-        // is the upper bound for a week that has not begun yet.
-        const currentWeek = currentWeekOf(world, weekStartedAt, at);
+        // The action names a hour, not a house: the house is the session's.
+        // A hour that already ticked can never be replayed, and the town clock
+        // is the upper bound for a hour that has not begun yet.
+        const currentHour = currentHourOf(world, hourStartedAt, at);
 
-        if (submission.week < world.week) {
-          return { kind: 'stale' as const, currentWeek };
+        if (submission.hour < world.hour) {
+          return { kind: 'stale' as const, currentHour };
         }
-        if (submission.week > currentWeek + QUEUE_AHEAD_WEEKS) {
-          return { kind: 'future' as const, currentWeek };
+        if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
+          return { kind: 'future' as const, currentHour };
         }
         if ((await session.findAction(submission.id)) !== null) {
           return { kind: 'duplicate' as const };
@@ -580,7 +772,7 @@ export function createApp(deps: AppDeps): Server {
         const stored: StoredAction = {
           id: submission.id,
           houseId: player.houseId,
-          week: submission.week,
+          playsAt: submission.hour,
           action: withHouse(submission.intent, player.houseId),
           receivedAt: at,
           cancelledAt: null,
@@ -588,9 +780,9 @@ export function createApp(deps: AppDeps): Server {
         await session.append(stored);
 
         return { kind: 'appended' as const, stored };
-      });
+      }, player.worldId);
     } catch (error) {
-      // The primary key caught an id another week already used; the pre-check
+      // The primary key caught an id another hour already used; the pre-check
       // above covers the common path, this covers a race from another world.
       if (error instanceof DuplicateActionError) {
         sendJson(response, 409, { error: 'duplicate_action' });
@@ -601,10 +793,10 @@ export function createApp(deps: AppDeps): Server {
 
     switch (outcome.kind) {
       case 'stale':
-        sendJson(response, 409, { error: 'stale_week', currentWeek: outcome.currentWeek });
+        sendJson(response, 409, { error: 'stale_hour', currentHour: outcome.currentHour });
         return;
       case 'future':
-        sendJson(response, 409, { error: 'future_week', currentWeek: outcome.currentWeek });
+        sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
         return;
       case 'duplicate':
         sendJson(response, 409, { error: 'duplicate_action' });
@@ -613,75 +805,98 @@ export function createApp(deps: AppDeps): Server {
         deps.logger.info('action.appended', {
           worldId: player.worldId,
           houseId: player.houseId,
-          week: outcome.stored.week,
+          hour: outcome.stored.playsAt,
           action: outcome.stored.action.type,
         });
         sendJson(response, 201, {
           id: outcome.stored.id,
-          week: outcome.stored.week,
+          hour: outcome.stored.playsAt,
           houseId: outcome.stored.houseId,
         });
     }
   }
 
-  function catchUpTown(worldId: string, houseId: string, at: Date): Promise<TownOutcome> {
-    return deps.worlds.withWorld(worldId, async (session) => {
+  function catchUpTown(townId: string, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
+    return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      const presence = await synchronisePresence(worldId, world, at);
+      const presence = await synchronisePresence(townId, world, at);
 
-      if (presence.deletedHouseIds.includes(houseId)) {
-        // The house is gone, but the deletion is a real change to the town and
-        // must be kept even though nothing is caught up for this reader.
-        await session.save(presence.world, session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+      // The last human house went with the silence: the town goes too, and the
+      // next join starts a new one. The players and the sealed seasons stay.
+      if (humanHouseOf(presence.world) === undefined) {
+        await session.clear();
         return { kind: 'gone' as const };
       }
 
-      const caught = await playWeek(session, presence.world, at, houseId);
+      if (presence.deletedHouseIds.includes(houseId)) {
+        // Another human house is gone, but the town remains: the deletion is a
+        // real change and must be kept even though nothing is caught up for
+        // this reader.
+        await session.save(presence.world, session.snapshot.hourStartedAt, []);
+        return { kind: 'gone' as const };
+      }
+
+      // The reader is the backstop, not the clock: it only wakes a town the
+      // scheduler has left more than an hour behind.
+      const due = await playDue(
+        session,
+        { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
+        at,
+        2,
+      );
       // The absence was simulated dormant; the visit itself wakes the house for
-      // the week that follows.
-      const woke = wake(caught.world, houseId);
+      // the hour that follows.
+      const woke = wake(due.world, houseId);
 
-      if (caught.summary.weeksPlayed > 0 || caught.summary.skippedWeeks > 0 || presence.changed || woke) {
-        await session.save(caught.world, caught.weekStartedAt, caught.recordedEvents, at);
+      if (due.hours > 0 || presence.changed || woke) {
+        await session.save(due.world, due.hourStartedAt, due.events);
       }
 
-      return { kind: 'caught' as const, result: caught };
-    });
+      const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
+
+      return { kind: 'caught' as const, town: session.snapshot.town, result: due, journal };
+    }, townId);
   }
 
-  function advanceTown(worldId: string, houseId: string, at: Date): Promise<TownOutcome> {
-    return deps.worlds.withWorld(worldId, async (session) => {
+  function advanceTown(townId: string, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
+    return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      const presence = await synchronisePresence(worldId, world, at);
+      const presence = await synchronisePresence(townId, world, at);
 
-      if (presence.deletedHouseIds.includes(houseId)) {
-        await session.save(presence.world, session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
+      if (humanHouseOf(presence.world) === undefined) {
+        await session.clear();
         return { kind: 'gone' as const };
       }
 
-      // One week further than the town's own clock, whatever the wall clock
+      if (presence.deletedHouseIds.includes(houseId)) {
+        await session.save(presence.world, session.snapshot.hourStartedAt, []);
+        return { kind: 'gone' as const };
+      }
+
+      // One hour further than the town's own clock, whatever the wall clock
       // says: the click is the hour.
-      const forced = new Date(session.snapshot.weekStartedAt.getTime() + WEEK_MS);
-      const caught = await playWeek(session, presence.world, forced, houseId);
-      wake(caught.world, houseId);
-      // The week was simulated, not lived. Put the next natural tick an hour
-      // from the real now, instead of stacking a backlog the test never waits for.
+      const forced = new Date(session.snapshot.hourStartedAt.getTime() + HOUR_MS);
+      const due = await playDue(
+        session,
+        { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
+        forced,
+        1,
+      );
+      wake(due.world, houseId);
+      // The hour was simulated, not lived. Put the next natural hour an hour
+      // from the real now, instead of stacking a backlog.
       const savedAt = new Date(now());
-      await session.save(caught.world, savedAt, caught.recordedEvents, savedAt);
+      await session.save(due.world, savedAt, due.events);
 
-      return { kind: 'caught' as const, result: { ...caught, weekStartedAt: savedAt } };
-    });
-  }
+      const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
 
-  function playWeek(session: WorldSession, world: World, at: Date, houseId: string): Promise<CatchUpResult> {
-    return catchUp({
-      world,
-      weekStartedAt: session.snapshot.weekStartedAt,
-      lastEvents: session.snapshot.lastEvents,
-      now: at,
-      houseId,
-      actionsFor: (week) => session.actionsFor(week),
-    });
+      return {
+        kind: 'caught' as const,
+        town: session.snapshot.town,
+        result: { ...due, hourStartedAt: savedAt },
+        journal,
+      };
+    }, townId);
   }
 
   async function synchronisePresence(worldId: string, world: World, at: Date): Promise<Presence> {
@@ -707,22 +922,33 @@ export function createApp(deps: AppDeps): Server {
     return world;
   }
 
-  async function ensureFounder(at: Date, trade: Trade): Promise<void> {
-    await deps.worlds.withWorld(WORLD_ID, async (session) => {
-      const world = sessionWorld(session);
+  type Closing = { kind: 'none' } | { kind: 'pending'; after: Date } | { kind: 'due' };
 
-      if (world.houses[FIRST_HOUSE_ID] !== undefined) {
-        return;
-      }
+  /** What a deletion state allows: everything, only the way back, or nothing. */
+  function closingOf(player: Player, at: Date): Closing {
+    if (player.deleteAfter === null) {
+      return { kind: 'none' };
+    }
 
-      await session.save(withFounder(world, trade), session.snapshot.weekStartedAt, session.snapshot.lastEvents, at);
-    });
+    return player.deleteAfter.getTime() <= at.getTime()
+      ? { kind: 'due' }
+      : { kind: 'pending', after: player.deleteAfter };
   }
 
-  async function assertWorldVersion(): Promise<void> {
-    await deps.worlds.withWorld(WORLD_ID, async (session) => {
-      sessionWorld(session);
-    });
+  /** A closing identity can only come back: every other route refuses it. */
+  function refuseClosing(player: Player, response: ServerResponse, at: Date): boolean {
+    const closing = closingOf(player, at);
+
+    if (closing.kind === 'none') {
+      return false;
+    }
+    if (closing.kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return true;
+    }
+
+    sendJson(response, 409, { error: 'deletion_pending', deleteAfter: closing.after.toISOString() });
+    return true;
   }
 
   async function identifiedBy(request: IncomingMessage, response: ServerResponse): Promise<Player | null> {
@@ -751,15 +977,15 @@ export function createApp(deps: AppDeps): Server {
 
 type BodyRead = { ok: true; body: unknown } | { ok: false };
 
-type TownOutcome = { kind: 'caught'; result: CatchUpResult } | { kind: 'gone' };
+type TownOutcome = { kind: 'caught'; town: TownInfo; result: Due; journal: JournalPage } | { kind: 'gone' };
 
 type ActionOutcome =
-  | { kind: 'stale'; currentWeek: number }
-  | { kind: 'future'; currentWeek: number }
+  | { kind: 'stale'; currentHour: number }
+  | { kind: 'future'; currentHour: number }
   | { kind: 'duplicate' }
   | { kind: 'appended'; stored: StoredAction };
 
-/** The visit wakes a house the absence had made dormant, for the week to come. */
+/** The visit wakes a house the absence had made dormant, for the hour to come. */
 function wake(world: World, houseId: string): boolean {
   const house = world.houses[houseId];
 

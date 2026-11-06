@@ -51,7 +51,7 @@ async function builtClient(): Promise<string> {
   directories.push(root);
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), '<!doctype html><title>Brigue</title>');
-  await writeFile(join(root, 'assets', 'app-3f9a1c.js'), 'console.log("brigue");');
+  await writeFile(join(root, 'assets', 'app-3f9a1c.js'), 'console.log("leclerc");');
   await writeFile(join(root, 'sw.js'), 'self.addEventListener("install", () => {});');
 
   return root;
@@ -177,7 +177,7 @@ describe('serving the built client', () => {
 
     // Assert
     expect(response.status).toBe(200);
-    expect(response.headers.get('content-length')).toBe(String('console.log("brigue");'.length));
+    expect(response.headers.get('content-length')).toBe(String('console.log("leclerc");'.length));
     expect(await response.text()).toBe('');
   });
 

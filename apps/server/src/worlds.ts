@@ -1,57 +1,96 @@
-import type { Action, Event, World } from '@brigue/core';
+import { isVisibleTo, type Action, type Event, type RefusalReason, type World } from '@brigue/core';
 
-/** One town, shared by every house. The id is stable across deploys. */
-export const WORLD_ID = 'saint-aubin';
+import { countEvent, emptyTally } from './journal.ts';
 
-/** The house a new player gets until multiplayer assigns AI houses. */
-export const FIRST_HOUSE_ID = 'brigue';
+/** One real hour is one town hour, and twenty-four of them make a year. */
+export const HOUR_MS = 60 * 60 * 1000;
+
+/** A town a player can join: the id the rows carry, the name the screen shows. */
+export interface TownInfo {
+  id: string;
+  name: string;
+}
 
 export interface StoredAction {
   /** Client-generated; the database primary key is what makes a retry a duplicate. */
   id: string;
   /** Always the authenticated player's house, never whatever the request body said. */
   houseId: string;
-  week: number;
+  /** The town hour the action plays on. */
+  playsAt: number;
   action: Action;
   receivedAt: Date;
-  /** Set when the player cancels before the week ticks; the row stays for dedup and replay. */
+  /** Set when the player cancels before it plays; the row stays for dedup and replay. */
   cancelledAt: Date | null;
 }
 
-export interface WorldSnapshot {
-  world: World;
-  /** When the world's current week began. Catch-up is measured from here. */
-  weekStartedAt: Date;
-  /** Events of the last tick that was played, so an empty read still shows one. */
-  lastEvents: Event[];
+export type JournalCounts = Partial<Record<Event['type'], number>>;
+export type JournalRefusals = Partial<Record<RefusalReason, number>>;
+
+export interface JournalPage {
+  /** The newest entries after the cursor, in the order they happened. */
+  events: Event[];
+  /** The newest entry's id: the cursor jumps over what the counts cover. */
+  lastId: number;
+  /** What the page left behind, counted by type. */
+  counts: JournalCounts;
+  /** The refused actions among them, counted by reason. */
+  refusals: JournalRefusals;
 }
 
-/** One unit of work on a world, inside the row lock (or its in-memory equivalent). */
+export interface WorldSnapshot {
+  town: TownInfo;
+  world: World;
+  /** When the town's current hour began, in real time. */
+  hourStartedAt: Date;
+}
+
+/** One unit of work on the town, inside the state row's lock. */
 export interface WorldSession {
   readonly snapshot: WorldSnapshot;
-  /** Actions queued for a week, in the order they were received. */
-  actionsFor(week: number): Promise<StoredAction[]>;
+  /** Actions queued for the hours in `[from, to]`, in the order they were received. */
+  actionsBetween(from: number, to: number): Promise<StoredAction[]>;
+  /** The journal after a reader's cursor, and how much is left beyond the page. */
+  eventsSince(afterId: number, limit: number, houseId: string): Promise<JournalPage>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
-  /** Marks an unapplied action cancelled; it is never returned to the tick. */
+  /** Marks an unplayed action cancelled; it is never handed to the advance. */
   cancel(id: string, at: Date): Promise<void>;
-  save(world: World, weekStartedAt: Date, lastEvents: Event[], at: Date): Promise<void>;
+  /** Cancels every unplayed action of a house, for an identity that goes. */
+  cancelHouse(houseId: string, at: Date): Promise<void>;
+  /** Writes the whole town and appends the events of the span. */
+  save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
+  /**
+   * Deletes the town — its state, houses, people, actions and journal — and
+   * leaves the players and the sealed seasons. The next join founds a new one.
+   */
+  clear(): Promise<void>;
 }
 
 export interface WorldStore {
-  /** Idempotent: a world that already exists keeps its state and its seed. */
-  createIfAbsent(id: string, world: World, weekStartedAt: Date, at: Date): Promise<void>;
+  /** Idempotent per id: creates the town row and its first state. */
+  createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void>;
+  /** Every town, oldest first, so a join can look for a free place. */
+  listTowns(): Promise<TownInfo[]>;
+  /** Every place name ever drawn, dead towns included: a name is never reused. */
+  usedTownNames(): Promise<string[]>;
   /**
-   * Locks the world for the whole callback. Everything that can turn a read
-   * into a write goes through here, so two requests never replay the same week.
+   * Locks the town for the whole callback — the scheduler and the reader both
+   * write, and two passes over the same town would lose one of them.
    */
-  withWorld<T>(id: string, run: (session: WorldSession) => Promise<T>): Promise<T>;
+  withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T>;
+  /**
+   * Serializes the joins: two newcomers must not take the same freed place, nor
+   * found two towns at once. It spans several towns, so it cannot be the lock
+   * of one `state` row.
+   */
+  withJoinLock<T>(run: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
 export class UnknownWorldError extends Error {
-  constructor(worldId: string) {
-    super(`unknown world ${worldId}`);
+  constructor() {
+    super('the town does not exist yet');
     this.name = 'UnknownWorldError';
   }
 }
@@ -66,61 +105,89 @@ export class DuplicateActionError extends Error {
 interface MemoryWorld {
   snapshot: WorldSnapshot;
   actions: StoredAction[];
+  events: { id: number; event: Event }[];
+  nextEventId: number;
 }
 
 /**
- * Mirrors the Postgres store for tests: one callback at a time per world, and a
- * rollback of both the snapshot and the actions when the callback throws, the
+ * Mirrors the Postgres store for tests: one callback at a time on the town, and
+ * a rollback of both the snapshot and the actions when the callback throws, the
  * way the surrounding transaction would roll back. Kept deliberately dumb: the
  * real locking is the `SELECT ... FOR UPDATE` in pg-worlds.ts.
  */
 export class MemoryWorldStore implements WorldStore {
-  private readonly worlds = new Map<string, MemoryWorld>();
-  private readonly queues = new Map<string, Promise<unknown>>();
+  private readonly towns = new Map<string, MemoryWorld>();
+  private readonly names = new Set<string>();
+  private queue: Promise<unknown> = Promise.resolve();
+  private joinQueue: Promise<unknown> = Promise.resolve();
 
-  async createIfAbsent(id: string, world: World, weekStartedAt: Date, at: Date): Promise<void> {
-    if (this.worlds.has(id)) {
+  async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
+    if (this.towns.has(town.id)) {
       return;
     }
 
-    this.worlds.set(id, {
+    this.names.add(town.name);
+    this.towns.set(town.id, {
       snapshot: {
+        town: { ...town },
         world: structuredClone(world),
-        weekStartedAt: new Date(weekStartedAt),
-        lastEvents: [],
+        hourStartedAt: new Date(hourStartedAt),
       },
       actions: [],
+      events: [],
+      nextEventId: 1,
     });
-    void at;
   }
 
-  async withWorld<T>(id: string, run: (session: WorldSession) => Promise<T>): Promise<T> {
-    const previous = this.queues.get(id) ?? Promise.resolve();
+  async listTowns(): Promise<TownInfo[]> {
+    // A stable sort keeps the insertion order — oldest first — on equal counts.
+    return [...this.towns.values()]
+      .sort(
+        (left, right) =>
+          Object.keys(left.snapshot.world.houses).length - Object.keys(right.snapshot.world.houses).length,
+      )
+      .map((stored) => ({ ...stored.snapshot.town }));
+  }
+
+  async usedTownNames(): Promise<string[]> {
+    return [...this.names];
+  }
+
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {
+    const previous = this.queue;
     const current = previous.then(async () => {
-      const stored = this.worlds.get(id);
-      if (!stored) {
-        throw new UnknownWorldError(id);
+      const stored = this.towns.get(townId);
+      if (stored === undefined) {
+        throw new UnknownWorldError();
       }
 
       const backup = structuredClone(stored);
 
       try {
-        return await run(this.sessionOf(stored));
+        return await run(this.sessionOf(townId, stored));
       } catch (error) {
-        stored.snapshot = backup.snapshot;
-        stored.actions = backup.actions;
+        this.towns.set(townId, backup);
         throw error;
       }
     });
 
     // A failed callback must not block the queue behind it, but its error still
     // reaches its own caller.
-    this.queues.set(
-      id,
-      current.then(
-        () => undefined,
-        () => undefined,
-      ),
+    this.queue = current.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return current;
+  }
+
+  async withJoinLock<T>(run: () => Promise<T>): Promise<T> {
+    const previous = this.joinQueue;
+    const current = previous.then(() => run());
+
+    this.joinQueue = current.then(
+      () => undefined,
+      () => undefined,
     );
 
     return current;
@@ -128,13 +195,29 @@ export class MemoryWorldStore implements WorldStore {
 
   async close(): Promise<void> {}
 
-  private sessionOf(stored: MemoryWorld): WorldSession {
+  private sessionOf(townId: string, stored: MemoryWorld): WorldSession {
     return {
       snapshot: stored.snapshot,
-      actionsFor: async (week) =>
+      actionsBetween: async (from, to) =>
         stored.actions
-          .filter((action) => action.week === week && action.cancelledAt === null)
+          .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
+          .sort((left, right) => left.playsAt - right.playsAt)
           .map((action) => structuredClone(action)),
+      eventsSince: async (afterId, limit, houseId) => {
+        const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, houseId));
+        const page = visible.slice(-limit);
+        const tally = emptyTally();
+
+        for (const entry of visible.slice(0, visible.length - page.length)) {
+          countEvent(tally, entry.event);
+        }
+
+        return {
+          events: page.map((entry) => structuredClone(entry.event)),
+          lastId: page.at(-1)?.id ?? afterId,
+          ...tally,
+        };
+      },
       findAction: async (id) => {
         const found = stored.actions.find((action) => action.id === id);
 
@@ -153,13 +236,26 @@ export class MemoryWorldStore implements WorldStore {
           found.cancelledAt = new Date(at);
         }
       },
-      save: async (world, weekStartedAt, lastEvents, at) => {
+      cancelHouse: async (houseId, at) => {
+        for (const action of stored.actions) {
+          if (action.houseId === houseId && action.cancelledAt === null) {
+            action.cancelledAt = new Date(at);
+          }
+        }
+      },
+      save: async (world, hourStartedAt, events) => {
         stored.snapshot = {
+          town: stored.snapshot.town,
           world: structuredClone(world),
-          weekStartedAt: new Date(weekStartedAt),
-          lastEvents: structuredClone(lastEvents),
+          hourStartedAt: new Date(hourStartedAt),
         };
-        void at;
+        for (const event of events) {
+          stored.events.push({ id: stored.nextEventId, event: structuredClone(event) });
+          stored.nextEventId += 1;
+        }
+      },
+      clear: async () => {
+        this.towns.delete(townId);
       },
     };
   }

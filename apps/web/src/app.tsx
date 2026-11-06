@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 
 import {
   ApiError,
-  advanceWeek,
+  advanceHour,
   cancelAction,
-  hasSession,
+  cancelDeletion,
   joinTown,
   readPending,
+  readSession,
   readWorld,
+  requestDeletion,
   resumeTown,
   sendAction,
   type PendingActionView,
@@ -17,6 +19,7 @@ import {
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
+import { ClosingHouse, DeleteAccountDialog } from './views/account.tsx';
 import { Create } from './views/create.tsx';
 import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
 import { Marche } from './views/marche.tsx';
@@ -27,6 +30,7 @@ type View =
   | { kind: 'loading' }
   | { kind: 'create' }
   | { kind: 'world'; data: WorldResponse }
+  | { kind: 'closing'; after: string }
   | { kind: 'lost' }
   | { kind: 'failure'; title: string; message: string };
 
@@ -48,6 +52,11 @@ export function App() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const pendingToken = useRef<string | null>(null);
@@ -104,8 +113,14 @@ export function App() {
     setLostError(null);
 
     try {
-      if (!(await hasSession())) {
+      const session = await readSession();
+
+      if (session === null) {
         setView({ kind: 'create' });
+        return;
+      }
+      if (session.deletionAfter !== null) {
+        setView({ kind: 'closing', after: session.deletionAfter });
         return;
       }
 
@@ -132,8 +147,14 @@ export function App() {
         // A half-completed join already set the cookie, or a fast second tap
         // raced the first: recover the session before asking for a token.
         try {
-          if (await hasSession()) {
-            await load();
+          const session = await readSession();
+
+          if (session !== null) {
+            if (session.deletionAfter !== null) {
+              setView({ kind: 'closing', after: session.deletionAfter });
+            } else {
+              await load();
+            }
             return;
           }
           setView({ kind: 'lost' });
@@ -203,16 +224,16 @@ export function App() {
         kind === 'buy'
           ? ({ type: 'market.buy', good, units } as const)
           : ({ type: 'market.sell', good, units } as const);
-      const sent = await sendAction(view.data.world.week, intent);
+      await sendAction(view.data.world.hour, intent);
       await readPending().then(setPending, () => setPending([]));
       const quantity = goodQuantity(units, good);
       showToast(
         kind === 'buy'
-          ? `Achat de ${quantity} envoyé pour la semaine ${sent.week}. Il apparaîtra à la prochaine lecture.`
-          : `Vente de ${quantity} envoyée pour la semaine ${sent.week}. Elle apparaîtra à la prochaine lecture.`,
+          ? `Achat de ${quantity} envoyé. Il apparaîtra à la prochaine lecture.`
+          : `Vente de ${quantity} envoyée. Elle apparaîtra à la prochaine lecture.`,
       );
     } catch (error) {
-      if (error instanceof ApiError && error.code === 'stale_week') {
+      if (error instanceof ApiError && error.code === 'stale_hour') {
         showToast(actionErrorText(error.code), true);
         await refresh();
       } else {
@@ -229,7 +250,7 @@ export function App() {
       await cancelAction(id);
       setPending((current) => current.filter((action) => action.id !== id));
     } catch (error) {
-      if (error instanceof ApiError && (error.code === 'stale_week' || error.code === 'unknown_action')) {
+      if (error instanceof ApiError && (error.code === 'stale_hour' || error.code === 'unknown_action')) {
         showToast(actionErrorText(error.code), true);
         await refresh();
       } else {
@@ -267,7 +288,7 @@ export function App() {
     setTab(next);
   }
 
-  async function advanceOneWeek(): Promise<void> {
+  async function advanceOneHour(): Promise<void> {
     // A repaint replaces the town, and the token dialog lives above it: same
     // guard as a refresh.
     if (token !== null) {
@@ -276,11 +297,11 @@ export function App() {
 
     setAdvancing(true);
     try {
-      const data = await advanceWeek();
+      const data = await advanceHour();
       setNow(Date.now());
       setView({ kind: 'world', data });
       await readPending().then(setPending, () => setPending([]));
-      showToast(`Semaine ${data.world.week}, comme si une heure était passée.`);
+      showToast(`Heure ${data.world.hour}, comme si une heure était passée.`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         void boot();
@@ -297,7 +318,13 @@ export function App() {
     setLostError(null);
 
     try {
-      await resumeTown(candidate);
+      const session = await resumeTown(candidate);
+
+      if (session.deletionAfter !== null) {
+        setView({ kind: 'closing', after: session.deletionAfter });
+        return;
+      }
+
       await load();
     } catch (error) {
       setLostError(
@@ -305,6 +332,44 @@ export function App() {
       );
     } finally {
       setResuming(false);
+    }
+  }
+
+  function askDelete(): void {
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function deleteAccount(): Promise<void> {
+    setDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const { deleteAfter } = await requestDeletion();
+      setDeleteOpen(false);
+      setView({ kind: 'closing', after: deleteAfter });
+    } catch (error) {
+      setDeleteError(readMessageFor(error));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function restore(): Promise<void> {
+    setRestoring(true);
+    setRestoreError(null);
+
+    try {
+      await cancelDeletion();
+      await boot();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        await boot();
+        return;
+      }
+      setRestoreError(readMessageFor(error));
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -333,7 +398,14 @@ export function App() {
   return (
     <>
       {view.kind === 'loading' ? null : view.kind === 'create' ? (
-        <Create joining={joining} error={joinError} onChoose={(trade) => void createHouse(trade)} />
+        <Create
+          joining={joining}
+          error={joinError}
+          resuming={resuming}
+          resumeError={lostError}
+          onChoose={(trade) => void createHouse(trade)}
+          onResume={(candidate) => void resume(candidate)}
+        />
       ) : view.kind === 'world' ? (
         <div class="app">
           {tab === 'ville' ? (
@@ -344,7 +416,8 @@ export function App() {
               pending={pending}
               onRefresh={() => void refresh()}
               onGoMarket={() => selectTab('marche')}
-              onAdvance={() => void advanceOneWeek()}
+              onAdvance={() => void advanceOneHour()}
+              onDeleteAccount={askDelete}
             />
           ) : (
             <Marche
@@ -359,11 +432,27 @@ export function App() {
           <div class="fade" aria-hidden="true"></div>
           <Nav tab={tab} onSelect={selectTab} />
         </div>
+      ) : view.kind === 'closing' ? (
+        <ClosingHouse after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />
       ) : view.kind === 'lost' ? (
         <LostHouse busy={resuming} error={lostError} onResume={(candidate) => void resume(candidate)} />
       ) : (
         <Failure title={view.title} message={view.message} onRetry={() => void boot()} />
       )}
+
+      {deleteOpen && view.kind === 'world' ? (
+        <DeleteAccountDialog
+          graceDays={view.data.deletionGraceDays}
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => {
+            if (!deleting) {
+              setDeleteOpen(false);
+            }
+          }}
+          onConfirm={() => void deleteAccount()}
+        />
+      ) : null}
 
       {token !== null ? (
         <TokenDialog

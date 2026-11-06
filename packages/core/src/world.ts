@@ -95,20 +95,20 @@ export interface Law {
   id: string;
   title: string;
   sponsorHouseId: string;
-  enactedWeek: number;
+  enactedAt: number;
 }
 
-/** The durations the calendar gives an engagement, in weeks. */
-export type EngagementKind = 'campaign' | 'hearing' | 'site';
+/** The durations the calendar gives an engagement, in hours. */
+export type EngagementKind = 'hearing' | 'site';
 
 /**
- * Work that takes weeks. It carries the week it falls due rather than a
- * remaining count, so a catch-up can replay whole weeks and pay what is owed.
+ * Work that takes hours. It carries the instant it falls due rather than a
+ * remaining count, so a catch-up can replay whole hours and pay what is owed.
+ * A campaign has no duration left: it is a candidacy, and it counts once.
  */
 export type Engagement =
-  | { id: string; kind: 'campaign'; houseId: string; seatId: SeatId; dueWeek: number }
-  | { id: string; kind: 'hearing'; houseId: string; dueWeek: number }
-  | { id: string; kind: 'site'; houseId: string; dueWeek: number };
+  | { id: string; kind: 'hearing'; houseId: string; dueAt: number }
+  | { id: string; kind: 'site'; houseId: string; dueAt: number };
 
 export interface World {
   /** Stamped so a saved world can be refused rather than silently misread. */
@@ -117,7 +117,7 @@ export interface World {
   rulesetVersion: number;
   seed: number;
   rng: number;
-  week: number;
+  hour: number;
   year: number;
   houses: Record<string, House>;
   people: Record<string, Person>;
@@ -125,13 +125,13 @@ export interface World {
   laws: Law[];
   market: Record<GoodId, number>;
   /**
-   * What the town put on the market last week, per good: units sold minus units
-   * bought. It is what moves the prices of the week that follows, so it is
+   * What the town put on the market last hour, per good: units sold minus units
+   * bought. It is what moves the prices of the hour that follows, so it is
    * stored rather than recomputed: the price you see is the town you were.
    */
   marketFlow: Partial<Record<GoodId, number>>;
   /**
-   * The last PRICE_HISTORY_WEEKS prices per good, in cents, one point per tick.
+   * The last PRICE_HISTORY_BELLS prices per good, in cents, one point per tick.
    * Optional because a world stored before the field existed must keep ticking:
    * its history starts at the tick that first sees it.
    */
@@ -139,41 +139,51 @@ export interface World {
   /** Votes bought per seat, per house, cleared when that seat is elected. */
   campaigns: Partial<Record<SeatId, Record<string, number>>>;
   /**
-   * What the town owes to a future week: a campaign, a hearing, a building
-   * site. Resolved by the tick when its due week arrives, even if the town
-   * only reaches that week later.
+   * Candidacies closed at the last noon bell: they count at the coming
+   * scrutiny. What is lodged after that bell waits in `campaigns` for the next.
+   */
+  closedCampaigns: Partial<Record<SeatId, Record<string, number>>>;
+  /**
+   * What the town owes to a future hour: a campaign, a hearing, a building
+   * site. Resolved by the tick when its due hour arrives, even if the town
+   * only reaches that hour later.
    */
   engagements: Engagement[];
-  /** Mints engagement ids, so two campaigns in one week cannot collide. */
+  /** Mints engagement ids, so two campaigns in one hour cannot collide. */
   engagementSeq: number;
 }
 
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 1;
 
 export const RULES = {
-  version: 7,
+  version: 1,
   /**
-   * A game year is twenty-four weeks, and every seat is up at the scrutiny that
-   * closes it: one ceremony a day, fixed and known in advance, rather than a
-   * rotation that fires while the player sleeps. The day is the unit the player
-   * actually plays; the week is the tick.
+   * The starting kit: a house must buy its input and pay a few hours of wages
+   * before its first sale. Every house gets it, the first as much as a later
+   * arrival.
    */
-  campaignWeeks: 8,
-  hearingWeeks: 6,
-  siteWeeks: 12,
+  startingPurseCents: 45_000,
+  startingInputUnits: 8,
+  /** The town stops growing here; a newcomer with no place starts another town. */
+  houseCap: 20,
+  /**
+   * A building site takes twelve hours. A hearing has no fixed delay: it is
+   * held at the next noon sitting after the complaint.
+   */
+  siteHours: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
   priceDriftCents: 30,
   /**
-   * A good's price is pulled by three things every week: its own random drift,
+   * A good's price is pulled by three things every hour: its own random drift,
    * the town's imbalance on that good, and the gap back to its reference.
    *
    * `absorbedUnits` is the town's standing demand at the reference price: the
-   * volume it takes every week whether or not anyone makes the good. Where that
+   * volume it takes every hour whether or not anyone makes the good. Where that
    * demand is nil, a good nobody touches sits on its reference; where it is not,
    * a good nobody makes climbs. `scaleUnits` is the imbalance that moves the
    * price by a tenth of it (`pricePressureDivisor`); `priceReversionDivisor` is
-   * how many weeks the gap back to the reference takes to close. Wool has no
+   * how many hours the gap back to the reference takes to close. Wool has no
    * absorption because what is made of it is bought by the workshops, which
    * shows up as demand, not as the town's own trade.
    */
@@ -213,71 +223,118 @@ export const RULES = {
 } as const;
 
 /**
- * Wall-clock policy, not a simulation rule: how long a week lasts, how far a
- * returning player is caught up, and when a house stops being played. Read by
- * the server; changing it must not refuse an existing world.
+ * Wall-clock policy, not a simulation rule: how far a returning player is caught
+ * up, and when a house stops being played. Read by the server; changing it must
+ * not refuse an existing world.
  */
 export const PACING = {
-  minutesPerWeek: 60,
-  // A month is 720 hours; 744 covers any calendar month. Beyond that, a read
-  // simulates the cap and lets the wall clock jump over the rest rather than
-  // replaying an unbounded backlog.
-  maxCatchUpWeeks: 744,
-  // A week without a visit is enough to say the player has stopped playing;
-  // the house goes dormant and stops producing. Calibration, not a rule.
-  dormancyDays: 7,
+  // The scheduler plays one hour per pass. Thirty days are 720 hours, and the
+  // read path catches up at most that far before the wall clock jumps: the
+  // backlog it cannot replay is not simulated, so the town only counts the
+  // hours it lived.
+  maxCatchUpHours: 744,
+  // Three days without a visit is enough to say the player has stopped playing;
+  // the house goes dormant, keeps its estate and its seat, and casts no vote.
+  // Calibration, not a rule.
+  dormancyDays: 3,
   // After a month without a visit the house is gone with its tokens: no return,
   // no vacation mode. The boundary is strict, so exactly thirty days still
   // reads and the next read deletes.
   deletionDays: 30,
+  // A deletion request is not immediate: the token stays valid for a week so the
+  // player can come back, and the scheduler erases the identity at the deadline.
+  // Calibration, not a rule.
+  deletionGraceDays: 7,
 } as const;
 
 export const START_YEAR = 1401;
-/** Twenty-four weeks make a year, so one real day is one game year. */
-export const WEEKS_PER_YEAR = 24;
+/** Twenty-four hours make a year, so one real day is one game year. */
+export const HOURS_PER_YEAR = 24;
 /**
- * The Marché keeps one price per week for a game year: one scrutiny cycle, one
- * real day of town life. It is a display window, not a rule, so it stays out of
- * RULES; a later change grows or shrinks it without moving the ruleset.
+ * The Marché keeps one price per bell: twelve bells make a game year cycling
+ * twice a day, and the window is the last day of town life. It is a display
+ * window, not a rule, so it stays out of RULES.
  */
-export const PRICE_HISTORY_WEEKS = WEEKS_PER_YEAR;
+export const PRICE_HISTORY_BELLS = HOURS_PER_YEAR;
 
-export interface Founder {
+export interface HouseArrival {
   house: House;
   person: Person;
 }
 
+/** The name and the id the first house arrives with, drawn before it joins. */
+export interface HouseIdentity {
+  id: string;
+  houseName: string;
+  personName: string;
+}
+
 /**
- * The house a new player starts with: a loom, a little money, no seat and no
- * career. `createWorld` opens with it, and the server puts it back into a freed
- * place so a deleted founder cannot brick the join path.
+ * The house a new player starts with: the workshop of its trade, a little
+ * money, its first input, no seat and no career. The town is built without it;
+ * `withFirstHouse` adds it when the first player joins, and puts it back into a
+ * freed place so a deleted first house cannot brick the join path. Its name is an
+ * input: the server draws it, and nothing about the first house is fixed.
  */
-export function createFounder(trade: Trade = 'weaver'): Founder {
+export function createFirstHouse(trade: Trade, identity: HouseIdentity): HouseArrival {
   const chain = TRADE_CHAINS[trade];
 
   return {
     house: {
-      id: 'brigue',
-      name: 'Brigue',
+      id: identity.id,
+      name: identity.houseName,
       controller: 'human',
-      treasuryCents: 117340,
+      treasuryCents: RULES.startingPurseCents,
       debtCents: 0,
       favour: 50,
       prestige: 50,
       career: 0,
       dormant: false,
       workshops: [{ good: chain.output, level: 2, workers: 2 }],
-      stock: { [chain.input]: 8 },
+      stock: { [chain.input]: RULES.startingInputUnits },
     },
     person: {
-      id: 'person-brigue',
-      houseId: 'brigue',
-      name: 'Colin Brigue',
+      id: `person-${identity.id}`,
+      houseId: identity.id,
+      name: identity.personName,
       age: 20,
       attributes: { artisanat: 10, parole: 10, intrigue: 10 },
       alive: true,
     },
   };
+}
+
+/**
+ * The first house: the town is built without it, and it is added when the first
+ * player joins — or when a deleted first house's place waits for a human. It is
+ * never a political role, and adding it twice is a no-op.
+ */
+export function withFirstHouse(world: World, trade: Trade, identity: HouseIdentity): World {
+  if (humanHouseOf(world) !== undefined) {
+    return world;
+  }
+
+  const next = structuredClone(world);
+  const { house, person } = createFirstHouse(trade, identity);
+  next.houses[house.id] = house;
+  next.people[person.id] = person;
+
+  return next;
+}
+
+/** Adds a newcomer's house to a town that already has a player. */
+export function withNewcomer(world: World, trade: Trade, identity: HouseIdentity): World {
+  const next = structuredClone(world);
+  const { house, person } = createFirstHouse(trade, identity);
+  next.houses[house.id] = house;
+  next.people[person.id] = person;
+
+  return next;
+}
+
+/** The first house: the only human house of a solo town. */
+export function humanHouseOf(world: World): House | undefined {
+  return Object.values(world.houses).find((house) => house.controller === 'human');
 }
 
 export type SeatRefusal = 'unknown_house' | 'unknown_person' | 'person_of_another_house' | 'person_dead';
@@ -324,18 +381,15 @@ export function stockUnits(house: House): number {
   return total;
 }
 
-export function createWorld(seed: number, trade: Trade = 'weaver'): World {
-  const founder = createFounder(trade);
-
+export function createWorld(seed: number): World {
   return {
     formatVersion: FORMAT_VERSION,
     rulesetVersion: RULES.version,
     seed,
     rng: seed,
-    week: 1,
+    hour: 1,
     year: START_YEAR,
     houses: {
-      [founder.house.id]: founder.house,
       caron: {
         id: 'caron',
         name: 'Caron',
@@ -349,32 +403,6 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
         workshops: [{ good: 'cloth', level: 3, workers: 3 }],
         stock: {},
       },
-      vandermeersch: {
-        id: 'vandermeersch',
-        name: 'Vandermeersch',
-        controller: 'ai',
-        treasuryCents: 180000,
-        debtCents: 0,
-        favour: 70,
-        prestige: 58,
-        career: 0,
-        dormant: false,
-        workshops: [{ good: 'wool', level: 2, workers: 1 }],
-        stock: {},
-      },
-      herse: {
-        id: 'herse',
-        name: 'de Herse',
-        controller: 'ai',
-        treasuryCents: 150000,
-        debtCents: 0,
-        favour: 40,
-        prestige: 45,
-        career: 0,
-        dormant: false,
-        workshops: [{ good: 'grain', level: 2, workers: 2 }],
-        stock: {},
-      },
       fournier: {
         id: 'fournier',
         name: 'Fournier',
@@ -386,19 +414,6 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
         career: 0,
         dormant: false,
         workshops: [{ good: 'bread', level: 2, workers: 2 }],
-        stock: {},
-      },
-      bois: {
-        id: 'bois',
-        name: 'Du Bois',
-        controller: 'ai',
-        treasuryCents: 140000,
-        debtCents: 0,
-        favour: 35,
-        prestige: 40,
-        career: 0,
-        dormant: false,
-        workshops: [{ good: 'wood', level: 2, workers: 1 }],
         stock: {},
       },
       charpentier: {
@@ -416,7 +431,6 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
       },
     },
     people: {
-      [founder.person.id]: founder.person,
       'person-caron': {
         id: 'person-caron',
         houseId: 'caron',
@@ -425,35 +439,11 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
         attributes: { artisanat: 10, parole: 10, intrigue: 10 },
         alive: true,
       },
-      'person-vandermeersch': {
-        id: 'person-vandermeersch',
-        houseId: 'vandermeersch',
-        name: 'Gilles Vandermeersch',
-        age: 38,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-        alive: true,
-      },
-      'person-herse': {
-        id: 'person-herse',
-        houseId: 'herse',
-        name: 'Agnès de Herse',
-        age: 57,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-        alive: true,
-      },
       'person-fournier': {
         id: 'person-fournier',
         houseId: 'fournier',
         name: 'Jehan Fournier',
         age: 41,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-        alive: true,
-      },
-      'person-bois': {
-        id: 'person-bois',
-        houseId: 'bois',
-        name: 'Martin Du Bois',
-        age: 35,
         attributes: { artisanat: 10, parole: 10, intrigue: 10 },
         alive: true,
       },
@@ -492,6 +482,7 @@ export function createWorld(seed: number, trade: Trade = 'weaver'): World {
       planks: [RULES.market.planks.referenceCents],
     },
     campaigns: {},
+    closedCampaigns: {},
     engagements: [],
     engagementSeq: 0,
   };

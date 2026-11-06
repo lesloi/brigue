@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { createWorld, GOODS, RULES, START_YEAR, stockUnits, tick, WEEKS_PER_YEAR, type World } from '@brigue/core';
+import { GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockUnits, type World } from '@brigue/core';
 
 import { projectWorld } from '../src/projection.ts';
+import { TEST_TOWN, tick, town } from './helpers.ts';
 
 const SEED = 20261105;
 const START = new Date('2026-11-05T12:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
 
-function play(world: World, weeks: number): World {
+function play(world: World, hours: number): World {
   let current = world;
 
-  for (let week = 0; week < weeks; week += 1) {
+  for (let hour = 0; hour < hours; hour += 1) {
     current = tick(current).world;
   }
 
@@ -19,67 +20,76 @@ function play(world: World, weeks: number): World {
 }
 
 describe('the projection calendar', () => {
-  it('agrees with the world on the week and the year it derives', () => {
+  it('agrees with the world on the hour and the year it derives', () => {
     // Arrange: twenty-four ticks make a year.
-    const world = play(createWorld(SEED), WEEKS_PER_YEAR);
+    const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
-    expect(projection.week).toBe(world.week);
-    expect(projection.week).toBe(WEEKS_PER_YEAR + 1);
+    expect(projection.hour).toBe(world.hour);
+    expect(projection.hour).toBe(HOURS_PER_YEAR + 1);
     expect(projection.year).toBe(world.year);
     expect(projection.year).toBe(START_YEAR + 1);
   });
 
+  it('names the town it was read from', () => {
+    // Act
+    const projection = projectWorld(TEST_TOWN, town(SEED), 'leclerc', START);
+
+    // Assert: the screen shows the town's name, and the hash covers it.
+    expect(projection.town.id).toBe(TEST_TOWN.id);
+    expect(projection.town.name).toBe(TEST_TOWN.name);
+  });
+
   it('tells the screen where the year stands without making it derive a date', () => {
-    // Arrange: the first week of the first year.
-    const projection = projectWorld(createWorld(SEED), 'brigue', START);
+    // Arrange: the first hour of the first year.
+    const projection = projectWorld(TEST_TOWN, town(SEED), 'leclerc', START);
 
     // Act and assert
     expect(projection.calendar).toEqual({
-      weeksPerYear: WEEKS_PER_YEAR,
-      weekOfYear: 1,
-      nextScrutinyWeek: WEEKS_PER_YEAR,
-      nextScrutinyAt: new Date(START.getTime() + WEEKS_PER_YEAR * HOUR).toISOString(),
+      hoursPerYear: HOURS_PER_YEAR,
+      hourOfYear: 1,
+      nextScrutinyHour: HOURS_PER_YEAR,
+      nextScrutinyAt: new Date(START.getTime() + HOURS_PER_YEAR * HOUR).toISOString(),
     });
   });
 
-  it('counts the partial year down to the end of the scrutiny week', () => {
-    // Arrange: the fifth week of the first year.
-    const world = play(createWorld(SEED), 4);
+  it('counts the partial year down to the end of the scrutiny hour', () => {
+    // Arrange: the fifth hour of the first year.
+    const world = play(town(SEED), 4);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
-    // Assert: twenty weeks in progress plus the scrutiny week itself.
-    expect(projection.calendar.weekOfYear).toBe(5);
-    expect(projection.calendar.nextScrutinyWeek).toBe(WEEKS_PER_YEAR);
+    // Assert: twenty hours in progress plus the scrutiny hour itself.
+    expect(projection.calendar.hourOfYear).toBe(5);
+    expect(projection.calendar.nextScrutinyHour).toBe(HOURS_PER_YEAR);
     expect(projection.calendar.nextScrutinyAt).toBe(
-      new Date(START.getTime() + (WEEKS_PER_YEAR - 5 + 1) * HOUR).toISOString(),
+      new Date(START.getTime() + (HOURS_PER_YEAR - 5 + 1) * HOUR).toISOString(),
     );
   });
 
-  it('ends the scrutiny week with the week it closes', () => {
-    // Arrange: the town is playing the last week of its first year.
-    const world = play(createWorld(SEED), WEEKS_PER_YEAR - 1);
+  it('ends the scrutiny hour with the hour it closes', () => {
+    // Arrange: the town is playing the last hour of its first year.
+    const world = play(town(SEED), HOURS_PER_YEAR - 1);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
-    // Assert: the scrutiny happens when this week ends, like the next tick.
-    expect(projection.calendar.weekOfYear).toBe(WEEKS_PER_YEAR);
-    expect(projection.calendar.nextScrutinyWeek).toBe(WEEKS_PER_YEAR);
-    expect(projection.calendar.nextScrutinyAt).toBe(projection.nextTickAt);
+    // Assert: the scrutiny happens when this hour ends, like the next tick.
+    expect(projection.calendar.hourOfYear).toBe(HOURS_PER_YEAR);
+    expect(projection.calendar.nextScrutinyHour).toBe(HOURS_PER_YEAR);
+    expect(projection.calendar.nextScrutinyAt).toBe(projection.nextBellAt);
   });
 
   it('carries the workshop chain and weekly figures so the client derives no rule', () => {
     // Arrange
-    const world = createWorld(SEED, 'baker');
+    const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops).toEqual([
@@ -88,20 +98,20 @@ describe('the projection calendar', () => {
         level: 2,
         workers: 2,
         input: 'grain',
-        outputUnitsPerWeek: 4,
-        inputUnitsPerWeek: 4,
-        wagesCentsPerWeek: 240,
+        outputUnitsPerHour: 4,
+        inputUnitsPerHour: 4,
+        wagesCentsPerHour: 240,
       },
     ]);
   });
 
   it('carries zero input for a raw workshop', () => {
     // Arrange
-    const world = createWorld(SEED);
-    world.houses.brigue.workshops = [{ good: 'wool', level: 2, workers: 1 }];
+    const world = town(SEED);
+    world.houses.leclerc.workshops = [{ good: 'wool', level: 2, workers: 1 }];
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops[0]).toEqual({
@@ -109,19 +119,19 @@ describe('the projection calendar', () => {
       level: 2,
       workers: 1,
       input: null,
-      outputUnitsPerWeek: 4,
-      inputUnitsPerWeek: 0,
-      wagesCentsPerWeek: 120,
+      outputUnitsPerHour: 4,
+      inputUnitsPerHour: 0,
+      wagesCentsPerHour: 120,
     });
   });
 
   it('scales the weekly figures with the level and the workers', () => {
     // Arrange
-    const world = createWorld(SEED);
-    world.houses.brigue.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
+    const world = town(SEED);
+    world.houses.leclerc.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops[0]).toEqual({
@@ -129,32 +139,32 @@ describe('the projection calendar', () => {
       level: 3,
       workers: 1,
       input: 'wool',
-      outputUnitsPerWeek: 6,
-      inputUnitsPerWeek: 6,
-      wagesCentsPerWeek: 120,
+      outputUnitsPerHour: 6,
+      inputUnitsPerHour: 6,
+      wagesCentsPerHour: 120,
     });
   });
 
   it('carries six prices, the stock and the warehouse capacity', () => {
     // Arrange
-    const world = createWorld(SEED);
+    const world = town(SEED);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert: the client sums nothing and derives no capacity.
     expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
-    expect(projection.house.stockUnits).toBe(stockUnits(world.houses.brigue));
+    expect(projection.house.stockUnits).toBe(stockUnits(world.houses.leclerc));
     expect(projection.house.stockUnits).toBe(8);
     expect(projection.house.stockCapacityUnits).toBe(RULES.stockCapacityUnits);
   });
 
   it('carries the year of prices and their references', () => {
     // Arrange
-    const world = createWorld(SEED, 'baker');
+    const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     for (const good of GOODS) {
@@ -165,11 +175,11 @@ describe('the projection calendar', () => {
 
   it('projects a field-less world with an empty history', () => {
     // Arrange: a world stored before the history field existed.
-    const world = createWorld(SEED);
+    const world = town(SEED);
     delete world.marketHistory;
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     expect(projection.town.marketHistory).toEqual({});
@@ -177,17 +187,17 @@ describe('the projection calendar', () => {
   });
 
   it('points at the next year once a scrutiny has closed the last one', () => {
-    // Arrange: the first week of the second year.
-    const world = play(createWorld(SEED), WEEKS_PER_YEAR);
+    // Arrange: the first hour of the second year.
+    const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
-    expect(projection.calendar.weekOfYear).toBe(1);
-    expect(projection.calendar.nextScrutinyWeek).toBe(WEEKS_PER_YEAR * 2);
+    expect(projection.calendar.hourOfYear).toBe(1);
+    expect(projection.calendar.nextScrutinyHour).toBe(HOURS_PER_YEAR * 2);
     expect(projection.calendar.nextScrutinyAt).toBe(
-      new Date(START.getTime() + (WEEKS_PER_YEAR * 2 - world.week + 1) * HOUR).toISOString(),
+      new Date(START.getTime() + (HOURS_PER_YEAR * 2 - world.hour + 1) * HOUR).toISOString(),
     );
   });
 });

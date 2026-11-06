@@ -13,20 +13,27 @@ French in the data and in the interface, and the English here is only how we tal
   never replaced by a human.
 - **Personnage** — the current member of the house. Holds the attributes, ages,
   dies, and is replaced by an heir.
-- **Ville** — the town, Saint-Aubin. One world, shared by every house; twenty houses at most.
-- **Semaine** — the tick. One game week, one real hour; twenty-four weeks make a year, and a year
-  is a day.
-- **An** — twenty-four weeks, one real day. The calendar advances a year per day.
+- **Ville** — the town, Saint-Aubin. Twenty houses at most, and the lowest tier of government.
+- **Comté** — the county: several towns, one council, one comte. Above the town.
+- **Royaume** — the kingdom: several counties, one council, one king. The highest tier.
+- **Heure** — the clock. One real hour is half a town month; twenty-four hours make a year, and a
+  year is a day. A duration is said in hours when planning, in months when the town speaks.
+- **Mois** — two real hours; twelve months make a year.
+- **An** — twenty-four real hours, one day. The calendar advances a year per day.
 - **Place** — a seat or a house as something the town can assign: a house is held by a controller
   (`ai` or `human`), a seat by a person.
-- **Dormance** — the state of a house whose player has stopped playing: it keeps its money, its
-  seat and its grudges, nothing runs, and the holder votes no more. After thirty days, the house
+- **Dormance** — the state of a house whose player has stopped playing: it keeps its money and its
+  grudges, nothing runs, it stands for nothing and holds no office. After thirty days, the house
   is deleted.
 
 ## The council
 
 - **Charge** — an office. A seat on the council, with a right attached.
 - **Maire** — the mayor. Presides, sets the agenda, hears appeals, sets the sales and guild taxes.
+  The head of the town, and the lowest tier of the ladder.
+- **Comte** — the count. The head of a county: the company, the roads, the appeal against a town.
+- **Roi** — the head of the kingdom: the ordinance and the staple. The coin belongs to the
+  kingdom's own officers, not to his day. Crowned, he reigns one real day, and then the town closes.
 - **Prévôt** — the provost. Opens investigations, seizes goods, holds the watch, defines crimes.
 - **Échevin du ban** — the alderman of the ban. One of them; fixes the prices of the town's goods,
   and the rents.
@@ -39,22 +46,25 @@ French in the data and in the interface, and the English here is only how we tal
 - **Crieur** — the herald. Publishes the ban, defines libel, carries the rumours.
 - **Jurat**, **Marguillier** — the five seats without a lever: salary, prestige, a vote on
   exceptional measures, and jury duty.
-- **Carrière** — the offices a house has held. It gates the floor the house may stand for, and it
-  falls one floor at death.
-- **Titre** — the house's rank, from roturier to prince. Bought, lost by a court or by death.
+- **Carrière** — the offices a house has held. It gates the floor of the pyramid the house may
+  stand for, and it falls one floor at death.
+- **Titre** — the house's rank, from roturier to prince. Bought at the town hall, lost by a court
+  or by death.
 - **Faveur** — favour: the standing that makes a house electable. Earned by service (a mandate, a
   jury, a vote with the winner) and by visible spending (a gift, a work, a banquet); lost by
   offence.
 - **Prestige** — prestige: what the town thinks of the house; the residence level caps it.
-- **Registre** — the clerk's ranking of the houses: prestige, offices held, titles, generations and
-  wealth, in one score.
+- **Registre** — the clerk's record of the houses: prestige, offices held, titles, generations and
+  wealth, shown by column rather than summed into one score.
+- **Livre des rois** — the page of the register that lists the crowned kings, their house, their
+  day and the line of what they did, kept across towns.
 
 ## The law
 
-- **Ban** — a proclamation fixing a price or forbidding a trade. Enforced from the next week.
+- **Ban** — a proclamation fixing a price or forbidding a trade. Enforced from the next midnight.
 - **Domaine** — the set of laws an office fixes alone, without a vote.
-- **Mesure** — an exceptional decision the council votes: a work, a loan, a recoinage, an amnesty,
-  a requisition, the gates, an ennoblement.
+- **Mesure** — an exceptional decision the council votes: a work, a loan, an amnesty, a
+  requisition, the gates.
 - **Greffe** — the clerk's office: acts, complaints, evidence, the record of what was decided.
 - **Loi** — a law in force, always with the house that carried it.
 - **Séance** — a sitting of the council, where the exceptional measures are voted.
@@ -63,7 +73,7 @@ French in the data and in the interface, and the English here is only how we tal
   and breaks a tie.
 - **Gravité** — the provost places each crime at minor, medium or serious; the penalty follows
   (five per cent and a day, ten and two, twenty and three).
-- **Pot-de-vin** — money and intrigue to make an officer look away for a few weeks; discovered, it
+- **Pot-de-vin** — money and intrigue to make an officer look away for a few hours; discovered, it
   is a crime for both.
 - **Preuve** — a piece of evidence. It can be destroyed, hidden or forged; a forged proof is a
   crime, and the clerk in office exposes it automatically.
@@ -80,6 +90,8 @@ French in the data and in the interface, and the English here is only how we tal
   town, not a coin: it exists so a tax can be written as "one denier a piece" without introducing
   a fraction of a cent.
 - **Halle** — the market hall, where goods are sold and where a place must be granted.
+- **Étape** — the staple: the right to force a good through one town before it is sold elsewhere.
+  Only the crown grants it, and it is what makes a town rich at its neighbours' expense.
 - **Sceau** — the seal that certifies cloth; also the drawn mark of a place on the map.
 - **Drap** — cloth, the good of chapter I.
 - **Laine** — wool, the raw material of cloth.

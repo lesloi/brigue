@@ -2,9 +2,9 @@ import type { Event, GoodId, Law, SeatId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
-  weeksPerYear: number;
-  weekOfYear: number;
-  nextScrutinyWeek: number;
+  hoursPerYear: number;
+  hourOfYear: number;
+  nextScrutinyHour: number;
   nextScrutinyAt: string;
 }
 
@@ -14,10 +14,10 @@ export interface TradeIntent {
   good: GoodId;
 }
 
-/** One action the server holds for the current or next week. */
+/** One action the server holds for the current or next hour. */
 export interface PendingActionView {
   id: string;
-  week: number;
+  hour: number;
   type: 'market.buy' | 'market.sell' | 'council.campaign';
   good?: GoodId;
   units?: number;
@@ -30,13 +30,13 @@ export interface ProjectedWorkshop {
   level: number;
   workers: number;
   input: GoodId | null;
-  outputUnitsPerWeek: number;
-  inputUnitsPerWeek: number;
-  wagesCentsPerWeek: number;
+  outputUnitsPerHour: number;
+  inputUnitsPerHour: number;
+  wagesCentsPerHour: number;
 }
 
 export interface WorldProjection {
-  week: number;
+  hour: number;
   year: number;
   calendar: CalendarView;
   house: {
@@ -54,6 +54,8 @@ export interface WorldProjection {
     stockCapacityUnits: number;
   };
   town: {
+    id: string;
+    name: string;
     houses: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
     people: Array<{ id: string; houseId: string; name: string }>;
     seats: Record<SeatId, { personId: string | null }>;
@@ -62,14 +64,16 @@ export interface WorldProjection {
     marketHistory: Partial<Record<GoodId, number[]>>;
     marketReferences: Record<GoodId, number>;
   };
-  /** The instant the current week ends, so the client can show the next week. */
-  nextTickAt: string;
+  /** The instant the current hour ends, so the client can show the next bell. */
+  nextBellAt: string;
 }
 
 export interface CatchUpSummary {
-  weeksPlayed: number;
-  skippedWeeks: number;
+  hours: number;
+  skipped: number;
+  /** What the journal page left behind, counted by type. */
   counts: Partial<Record<Event['type'], number>>;
+  /** The refused actions among them, counted by reason. */
   refusals: Partial<Record<string, number>>;
 }
 
@@ -78,7 +82,9 @@ export interface WorldResponse {
   events: Event[];
   summary: CatchUpSummary;
   stateHash: string;
-  /** Set only by a server started for local development: it exposes `advanceWeek`. */
+  /** How long a deletion waits; the screen says it, the server owns it. */
+  deletionGraceDays: number;
+  /** Set only by a server started for local development: it exposes `advanceHour`. */
   dev?: boolean;
 }
 
@@ -99,14 +105,21 @@ export class ApiError extends Error {
   }
 }
 
-export async function hasSession(): Promise<boolean> {
+export interface SessionInfo {
+  worldId: string;
+  houseId: string;
+  /** Set when a deletion is scheduled: the deadline, in ISO. */
+  deletionAfter: string | null;
+}
+
+export async function readSession(): Promise<SessionInfo | null> {
   const response = await fetch('/api/session', { credentials: 'same-origin' });
 
   if (response.status === 200) {
-    return true;
+    return (await response.json()) as SessionInfo;
   }
   if (response.status === 401) {
-    return false;
+    return null;
   }
 
   throw new ApiError(response.status, await errorCode(response));
@@ -126,7 +139,7 @@ export function joinTown(trade: Trade): Promise<Joined> {
   });
 }
 
-export function resumeTown(token: string): Promise<{ worldId: string; houseId: string }> {
+export function resumeTown(token: string): Promise<SessionInfo> {
   return send('/api/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -134,24 +147,34 @@ export function resumeTown(token: string): Promise<{ worldId: string; houseId: s
   });
 }
 
+/** Schedules the erasure of the identity; the token stays valid until then. */
+export function requestDeletion(): Promise<{ deleteAfter: string }> {
+  return send('/api/player/deletion', { method: 'POST' });
+}
+
+/** Cancels a scheduled erasure: the player came back. */
+export function cancelDeletion(): Promise<void> {
+  return sendVoid('/api/player/deletion', { method: 'DELETE' });
+}
+
 export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
 }
 
-/** Local development only: plays the next week now. The server refuses in production. */
-export function advanceWeek(): Promise<WorldResponse> {
+/** Local development only: plays the next hour now. The server refuses in production. */
+export function advanceHour(): Promise<WorldResponse> {
   return send('/api/dev/advance', { method: 'POST' });
 }
 
-export function sendAction(week: number, action: ActionIntent): Promise<{ id: string; week: number; houseId: string }> {
+export function sendAction(hour: number, action: ActionIntent): Promise<{ id: string; hour: number; houseId: string }> {
   return send('/api/actions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: actionId(), week, action }),
+    body: JSON.stringify({ id: actionId(), hour, action }),
   });
 }
 
-/** The actions the server still holds for this house, current and next week. */
+/** The actions the server still holds for this house, current and next hour. */
 export async function readPending(): Promise<PendingActionView[]> {
   const body = await send<{ actions: PendingActionView[] }>('/api/actions');
 
@@ -199,6 +222,19 @@ async function send<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+/** A call whose answer carries no body, like a deletion. */
+async function sendVoid(path: string, init: RequestInit = {}): Promise<void> {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    ...init,
+    headers: { Accept: 'application/json', ...init.headers },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorCode(response));
+  }
 }
 
 async function errorCode(response: Response): Promise<string | null> {

@@ -1,14 +1,14 @@
-import type { Action, Event } from '@brigue/core';
+import type { Action, Event, RefusalReason } from '@brigue/core';
 
 import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
 
-/** The three cuts of the week's ledger: the house's own story, everything, the prices. */
+/** The three cuts of the journal: the house's own story, everything, the prices. */
 export type LedgerFilter = 'house' | 'all' | 'prices';
 
 /**
  * The default is the house's own story plus the town's politics; the AI's
  * market noise and the price lines stay behind the other cuts. `prices` is
- * where chapter I's lesson lives; `all` is the whole last week.
+ * where chapter I's lesson lives; `all` is the whole page.
  */
 export function ledgerEvents(events: readonly Event[], houseId: string, filter: LedgerFilter): Event[] {
   switch (filter) {
@@ -27,6 +27,76 @@ export function ledgerEvents(events: readonly Event[], houseId: string, filter: 
 }
 
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';
+
+/** What one counted type is called in a tally, in both numbers. */
+const COUNT_NAMES: Record<Event['type'], [string, string]> = {
+  'action.refused': ['refus', 'refus'],
+  'market.bought': ['achat', 'achats'],
+  'market.sold': ['vente', 'ventes'],
+  'market.price_changed': ['prix changé', 'prix changés'],
+  'workshop.produced': ['production', 'productions'],
+  'workshop.overflow': ['débordement', 'débordements'],
+  'workshop.idle': ['atelier à l’arrêt', 'ateliers à l’arrêt'],
+  'house.wages_paid': ['paie de gages', 'paies de gages'],
+  'house.penniless': ['gages impayés', 'gages impayés'],
+  'house.debt_repaid': ['remboursement', 'remboursements'],
+  'council.campaigned': ['candidature', 'candidatures'],
+  'engagement.resolved': ['engagement résolu', 'engagements résolus'],
+  'council.scrutiny_held': ['scrutin', 'scrutins'],
+  'council.election_held': ['élection', 'élections'],
+};
+
+/**
+ * The entries a page left behind, said as a tally. A refusal is carried by the
+ * refusal clause alone, so it is not listed twice.
+ */
+export function journalCountsText(
+  counts: Partial<Record<Event['type'], number>>,
+  refusals: Partial<Record<string, number>>,
+): string | null {
+  const parts: Array<{ count: number; text: string }> = [];
+
+  for (const [type, raw] of Object.entries(counts)) {
+    const count = raw ?? 0;
+    if (count <= 0 || type === 'action.refused') {
+      continue;
+    }
+    parts.push({ count, text: `${formatCount(count)} ${countName(type as Event['type'], count)}` });
+  }
+
+  let refused = 0;
+  const reasons: Array<{ count: number; text: string }> = [];
+  for (const [reason, raw] of Object.entries(refusals)) {
+    const count = raw ?? 0;
+    if (count <= 0) {
+      continue;
+    }
+    refused += count;
+    reasons.push({ count, text: `${formatCount(count)} ${refusalText(reason as RefusalReason)}` });
+  }
+  if (refused > 0) {
+    const detail = reasons
+      .sort((left, right) => right.count - left.count)
+      .map((reason) => reason.text)
+      .join(', ');
+    parts.push({ count: refused, text: `${formatCount(refused)} refus (${detail})` });
+  }
+
+  if (parts.length === 0) {
+    return null;
+  }
+
+  return parts
+    .sort((left, right) => right.count - left.count)
+    .map((part) => part.text)
+    .join(', ');
+}
+
+function countName(type: Event['type'], count: number): string {
+  const [one, many] = COUNT_NAMES[type];
+
+  return count > 1 ? many : one;
+}
 
 export interface EventLine {
   tone: Tone;
@@ -106,21 +176,15 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
     case 'council.campaigned':
       return {
         tone: 'council',
-        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez dépensé', 'a dépensé')} ${formatCount(event.favourSpent)} de faveur pour la ${seatName(event.seatId)} ; la campagne aboutit semaine ${formatCount(event.dueWeek)}.`,
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est dans ${formatCount(event.countsAt - event.at)} heures.`,
       };
 
     case 'engagement.resolved': {
       const late =
-        event.resolvedWeek === event.dueWeek
+        event.resolvedAt === event.dueAt
           ? ''
-          : ` (${formatCount(event.resolvedWeek - event.dueWeek)} semaine${event.resolvedWeek - event.dueWeek > 1 ? 's' : ''} de retard)`;
+          : ` (${formatCount(event.resolvedAt - event.dueAt)} heure${event.resolvedAt - event.dueAt > 1 ? 's' : ''} de retard)`;
 
-      if (event.kind === 'campaign') {
-        return {
-          tone: 'council',
-          text: `La campagne de ${subject(event.houseId)} pour la ${event.seatId === undefined ? 'charge' : seatName(event.seatId)} aboutit${late}.`,
-        };
-      }
       if (event.kind === 'hearing') {
         return {
           tone: 'council',

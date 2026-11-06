@@ -1,5 +1,5 @@
 /**
- * Saint-Aubin, drawn once. Vector, so it stays sharp on a phone and costs a few
+ * The town, drawn once. Vector, so it stays sharp on a phone and costs a few
  * kilobytes. The scene is decoration: nothing in it is clickable.
  */
 export function HeroScene() {

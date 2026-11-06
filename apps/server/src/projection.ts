@@ -1,9 +1,8 @@
 import {
   GOODS,
-  PACING,
+  HOURS_PER_YEAR,
   RULES,
   stockUnits,
-  WEEKS_PER_YEAR,
   type GoodId,
   type House,
   type Law,
@@ -12,15 +11,17 @@ import {
   type World,
 } from '@brigue/core';
 
-/** A workshop as the screen reads it: its chain and weekly figures come from the rules. */
+import type { TownInfo } from './worlds.ts';
+
+/** A workshop as the screen reads it: its chain and hourly figures come from the rules. */
 export interface WorkshopView {
   good: GoodId;
   level: number;
   workers: number;
   input: GoodId | null;
-  outputUnitsPerWeek: number;
-  inputUnitsPerWeek: number;
-  wagesCentsPerWeek: number;
+  outputUnitsPerHour: number;
+  inputUnitsPerHour: number;
+  wagesCentsPerHour: number;
 }
 
 export interface OwnHouseView {
@@ -59,33 +60,35 @@ export interface PublicPersonView {
  * where the year stands, and when the next scrutiny closes it.
  */
 export interface CalendarView {
-  weeksPerYear: number;
-  /** One-based week inside the year, always between 1 and `weeksPerYear`. */
-  weekOfYear: number;
-  /** The absolute town week in which the next scrutiny is held. */
-  nextScrutinyWeek: number;
-  /** When that week ends and the scrutiny happens, as an instant. */
+  hoursPerYear: number;
+  /** One-based hour inside the year, always between 1 and `hoursPerYear`. */
+  hourOfYear: number;
+  /** The absolute town hour in which the next scrutiny is held. */
+  nextScrutinyHour: number;
+  /** When that hour begins and the scrutiny happens, as an instant. */
   nextScrutinyAt: string;
 }
 
 export interface WorldProjection {
-  week: number;
+  hour: number;
   year: number;
   calendar: CalendarView;
   house: OwnHouseView;
   town: {
+    id: string;
+    name: string;
     houses: PublicHouseView[];
     people: PublicPersonView[];
     seats: Record<SeatId, Seat>;
     laws: Law[];
     market: Record<GoodId, number>;
-    /** The last PRICE_HISTORY_WEEKS prices per good, so the Marché can draw them. */
+    /** The last prices per good, so the Marché can draw them. */
     marketHistory: Partial<Record<GoodId, number[]>>;
     /** The reference each good returns to; the chart draws it as a guide. */
     marketReferences: Record<GoodId, number>;
   };
-  /** The instant the current week ends, so the client can show the next tick. */
-  nextTickAt: string;
+  /** The instant the next bell rings, so the client can show when the town moves. */
+  nextBellAt: string;
 }
 
 /**
@@ -93,7 +96,7 @@ export interface WorldProjection {
  * rest of the town at the detail the town itself would show. The seed, the
  * generator and other houses' treasuries never leave the server.
  */
-export function projectWorld(world: World, houseId: string, weekStartedAt: Date): WorldProjection {
+export function projectWorld(town: TownInfo, world: World, houseId: string, hourStartedAt: Date): WorldProjection {
   const house = world.houses[houseId];
   if (!house) {
     // The token points at a house the world no longer holds: a server bug, not
@@ -102,11 +105,13 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
   }
 
   return {
-    week: world.week,
+    hour: world.hour,
     year: world.year,
-    calendar: calendarOf(world, weekStartedAt),
+    calendar: calendarOf(world, hourStartedAt),
     house: ownHouse(house),
     town: {
+      id: town.id,
+      name: town.name,
       houses: Object.values(world.houses)
         .map((candidate) => ({
           id: candidate.id,
@@ -127,23 +132,39 @@ export function projectWorld(world: World, houseId: string, weekStartedAt: Date)
         number
       >,
     },
-    nextTickAt: new Date(weekStartedAt.getTime() + PACING.minutesPerWeek * 60_000).toISOString(),
+    nextBellAt: new Date(
+      hourStartedAt.getTime() + hoursUntil(nextBellOf(world.hour), world.hour) * HOUR_MS,
+    ).toISOString(),
   };
 }
 
-function calendarOf(world: World, weekStartedAt: Date): CalendarView {
-  const weekOfYear = ((world.week - 1) % WEEKS_PER_YEAR) + 1;
-  // A scrutiny closes the week that is a multiple of the year length, so the
-  // week currently in progress is its own scrutiny week when it divides.
-  const nextScrutinyWeek = world.week + ((WEEKS_PER_YEAR - (world.week % WEEKS_PER_YEAR)) % WEEKS_PER_YEAR);
-  const weekMs = PACING.minutesPerWeek * 60_000;
-  const weeksUntilEnd = nextScrutinyWeek - world.week + 1;
+export const HOUR_MS = 60 * 60 * 1000;
+
+/** The first bell strictly after this hour: noon or midnight, whichever comes first. */
+export function nextBellOf(hour: number): number {
+  const half = HOURS_PER_YEAR / 2;
+
+  return hour + ((half - (hour % half)) % half);
+}
+
+function hoursUntil(target: number, from: number): number {
+  // An hour's ceremony happens when that hour is over, so the end of the town's
+  // current hour is one step past its start.
+  return target - from + 1;
+}
+
+function calendarOf(world: World, hourStartedAt: Date): CalendarView {
+  const hourOfYear = ((world.hour - 1) % HOURS_PER_YEAR) + 1;
+  // A scrutiny closes the hour that is a multiple of the year length.
+  const nextScrutinyHour = world.hour + ((HOURS_PER_YEAR - (world.hour % HOURS_PER_YEAR)) % HOURS_PER_YEAR);
 
   return {
-    weeksPerYear: WEEKS_PER_YEAR,
-    weekOfYear,
-    nextScrutinyWeek,
-    nextScrutinyAt: new Date(weekStartedAt.getTime() + weeksUntilEnd * weekMs).toISOString(),
+    hoursPerYear: HOURS_PER_YEAR,
+    hourOfYear,
+    nextScrutinyHour,
+    nextScrutinyAt: new Date(
+      hourStartedAt.getTime() + hoursUntil(nextScrutinyHour, world.hour) * HOUR_MS,
+    ).toISOString(),
   };
 }
 
@@ -159,14 +180,14 @@ function ownHouse(house: House): OwnHouseView {
     dormant: house.dormant,
     workshops: house.workshops.map((workshop) => {
       const recipe = RULES.recipes[workshop.good];
-      const outputUnitsPerWeek = workshop.level * RULES.outputPerLevel;
+      const outputUnitsPerHour = workshop.level * RULES.outputPerLevel;
 
       return {
         ...structuredClone(workshop),
         input: recipe?.input ?? null,
-        outputUnitsPerWeek,
-        inputUnitsPerWeek: recipe === null ? 0 : outputUnitsPerWeek * recipe.perUnit,
-        wagesCentsPerWeek: workshop.workers * RULES.wagePerWorkerCents,
+        outputUnitsPerHour,
+        inputUnitsPerHour: recipe === null ? 0 : outputUnitsPerHour * recipe.perUnit,
+        wagesCentsPerHour: workshop.workers * RULES.wagePerWorkerCents,
       };
     }),
     stock: structuredClone(house.stock),

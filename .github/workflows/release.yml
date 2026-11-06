@@ -69,11 +69,3 @@ jobs:
             kubectl -n "$NAMESPACE" rollout status "deployment/$DEPLOYMENT" --timeout=5m || true
             exit 1
           fi
-
-      # The format change is not a migration in the init container: the previous pod still serves
-      # during the rollout, and a visit there would recreate the old world. Once the new pod is the
-      # one serving, migrate to the image's format. With no argument the script targets the release
-      # being deployed; if a world has no migration it stops and fails the release, naming the
-      # worlds and the cost, and an operator confirms the reset with --reset.
-      - name: Migrate the world to this image's format
-        run: kubectl -n "$NAMESPACE" exec "deployment/$DEPLOYMENT" -c "$CONTAINER" -- node scripts/migrate-world.ts
