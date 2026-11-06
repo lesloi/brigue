@@ -256,22 +256,27 @@ export interface Founder {
   person: Person;
 }
 
-/** The id of the first house, the one the first player takes. */
-export const FOUNDER_HOUSE_ID = 'brigue';
+/** The name and the id the first house arrives with, drawn before it joins. */
+export interface FounderIdentity {
+  id: string;
+  houseName: string;
+  personName: string;
+}
 
 /**
  * The house a new player starts with: the workshop of its trade, a little
  * money, its first input, no seat and no career. The town is built without it;
  * `withFounder` adds it when the first player joins, and puts it back into a
- * freed place so a deleted founder cannot brick the join path.
+ * freed place so a deleted founder cannot brick the join path. Its name is an
+ * input: the server draws it, and nothing about the first house is fixed.
  */
-export function createFounder(trade: Trade = 'weaver'): Founder {
+export function createFounder(trade: Trade, identity: FounderIdentity): Founder {
   const chain = TRADE_CHAINS[trade];
 
   return {
     house: {
-      id: FOUNDER_HOUSE_ID,
-      name: 'Brigue',
+      id: identity.id,
+      name: identity.houseName,
       controller: 'human',
       treasuryCents: RULES.founderTreasuryCents,
       debtCents: 0,
@@ -283,9 +288,9 @@ export function createFounder(trade: Trade = 'weaver'): Founder {
       stock: { [chain.input]: RULES.founderInputUnits },
     },
     person: {
-      id: 'person-brigue',
-      houseId: 'brigue',
-      name: 'Colin Brigue',
+      id: `person-${identity.id}`,
+      houseId: identity.id,
+      name: identity.personName,
       age: 20,
       attributes: { artisanat: 10, parole: 10, intrigue: 10 },
       alive: true,
@@ -297,18 +302,26 @@ export function createFounder(trade: Trade = 'weaver'): Founder {
  * The first house: the town is built without it, and it is added when the first
  * player joins — or when a deleted founder's place waits for a human. It is
  * never a political role, and adding it twice is a no-op.
+ *
+ * A world with a human house and no founder is a multiplayer state this format
+ * does not produce: here the only human is the founder.
  */
-export function withFounder(world: World, trade: Trade): World {
-  if (world.houses[FOUNDER_HOUSE_ID] !== undefined) {
+export function withFounder(world: World, trade: Trade, identity: FounderIdentity): World {
+  if (firstHouseOf(world) !== undefined) {
     return world;
   }
 
   const next = structuredClone(world);
-  const { house, person } = createFounder(trade);
+  const { house, person } = createFounder(trade, identity);
   next.houses[house.id] = house;
   next.people[person.id] = person;
 
   return next;
+}
+
+/** The first house: the only human house of a solo town. */
+export function firstHouseOf(world: World): House | undefined {
+  return Object.values(world.houses).find((house) => house.controller === 'human');
 }
 
 export type SeatRefusal = 'unknown_house' | 'unknown_person' | 'person_of_another_house' | 'person_dead';

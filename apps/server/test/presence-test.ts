@@ -284,7 +284,7 @@ describe('the thirty-day deletion', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trade: 'baker' }),
     });
-    const { token } = (await joined.json()) as { token: string };
+    const { token, houseId } = (await joined.json()) as { token: string; houseId: string };
     const read = await fetch(`${harness.url}/api/world`, { headers: { Cookie: `${SESSION_COOKIE}=${token}` } });
     const body = (await read.json()) as {
       world: {
@@ -301,7 +301,9 @@ describe('the thirty-day deletion', () => {
     // Assert: a starter house, not the old money, and no inherited seat.
     expect(joined.status).toBe(201);
     expect(read.status).toBe(200);
-    expect(body.world.house.id).toBe('brigue');
+    // A drawn first house, not the deleted one, and none of its money.
+    expect(houseId).not.toBe('brigue');
+    expect(body.world.house.id).toBe(houseId);
     expect(body.world.house.treasuryCents).toBe(117340);
     expect(body.world.house.workshops).toEqual([
       {

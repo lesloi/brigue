@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import {
   createWorld,
+  firstHouseOf,
   FORMAT_VERSION,
   hashJson,
   PACING,
@@ -17,6 +18,7 @@ import {
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
+import { drawFounderIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
@@ -27,7 +29,6 @@ import { authenticate, issueToken } from './session.ts';
 import { assertWebRoot, serveStatic } from './static.ts';
 import {
   DuplicateActionError,
-  FIRST_HOUSE_ID,
   HOUR_MS,
   UnknownWorldError,
   WORLD_ID,
@@ -298,20 +299,22 @@ export function createApp(deps: AppDeps): Server {
 
     try {
       // One town, created by the first player; the next ones find it and only
-      // take the house binding. The trade is what the founder chose.
-      await deps.worlds.createIfAbsent(withFounder(createWorld(randomSeed()), trade), at, at);
+      // take the house binding. The town is built from its seed, and the first
+      // house — the founder's place — is drawn when its player joins.
+      const town = createWorld(randomSeed());
+      await deps.worlds.createIfAbsent(withFounder(town, trade, drawFounderIdentity(town)), at, at);
       await assertWorldVersion();
       // A freed place waits for a human: the founder's house may have been
       // deleted after thirty days of silence, and the binding must point at a
       // house the world still holds.
-      await ensureFounder(at, trade);
+      const houseId = await ensureFounder(trade);
 
-      const issued = await issueToken(deps.store, WORLD_ID, FIRST_HOUSE_ID, at);
-      deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId: FIRST_HOUSE_ID });
+      const issued = await issueToken(deps.store, WORLD_ID, houseId, at);
+      deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId });
       sendJson(
         response,
         201,
-        { worldId: WORLD_ID, houseId: FIRST_HOUSE_ID, token: issued.token },
+        { worldId: WORLD_ID, houseId, token: issued.token },
         { 'Set-Cookie': sessionCookie(issued.token, secureCookies) },
       );
     } catch (error) {
@@ -726,15 +729,22 @@ export function createApp(deps: AppDeps): Server {
     return world;
   }
 
-  async function ensureFounder(at: Date, trade: Trade): Promise<void> {
-    await deps.worlds.withWorld(async (session) => {
+  async function ensureFounder(trade: Trade): Promise<string> {
+    return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
+      // The solo town has one human house, and it is the founder's place.
+      // Multiplayer will have to tell that slot from a converted AI house;
+      // until then, the only human is the founder.
+      const existing = firstHouseOf(world);
 
-      if (world.houses[FIRST_HOUSE_ID] !== undefined) {
-        return;
+      if (existing !== undefined) {
+        return existing.id;
       }
 
-      await session.save(withFounder(world, trade), session.snapshot.hourStartedAt, []);
+      const identity = drawFounderIdentity(world);
+      await session.save(withFounder(world, trade, identity), session.snapshot.hourStartedAt, []);
+
+      return identity.id;
     });
   }
 

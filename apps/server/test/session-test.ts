@@ -105,20 +105,21 @@ describe('the token endpoint', () => {
   });
 
   it('never reads a token from the URL', async () => {
+    // Arrange: a token the store does not know. Reading it would answer 401
+    // instead of joining.
     const harness = await start();
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const unknown = `bgk_${'x'.repeat(43)}`;
 
-    // The house is taken, so a join cannot succeed. A 200 would mean the
-    // query-string token was used as an identity.
-    const response = await fetch(`${harness.url}/api/session?token=${encodeURIComponent(token)}`, {
+    // Act
+    const response = await fetch(`${harness.url}/api/session?token=${encodeURIComponent(unknown)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trade: 'weaver' }),
     });
 
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'no_free_house' });
-    expect(cookieOf(response)).toBeUndefined();
+    // Assert: the body's trade created the town, the query was ignored.
+    expect(response.status).toBe(201);
+    expect(cookieOf(response)).toBeDefined();
   });
 
   it('refuses a malformed body without opening a session', async () => {
@@ -175,20 +176,26 @@ describe('joining the town', () => {
 
     expect(response.status).toBe(201);
     expect(body.worldId).toBe('saint-aubin');
-    expect(body.houseId).toBe('brigue');
+    expect(body.houseId).toMatch(/^[a-z0-9-]+$/);
     expect(body.token).toMatch(/^bgk_[A-Za-z0-9_-]{43}$/);
     expect(cookieOf(response)).toContain('HttpOnly');
-    expect(await harness.worlds.withWorld(async (session) => session.snapshot.world.hour)).toBe(1);
+
+    // The first house is the human one the join drew, and the town is one
+    // hour old.
+    const snapshot = await harness.worlds.withWorld(async (session) => session.snapshot);
+    expect(snapshot.world.hour).toBe(1);
+    expect(snapshot.world.houses[body.houseId]?.controller).toBe('human');
+    expect(snapshot.world.houses[body.houseId]?.name).not.toBe('');
 
     // The issued token is the identity: it logs in on the next visit.
     const again = await login(harness, body.token);
     expect(again.status).toBe(200);
-    expect(await again.json()).toEqual({ worldId: 'saint-aubin', houseId: 'brigue' });
+    expect(await again.json()).toEqual({ worldId: 'saint-aubin', houseId: body.houseId });
   });
 
   it('refuses a second token for a house that already has one', async () => {
     const harness = await start();
-    await issueToken(harness.store, 'saint-aubin', 'brigue');
+    expect((await join(harness)).status).toBe(201);
 
     const response = await join(harness);
 

@@ -1,4 +1,4 @@
-import { FOUNDER_HOUSE_ID, isVisibleTo, type Action, type Event, type RefusalReason, type World } from '@brigue/core';
+import { isVisibleTo, type Action, type Event, type RefusalReason, type World } from '@brigue/core';
 
 import { countEvent, emptyTally } from './journal.ts';
 
@@ -7,9 +7,6 @@ export const HOUR_MS = 60 * 60 * 1000;
 
 /** The players table still keys its binding by a world name; the town itself does not. */
 export const WORLD_ID = 'saint-aubin';
-
-/** The house a new player gets until multiplayer assigns AI houses. */
-export const FIRST_HOUSE_ID = FOUNDER_HOUSE_ID;
 
 export interface StoredAction {
   /** Client-generated; the database primary key is what makes a retry a duplicate. */
