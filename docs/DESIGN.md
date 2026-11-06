@@ -34,19 +34,19 @@ Two rules keep the chapters honest:
 ## The town
 
 Twenty houses at most, ten of them AI at the opening. The town is founded when its first player
-joins: ten AI houses and the founder's house are created together, so no town waits empty for
-someone — six AI today, until the finished trades are filled. The founder's house takes a name
+joins: ten AI houses and the first player's house are created together, so no town waits empty for
+someone — six AI today, until the finished trades are filled. That house takes a name
 drawn from the town's names, and may be renamed later (not built yet). Its offices do not
 exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
 A human who arrives in a full town takes the place of a finished-trade AI house. The AI line
 ends; the newcomer chooses a trade, starts with its workshop and no money, no seat, no career. The
-founder is the exception of the opening: its house starts with eight units of its input and a
+first house is the exception of the opening: it starts with eight units of its input and a
 purse, because its first sale is hours away, and the place is re-founded with that kit after a
 deletion.
 The three raw suppliers — wool, grain and wood — stay AI forever: they are the floor that feeds
-every chain, and a human never replaces one. No AI is created after the opening: the ten founding
+every chain, and a human never replaces one. No AI is created after the opening: the ten opening
 families are the opening composition, not a pump, and a freed finished-trade place waits for a
 human.
 

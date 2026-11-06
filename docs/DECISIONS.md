@@ -28,7 +28,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   AI ever plays it. The deletion stays an edge rule. The reverse is asymmetric: when a full town
   receives a human, the finished-trade AI house ends and the newcomer chooses a trade, starts with
   its workshop and no money, no seat, no career. No AI is created after the opening; the ten
-  founding families are the opening composition, and a freed finished-trade place waits for a
+  opening families are the opening composition, and a freed finished-trade place waits for a
   human. The three raw suppliers are permanent AI. An absence must not be a betrayal, and an
   arrival must not inherit a mayoralty.
 
@@ -36,24 +36,23 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   twenty houses for twelve seats is a contest, and the council only becomes political once the
   town outgrows its seats. Above the town, the same houses compete for seven seats of county and
   seven of kingdom, shared across their towns: the higher the tier, the scarcer the seat. The AI
-  cap keeps the town human: a shared world is mostly people, and a solo world is ten AI and its
-  founder. The town opens with ten AI in the target — three permanent raw suppliers and seven
+  cap keeps the town human: a shared world is mostly people, and a solo world is ten AI and one human house. The town opens with ten AI in the target — three permanent raw suppliers and seven
   finished trades — and six today (three raw, three finished). A human arriving when it is full
   replaces a finished-trade AI, never a raw supplier; the AI count only falls as humans arrive,
   and "ten" is the opening composition, not a floor. Revisit if a whole kingdom proves too small
   at twenty houses a town.
 
 - **The player chooses a trade at creation; the raw suppliers stay AI.** At the first launch,
-  every player — the founder included — chooses one of three trades: weaver (wool into cloth),
+  every player chooses one of three trades: weaver (wool into cloth),
   baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
-  that trade; no assignment balances the town's mix. The founder is the first house, not a
-  political role: same house, no seat, no vote; only the starting kit differs — a workshop of its
+  that trade; no assignment balances the town's mix. The first house is not a political
+  role: it holds no seat and no vote, and only its starting kit differs — a workshop of its
   trade, eight units of its input and a purse, because its first sale is hours away. The town is
   built without it: the first house is added when the first player joins, so no town waits empty
   for someone. Its name is drawn from the town's names at that moment — nothing about the first
   house is fixed — and the player may rename it later (not built yet). A human who
-  arrives later, replacing a finished trade, brings its workshop and nothing else; the founder's
-  place, re-founded after its house was deleted, keeps the kit, because it is the opening slot and
+  arrives later, replacing a finished trade, brings its workshop and nothing else; the first house's
+  place, re-founded after a deletion, keeps the kit, because it is the opening slot and
   not a newcomer taking an AI's place. The three raw
   suppliers (wool, grain, wood) stay AI houses forever and are never replaced by a human: they
   are the floor that keeps every chain fed, so a player town cannot lose an input to a newcomer
