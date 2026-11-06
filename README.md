@@ -69,6 +69,11 @@ pnpm --filter @brigue/server migrate
 pnpm --filter @brigue/server dev
 ```
 
+When a format change cannot migrate the old schema, the database is reset instead: `pnpm
+--filter @brigue/server reset --confirm` drops the town and rebuilds the schema from the
+migrations, carrying the players and the sealed seasons across. It does nothing without
+`--confirm`.
+
 The PWA runs beside it, and Vite proxies `/api` to `http://localhost:3000`:
 
 ```sh

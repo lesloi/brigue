@@ -184,12 +184,16 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new
   `formatVersion`; a world of another format is refused, never guessed. A world with a registered
-  migration is converted; one without is not deleted in silence — the script stops, names the
-  reset and its cost, and an operator confirms it with `--reset`. The format that ships next is
+  migration is converted; one without is not deleted in silence: the reset names what it will
+  destroy and refuses until an operator confirms it. The format that ships next is
   the first: it deletes the test towns, the earlier formats and their migrations, and starts
   `formatVersion` and `rulesetVersion` at one. Nothing in them is worth carrying, and a version
   number that records a history nobody can read is a cost, not a safeguard. Once a town has
   players whose history matters, a breaking change ships a migration by default.
+
+  This first format resets with `pnpm --filter @brigue/server reset --confirm`: the schema is
+  dropped and rebuilt from the one migration, and the players cross without a house — the token
+  is what carries someone from one town to the next — while the sealed seasons stay untouched.
 
   The next format carries the clock, the scheduler, the journal and the tables, and nothing else:
   the town's politics lands additively inside it, and the floors above the town wait for the
