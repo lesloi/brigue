@@ -216,8 +216,8 @@ describe('joining the town', () => {
     expect(world.houses[first.houseId]?.treasuryCents).toBe(RULES.startingPurseCents);
   });
 
-  it('binds a player to a human house with no live token', async () => {
-    // Arrange: a town whose first house exists but has no token.
+  it('takes a house no player has taken', async () => {
+    // Arrange: a town whose first house exists but was never bound.
     const harness = await start();
     const base = town(7);
     await harness.worlds.createTown(TEST_TOWN, base, new Date());
@@ -226,7 +226,7 @@ describe('joining the town', () => {
     const response = await join(harness);
     const body = (await response.json()) as { houseId: string; worldId: string };
 
-    // Assert: the freed place is taken, and no house is added.
+    // Assert: the free place is taken, and no house is added.
     expect(response.status).toBe(201);
     expect(body.worldId).toBe(TEST_TOWN.id);
     expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
@@ -234,28 +234,23 @@ describe('joining the town', () => {
     expect(Object.keys(world.houses)).toHaveLength(Object.keys(base.houses).length);
   });
 
-  it('does not hand out a house the deletion pass is about to remove', async () => {
-    // Arrange: a freed house whose last visit is past the deletion threshold.
+  it('leaves a revoked house to its owner', async () => {
+    // Arrange: a house a player has taken, whose token they revoked.
     const harness = await start();
     await harness.worlds.createTown(TEST_TOWN, town(7), new Date());
-    const seen = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
-    await harness.store.insert({
-      tokenHash: 'f'.repeat(64),
-      worldId: TEST_TOWN.id,
-      houseId: TEST_FIRST_HOUSE.id,
-      createdAt: seen,
-      lastSeenAt: seen,
-      revokedAt: seen,
-    });
+    const { player } = await issueToken(harness.store, TEST_TOWN.id, TEST_FIRST_HOUSE.id, new Date());
+    await harness.store.revoke(player.tokenHash, new Date());
 
     // Act
     const response = await join(harness);
     const body = (await response.json()) as { houseId: string; worldId: string };
 
-    // Assert: a new house, not the one the next read would delete.
+    // Assert: a new house, and the old one still waits for its owner.
     expect(response.status).toBe(201);
     expect(body.worldId).toBe(TEST_TOWN.id);
     expect(body.houseId).not.toBe(TEST_FIRST_HOUSE.id);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
+    expect(world.houses[TEST_FIRST_HOUSE.id]).toBeDefined();
   });
 
   it('skips a town that vanishes between the list and its lock', async () => {

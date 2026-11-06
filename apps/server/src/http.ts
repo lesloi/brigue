@@ -49,7 +49,6 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const QUEUE_AHEAD_HOURS = 1;
 /** A read returns at most this many journal entries; the rest is counted. */
 const JOURNAL_PAGE = 50;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface AppDeps {
   store: PlayerStore;
@@ -310,7 +309,7 @@ export function createApp(deps: AppDeps): Server {
           let houseId: string | null;
 
           try {
-            houseId = await takePlace(town.id, trade, at);
+            houseId = await takePlace(town.id, trade);
           } catch (error) {
             // The town went between the list and its lock, or the scheduler
             // deleted it: the next join will not see it either.
@@ -348,12 +347,15 @@ export function createApp(deps: AppDeps): Server {
   }
 
   /**
-   * The place a newcomer takes in a town: a human house with no live token (a
-   * freed place, or the one the town was created with), else a new human house
-   * until the town is full. A full town offers nothing; the join moves on. A
-   * town whose last human house has gone is on its way out, and is left alone.
+   * The place a newcomer takes in a town: a human house no player has ever
+   * taken (the one the town was just created with, or a place whose token was
+   * never issued), else a new human house until the town is full. A house a
+   * player has taken stays theirs while it is silent — a revoked token does not
+   * give it away — until the silence rule deletes it. A full town offers
+   * nothing; the join moves on. A town whose last human house has gone is on
+   * its way out, and is left alone.
    */
-  async function takePlace(townId: string, trade: Trade, at: Date): Promise<string | null> {
+  async function takePlace(townId: string, trade: Trade): Promise<string | null> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
 
@@ -362,27 +364,11 @@ export function createApp(deps: AppDeps): Server {
       }
 
       const players = await deps.store.listByWorld(townId);
-      const live = new Set(players.filter((player) => player.revokedAt === null).map((player) => player.houseId));
-      const lastSeen = new Map<string, number>();
+      const taken = new Set(players.map((player) => player.houseId));
+      const free = Object.values(world.houses).find((house) => house.controller === 'human' && !taken.has(house.id));
 
-      for (const player of players) {
-        lastSeen.set(player.houseId, Math.max(lastSeen.get(player.houseId) ?? 0, player.lastSeenAt.getTime()));
-      }
-
-      // A house already past the deletion threshold is due for the next
-      // presence pass: handing it out would hand out a token that pass revokes
-      // at the newcomer's first read.
-      const alive = (houseId: string): boolean => {
-        const seen = lastSeen.get(houseId);
-
-        return seen === undefined || at.getTime() - seen <= PACING.deletionDays * DAY_MS;
-      };
-      const freed = Object.values(world.houses).find(
-        (house) => house.controller === 'human' && !live.has(house.id) && alive(house.id),
-      );
-
-      if (freed !== undefined) {
-        return freed.id;
+      if (free !== undefined) {
+        return free.id;
       }
       if (Object.keys(world.houses).length >= RULES.houseCap) {
         return null;

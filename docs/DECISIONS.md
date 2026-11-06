@@ -20,8 +20,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **A join takes the first free place; a full world gets a new town.** The towns are visited
   least filled first — the one that needs people most — and the oldest breaks a tie. A human house
-  with no live token is a freed place, and a town below twenty houses takes a new human house; a
-  town whose humans have all gone is left to its deletion, never given to a newcomer. When no town has a place, the join founds one — three AI houses and the
+  no player has ever taken is a free place, and a town below twenty houses takes a new human
+  house; a town whose humans have all gone is left to its deletion, never given to a newcomer. When no town has a place, the join founds one — three AI houses and the
   newcomer's house — and names it by drawing from a list of places, each name used once per
   database.
 
@@ -36,10 +36,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   AI ever plays it. When the last human house goes, the town goes with it: the next player starts
   a new town, and only the sealed register and the book of kings cross. The scheduler applies the
   same silence rule on every pass, so a town with no player expires without waiting for a visit.
-  The deletion stays an edge rule. The reverse is asymmetric: a human arriving later chooses a
-  trade, starts with the same kit as the first house, and holds no seat or career. No AI is
-  created after the opening: the three AI houses are the opening composition. An absence must not
-  be a betrayal, and an arrival must not inherit a mayoralty.
+  The deletion stays an edge rule. A revoked token does not free the house: it waits for its
+  owner until the deletion, like a silent one, and no arrival inherits its purse, its stock or
+  its seat. The reverse is asymmetric: a human arriving later chooses a trade, starts with the
+  same kit as the first house, and holds no seat or career. No AI is created after the opening:
+  the three AI houses are the opening composition. An absence must not be a betrayal, and an
+  arrival must not inherit a mayoralty.
 
 - **The town is capped at twenty houses, three of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
@@ -190,7 +192,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   event carries its instant and its audience, the log has growing ids, and the filter by audience
   happens at read time. Each player holds a cursor outside the world, like the
   last visit. A read returns the newest fifty events since that cursor in detail, and counts the
-  rest by type and by refusal; raw events are dropped after a few days. The register carries what
+  rest by type and by refusal; raw events are dropped after a few days (not built yet). The register carries what
   lasts; the journal carries only what is new.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
