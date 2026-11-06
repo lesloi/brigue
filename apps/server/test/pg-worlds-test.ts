@@ -225,7 +225,58 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
     expect(read.journal.events).toEqual(events);
     expect(read.journal.lastId).toBeGreaterThan(0);
-    expect(read.journal.remaining).toBe(0);
+    expect(read.journal.counts).toEqual({});
+    expect(read.journal.refusals).toEqual({});
+  });
+
+  it('reads the newest page and counts the entries it leaves behind', async () => {
+    // Arrange: four town events, one private to another house, read two at a
+    // time for this house.
+    const world = createWorld(3);
+    await store.createIfAbsent(world, START, START);
+    const events: Event[] = [
+      {
+        type: 'market.bought',
+        audience: 'town',
+        at: 1,
+        houseId: 'brigue',
+        good: 'wool',
+        units: 1,
+        priceCents: 380,
+        totalCents: 380,
+      },
+      {
+        type: 'action.refused',
+        audience: { houseId: 'brigue' },
+        at: 2,
+        houseId: 'brigue',
+        action: 'market.buy',
+        reason: 'insufficient_funds',
+      },
+      {
+        type: 'market.sold',
+        audience: 'town',
+        at: 3,
+        houseId: 'caron',
+        good: 'cloth',
+        units: 2,
+        priceCents: 1240,
+        revenueCents: 2480,
+      },
+      { type: 'workshop.produced', audience: { houseId: 'brigue' }, at: 4, houseId: 'brigue', good: 'cloth', units: 3 },
+    ];
+
+    // Act
+    await store.withWorld(async (session) => {
+      await session.save(world, START, events);
+    });
+    const page = await store.withWorld(async (session) => session.eventsSince(0, 2, 'brigue'));
+
+    // Assert: the last two entries, in time order, and the earlier two counted
+    // — one of them a refusal, by reason.
+    expect(page.events).toEqual(events.slice(2));
+    expect(page.counts).toEqual({ 'market.bought': 1, 'action.refused': 1 });
+    expect(page.refusals).toEqual({ insufficient_funds: 1 });
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {

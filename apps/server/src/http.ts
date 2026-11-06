@@ -393,7 +393,12 @@ export function createApp(deps: AppDeps): Server {
     sendJson(response, 200, {
       world: projection,
       events: outcome.journal.events,
-      summary: { hours: caught.hours, skipped: caught.skipped, remaining: outcome.journal.remaining },
+      summary: {
+        hours: caught.hours,
+        skipped: caught.skipped,
+        counts: outcome.journal.counts,
+        refusals: outcome.journal.refusals,
+      },
       // The projected state, not the world: hashing the world would reveal the
       // seed and with it every future the town has not lived yet.
       stateHash: hashJson(projection),
@@ -438,7 +443,12 @@ export function createApp(deps: AppDeps): Server {
     sendJson(response, 200, {
       world: projection,
       events: outcome.journal.events,
-      summary: { hours: caught.hours, skipped: caught.skipped, remaining: outcome.journal.remaining },
+      summary: {
+        hours: caught.hours,
+        skipped: caught.skipped,
+        counts: outcome.journal.counts,
+        refusals: outcome.journal.refusals,
+      },
       stateHash: hashJson(projection),
       dev: true,
     });

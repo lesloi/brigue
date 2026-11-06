@@ -1,4 +1,6 @@
-import { isVisibleTo, type Action, type Event, type World } from '@brigue/core';
+import { isVisibleTo, type Action, type Event, type RefusalReason, type World } from '@brigue/core';
+
+import { countEvent, emptyTally } from './journal.ts';
 
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -22,12 +24,18 @@ export interface StoredAction {
   cancelledAt: Date | null;
 }
 
+export type JournalCounts = Partial<Record<Event['type'], number>>;
+export type JournalRefusals = Partial<Record<RefusalReason, number>>;
+
 export interface JournalPage {
+  /** The newest entries after the cursor, in the order they happened. */
   events: Event[];
-  /** The id to store as the reader's cursor. */
+  /** The newest entry's id: the cursor jumps over what the counts cover. */
   lastId: number;
-  /** How many more entries the reader may see beyond this page. */
-  remaining: number;
+  /** What the page left behind, counted by type. */
+  counts: JournalCounts;
+  /** The refused actions among them, counted by reason. */
+  refusals: JournalRefusals;
 }
 
 export interface WorldSnapshot {
@@ -146,12 +154,17 @@ export class MemoryWorldStore implements WorldStore {
           .map((action) => structuredClone(action)),
       eventsSince: async (afterId, limit, houseId) => {
         const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, houseId));
-        const page = visible.slice(0, limit);
+        const page = visible.slice(-limit);
+        const tally = emptyTally();
+
+        for (const entry of visible.slice(0, visible.length - page.length)) {
+          countEvent(tally, entry.event);
+        }
 
         return {
           events: page.map((entry) => structuredClone(entry.event)),
           lastId: page.at(-1)?.id ?? afterId,
-          remaining: visible.length - page.length,
+          ...tally,
         };
       },
       findAction: async (id) => {

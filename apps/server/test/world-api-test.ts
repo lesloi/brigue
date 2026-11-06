@@ -42,7 +42,8 @@ interface WorldBody {
   summary: {
     hours: number;
     skipped: number;
-    remaining: number;
+    counts: Partial<Record<string, number>>;
+    refusals: Partial<Record<string, number>>;
   };
   stateHash: string;
   dev?: boolean;
@@ -204,7 +205,7 @@ describe('GET /api/world', () => {
     expect(first.world.hour).toBe(1);
   });
 
-  it('catches a month up when the scheduler never ran, and summarises the rest', async () => {
+  it('catches a month up when the scheduler never ran, and counts what it left behind', async () => {
     // Arrange: the loop is down; a visit is the only thing that wakes the town.
     const harness = await start();
     await harness.lapse(30 * 24 * HOUR);
@@ -216,9 +217,11 @@ describe('GET /api/world', () => {
     expect(body.summary.hours).toBe(720);
     expect(body.summary.skipped).toBe(0);
     expect(body.world.hour).toBe(721);
-    // One page of the journal, with the rest counted rather than sent.
+    // The page is the newest fifty, in time order, up to the last hour lived.
     expect(body.events).toHaveLength(50);
-    expect(body.summary.remaining).toBeGreaterThan(0);
+    expect(Number(body.events.at(-1)?.at)).toBe(720);
+    // The rest is counted, not sent.
+    expect(body.summary.counts['market.bought']).toBeGreaterThan(50);
   });
 
   it('keeps the last hour on the following read that has nothing to play', async () => {
@@ -237,11 +240,12 @@ describe('GET /api/world', () => {
     expect(first.events.length).toBeGreaterThan(0);
     expect(second.events).toEqual([]);
     expect(second.summary.hours).toBe(0);
+    expect(second.summary.counts).toEqual({});
     expect(second.stateHash).toBe(first.stateHash);
   });
 
-  it('pages through a long journal without recounting it', async () => {
-    // Arrange: a month of entries behind one page of fifty.
+  it('shows the newest page and forgets what it counted', async () => {
+    // Arrange: a month of entries, far more than one page.
     const harness = await start();
     await harness.lapse(30 * 24 * HOUR);
     const first = await worldBody(harness);
@@ -249,14 +253,12 @@ describe('GET /api/world', () => {
     // Act
     const second = await worldBody(harness);
 
-    // Assert: the cursor moved to the end of the first page, so the second
-    // continues the journal and the count drops by exactly one page.
+    // Assert: the cursor jumped to the newest entry, so the counted entries
+    // are never shown again, and a second read has nothing left.
     expect(first.events).toHaveLength(50);
-    expect(second.events).toHaveLength(50);
-    expect(second.events).not.toEqual(first.events);
-    expect(Number(second.events[0]?.at ?? 0)).toBeGreaterThanOrEqual(Number(first.events.at(-1)?.at ?? 0));
+    expect(second.events).toEqual([]);
     expect(second.summary.hours).toBe(0);
-    expect(second.summary.remaining).toBe(first.summary.remaining - 50);
+    expect(second.summary.counts).toEqual({});
   });
 
   it('leaves a town one hour behind to the scheduler', async () => {

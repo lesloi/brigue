@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 
 import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
+import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
   DuplicateActionError,
   UnknownWorldError,
@@ -115,24 +116,35 @@ class PgWorldSession implements WorldSession {
   }
 
   async eventsSince(afterId: number, limit: number, houseId: string): Promise<JournalPage> {
+    // House-visible in one place, so the page and its counts cannot disagree.
+    const visible = `(audience = 'town' OR (audience = 'house' AND house_id = $2))`;
     const { rows } = await this.client.query(
       `SELECT id, at, audience, house_id, type, payload
        FROM events
-       WHERE id > $1 AND (audience = 'town' OR (audience = 'house' AND house_id = $2))
-       ORDER BY id
+       WHERE id > $1 AND ${visible}
+       ORDER BY id DESC
        LIMIT $3`,
       [afterId, houseId, limit],
     );
-    const events = rows.map(rowToEvent);
-    const lastId = events.length === 0 ? afterId : Number(rows[rows.length - 1].id);
-    const { rows: rest } = await this.client.query(
-      `SELECT count(*)::int AS remaining
-       FROM events
-       WHERE id > $1 AND (audience = 'town' OR (audience = 'house' AND house_id = $2))`,
-      [lastId, houseId],
-    );
+    // The query walks back from the newest; the page reads forward in time.
+    const newest = rows.slice().reverse();
+    const events = newest.map(rowToEvent);
+    const lastId = events.length === 0 ? afterId : Number(rows[0].id);
+    const tally = emptyTally();
 
-    return { events, lastId, remaining: rest[0]?.remaining ?? 0 };
+    if (newest.length > 0) {
+      const oldest = Number(newest[0].id);
+      const { rows: grouped } = await this.client.query(
+        `SELECT type, payload->>'reason' AS reason, count(*)::int AS count
+         FROM events
+         WHERE id > $1 AND id < $3 AND ${visible}
+         GROUP BY type, payload->>'reason'`,
+        [afterId, houseId, oldest],
+      );
+      foldGrouped(tally, grouped.map(toGroupedCount));
+    }
+
+    return { events, lastId, ...tally };
   }
 
   async findAction(id: string): Promise<StoredAction | null> {
@@ -524,6 +536,10 @@ function rowToEvent(row: {
   const audience = row.audience === 'house' ? { houseId: row.house_id ?? '' } : row.audience;
 
   return { ...row.payload, type: row.type, audience, at: row.at } as Event;
+}
+
+function toGroupedCount(row: { type: string; reason: string | null; count: number | string }): GroupedCount {
+  return { type: row.type, reason: row.reason, count: Number(row.count) };
 }
 
 function rowToStoredAction(row: {

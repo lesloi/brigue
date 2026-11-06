@@ -290,20 +290,37 @@ describe('lawAgeText', () => {
 });
 
 describe('catchUpText', () => {
-  it('agrees with a single hour and a single entry', () => {
-    expect(catchUpText({ hours: 1, skipped: 0, remaining: 0 })).toBe('1 heure vécue depuis votre dernière visite.');
-    expect(catchUpText({ hours: 1, skipped: 1, remaining: 1 })).toContain('1 heure sautée');
-    expect(catchUpText({ hours: 1, skipped: 1, remaining: 1 })).toContain('1 entrée de plus');
+  const nothing = { counts: {}, refusals: {} };
+
+  it('agrees with a single hour', () => {
+    expect(catchUpText({ hours: 1, skipped: 0, ...nothing })).toBe('1 heure vécue depuis votre dernière visite.');
+    expect(catchUpText({ hours: 1, skipped: 1, ...nothing })).toContain('1 heure sautée');
   });
 
   it('pluralises above one', () => {
-    expect(catchUpText({ hours: 2, skipped: 0, remaining: 0 })).toBe('2 heures vécues depuis votre dernière visite.');
-    expect(catchUpText({ hours: 0, skipped: 2, remaining: 3 })).toContain('2 heures sautées');
-    expect(catchUpText({ hours: 0, skipped: 2, remaining: 3 })).toContain('3 entrées de plus');
+    expect(catchUpText({ hours: 2, skipped: 0, ...nothing })).toBe('2 heures vécues depuis votre dernière visite.');
+    expect(catchUpText({ hours: 0, skipped: 2, ...nothing })).toContain('2 heures sautées');
+  });
+
+  it('counts what the page left behind, refusals by reason', () => {
+    // Act
+    const text = catchUpText({
+      hours: 30,
+      skipped: 0,
+      counts: { 'market.bought': 312, 'market.sold': 40, 'action.refused': 12 },
+      refusals: { insufficient_funds: 5, stock_full: 7 },
+    });
+
+    // Assert: the refusal is not also listed as a type.
+    expect(text).toContain('30 heures vécues');
+    expect(text).toContain('312 achats');
+    expect(text).toContain('40 ventes');
+    expect(text).toContain('12 refus (7 entrepôt plein, 5 fonds insuffisants)');
+    expect(text).not.toContain('12 refus,');
   });
 
   it('says nothing when the visit owes nothing', () => {
-    expect(catchUpText({ hours: 0, skipped: 0, remaining: 0 })).toBeNull();
+    expect(catchUpText({ hours: 0, skipped: 0, ...nothing })).toBeNull();
   });
 });
 

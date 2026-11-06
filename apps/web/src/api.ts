@@ -69,8 +69,10 @@ export interface WorldProjection {
 export interface CatchUpSummary {
   hours: number;
   skipped: number;
-  /** Journal entries beyond the page this read returned. */
-  remaining: number;
+  /** What the journal page left behind, counted by type. */
+  counts: Partial<Record<Event['type'], number>>;
+  /** The refused actions among them, counted by reason. */
+  refusals: Partial<Record<string, number>>;
 }
 
 export interface WorldResponse {
