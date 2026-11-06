@@ -32,9 +32,9 @@ Early, and in two layers.
 - **The code** implements the clock and the economy: one real hour is one town hour, twenty-four
   hours a year, and a scrutiny at the end of each year with every seat up; the town advances on a
   scheduler, and the two bells settle the prices. Five seats today, six goods in three chains, a
-  warehouse with a cap, a sale made by an action, and a trade chosen at creation. The raw
-  suppliers stay AI; humans replace only the finished trades when multiplayer lands. The town
-  lives in Postgres tables and its events in a journal. It is covered by tests, and it is the
+  warehouse with a cap, a sale made by an action, and a trade chosen at creation. The three
+  finished trades are AI houses; the raw goods are bought at the market. The town lives in
+  Postgres tables and its events in a journal. It is covered by tests, and it is the
   format that replaces the week-based one — it deletes the test towns and starts the version at
   one; no world is in production.
 

@@ -47,12 +47,10 @@ exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
 A human who arrives later chooses a trade and takes a free place with the same kit as the first
-house — the workshop, eight units of its input and a purse — and no seat or career. A human who
-arrives in a full town takes the place of a finished-trade AI house.
+house — the workshop, eight units of its input and a purse — and no seat or career.
 The three AI houses are the finished trades, one per trade. Wool, grain and wood are bought at
 the market at the current price: no house produces them, so every chain is fed whatever the
-town's trades. No AI is created after the opening; a freed finished-trade place waits for a
-human.
+town's trades. No AI is created or removed after the opening: the three are the composition.
 
 A player who stops playing leaves a **dormant** house. It keeps its money, its seat and its
 grudges, but nothing runs: the workshop is idle, the stock is still a target, and the holder

@@ -164,7 +164,7 @@ export const RULES = {
    */
   startingPurseCents: 45_000,
   startingInputUnits: 8,
-  /** The town stops growing here; a human arriving in a full town takes a finished trade. */
+  /** The town stops growing here; a newcomer with no place starts another town. */
   houseCap: 20,
   /**
    * A building site takes twelve hours. A hearing has no fixed delay: it is

@@ -36,11 +36,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   AI ever plays it. When the last human house goes, the town goes with it: the next player starts
   a new town, and only the sealed register and the book of kings cross. The scheduler applies the
   same silence rule on every pass, so a town with no player expires without waiting for a visit.
-  The deletion stays an edge rule. The reverse is asymmetric: when a full town
-  receives a human, the finished-trade AI house ends and the newcomer chooses a trade, starts with
-  the same kit as the first house, and holds no seat or career. No AI is created after the
-  opening: the three AI houses are the opening composition, and a freed finished-trade place
-  waits for a human. An absence must not be a betrayal, and an arrival must not inherit a mayoralty.
+  The deletion stays an edge rule. The reverse is asymmetric: a human arriving later chooses a
+  trade, starts with the same kit as the first house, and holds no seat or career. No AI is
+  created after the opening: the three AI houses are the opening composition. An absence must not
+  be a betrayal, and an arrival must not inherit a mayoralty.
 
 - **The town is capped at twenty houses, three of them AI.** The cap is what makes a seat scarce:
   twenty houses for twelve seats is a contest, and the council only becomes political once the
@@ -48,9 +47,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   seven of kingdom, shared across their towns: the higher the tier, the scarcer the seat. The AI
   cap keeps the town human: a shared world is mostly people, and a solo world is three AI and one
   human house. The town opens with three AI houses, one per finished trade; the raw goods come
-  at the market, not from a house. A human arriving when the town is full replaces a
-  finished-trade AI, and the AI count only falls as humans arrive; three is the opening
-  composition, not a floor. Revisit if a whole kingdom proves too small at twenty houses a town.
+  at the market, not from a house. The three are the composition: no AI is created or removed
+  after the opening. Revisit if a whole kingdom proves too small at twenty houses a town.
 
 - **The player chooses a trade at creation; the raw goods are bought at the market.** At the first launch,
   every player chooses one of three trades: weaver (wool into cloth),
@@ -64,7 +62,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   later joins with the same kit, in a free place; the first house's place, re-founded after a
   deletion, keeps it too. Wool, grain and wood are bought at the market at the current price; no
   house produces them, so every chain is fed whatever the town's trades. The three AI houses are
-  the finished trades, one per trade; a human replaces one when the town is full (not built yet).
+  the finished trades, one per trade.
   The price signal and the trade conversion of the residence work let a player move into a missing
   finished good; a town of weavers will have cheap cloth and dear bread, which is the market
   working, not a bug.
