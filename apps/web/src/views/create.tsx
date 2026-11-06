@@ -39,7 +39,7 @@ export function Create({ joining, error, resuming, resumeError, onChoose, onResu
         </div>
         {error !== null ? <p class="gate-error">{error}</p> : null}
         <details class="resume">
-          <summary>J'ai déjà un jeton</summary>
+          <summary>J'ai déjà un compte joueur</summary>
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -49,7 +49,7 @@ export function Create({ joining, error, resuming, resumeError, onChoose, onResu
               }
             }}
           >
-            <label for="resume-token">Votre jeton</label>
+            <label for="resume-token">Votre compte joueur</label>
             <input
               id="resume-token"
               name="token"

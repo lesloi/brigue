@@ -328,7 +328,7 @@ export function App() {
       await load();
     } catch (error) {
       setLostError(
-        error instanceof ApiError && error.status === 401 ? "Ce jeton n'est pas reconnu." : readMessageFor(error),
+        error instanceof ApiError && error.status === 401 ? "Ce compte n'est pas reconnu." : readMessageFor(error),
       );
     } finally {
       setResuming(false);
@@ -458,8 +458,8 @@ export function App() {
         <TokenDialog
           token={token}
           onClose={() => setToken(null)}
-          onCopied={() => showToast('Jeton copié.')}
-          onCopyError={() => showToast('Impossible de copier : sélectionnez le jeton à la main.', true)}
+          onCopied={() => showToast('Compte copié.')}
+          onCopyError={() => showToast('Impossible de copier : sélectionnez le compte à la main.', true)}
         />
       ) : null}
 
