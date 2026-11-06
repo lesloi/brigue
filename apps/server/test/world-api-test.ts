@@ -85,7 +85,7 @@ async function start(
   const world = options.world ?? town(20261031);
   await worlds.createIfAbsent(world, new Date(clock.now), new Date(clock.now));
 
-  const houses = options.houses ?? ['brigue'];
+  const houses = options.houses ?? ['leclerc'];
   const cookies: Record<string, string> = {};
   for (const houseId of houses) {
     const { token } = await issueToken(store, WORLD_ID, houseId, new Date(clock.now));
@@ -152,7 +152,7 @@ async function worldBodyAs(harness: Harness, houseId: string): Promise<WorldBody
 }
 
 function postAction(harness: Harness, body: unknown): Promise<Response> {
-  return postActionAs(harness, 'brigue', body);
+  return postActionAs(harness, 'leclerc', body);
 }
 
 function postActionAs(harness: Harness, houseId: string, body: unknown): Promise<Response> {
@@ -163,11 +163,11 @@ function postActionAs(harness: Harness, houseId: string, body: unknown): Promise
   });
 }
 
-function getPending(harness: Harness, houseId = 'brigue'): Promise<Response> {
+function getPending(harness: Harness, houseId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[houseId] as string } });
 }
 
-function cancelPending(harness: Harness, id: string, houseId = 'brigue'): Promise<Response> {
+function cancelPending(harness: Harness, id: string, houseId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions/${id}`, {
     method: 'DELETE',
     headers: { Cookie: harness.cookies[houseId] as string },
@@ -339,7 +339,7 @@ describe('GET /api/world', () => {
     const serialised = JSON.stringify(body);
 
     // Assert
-    expect(body.world.house.id).toBe('brigue');
+    expect(body.world.house.id).toBe('leclerc');
     expect(serialised).not.toContain('"seed"');
     expect(serialised).not.toContain('"rng"');
     expect(body.world.town.houses.every((house) => !('treasuryCents' in house))).toBe(true);
@@ -353,21 +353,21 @@ describe('GET /api/world', () => {
     // served from the stored events of the first.
     const world = town(20261031);
     world.houses.caron.controller = 'human';
-    const harness = await start({ world, houses: ['brigue', 'caron'] });
+    const harness = await start({ world, houses: ['leclerc', 'caron'] });
     await harness.advance(HOUR);
 
     // Act
-    const brigue = await worldBodyAs(harness, 'brigue');
+    const leclerc = await worldBodyAs(harness, 'leclerc');
     const caron = await worldBodyAs(harness, 'caron');
 
     // Assert
     const wagesOf = (body: WorldBody, houseId: string) =>
       body.events.filter((event) => event.type === 'house.wages_paid' && event.houseId === houseId);
 
-    expect(wagesOf(brigue, 'brigue').length).toBeGreaterThan(0);
-    expect(wagesOf(brigue, 'caron')).toEqual([]);
+    expect(wagesOf(leclerc, 'leclerc').length).toBeGreaterThan(0);
+    expect(wagesOf(leclerc, 'caron')).toEqual([]);
     expect(wagesOf(caron, 'caron').length).toBeGreaterThan(0);
-    expect(wagesOf(caron, 'brigue')).toEqual([]);
+    expect(wagesOf(caron, 'leclerc')).toEqual([]);
   });
 
   it('projects and ticks a town of twenty houses', async () => {
@@ -428,10 +428,10 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ id: ID_A, hour: 1, houseId: 'brigue' });
+    expect(await response.json()).toEqual({ id: ID_A, hour: 1, houseId: 'leclerc' });
     expect(body.events[0]).toMatchObject({
       type: 'market.bought',
-      houseId: 'brigue',
+      houseId: 'leclerc',
       good: 'wool',
       units: 2,
       priceCents: 380,
@@ -452,7 +452,7 @@ describe('POST /api/actions', () => {
     // Assert: two of the eight wool are sold, four are woven, two remain.
     expect(response.status).toBe(201);
     expect(body.events).toContainEqual(
-      expect.objectContaining({ type: 'market.sold', houseId: 'brigue', good: 'wool', units: 2, priceCents: 380 }),
+      expect.objectContaining({ type: 'market.sold', houseId: 'leclerc', good: 'wool', units: 2, priceCents: 380 }),
     );
     expect(body.world.house.stock.wool).toBe(2);
   });
@@ -548,7 +548,7 @@ describe('POST /api/actions', () => {
     // Assert
     expect(response.status).toBe(201);
     // The queued action plays on its own hour, not on the one before.
-    const buys = body.events.filter((event) => event.type === 'market.bought' && event.houseId === 'brigue');
+    const buys = body.events.filter((event) => event.type === 'market.bought' && event.houseId === 'leclerc');
     expect(buys).toHaveLength(1);
     expect(buys[0]).toMatchObject({ units: 3, at: 2 });
   });
@@ -564,7 +564,7 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(201);
-    expect(body.events[0]).toMatchObject({ type: 'market.bought', houseId: 'brigue' });
+    expect(body.events[0]).toMatchObject({ type: 'market.bought', houseId: 'leclerc' });
   });
 
   it('refuses an action on a world whose rules changed', async () => {
@@ -689,11 +689,11 @@ describe('the queued actions', () => {
 
   it("does not cancel another house's action", async () => {
     // Arrange
-    const harness = await start({ houses: ['brigue', 'caron'] });
+    const harness = await start({ houses: ['leclerc', 'caron'] });
     await postActionAs(harness, 'caron', buyWool(ID_A, 1, 2));
 
     // Act
-    const foreign = await cancelPending(harness, ID_A, 'brigue');
+    const foreign = await cancelPending(harness, ID_A, 'leclerc');
     const own = await cancelPending(harness, ID_A, 'caron');
 
     // Assert
@@ -847,7 +847,7 @@ describe('POST /api/dev/advance', () => {
 
     // Assert
     expect(advanced.events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', houseId: 'brigue', units: 10 }),
+      expect.objectContaining({ type: 'market.bought', houseId: 'leclerc', units: 10 }),
     );
   });
 

@@ -25,7 +25,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     expect(projection.hour).toBe(world.hour);
@@ -36,7 +36,7 @@ describe('the projection calendar', () => {
 
   it('tells the screen where the year stands without making it derive a date', () => {
     // Arrange: the first hour of the first year.
-    const projection = projectWorld(town(SEED), 'brigue', START);
+    const projection = projectWorld(town(SEED), 'leclerc', START);
 
     // Act and assert
     expect(projection.calendar).toEqual({
@@ -52,7 +52,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), 4);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert: twenty hours in progress plus the scrutiny hour itself.
     expect(projection.calendar.hourOfYear).toBe(5);
@@ -67,7 +67,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR - 1);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert: the scrutiny happens when this hour ends, like the next tick.
     expect(projection.calendar.hourOfYear).toBe(HOURS_PER_YEAR);
@@ -80,7 +80,7 @@ describe('the projection calendar', () => {
     const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops).toEqual([
@@ -99,10 +99,10 @@ describe('the projection calendar', () => {
   it('carries zero input for a raw workshop', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.brigue.workshops = [{ good: 'wool', level: 2, workers: 1 }];
+    world.houses.leclerc.workshops = [{ good: 'wool', level: 2, workers: 1 }];
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops[0]).toEqual({
@@ -119,10 +119,10 @@ describe('the projection calendar', () => {
   it('scales the weekly figures with the level and the workers', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.brigue.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
+    world.houses.leclerc.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops[0]).toEqual({
@@ -141,11 +141,11 @@ describe('the projection calendar', () => {
     const world = town(SEED);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert: the client sums nothing and derives no capacity.
     expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
-    expect(projection.house.stockUnits).toBe(stockUnits(world.houses.brigue));
+    expect(projection.house.stockUnits).toBe(stockUnits(world.houses.leclerc));
     expect(projection.house.stockUnits).toBe(8);
     expect(projection.house.stockCapacityUnits).toBe(RULES.stockCapacityUnits);
   });
@@ -155,7 +155,7 @@ describe('the projection calendar', () => {
     const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     for (const good of GOODS) {
@@ -170,7 +170,7 @@ describe('the projection calendar', () => {
     delete world.marketHistory;
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     expect(projection.town.marketHistory).toEqual({});
@@ -182,7 +182,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(world, 'brigue', START);
+    const projection = projectWorld(world, 'leclerc', START);
 
     // Assert
     expect(projection.calendar.hourOfYear).toBe(1);

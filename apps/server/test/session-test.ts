@@ -73,13 +73,13 @@ function cookiePair(response: Response): string {
 describe('the token endpoint', () => {
   it('opens the house of a valid token and sets an httpOnly session cookie', async () => {
     const harness = await start();
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
 
     const response = await login(harness, token);
     const cookie = cookieOf(response) as string;
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ worldId: 'saint-aubin', houseId: 'brigue' });
+    expect(await response.json()).toEqual({ worldId: 'saint-aubin', houseId: 'leclerc' });
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('Secure');
     expect(cookie).toContain('SameSite=Strict');
@@ -90,7 +90,7 @@ describe('the token endpoint', () => {
 
   it('answers a revoked token exactly like an unknown one: 401 and nothing else', async () => {
     const harness = await start();
-    const { token, player } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const { token, player } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
     await harness.store.revoke(player.tokenHash, new Date());
 
     const unknown = await login(harness, `bgk_${'x'.repeat(43)}`);
@@ -137,7 +137,7 @@ describe('the token endpoint', () => {
 
   it('is rate limited per client, without touching another client', async () => {
     const harness = await start({ trustProxy: true, sessionAttemptsPerMinute: 2 });
-    const valid = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const valid = await issueToken(harness.store, 'saint-aubin', 'leclerc');
     const limited = await (async () => {
       expect((await login(harness, 'nope', '203.0.113.7')).status).toBe(401);
       expect((await login(harness, 'nope', '203.0.113.7')).status).toBe(401);
@@ -250,7 +250,7 @@ describe('joining the town', () => {
     // Arrange
     const harness = await start();
     await harness.worlds.createIfAbsent(town(7, 'baker'), new Date(), new Date());
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
 
     // Act
     const response = await login(harness, token);
@@ -337,7 +337,7 @@ describe('the session cookie', () => {
 
   it('revokes the token when the session is closed', async () => {
     const harness = await start();
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
     const opened = await login(harness, token);
 
     const closed = await fetch(`${harness.url}/api/session`, {
@@ -356,7 +356,7 @@ describe('the session cookie', () => {
 
   it('drops Secure only when the server is explicitly told to', async () => {
     const harness = await start({ secureCookies: false });
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
 
     const response = await login(harness, token);
 
@@ -367,7 +367,7 @@ describe('the session cookie', () => {
 describe('the logs', () => {
   it('never contain a token, whether it was accepted, unknown or revoked', async () => {
     const harness = await start();
-    const { token, player } = await issueToken(harness.store, 'saint-aubin', 'brigue');
+    const { token, player } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
 
     await login(harness, token);
     await login(harness, `bgk_${'x'.repeat(43)}`);

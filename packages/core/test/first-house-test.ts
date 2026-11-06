@@ -13,7 +13,7 @@ import {
 } from '../src/index.ts';
 import { tick } from './helpers.ts';
 
-const IDENTITY: FirstHouseIdentity = { id: 'brigue', houseName: 'Brigue', personName: 'Colin Brigue' };
+const IDENTITY: FirstHouseIdentity = { id: 'leclerc', houseName: 'Leclerc', personName: 'Colin Leclerc' };
 
 describe('the first house', () => {
   it('starts a weaver with its chain and input', () => {

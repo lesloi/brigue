@@ -48,7 +48,7 @@ function player(tokenHash: string): Player {
   return {
     tokenHash,
     worldId: 'saint-aubin',
-    houseId: 'brigue',
+    houseId: 'leclerc',
     createdAt: at,
     lastSeenAt: at,
     revokedAt: null,

@@ -30,7 +30,7 @@ import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
 import { catchUpText, countdownText, lawAgeText, scrutinyText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
-  brigue: 'Brigue',
+  leclerc: 'Leclerc',
   caron: 'Caron',
   herse: 'de Herse',
 };
@@ -45,7 +45,7 @@ describe('eventLine', () => {
       audience: 'town',
 
       at: 0,
-      houseId: 'brigue',
+      houseId: 'leclerc',
       good: 'wool',
       units: 10,
       priceCents: 380,
@@ -53,7 +53,7 @@ describe('eventLine', () => {
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('loss');
@@ -76,7 +76,7 @@ describe('eventLine', () => {
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.text).toContain('Caron a acheté 1 laine');
@@ -86,16 +86,16 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'action.refused',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
 
       at: 0,
       action: 'market.buy',
-      houseId: 'brigue',
+      houseId: 'leclerc',
       reason: 'insufficient_funds',
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('refusal');
@@ -106,10 +106,10 @@ describe('eventLine', () => {
     // Arrange
     const own: Event = {
       type: 'house.penniless',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
 
       at: 0,
-      houseId: 'brigue',
+      houseId: 'leclerc',
       shortfallCents: 240,
     };
     const other: Event = {
@@ -122,8 +122,8 @@ describe('eventLine', () => {
     };
 
     // Act
-    const ownLine = eventLine(own, 'brigue', nameOf);
-    const otherLine = eventLine(other, 'brigue', nameOf);
+    const ownLine = eventLine(own, 'leclerc', nameOf);
+    const otherLine = eventLine(other, 'leclerc', nameOf);
 
     // Assert
     expect(ownLine.text).toBe("Vous n'avez pas pu payer 2,4 écus de gages.");
@@ -134,16 +134,16 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.produced',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
 
       at: 0,
-      houseId: 'brigue',
+      houseId: 'leclerc',
       good: 'cloth',
       units: 4,
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('gain');
@@ -154,16 +154,16 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.overflow',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
 
       at: 0,
-      houseId: 'brigue',
+      houseId: 'leclerc',
       good: 'wool',
       refusedUnits: 3,
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
@@ -173,16 +173,16 @@ describe('eventLine', () => {
     // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
     const event: Event = {
       type: 'council.campaigned',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
       at: 0,
-      houseId: 'brigue',
+      houseId: 'leclerc',
       seatId: 'maire',
       favourSpent: 3,
       countsAt: 24,
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.tone).toBe('council');
@@ -194,17 +194,17 @@ describe('eventLine', () => {
     // Arrange: heard three hours after it fell due.
     const event: Event = {
       type: 'engagement.resolved',
-      audience: { houseId: 'brigue' },
+      audience: { houseId: 'leclerc' },
       at: 8,
       engagementId: 'e1',
       kind: 'hearing',
-      houseId: 'brigue',
+      houseId: 'leclerc',
       dueAt: 5,
       resolvedAt: 8,
     };
 
     // Act
-    const line = eventLine(event, 'brigue', nameOf);
+    const line = eventLine(event, 'leclerc', nameOf);
 
     // Assert
     expect(line.text).toContain("L'audience de Vous est tenue");
@@ -356,7 +356,7 @@ describe('the ledger filter', () => {
       audience: 'town',
 
       at: 0,
-      houseId: 'brigue',
+      houseId: 'leclerc',
       good: 'cloth',
       units: 2,
       priceCents: 1240,
@@ -375,23 +375,23 @@ describe('the ledger filter', () => {
     },
     { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerHouseId: 'caron', votes: {} },
     { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
-    { type: 'house.wages_paid', audience: { houseId: 'brigue' }, at: 0, houseId: 'brigue', amountCents: 240 },
+    { type: 'house.wages_paid', audience: { houseId: 'leclerc' }, at: 0, houseId: 'leclerc', amountCents: 240 },
   ];
 
   it('keeps the house and the town politics by default', () => {
     // Act
-    const filtered = ledgerEvents(events, 'brigue', 'house');
+    const filtered = ledgerEvents(events, 'leclerc', 'house');
 
     // Assert
     expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.wages_paid']);
   });
 
   it('keeps only the prices in the prices cut', () => {
-    expect(ledgerEvents(events, 'brigue', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
+    expect(ledgerEvents(events, 'leclerc', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
   });
 
   it('keeps everything in the full cut', () => {
-    expect(ledgerEvents(events, 'brigue', 'all')).toEqual(events);
+    expect(ledgerEvents(events, 'leclerc', 'all')).toEqual(events);
   });
 });
 

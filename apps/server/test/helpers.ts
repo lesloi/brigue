@@ -15,9 +15,9 @@ export function tick(world: World, actions: readonly Action[] = []): { world: Wo
 
 /** The fixture identity the tests play; production draws its own. */
 export const TEST_FIRST_HOUSE: FirstHouseIdentity = {
-  id: 'brigue',
-  houseName: 'Brigue',
-  personName: 'Colin Brigue',
+  id: 'leclerc',
+  houseName: 'Leclerc',
+  personName: 'Colin Leclerc',
 };
 
 /** The playable town: the AI houses plus the first player's house. */

@@ -21,7 +21,7 @@ describe('the token', () => {
 
   it('is stored as a hash, never as itself', async () => {
     const store = new MemoryPlayerStore();
-    const { token } = await issueToken(store, 'saint-aubin', 'brigue');
+    const { token } = await issueToken(store, 'saint-aubin', 'leclerc');
 
     expect(await store.findByTokenHash(token)).toBeNull();
     expect(await store.findByTokenHash(hashToken(token))).not.toBeNull();
@@ -34,7 +34,7 @@ describe('the binding', () => {
     const store = new MemoryPlayerStore();
     const at = new Date('2026-10-31T12:00:00Z');
     const later = new Date('2026-11-01T12:00:00Z');
-    const { player } = await issueToken(store, 'saint-aubin', 'brigue', at);
+    const { player } = await issueToken(store, 'saint-aubin', 'leclerc', at);
 
     // Act
     await store.touch(player.tokenHash, later);
@@ -46,23 +46,23 @@ describe('the binding', () => {
 
   it('opens exactly one house', async () => {
     const store = new MemoryPlayerStore();
-    const brigue = await issueToken(store, 'saint-aubin', 'brigue');
+    const leclerc = await issueToken(store, 'saint-aubin', 'leclerc');
     const caron = await issueToken(store, 'saint-aubin', 'caron');
 
-    expect(await authenticate(store, brigue.token)).toMatchObject({ worldId: 'saint-aubin', houseId: 'brigue' });
+    expect(await authenticate(store, leclerc.token)).toMatchObject({ worldId: 'saint-aubin', houseId: 'leclerc' });
     expect(await authenticate(store, caron.token)).toMatchObject({ worldId: 'saint-aubin', houseId: 'caron' });
   });
 
   it.each([undefined, '', 'bgk_', 'not-a-token', `bgk_${'x'.repeat(43)}`])('refuses %j', async (token) => {
     const store = new MemoryPlayerStore();
-    await issueToken(store, 'saint-aubin', 'brigue');
+    await issueToken(store, 'saint-aubin', 'leclerc');
 
     expect(await authenticate(store, token)).toBeNull();
   });
 
   it('refuses a revoked token', async () => {
     const store = new MemoryPlayerStore();
-    const { token, player } = await issueToken(store, 'saint-aubin', 'brigue');
+    const { token, player } = await issueToken(store, 'saint-aubin', 'leclerc');
 
     await store.revoke(player.tokenHash, new Date('2026-10-31T12:00:00Z'));
 
@@ -71,12 +71,12 @@ describe('the binding', () => {
 
   it('holds one live token per house, and allows a new one after revoke', async () => {
     const store = new MemoryPlayerStore();
-    const first = await issueToken(store, 'saint-aubin', 'brigue');
+    const first = await issueToken(store, 'saint-aubin', 'leclerc');
 
-    await expect(issueToken(store, 'saint-aubin', 'brigue')).rejects.toThrow();
+    await expect(issueToken(store, 'saint-aubin', 'leclerc')).rejects.toThrow();
     await store.revoke(first.player.tokenHash, new Date());
 
-    await expect(issueToken(store, 'saint-aubin', 'brigue')).resolves.toBeDefined();
+    await expect(issueToken(store, 'saint-aubin', 'leclerc')).resolves.toBeDefined();
   });
 
   it('keeps the binding outside the world it names', async () => {

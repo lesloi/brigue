@@ -35,9 +35,9 @@ function play(world: World, hours: number, actionAt?: (hour: number) => Action[]
 }
 
 function scripted(hour: number): Action[] {
-  if (hour === 3) return [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 5 }];
-  if (hour === 7) return [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }];
-  if (hour === 11) return [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 20 }];
+  if (hour === 3) return [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 5 }];
+  if (hour === 7) return [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'maire' }];
+  if (hour === 11) return [{ type: 'market.buy', houseId: 'leclerc', good: 'cloth', units: 20 }];
   return [];
 }
 
@@ -60,26 +60,26 @@ describe('the simulation core', () => {
     const world = town(SEED);
     const before = canonicalJson(world);
 
-    tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 2 }]);
+    tick(world, [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 2 }]);
 
     expect(canonicalJson(world)).toBe(before);
   });
 
   it('refuses an action the house cannot pay for, and says so', () => {
     const world = town(SEED);
-    const refused = tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'cloth', units: 10_000 }]);
+    const refused = tick(world, [{ type: 'market.buy', houseId: 'leclerc', good: 'cloth', units: 10_000 }]);
     const control = tick(world, []);
 
     expect(refused.events).toContainEqual(
       expect.objectContaining({
         type: 'action.refused',
-        audience: { houseId: 'brigue' },
+        audience: { houseId: 'leclerc' },
         action: 'market.buy',
-        houseId: 'brigue',
+        houseId: 'leclerc',
         reason: 'insufficient_funds',
       }),
     );
-    expect(refused.world.houses.brigue.treasuryCents).toBe(control.world.houses.brigue.treasuryCents);
+    expect(refused.world.houses.leclerc.treasuryCents).toBe(control.world.houses.leclerc.treasuryCents);
   });
 
   it('refuses an action from a house that does not exist instead of throwing', () => {
@@ -89,7 +89,7 @@ describe('the simulation core', () => {
   });
 
   it('refuses an action type it does not know, instead of skipping it', () => {
-    const malformed = { type: 'market.invent', houseId: 'brigue', good: 'wool' } as unknown as Action;
+    const malformed = { type: 'market.invent', houseId: 'leclerc', good: 'wool' } as unknown as Action;
     const { events } = tick(town(SEED), [malformed]);
 
     expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_action', houseId: 'unknown' });
@@ -98,10 +98,10 @@ describe('the simulation core', () => {
   it('credits the output to the stock instead of the purse', () => {
     const { world } = tick(town(SEED));
 
-    expect(world.houses.brigue.stock.cloth).toBe(4);
-    expect(world.houses.brigue.stock.wool).toBe(4);
+    expect(world.houses.leclerc.stock.cloth).toBe(4);
+    expect(world.houses.leclerc.stock.wool).toBe(4);
     // The first house is human: its stock is not sold, and production pays no coin.
-    expect(world.houses.brigue.treasuryCents).toBe(117340 - 240);
+    expect(world.houses.leclerc.treasuryCents).toBe(117340 - 240);
   });
 
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
@@ -110,18 +110,18 @@ describe('the simulation core', () => {
     expect(first.events).toContainEqual(
       expect.objectContaining({
         type: 'workshop.idle',
-        audience: { houseId: 'brigue' },
-        houseId: 'brigue',
+        audience: { houseId: 'leclerc' },
+        houseId: 'leclerc',
         good: 'cloth',
         input: 'wool',
         missingUnits: 4,
       }),
     );
 
-    const { events } = tick(first.world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 4 }]);
+    const { events } = tick(first.world, [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 4 }]);
 
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'workshop.produced', houseId: 'brigue', good: 'cloth', units: 4 }),
+      expect.objectContaining({ type: 'workshop.produced', houseId: 'leclerc', good: 'cloth', units: 4 }),
     );
   });
 
@@ -193,19 +193,19 @@ describe('the simulation core', () => {
     const after = tick(before).world;
 
     // Assert
-    expect(before.people['person-brigue'].age).toBe(20);
-    expect(after.people['person-brigue'].age).toBe(21);
+    expect(before.people['person-leclerc'].age).toBe(20);
+    expect(after.people['person-leclerc'].age).toBe(21);
   });
 
   it('seats a person of the house and refuses another house’s person', () => {
     // Arrange
     const world = town(SEED);
-    const brigue = world.people['person-brigue'];
+    const leclerc = world.people['person-leclerc'];
     const caron = world.people['person-caron'];
 
     // Act and assert
-    expect(takeSeat(world, 'brigue', caron.id)).toEqual({ ok: false, reason: 'person_of_another_house' });
-    expect(takeSeat(world, 'brigue', brigue.id)).toEqual({ ok: true, seat: { personId: brigue.id } });
+    expect(takeSeat(world, 'leclerc', caron.id)).toEqual({ ok: false, reason: 'person_of_another_house' });
+    expect(takeSeat(world, 'leclerc', leclerc.id)).toEqual({ ok: true, seat: { personId: leclerc.id } });
   });
 
   it('keeps every filled seat on a living person of the house that holds it', () => {
@@ -226,11 +226,11 @@ describe('the simulation core', () => {
 
   it('lodges a candidacy at once and the noon bell closes it for the scrutiny', () => {
     // Arrange: lodged during hour one, before any noon.
-    const queued = tick(town(SEED), [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }]);
+    const queued = tick(town(SEED), [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'maire' }]);
 
     // Assert: the bonus is in the open map at once, and the event says which
     // scrutiny it counts for.
-    expect(queued.world.campaigns.maire).toEqual({ brigue: RULES.campaignVoteBonus });
+    expect(queued.world.campaigns.maire).toEqual({ leclerc: RULES.campaignVoteBonus });
     expect(queued.world.engagements).toEqual([]);
     expect(queued.events).toContainEqual(
       expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', countsAt: HOURS_PER_YEAR }),
@@ -242,7 +242,7 @@ describe('the simulation core', () => {
 
     // Assert: the bell closes the open map into the one the scrutiny reads.
     expect(beforeNoon.closedCampaigns.maire).toBeUndefined();
-    expect(afterNoon.closedCampaigns.maire).toEqual({ brigue: RULES.campaignVoteBonus });
+    expect(afterNoon.closedCampaigns.maire).toEqual({ leclerc: RULES.campaignVoteBonus });
     expect(afterNoon.campaigns.maire).toBeUndefined();
   });
 
@@ -251,13 +251,13 @@ describe('the simulation core', () => {
     const world = { ...town(SEED), hour: HOURS_PER_YEAR / 2 + 1 };
 
     // Act
-    const queued = tick(world, [{ type: 'council.campaign', houseId: 'brigue', seatId: 'maire' }]);
+    const queued = tick(world, [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'maire' }]);
 
     // Assert: it waits for the scrutiny after the coming one.
     expect(queued.events).toContainEqual(
       expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', countsAt: HOURS_PER_YEAR * 2 }),
     );
-    expect(queued.world.campaigns.maire).toEqual({ brigue: RULES.campaignVoteBonus });
+    expect(queued.world.campaigns.maire).toEqual({ leclerc: RULES.campaignVoteBonus });
     expect(queued.world.closedCampaigns.maire).toBeUndefined();
   });
 
@@ -273,7 +273,7 @@ describe('the simulation core', () => {
     ] as const) {
       // Arrange: an engagement due at that hour.
       const world = town(SEED);
-      world.engagements = [{ id: `engagement-${kind}`, kind, houseId: 'brigue', dueAt }];
+      world.engagements = [{ id: `engagement-${kind}`, kind, houseId: 'leclerc', dueAt }];
 
       // Act: run to the due hour, then one tick more.
       const early = play(world, dueAt - world.hour);
@@ -293,7 +293,7 @@ describe('the simulation core', () => {
     // moves only the wall clock, so this is the defensive path, not the normal one.
     const world = town(SEED);
     world.hour = 900;
-    world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'brigue', dueAt: 800 }];
+    world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'leclerc', dueAt: 800 }];
 
     // Act
     const { world: after, events } = tick(world);
@@ -315,7 +315,7 @@ describe('the simulation core', () => {
     // Arrange: both worlds reach the same scrutiny, one with a campaign for the treasury.
     const control = play(town(SEED), HOURS_PER_YEAR);
     const campaigned = play(town(SEED), HOURS_PER_YEAR, (hour) =>
-      hour === 0 ? [{ type: 'council.campaign', houseId: 'brigue', seatId: 'tresorier' }] : [],
+      hour === 0 ? [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'tresorier' }] : [],
     );
 
     const votesOf = (events: Event[], seatId: string) =>
@@ -331,42 +331,42 @@ describe('the simulation core', () => {
 
   it('turns unpaid wages into a debt instead of erasing them', () => {
     const world = town(SEED);
-    world.houses.brigue.treasuryCents = 0;
-    world.houses.brigue.stock = {};
-    world.houses.brigue.workshops = [{ good: 'wool', level: 0, workers: 3 }];
+    world.houses.leclerc.treasuryCents = 0;
+    world.houses.leclerc.stock = {};
+    world.houses.leclerc.workshops = [{ good: 'wool', level: 0, workers: 3 }];
 
     const { world: after, events } = tick(world);
 
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'house.penniless',
-        audience: { houseId: 'brigue' },
-        houseId: 'brigue',
+        audience: { houseId: 'leclerc' },
+        houseId: 'leclerc',
         shortfallCents: 360,
       }),
     );
-    expect(after.houses.brigue.debtCents).toBe(360);
+    expect(after.houses.leclerc.debtCents).toBe(360);
   });
 
   it('refuses an action from a dormant house instead of running it', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.brigue.dormant = true;
+    world.houses.leclerc.dormant = true;
 
     // Act
-    const { world: after, events } = tick(world, [{ type: 'market.buy', houseId: 'brigue', good: 'wool', units: 1 }]);
+    const { world: after, events } = tick(world, [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 1 }]);
 
     // Assert
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'action.refused',
-        audience: { houseId: 'brigue' },
+        audience: { houseId: 'leclerc' },
         action: 'market.buy',
-        houseId: 'brigue',
+        houseId: 'leclerc',
         reason: 'dormant_house',
       }),
     );
-    expect(after.houses.brigue.stock.wool).toBe(8);
+    expect(after.houses.leclerc.stock.wool).toBe(8);
   });
 
   it('keeps a dormant house’s seat, stops its trade and keeps it out of the vote', () => {
@@ -407,14 +407,14 @@ describe('the simulation core', () => {
     const { events } = tick(town(SEED));
 
     // Act
-    const forBrigue = visibleTo(events, 'brigue');
+    const forLeclerc = visibleTo(events, 'leclerc');
     const forCaron = visibleTo(events, 'caron');
 
     // Assert
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'house.wages_paid', houseId: 'caron', audience: { houseId: 'caron' } }),
     );
-    expect(forBrigue.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toEqual([]);
+    expect(forLeclerc.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toEqual([]);
     expect(forCaron.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toHaveLength(1);
   });
 

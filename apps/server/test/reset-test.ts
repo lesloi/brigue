@@ -28,16 +28,16 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     // Arrange: a bound player, a sealed season and a town that should not
     // survive.
     const tokenHash = 'a'.repeat(64);
-    await pool.query(`INSERT INTO players (token_hash, world_id, house_id) VALUES ($1, 'saint-aubin', 'brigue')`, [
+    await pool.query(`INSERT INTO players (token_hash, world_id, house_id) VALUES ($1, 'saint-aubin', 'leclerc')`, [
       tokenHash,
     ]);
     await pool.query(
       `INSERT INTO archive_houses (season, name, prestige, offices_held, title, generations, wealth_cents)
-       VALUES (1, 'Brigue', 12, 3, 'roturier', 2, 5000)`,
+       VALUES (1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
     );
     await pool.query(
       `INSERT INTO kings (season, crowned_at, token_hash, house_name, person_name)
-       VALUES (1, 12, $1, 'Brigue', 'Aubin')`,
+       VALUES (1, 12, $1, 'Leclerc', 'Aubin')`,
       [tokenHash],
     );
     await pool.query(
