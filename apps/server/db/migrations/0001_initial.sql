@@ -7,9 +7,9 @@
 -- migrations were deleted with their test towns, so this file starts at one.
 
 -- A token bound to a house, outside the world: the world is versioned and
--- replayed, a login is not a game rule, and a format change must never lock a
--- player out. A player survives a reset; the house does not, which is why
--- `house_id` may be empty for exactly that moment.
+-- replayed, a login is not a game rule. A season's seal keeps the player and
+-- takes the house, which is why `house_id` may be empty for exactly that
+-- moment; until the seal exists, a reset clears the tokens with the town.
 CREATE TABLE players (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
   world_id text NOT NULL CHECK (length(world_id) > 0),
