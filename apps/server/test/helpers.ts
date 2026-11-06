@@ -1,5 +1,5 @@
-import { advance, createWorld, withFounder } from '@brigue/core';
-import type { Action, Event, FounderIdentity, Trade, World } from '@brigue/core';
+import { advance, createWorld, withFirstHouse } from '@brigue/core';
+import type { Action, Event, FirstHouseIdentity, Trade, World } from '@brigue/core';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -14,7 +14,7 @@ export function tick(world: World, actions: readonly Action[] = []): { world: Wo
 }
 
 /** The fixture identity the tests play; production draws its own. */
-export const TEST_FOUNDER: FounderIdentity = {
+export const TEST_FIRST_HOUSE: FirstHouseIdentity = {
   id: 'brigue',
   houseName: 'Brigue',
   personName: 'Colin Brigue',
@@ -22,5 +22,5 @@ export const TEST_FOUNDER: FounderIdentity = {
 
 /** The playable town: the AI houses plus the first player's house. */
 export function town(seed: number, trade: Trade = 'weaver'): World {
-  return withFounder(createWorld(seed), trade, TEST_FOUNDER);
+  return withFirstHouse(createWorld(seed), trade, TEST_FIRST_HOUSE);
 }

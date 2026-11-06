@@ -12,9 +12,9 @@ export {
   type TickResult,
 } from './tick.ts';
 export {
-  createFounder,
+  createFirstHouse,
   createWorld,
-  withFounder,
+  withFirstHouse,
   firstHouseOf,
   FORMAT_VERSION,
   GOODS,
@@ -33,8 +33,8 @@ export {
   type Controller,
   type Engagement,
   type EngagementKind,
-  type Founder,
-  type FounderIdentity,
+  type FirstHouse,
+  type FirstHouseIdentity,
   type GoodId,
   type House,
   type Law,

@@ -100,7 +100,7 @@ describe('the simulation core', () => {
 
     expect(world.houses.brigue.stock.cloth).toBe(4);
     expect(world.houses.brigue.stock.wool).toBe(4);
-    // The founder is human: its stock is not sold, and production pays no coin.
+    // The first house is human: its stock is not sold, and production pays no coin.
     expect(world.houses.brigue.treasuryCents).toBe(117340 - 240);
   });
 
@@ -186,7 +186,7 @@ describe('the simulation core', () => {
   });
 
   it('advances a living person one year per twenty-four ticks', () => {
-    // Arrange: the founder enters at twenty.
+    // Arrange: the first house enters at twenty.
     const before = play(town(SEED), HOURS_PER_YEAR - 1).world;
 
     // Act

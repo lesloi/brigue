@@ -158,12 +158,12 @@ export const FORMAT_VERSION = 1;
 export const RULES = {
   version: 1,
   /**
-   * The founder's starting kit: the first house must buy its input and pay a
+   * The first house's starting kit: the first house must buy its input and pay a
    * few hours of wages before its first sale. Every later arrival starts with
    * its workshop and nothing else.
    */
-  founderTreasuryCents: 117340,
-  founderInputUnits: 8,
+  startingPurseCents: 117340,
+  startingInputUnits: 8,
   /**
    * A building site takes twelve hours. A hearing has no fixed delay: it is
    * held at the next noon sitting after the complaint.
@@ -251,13 +251,13 @@ export const HOURS_PER_YEAR = 24;
  */
 export const PRICE_HISTORY_BELLS = HOURS_PER_YEAR;
 
-export interface Founder {
+export interface FirstHouse {
   house: House;
   person: Person;
 }
 
 /** The name and the id the first house arrives with, drawn before it joins. */
-export interface FounderIdentity {
+export interface FirstHouseIdentity {
   id: string;
   houseName: string;
   personName: string;
@@ -266,11 +266,11 @@ export interface FounderIdentity {
 /**
  * The house a new player starts with: the workshop of its trade, a little
  * money, its first input, no seat and no career. The town is built without it;
- * `withFounder` adds it when the first player joins, and puts it back into a
- * freed place so a deleted founder cannot brick the join path. Its name is an
+ * `withFirstHouse` adds it when the first player joins, and puts it back into a
+ * freed place so a deleted first house cannot brick the join path. Its name is an
  * input: the server draws it, and nothing about the first house is fixed.
  */
-export function createFounder(trade: Trade, identity: FounderIdentity): Founder {
+export function createFirstHouse(trade: Trade, identity: FirstHouseIdentity): FirstHouse {
   const chain = TRADE_CHAINS[trade];
 
   return {
@@ -278,14 +278,14 @@ export function createFounder(trade: Trade, identity: FounderIdentity): Founder 
       id: identity.id,
       name: identity.houseName,
       controller: 'human',
-      treasuryCents: RULES.founderTreasuryCents,
+      treasuryCents: RULES.startingPurseCents,
       debtCents: 0,
       favour: 50,
       prestige: 50,
       career: 0,
       dormant: false,
       workshops: [{ good: chain.output, level: 2, workers: 2 }],
-      stock: { [chain.input]: RULES.founderInputUnits },
+      stock: { [chain.input]: RULES.startingInputUnits },
     },
     person: {
       id: `person-${identity.id}`,
@@ -300,19 +300,19 @@ export function createFounder(trade: Trade, identity: FounderIdentity): Founder 
 
 /**
  * The first house: the town is built without it, and it is added when the first
- * player joins — or when a deleted founder's place waits for a human. It is
+ * player joins — or when a deleted first house's place waits for a human. It is
  * never a political role, and adding it twice is a no-op.
  *
- * A world with a human house and no founder is a multiplayer state this format
- * does not produce: here the only human is the founder.
+ * A world whose only human house is not this one is a multiplayer state this
+ * format does not produce: here the only human house is the first house.
  */
-export function withFounder(world: World, trade: Trade, identity: FounderIdentity): World {
+export function withFirstHouse(world: World, trade: Trade, identity: FirstHouseIdentity): World {
   if (firstHouseOf(world) !== undefined) {
     return world;
   }
 
   const next = structuredClone(world);
-  const { house, person } = createFounder(trade, identity);
+  const { house, person } = createFirstHouse(trade, identity);
   next.houses[house.id] = house;
   next.people[person.id] = person;
 

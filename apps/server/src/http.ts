@@ -9,7 +9,7 @@ import {
   PACING,
   RULES,
   TRADES,
-  withFounder,
+  withFirstHouse,
   WorldVersionError,
   type Trade,
   type World,
@@ -18,7 +18,7 @@ import {
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
-import { drawFounderIdentity } from './names.ts';
+import { drawFirstHouseIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
@@ -300,14 +300,14 @@ export function createApp(deps: AppDeps): Server {
     try {
       // One town, created by the first player; the next ones find it and only
       // take the house binding. The town is built from its seed, and the first
-      // house — the founder's place — is drawn when its player joins.
+      // house — the first house's place — is drawn when its player joins.
       const town = createWorld(randomSeed());
-      await deps.worlds.createIfAbsent(withFounder(town, trade, drawFounderIdentity(town)), at, at);
+      await deps.worlds.createIfAbsent(withFirstHouse(town, trade, drawFirstHouseIdentity(town)), at, at);
       await assertWorldVersion();
-      // A freed place waits for a human: the founder's house may have been
+      // A freed place waits for a human: the first house may have been
       // deleted after thirty days of silence, and the binding must point at a
       // house the world still holds.
-      const houseId = await ensureFounder(trade);
+      const houseId = await ensureFirstHouse(trade);
 
       const issued = await issueToken(deps.store, WORLD_ID, houseId, at);
       deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId });
@@ -729,20 +729,20 @@ export function createApp(deps: AppDeps): Server {
     return world;
   }
 
-  async function ensureFounder(trade: Trade): Promise<string> {
+  async function ensureFirstHouse(trade: Trade): Promise<string> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      // The solo town has one human house, and it is the founder's place.
+      // The solo town has one human house, and it is the first house's place.
       // Multiplayer will have to tell that slot from a converted AI house;
-      // until then, the only human is the founder.
+      // until then, the only human is the first house.
       const existing = firstHouseOf(world);
 
       if (existing !== undefined) {
         return existing.id;
       }
 
-      const identity = drawFounderIdentity(world);
-      await session.save(withFounder(world, trade, identity), session.snapshot.hourStartedAt, []);
+      const identity = drawFirstHouseIdentity(world);
+      await session.save(withFirstHouse(world, trade, identity), session.snapshot.hourStartedAt, []);
 
       return identity.id;
     });

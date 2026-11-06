@@ -89,7 +89,7 @@ describe('the market of a hour', () => {
     // Arrange
     const { world } = playWeek(town(SEED));
 
-    // Act and assert: sold minus bought, per good. The founder produces but
+    // Act and assert: sold minus bought, per good. The first house produces but
     // does not sell; every AI house sells what it produced.
     expect(world.marketFlow).toEqual({
       wool: -2,
@@ -176,7 +176,7 @@ describe('the market of a hour', () => {
       ceilCents: RULES.priceCeilCents,
     };
     // Both towns leave the same market: the AI sells six cloth an hour, and one
-    // founder adds twenty on top of it.
+    // first house adds twenty on top of it.
     const expected =
       nextPriceCents({ ...rule, priceCents: RULES.market.cloth.referenceCents, flowUnits: 6 * hours }) -
       nextPriceCents({ ...rule, priceCents: RULES.market.cloth.referenceCents, flowUnits: 6 * hours + 20 });
@@ -402,7 +402,7 @@ describe('an AI house', () => {
   });
 
   it("does not sell a human house's stock", () => {
-    // Arrange: the founder is the weaver and must keep its bet.
+    // Arrange: the first house is the weaver and must keep its bet.
     const { world, events } = playWeek(town(SEED));
 
     // Assert

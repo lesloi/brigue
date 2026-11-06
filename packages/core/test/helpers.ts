@@ -1,5 +1,5 @@
-import { advance, createWorld, withFounder } from '../src/index.ts';
-import type { Action, Event, FounderIdentity, Trade, World } from '../src/index.ts';
+import { advance, createWorld, withFirstHouse } from '../src/index.ts';
+import type { Action, Event, FirstHouseIdentity, Trade, World } from '../src/index.ts';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -33,7 +33,7 @@ export function playHalfDay(world: World, actions: readonly Action[] = []): { wo
 }
 
 /** The fixture identity the tests play; production draws its own. */
-export const TEST_FOUNDER: FounderIdentity = {
+export const TEST_FIRST_HOUSE: FirstHouseIdentity = {
   id: 'brigue',
   houseName: 'Brigue',
   personName: 'Colin Brigue',
@@ -41,5 +41,5 @@ export const TEST_FOUNDER: FounderIdentity = {
 
 /** The playable town: the AI houses plus the first player's house. */
 export function town(seed: number, trade: Trade = 'weaver'): World {
-  return withFounder(createWorld(seed), trade, TEST_FOUNDER);
+  return withFirstHouse(createWorld(seed), trade, TEST_FIRST_HOUSE);
 }

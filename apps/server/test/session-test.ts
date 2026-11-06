@@ -215,7 +215,7 @@ describe('joining the town', () => {
     expect(cookieOf(response)).toBeUndefined();
   });
 
-  it('opens the founder with the chosen trade', async () => {
+  it('opens the first house with the chosen trade', async () => {
     // Arrange
     const harness = await start();
 

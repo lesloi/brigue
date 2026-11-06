@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 
-import type { FounderIdentity, World } from '@brigue/core';
+import type { FirstHouseIdentity, World } from '@brigue/core';
 
 /**
  * The names the first house can take. None of them is an AI house's: a town
@@ -65,7 +65,7 @@ export const PERSON_NAMES = [
  * town does not already use, a first name for the person, and an id derived
  * from the name. Nothing about the first house is fixed.
  */
-export function drawFounderIdentity(world: World): FounderIdentity {
+export function drawFirstHouseIdentity(world: World): FirstHouseIdentity {
   const taken = new Set(Object.values(world.houses).map((house) => house.name.toLowerCase()));
   const free = HOUSE_NAMES.filter((name) => !taken.has(name.toLowerCase()));
   const houseName = free.length > 0 ? free[randomInt(free.length)] : `Maison ${Object.keys(world.houses).length + 1}`;

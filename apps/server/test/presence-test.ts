@@ -260,7 +260,7 @@ describe('the thirty-day deletion', () => {
     await expect(issueToken(harness.store, WORLD_ID, 'caron', new Date(START))).resolves.toBeDefined();
   });
 
-  it('makes a returning founder start a fresh house after more than thirty days', async () => {
+  it('makes a returning player start a fresh first house after more than thirty days', async () => {
     // Arrange: the old house has money and a seat, so a failed respawn would
     // keep them.
     const world = town(20261105);

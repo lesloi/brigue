@@ -1,7 +1,7 @@
 import { createWorld, type House } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { drawFounderIdentity, HOUSE_NAMES, PERSON_NAMES } from '../src/names.ts';
+import { drawFirstHouseIdentity, HOUSE_NAMES, PERSON_NAMES } from '../src/names.ts';
 
 describe('the first house name', () => {
   it('draws a name the town does not use, and an id from it', () => {
@@ -11,7 +11,7 @@ describe('the first house name', () => {
     // Act and assert: a hundred draws stay inside the pool, free, and shaped
     // like an id, with a person named after the house.
     for (let draw = 0; draw < 100; draw += 1) {
-      const identity = drawFounderIdentity(world);
+      const identity = drawFirstHouseIdentity(world);
 
       expect(HOUSE_NAMES).toContain(identity.houseName);
       expect(world.houses[identity.id]).toBeUndefined();
@@ -33,7 +33,7 @@ describe('the first house name', () => {
     }
 
     // Act
-    const identity = drawFounderIdentity(world);
+    const identity = drawFirstHouseIdentity(world);
 
     // Assert: a name outside the pool, and an id nothing else holds.
     expect(identity.houseName).toMatch(/^Maison \d+$/);
@@ -48,7 +48,7 @@ describe('the first house name', () => {
 
     // Act and assert
     for (let draw = 0; draw < 100; draw += 1) {
-      expect(drawFounderIdentity(world).houseName).not.toBe(taken);
+      expect(drawFirstHouseIdentity(world).houseName).not.toBe(taken);
     }
   });
 });

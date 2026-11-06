@@ -20,7 +20,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * seats become vacant.
  *
  * A house with no player row at all is dormant but not deleted: there is no
- * visit to measure the silence from, and the join path puts the founder back.
+ * visit to measure the silence from, and the join path puts the first house back.
  */
 export function applyPresence(world: World, players: readonly Player[], now: number): Presence {
   const latestSeen = new Map<string, number>();
