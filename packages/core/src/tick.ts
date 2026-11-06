@@ -423,7 +423,7 @@ function driftPrices(world: World, events: EventDraft[]): void {
     world.rng = rng;
 
     const before = world.market[good];
-    // The countryside supplies the raw goods at the current price: their price
+    // The outside supply sells the raw goods at the current price: their price
     // is not moved by the town's flow, only by chance and the pull home.
     const raw = RULES.recipes[good] === null;
     const after = nextPriceCents({
