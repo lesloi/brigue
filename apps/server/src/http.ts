@@ -201,7 +201,7 @@ export function createApp(deps: AppDeps): Server {
           methodNotAllowed(response, 'POST');
           return;
         }
-        await advanceWeek(request, response);
+        await advanceHour(request, response);
         return;
 
       default:
@@ -508,7 +508,7 @@ export function createApp(deps: AppDeps): Server {
    * Local development only: plays the next hour now instead of waiting for the
    * hour to pass. The world clock jumps, the wall clock does not.
    */
-  async function advanceWeek(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  async function advanceHour(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
     if (player === null) {
