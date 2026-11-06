@@ -176,7 +176,7 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
     case 'council.campaigned':
       return {
         tone: 'council',
-        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; elle compte au prochain scrutin.`,
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est dans ${formatCount(event.countsAt - event.at)} heures.`,
       };
 
     case 'engagement.resolved': {

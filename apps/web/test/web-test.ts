@@ -169,25 +169,26 @@ describe('eventLine', () => {
     expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
   });
 
-  it('reads a candidacy as counting at the next scrutiny', () => {
+  it('says when the scrutiny that counts a candidacy is held', () => {
     // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
     const event: Event = {
       type: 'council.campaigned',
       audience: { houseId: 'leclerc' },
-      at: 0,
+      at: 12,
       houseId: 'leclerc',
       seatId: 'maire',
       favourSpent: 3,
-      countsAt: 24,
+      countsAt: 48,
     };
 
     // Act
     const line = eventLine(event, 'leclerc', nameOf);
 
-    // Assert
+    // Assert: the screen does not claim the coming scrutiny when the noon bell
+    // has already closed this year's.
     expect(line.tone).toBe('council');
     expect(line.text).toContain('candidature à la mairie');
-    expect(line.text).toContain('prochain scrutin');
+    expect(line.text).toContain('dans 36 heures');
   });
 
   it('counts a late engagement in hours', () => {
