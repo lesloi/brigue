@@ -33,10 +33,10 @@ Two rules keep the chapters honest:
 
 ## The town
 
-Twenty houses at most, ten of them AI at the opening. A world opens with ten AI houses and its
-founder — six today, until the finished trades are filled — but the town exists before the
-player, and its offices do not. Every seat is empty, and the pyramid fills from the bottom, one
-floor per election.
+Twenty houses at most, ten of them AI at the opening. The town is founded when its first player
+joins: ten AI houses and the founder's house are created together, so no town waits empty for
+someone — six AI today, until the finished trades are filled. Its offices do not exist yet:
+every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
 A human who arrives in a full town takes the place of a finished-trade AI house. The AI line
 ends; the newcomer chooses a trade, starts with its workshop and no money, no seat, no career. The

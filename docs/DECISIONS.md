@@ -48,7 +48,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
   that trade; no assignment balances the town's mix. The founder is the first house, not a
   political role: same house, no seat, no vote; only the starting kit differs — a workshop of its
-  trade, eight units of its input and a purse, because its first sale is hours away. A human who
+  trade, eight units of its input and a purse, because its first sale is hours away. The town is
+  built without it: the first house is added when the first player joins, so no town waits empty
+  for someone. A human who
   arrives later, replacing a finished trade, brings its workshop and nothing else; the founder's
   place, re-founded after its house was deleted, keeps the kit, because it is the opening slot and
   not a newcomer taking an AI's place. The three raw
@@ -210,10 +212,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 ## Simulation
 
-- **The core is pure, deterministic and clock-free.** One seed and one trade in, one world out:
-  the founder's chosen trade is a creation input, so two worlds from the same seed can start in
-  different chains, and nothing rebuilds a world from a seed alone. A stored world carries the
-  trade in its workshops. A test replays two hundred advances and asserts the same state hash,
+- **The core is pure, deterministic and clock-free.** One seed in, one world out: the town is
+  built from the seed, and the first house is added when its player joins with the trade that
+  player chose. Two towns from the same seed can therefore start in different chains, and a seed
+  alone does not rebuild a playable town. A stored world carries the trade in its workshops. A test replays two hundred advances and asserts the same state hash,
   and another fails if `Math.random` or `Date.now` ever enters `packages/core`. Everything else
   depends on this: it is how a bug is reproduced, how a balance change is measured, and why the
   server can catch a world up at all.
