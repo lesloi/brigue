@@ -333,7 +333,14 @@ export function App() {
   return (
     <>
       {view.kind === 'loading' ? null : view.kind === 'create' ? (
-        <Create joining={joining} error={joinError} onChoose={(trade) => void createHouse(trade)} />
+        <Create
+          joining={joining}
+          error={joinError}
+          resuming={resuming}
+          resumeError={lostError}
+          onChoose={(trade) => void createHouse(trade)}
+          onResume={(candidate) => void resume(candidate)}
+        />
       ) : view.kind === 'world' ? (
         <div class="app">
           {tab === 'ville' ? (
