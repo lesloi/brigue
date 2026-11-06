@@ -13,7 +13,6 @@ export {
 } from './tick.ts';
 export {
   createFirstHouse,
-  createNewcomer,
   createWorld,
   withFirstHouse,
   withNewcomer,

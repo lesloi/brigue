@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createFirstHouse,
-  createNewcomer,
   createWorld,
   humanHouseOf,
   RULES,
@@ -73,18 +72,6 @@ describe('the first house', () => {
     expect(twice.houses.other).toBeUndefined();
   });
 
-  it('starts a newcomer with the workshop and nothing else', () => {
-    // Act
-    const newcomer = createNewcomer('baker', { ...IDENTITY, id: 'moreau', houseName: 'Moreau' });
-
-    // Assert: the workshop of the chosen trade, no purse, no input, no standing.
-    expect(newcomer.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2 }]);
-    expect(newcomer.house.treasuryCents).toBe(0);
-    expect(newcomer.house.stock).toEqual({});
-    expect(newcomer.house.favour).toBe(0);
-    expect(newcomer.house.prestige).toBe(0);
-  });
-
   it('adds a newcomer to a town that already has a player', () => {
     // Arrange
     const town = withFirstHouse(createWorld(1), 'weaver', IDENTITY);
@@ -92,8 +79,10 @@ describe('the first house', () => {
     // Act
     const two = withNewcomer(town, 'baker', { ...IDENTITY, id: 'moreau', houseName: 'Moreau' });
 
-    // Assert
+    // Assert: the same kit as the first house, and a house of its own.
     expect(two.houses.moreau?.controller).toBe('human');
+    expect(two.houses.moreau?.treasuryCents).toBe(RULES.startingPurseCents);
+    expect(two.houses.moreau?.stock).toEqual({ grain: RULES.startingInputUnits });
     expect(two.people['person-moreau']?.houseId).toBe('moreau');
     expect(Object.values(two.houses).filter((house) => house.controller === 'human')).toHaveLength(2);
   });

@@ -207,7 +207,7 @@ describe('joining the town', () => {
     expect(second.houseId).not.toBe(first.houseId);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world);
     expect(world.houses[second.houseId]?.controller).toBe('human');
-    expect(world.houses[second.houseId]?.treasuryCents).toBe(0);
+    expect(world.houses[second.houseId]?.treasuryCents).toBe(RULES.startingPurseCents);
     expect(world.houses[first.houseId]?.treasuryCents).toBe(RULES.startingPurseCents);
   });
 

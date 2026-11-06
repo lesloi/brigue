@@ -318,23 +318,10 @@ export function withFirstHouse(world: World, trade: Trade, identity: HouseIdenti
   return next;
 }
 
-/**
- * A human who joins a town that already has its first house: the same workshop
- * as the first house, and nothing else — no purse, no input, no standing.
- */
-export function createNewcomer(trade: Trade, identity: HouseIdentity): HouseArrival {
-  const { house, person } = createFirstHouse(trade, identity);
-
-  return {
-    house: { ...house, treasuryCents: 0, favour: 0, prestige: 0, stock: {} },
-    person,
-  };
-}
-
 /** Adds a newcomer's house to a town that already has a player. */
 export function withNewcomer(world: World, trade: Trade, identity: HouseIdentity): World {
   const next = structuredClone(world);
-  const { house, person } = createNewcomer(trade, identity);
+  const { house, person } = createFirstHouse(trade, identity);
   next.houses[house.id] = house;
   next.people[person.id] = person;
 
