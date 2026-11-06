@@ -20,7 +20,9 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
   });
 
   afterEach(async () => {
-    await pool.query('DELETE FROM players');
+    // Scoped to this file's world: the other Postgres tests share the database
+    // and run in parallel.
+    await pool.query('DELETE FROM players WHERE world_id = $1', ['pg-players']);
   });
 
   afterAll(async () => {
@@ -47,7 +49,7 @@ function player(tokenHash: string): Player {
 
   return {
     tokenHash,
-    worldId: 'saint-aubin',
+    worldId: 'pg-players',
     houseId: 'leclerc',
     createdAt: at,
     lastSeenAt: at,

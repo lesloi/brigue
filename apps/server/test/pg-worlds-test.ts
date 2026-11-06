@@ -47,6 +47,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
        DELETE FROM archive_houses;
        DELETE FROM kings;`,
     );
+    // The player rows live outside the town, so the cascade does not take them.
+    await pool.query('DELETE FROM players WHERE world_id = $1', [TEST_TOWN.id]);
   });
 
   afterAll(async () => {
@@ -213,7 +215,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       },
     ];
     const hourStartedAt = new Date(START.getTime() + 42_000);
-    await store.createTown(TEST_TOWN, createWorld(1), START);
+    await store.createTown(TEST_TOWN, world, START);
 
     // Act
     await withWorld(async (session) => {
@@ -331,7 +333,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const houses = await pool.query('SELECT count(*)::int AS count FROM houses');
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
     const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
-    const players = await pool.query('SELECT count(*)::int AS count FROM players');
+    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE world_id = $1', [TEST_TOWN.id]);
     const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
