@@ -4,6 +4,11 @@ Brigue is a game of municipal politics in a medieval town. You choose a trade, y
 its workshop and no name, and the town has twelve seats. It is not a game about building an
 empire: it is a game about being someone in a room where twelve people decide.
 
+This file describes the town the current format builds. Where [DECISIONS.md](./DECISIONS.md) has
+since moved a rule — the clock, the absent house, the register, the floors above the town — the
+decision is the target, and this file is rewritten with the next format. Those floors are only
+sketched at the end.
+
 ## The three chapters
 
 The structure decides everything else.
@@ -212,6 +217,41 @@ survive a catch-up: the world replays whole weeks and resolves what falls due.
 The interface is a chancery: flat sections, hairline rules, one strong action per screen, one accent
 colour reserved for what is dangerous or decisive. The town illustration appears once, on **Ville**;
 a map of places, drawn in seals, serves as navigation.
+
+## The floors above the town (next format)
+
+Not built. The town's council is the first floor; the two above it are written here so their
+offices have names before they have code. Both are elected by every house, at the same midnight
+scrutiny, with the same roll and the same campaign bonus; only the title required, the career
+required and the price of a campaign change.
+
+### The county
+
+Headed by the count, who must bear the title of count and have held a town office. The four lesser
+offices need a knight's title; the bailli and the receveur, a baron's.
+
+- **Comte** — levies the company, decides whether the roads are guarded, presides the court of the
+  county and breaks its ties.
+- **Bailli** — instructs what crosses a town's border; admits or refuses an appeal.
+- **Receveur** — holds the county's chest: the tolls in, the company's wages out, and an unpaid
+  company disbands or turns to pillage.
+- **Voyer** — sets the tolls between towns and the state of the roads.
+- **Gruyer** — the forests, the cutting rights and the price of planks.
+- **Grenetier** — the granary: releases grain in a famine, or withholds it.
+- **Juge-mage** — judges a town; the fine is paid by its chest and its mayor answers.
+
+### The kingdom
+
+Headed by the king, who must bear the title of prince and have held a county office. The four
+lesser offices need a marquis's title; the chancelier and the argentier, a duke's.
+
+- **Roi** — the ordinance and the staple; crowned, he reigns one day.
+- **Chancelier** — the seal, the ordinances and the register of the kingdom; he may refuse to seal.
+- **Argentier** — the coin and the royal chest.
+- **Maréchal** — the royal company and the marshals' provosts on the roads.
+- **Chambellan** — the door: nothing reaches the king without passing him.
+- **Maître des comptes** — audits a county and may refuse its budget.
+- **Juge souverain** — the last appeal; he judges the counts.
 
 ## Not decided yet
 
