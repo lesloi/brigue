@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { PACING, type World } from '@brigue/core';
+import { PACING, RULES, type World } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp } from '../src/http.ts';
@@ -309,7 +309,7 @@ describe('the thirty-day deletion', () => {
     // A drawn first house, not the deleted one, and none of its money.
     expect(houseId).not.toBe('leclerc');
     expect(body.world.house.id).toBe(houseId);
-    expect(body.world.house.treasuryCents).toBe(117340);
+    expect(body.world.house.treasuryCents).toBe(RULES.startingPurseCents);
     expect(body.world.house.workshops).toEqual([
       {
         good: 'bread',

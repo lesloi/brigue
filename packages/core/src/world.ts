@@ -162,7 +162,7 @@ export const RULES = {
    * few hours of wages before its first sale. Every later arrival starts with
    * its workshop and nothing else.
    */
-  startingPurseCents: 117340,
+  startingPurseCents: 45_000,
   startingInputUnits: 8,
   /**
    * A building site takes twelve hours. A hearing has no fixed delay: it is

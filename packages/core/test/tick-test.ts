@@ -101,7 +101,7 @@ describe('the simulation core', () => {
     expect(world.houses.leclerc.stock.cloth).toBe(4);
     expect(world.houses.leclerc.stock.wool).toBe(4);
     // The first house is human: its stock is not sold, and production pays no coin.
-    expect(world.houses.leclerc.treasuryCents).toBe(117340 - 240);
+    expect(world.houses.leclerc.treasuryCents).toBe(RULES.startingPurseCents - 240);
   });
 
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
