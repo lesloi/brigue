@@ -191,11 +191,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   number that records a history nobody can read is a cost, not a safeguard. Once a town has
   players whose history matters, a breaking change ships a migration by default.
 
-  This first format resets with `pnpm --filter @brigue/server reset --confirm`: the schema is
-  dropped and rebuilt from the one migration, and the sealed seasons stay untouched. A full
-  reset, with `--full`, deletes them too and is the only one that touches the register. The
-  tokens do not cross yet — the tables that hold the binding are rebuilt, and nothing can bind a
-  token to a new house — so a reset clears them with the town until the seal lands.
+  This first format resets with `pnpm --filter @brigue/server reset`: the schema is dropped and
+  rebuilt from the one migration, and the sealed seasons stay untouched. `--check` shows what
+  would go, `--force` skips the question, and otherwise an operator reads the same report and
+  answers `yes` on a terminal; without one, it refuses. A full reset, with `--full`, deletes the
+  sealed seasons too and is the only one that touches the register. The tokens do not cross yet
+  — the tables that hold the binding are rebuilt, and nothing can bind a token to a new house —
+  so a reset clears them with the town until the seal lands.
 
   The next format carries the clock, the scheduler, the journal and the tables, and nothing else:
   the town's politics lands additively inside it, and the floors above the town wait for the
