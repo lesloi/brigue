@@ -9,7 +9,7 @@ import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
 import { MemoryWorldStore } from '../src/worlds.ts';
-import { town } from './helpers.ts';
+import { TEST_FIRST_HOUSE, town } from './helpers.ts';
 
 interface Harness {
   url: string;
@@ -193,12 +193,60 @@ describe('joining the town', () => {
     expect(await again.json()).toEqual({ worldId: 'saint-aubin', houseId: body.houseId });
   });
 
-  it('refuses a second token for a house that already has one', async () => {
+  it('hands a second player a new house, not the first one', async () => {
+    // Arrange: the first player has the town and its first house.
     const harness = await start();
-    expect((await join(harness)).status).toBe(201);
+    const first = (await (await join(harness)).json()) as { houseId: string };
 
+    // Act
+    const response = await join(harness);
+    const second = (await response.json()) as { houseId: string };
+
+    // Assert: a house of its own, a workshop, no purse.
+    expect(response.status).toBe(201);
+    expect(second.houseId).not.toBe(first.houseId);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world);
+    expect(world.houses[second.houseId]?.controller).toBe('human');
+    expect(world.houses[second.houseId]?.treasuryCents).toBe(0);
+    expect(world.houses[first.houseId]?.treasuryCents).toBe(RULES.startingPurseCents);
+  });
+
+  it('binds a player to a human house with no live token', async () => {
+    // Arrange: a town whose first house exists but has no token.
+    const harness = await start();
+    await harness.worlds.createIfAbsent(town(7), new Date(), new Date());
+
+    // Act
+    const response = await join(harness);
+    const body = (await response.json()) as { houseId: string };
+
+    // Assert: the freed place is taken, and no house is added.
+    expect(response.status).toBe(201);
+    expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world);
+    expect(Object.keys(world.houses)).toHaveLength(7);
+  });
+
+  it('refuses when the town has no room for another human', async () => {
+    // Arrange: a town at the cap, its only human house taken.
+    const harness = await start();
+    const base = town(7);
+    for (let index = 0; index < 13; index += 1) {
+      const id = `ai-${index}`;
+      base.houses[id] = { ...(base.houses.caron as (typeof base.houses)[string]), id, name: `IA ${index}` };
+      base.people[`person-${id}`] = {
+        ...(base.people['person-caron'] as (typeof base.people)[string]),
+        id: `person-${id}`,
+        houseId: id,
+      };
+    }
+    await harness.worlds.createIfAbsent(base, new Date(), new Date());
+    await issueToken(harness.store, 'saint-aubin', TEST_FIRST_HOUSE.id, new Date());
+
+    // Act
     const response = await join(harness);
 
+    // Assert
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'no_free_house' });
     expect(cookieOf(response)).toBeUndefined();

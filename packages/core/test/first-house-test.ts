@@ -2,18 +2,20 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createFirstHouse,
+  createNewcomer,
   createWorld,
-  firstHouseOf,
+  humanHouseOf,
   RULES,
   stateHash,
   TRADE_CHAINS,
   TRADES,
   withFirstHouse,
-  type FirstHouseIdentity,
+  withNewcomer,
+  type HouseIdentity,
 } from '../src/index.ts';
 import { tick } from './helpers.ts';
 
-const IDENTITY: FirstHouseIdentity = { id: 'leclerc', houseName: 'Leclerc', personName: 'Colin Leclerc' };
+const IDENTITY: HouseIdentity = { id: 'leclerc', houseName: 'Leclerc', personName: 'Colin Leclerc' };
 
 describe('the first house', () => {
   it('starts a weaver with its chain and input', () => {
@@ -41,7 +43,7 @@ describe('the first house', () => {
     const world = createWorld(1);
 
     // Assert
-    expect(firstHouseOf(world)).toBeUndefined();
+    expect(humanHouseOf(world)).toBeUndefined();
     expect(Object.values(world.houses).every((house) => house.controller === 'ai')).toBe(true);
     expect(world.houses.caron).toBeDefined();
   });
@@ -55,7 +57,7 @@ describe('the first house', () => {
     expect(world.houses[IDENTITY.id]?.workshops).toEqual([{ good: 'bread', level: 2, workers: 2 }]);
     expect(world.houses[IDENTITY.id]?.stock).toEqual({ grain: RULES.startingInputUnits });
     expect(world.people[`person-${IDENTITY.id}`]?.houseId).toBe(IDENTITY.id);
-    expect(firstHouseOf(world)?.id).toBe(IDENTITY.id);
+    expect(humanHouseOf(world)?.id).toBe(IDENTITY.id);
   });
 
   it('adds the first house once', () => {
@@ -69,6 +71,31 @@ describe('the first house', () => {
     expect(twice).toBe(once);
     expect(twice.houses[IDENTITY.id]?.workshops).toEqual([{ good: 'cloth', level: 2, workers: 2 }]);
     expect(twice.houses.other).toBeUndefined();
+  });
+
+  it('starts a newcomer with the workshop and nothing else', () => {
+    // Act
+    const newcomer = createNewcomer('baker', { ...IDENTITY, id: 'moreau', houseName: 'Moreau' });
+
+    // Assert: the workshop of the chosen trade, no purse, no input, no standing.
+    expect(newcomer.house.workshops).toEqual([{ good: 'bread', level: 2, workers: 2 }]);
+    expect(newcomer.house.treasuryCents).toBe(0);
+    expect(newcomer.house.stock).toEqual({});
+    expect(newcomer.house.favour).toBe(0);
+    expect(newcomer.house.prestige).toBe(0);
+  });
+
+  it('adds a newcomer to a town that already has a player', () => {
+    // Arrange
+    const town = withFirstHouse(createWorld(1), 'weaver', IDENTITY);
+
+    // Act
+    const two = withNewcomer(town, 'baker', { ...IDENTITY, id: 'moreau', houseName: 'Moreau' });
+
+    // Assert
+    expect(two.houses.moreau?.controller).toBe('human');
+    expect(two.people['person-moreau']?.houseId).toBe('moreau');
+    expect(Object.values(two.houses).filter((house) => house.controller === 'human')).toHaveLength(2);
   });
 
   it('produces the chosen chain on the first tick', () => {

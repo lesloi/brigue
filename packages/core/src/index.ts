@@ -13,9 +13,11 @@ export {
 } from './tick.ts';
 export {
   createFirstHouse,
+  createNewcomer,
   createWorld,
   withFirstHouse,
-  firstHouseOf,
+  withNewcomer,
+  humanHouseOf,
   FORMAT_VERSION,
   GOODS,
   PACING,
@@ -33,8 +35,8 @@ export {
   type Controller,
   type Engagement,
   type EngagementKind,
-  type FirstHouse,
-  type FirstHouseIdentity,
+  type HouseArrival,
+  type HouseIdentity,
   type GoodId,
   type House,
   type Law,

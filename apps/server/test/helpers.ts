@@ -1,5 +1,5 @@
 import { advance, createWorld, withFirstHouse } from '@brigue/core';
-import type { Action, Event, FirstHouseIdentity, Trade, World } from '@brigue/core';
+import type { Action, Event, HouseIdentity, Trade, World } from '@brigue/core';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -14,7 +14,7 @@ export function tick(world: World, actions: readonly Action[] = []): { world: Wo
 }
 
 /** The fixture identity the tests play; production draws its own. */
-export const TEST_FIRST_HOUSE: FirstHouseIdentity = {
+export const TEST_FIRST_HOUSE: HouseIdentity = {
   id: 'leclerc',
   houseName: 'Leclerc',
   personName: 'Colin Leclerc',

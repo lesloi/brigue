@@ -1,5 +1,5 @@
 import { advance, createWorld, withFirstHouse } from '../src/index.ts';
-import type { Action, Event, FirstHouseIdentity, Trade, World } from '../src/index.ts';
+import type { Action, Event, HouseIdentity, Trade, World } from '../src/index.ts';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -33,7 +33,7 @@ export function playHalfDay(world: World, actions: readonly Action[] = []): { wo
 }
 
 /** The fixture identity the tests play; production draws its own. */
-export const TEST_FIRST_HOUSE: FirstHouseIdentity = {
+export const TEST_FIRST_HOUSE: HouseIdentity = {
   id: 'leclerc',
   houseName: 'Leclerc',
   personName: 'Colin Leclerc',

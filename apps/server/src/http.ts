@@ -3,13 +3,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 
 import {
   createWorld,
-  firstHouseOf,
+  humanHouseOf,
   FORMAT_VERSION,
   hashJson,
   PACING,
   RULES,
   TRADES,
   withFirstHouse,
+  withNewcomer,
   WorldVersionError,
   type Trade,
   type World,
@@ -18,7 +19,7 @@ import {
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
-import { drawFirstHouseIdentity } from './names.ts';
+import { drawHouseIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
@@ -302,12 +303,15 @@ export function createApp(deps: AppDeps): Server {
       // take the house binding. The town is built from its seed, and the first
       // house — the first house's place — is drawn when its player joins.
       const town = createWorld(randomSeed());
-      await deps.worlds.createIfAbsent(withFirstHouse(town, trade, drawFirstHouseIdentity(town)), at, at);
+      await deps.worlds.createIfAbsent(withFirstHouse(town, trade, drawHouseIdentity(town)), at, at);
       await assertWorldVersion();
-      // A freed place waits for a human: the first house may have been
-      // deleted after thirty days of silence, and the binding must point at a
-      // house the world still holds.
-      const houseId = await ensureFirstHouse(trade);
+      const houseId = await ensureHouse(trade);
+
+      if (houseId === null) {
+        deps.logger.warn('session.no_free_house', { ip });
+        sendJson(response, 409, { error: 'no_free_house' });
+        return;
+      }
 
       const issued = await issueToken(deps.store, WORLD_ID, houseId, at);
       deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId });
@@ -648,7 +652,7 @@ export function createApp(deps: AppDeps): Server {
 
       // The last human house went with the silence: the town goes too, and the
       // next join starts a new one. The players and the sealed seasons stay.
-      if (firstHouseOf(presence.world) === undefined) {
+      if (humanHouseOf(presence.world) === undefined) {
         await session.clear();
         return { kind: 'gone' as const };
       }
@@ -688,7 +692,7 @@ export function createApp(deps: AppDeps): Server {
       const world = sessionWorld(session);
       const presence = await synchronisePresence(WORLD_ID, world, at);
 
-      if (firstHouseOf(presence.world) === undefined) {
+      if (humanHouseOf(presence.world) === undefined) {
         await session.clear();
         return { kind: 'gone' as const };
       }
@@ -742,20 +746,28 @@ export function createApp(deps: AppDeps): Server {
     return world;
   }
 
-  async function ensureFirstHouse(trade: Trade): Promise<string> {
+  /**
+   * The house the joining player gets: a human house with no live token (a
+   * freed place, or the one the town was just created with), else a new human
+   * house until the town is full. A full town refuses until a finished trade
+   * can be handed over.
+   */
+  async function ensureHouse(trade: Trade): Promise<string | null> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      // The solo town has one human house, and it is the first house's place.
-      // Multiplayer will have to tell that slot from a converted AI house;
-      // until then, the only human is the first house.
-      const existing = firstHouseOf(world);
+      const players = await deps.store.listByWorld(WORLD_ID);
+      const live = new Set(players.filter((player) => player.revokedAt === null).map((player) => player.houseId));
+      const freed = Object.values(world.houses).find((house) => house.controller === 'human' && !live.has(house.id));
 
-      if (existing !== undefined) {
-        return existing.id;
+      if (freed !== undefined) {
+        return freed.id;
+      }
+      if (Object.keys(world.houses).length >= RULES.houseCap) {
+        return null;
       }
 
-      const identity = drawFirstHouseIdentity(world);
-      await session.save(withFirstHouse(world, trade, identity), session.snapshot.hourStartedAt, []);
+      const identity = drawHouseIdentity(world);
+      await session.save(withNewcomer(world, trade, identity), session.snapshot.hourStartedAt, []);
 
       return identity.id;
     });

@@ -164,6 +164,8 @@ export const RULES = {
    */
   startingPurseCents: 45_000,
   startingInputUnits: 8,
+  /** The town stops growing here; a human arriving in a full town takes a finished trade. */
+  houseCap: 20,
   /**
    * A building site takes twelve hours. A hearing has no fixed delay: it is
    * held at the next noon sitting after the complaint.
@@ -251,13 +253,13 @@ export const HOURS_PER_YEAR = 24;
  */
 export const PRICE_HISTORY_BELLS = HOURS_PER_YEAR;
 
-export interface FirstHouse {
+export interface HouseArrival {
   house: House;
   person: Person;
 }
 
 /** The name and the id the first house arrives with, drawn before it joins. */
-export interface FirstHouseIdentity {
+export interface HouseIdentity {
   id: string;
   houseName: string;
   personName: string;
@@ -270,7 +272,7 @@ export interface FirstHouseIdentity {
  * freed place so a deleted first house cannot brick the join path. Its name is an
  * input: the server draws it, and nothing about the first house is fixed.
  */
-export function createFirstHouse(trade: Trade, identity: FirstHouseIdentity): FirstHouse {
+export function createFirstHouse(trade: Trade, identity: HouseIdentity): HouseArrival {
   const chain = TRADE_CHAINS[trade];
 
   return {
@@ -302,12 +304,9 @@ export function createFirstHouse(trade: Trade, identity: FirstHouseIdentity): Fi
  * The first house: the town is built without it, and it is added when the first
  * player joins — or when a deleted first house's place waits for a human. It is
  * never a political role, and adding it twice is a no-op.
- *
- * A world whose only human house is not this one is a multiplayer state this
- * format does not produce: here the only human house is the first house.
  */
-export function withFirstHouse(world: World, trade: Trade, identity: FirstHouseIdentity): World {
-  if (firstHouseOf(world) !== undefined) {
+export function withFirstHouse(world: World, trade: Trade, identity: HouseIdentity): World {
+  if (humanHouseOf(world) !== undefined) {
     return world;
   }
 
@@ -319,8 +318,31 @@ export function withFirstHouse(world: World, trade: Trade, identity: FirstHouseI
   return next;
 }
 
+/**
+ * A human who joins a town that already has its first house: the same workshop
+ * as the first house, and nothing else — no purse, no input, no standing.
+ */
+export function createNewcomer(trade: Trade, identity: HouseIdentity): HouseArrival {
+  const { house, person } = createFirstHouse(trade, identity);
+
+  return {
+    house: { ...house, treasuryCents: 0, favour: 0, prestige: 0, stock: {} },
+    person,
+  };
+}
+
+/** Adds a newcomer's house to a town that already has a player. */
+export function withNewcomer(world: World, trade: Trade, identity: HouseIdentity): World {
+  const next = structuredClone(world);
+  const { house, person } = createNewcomer(trade, identity);
+  next.houses[house.id] = house;
+  next.people[person.id] = person;
+
+  return next;
+}
+
 /** The first house: the only human house of a solo town. */
-export function firstHouseOf(world: World): House | undefined {
+export function humanHouseOf(world: World): House | undefined {
   return Object.values(world.houses).find((house) => house.controller === 'human');
 }
 

@@ -1,6 +1,6 @@
 import {
   advance,
-  firstHouseOf,
+  humanHouseOf,
   FORMAT_VERSION,
   PACING,
   RULES,
@@ -118,7 +118,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           options.logger.warn('world.house_deleted', { worldId: WORLD_ID, houseId });
         }
 
-        if (firstHouseOf(presence.world) === undefined) {
+        if (humanHouseOf(presence.world) === undefined) {
           await session.clear();
           options.logger.info('town.deleted', { worldId: WORLD_ID });
           return;
