@@ -172,8 +172,9 @@ CREATE TABLE actions (
 
 CREATE INDEX actions_plays_at ON actions (plays_at, seq);
 
--- The sealed season keeps the register and the book of kings, and no reset
--- touches them. `kings` keys on the token, so the crown follows the player and
+-- The sealed season keeps the register and the book of kings, and no ordinary
+-- reset touches them; a full reset deletes them too. `kings` keys on the token,
+-- so the crown follows the player and
 -- never the name: a name taken again inherits nothing.
 CREATE TABLE archive_houses (
   season integer NOT NULL,

@@ -2,10 +2,20 @@ import type { Pool, PoolClient } from 'pg';
 
 import { buildSchema, withMigrationLock } from './migrations.ts';
 
+export interface ResetOptions {
+  /**
+   * Also delete the sealed seasons. They outlive every other reset, so this is
+   * the one wipe that takes the register and the book of kings with it.
+   */
+  full?: boolean;
+}
+
 export interface ResetReport {
-  /** Sealed seasons carried across: no reset touches the register. */
+  /** Sealed seasons carried across; zero on a full reset. */
   archivedHouses: number;
   kings: number;
+  /** Whether the sealed seasons were deleted too. */
+  full: boolean;
   /** The migrations the empty schema was built from. */
   applied: string[];
 }
@@ -34,30 +44,36 @@ interface SurvivingKing {
  * Drops the whole schema and builds it again from the migrations.
  *
  * The sealed seasons — the register and the book of kings — are copied across,
- * because no reset touches them. The town and its players are not: the tables
- * that hold the token binding are rebuilt, and nothing can bind a token to a
- * new house yet, so the tokens go with the town.
+ * because no ordinary reset touches them. A full reset deletes them too. The
+ * town and its players always go: the tables that hold the token binding are
+ * rebuilt, and nothing can bind a token to a new house yet.
  *
  * Destructive by design: the caller asks the operator first.
  */
-export async function resetDatabase(pool: Pool): Promise<ResetReport> {
+export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Promise<ResetReport> {
+  const full = options.full === true;
+
   return withMigrationLock(pool, async (client) => {
     await client.query('BEGIN');
 
     try {
       // Read what survives before anything is dropped. The old schema has
       // neither the archive nor the kings, so each table is read only if it is
-      // there.
-      const archivedHouses = await survivors<SurvivingArchive>(
-        client,
-        'archive_houses',
-        'season, name, prestige, offices_held, title, generations, wealth_cents',
-      );
-      const kings = await survivors<SurvivingKing>(
-        client,
-        'kings',
-        'season, crowned_at, token_hash, house_name, person_name, ordinance, staple_good',
-      );
+      // there, and a full reset carries nothing.
+      const archivedHouses = full
+        ? []
+        : await survivors<SurvivingArchive>(
+            client,
+            'archive_houses',
+            'season, name, prestige, offices_held, title, generations, wealth_cents',
+          );
+      const kings = full
+        ? []
+        : await survivors<SurvivingKing>(
+            client,
+            'kings',
+            'season, crowned_at, token_hash, house_name, person_name, ordinance, staple_good',
+          );
 
       await client.query('DROP SCHEMA public CASCADE');
       await client.query('CREATE SCHEMA public');
@@ -100,6 +116,7 @@ export async function resetDatabase(pool: Pool): Promise<ResetReport> {
       return {
         archivedHouses: archivedHouses.length,
         kings: kings.length,
+        full,
         applied,
       };
     } catch (error) {

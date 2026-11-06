@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { resetDatabase } from '../src/reset.ts';
 
@@ -13,14 +13,18 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: resetUrl });
-    await resetDatabase(pool);
+  });
+
+  beforeEach(async () => {
+    // Start every case from an empty database, sealed seasons included.
+    await resetDatabase(pool, { full: true });
   });
 
   afterAll(async () => {
     await pool.end();
   });
 
-  it('keeps the sealed seasons and deletes the town with its tokens', async () => {
+  async function seed(): Promise<string> {
     // Arrange: a bound player, a sealed season and a town that should not
     // survive.
     const tokenHash = 'a'.repeat(64);
@@ -41,6 +45,13 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
        VALUES (1, 1, 7, 7, 1, 1, now())`,
     );
 
+    return tokenHash;
+  }
+
+  it('keeps the sealed seasons and deletes the town with its tokens', async () => {
+    // Arrange
+    await seed();
+
     // Act
     const report = await resetDatabase(pool);
 
@@ -54,7 +65,25 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(players.rows[0]?.count).toBe(0);
     expect(archive.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
-    expect(report).toMatchObject({ archivedHouses: 1, kings: 1 });
+    expect(report).toMatchObject({ archivedHouses: 1, kings: 1, full: false });
     expect(report.applied).toContain('0001_initial.sql');
+  });
+
+  it('deletes the sealed seasons too when the reset is full', async () => {
+    // Arrange
+    await seed();
+
+    // Act
+    const report = await resetDatabase(pool, { full: true });
+
+    // Assert: nothing is carried, and the schema is ready again.
+    const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
+    const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
+    const migrations = await pool.query('SELECT count(*)::int AS count FROM schema_migrations');
+
+    expect(archive.rows[0]?.count).toBe(0);
+    expect(kings.rows[0]?.count).toBe(0);
+    expect(migrations.rows[0]?.count).toBeGreaterThan(0);
+    expect(report).toMatchObject({ archivedHouses: 0, kings: 0, full: true });
   });
 });
