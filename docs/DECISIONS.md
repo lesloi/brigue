@@ -25,7 +25,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   contested without it, and its prestige and favour decay while it is silent. The town is then
   governed by the houses that are there, which is the point of a shared council. After thirty days
   without a visit the house is deleted and the token with it: no return, no vacation mode, and no
-  AI ever plays it. The deletion stays an edge rule. The reverse is asymmetric: when a full town
+  AI ever plays it. When the last human house goes, the town goes with it: the next player starts
+  a new town, and only the sealed register and the book of kings cross. The deletion stays an edge
+  rule. The reverse is asymmetric: when a full town
   receives a human, the finished-trade AI house ends and the newcomer chooses a trade, starts with
   its workshop and no money, no seat, no career. No AI is created after the opening; the ten
   opening families are the opening composition, and a freed finished-trade place waits for a
