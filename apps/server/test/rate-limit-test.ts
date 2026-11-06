@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createRateLimiter } from '../src/rate-limit.ts';
+import { createRateLimiter } from '../src/http/rate-limit.ts';
 
 describe('the rate limiter', () => {
   it('allows the limit and refuses the next attempt in the window', () => {

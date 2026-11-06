@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isConfirmation, parseResetArgs, ResetUsageError } from '../src/reset-args.ts';
+import { isConfirmation, parseResetArgs, ResetUsageError } from '../src/db/reset-args.ts';
 
 describe('reset arguments', () => {
   it('reads the three flags', () => {

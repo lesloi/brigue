@@ -9,8 +9,8 @@ import {
   type World,
 } from '@brigue/core';
 
-import type { Logger } from './logger.ts';
-import type { PlayerStore } from './players.ts';
+import type { Logger } from '../logger.ts';
+import type { PlayerStore } from '../identity/players.ts';
 import { applyPresence, removeHouse } from './presence.ts';
 import { HOUR_MS, UnknownWorldError, type TownInfo, type WorldSession, type WorldStore } from './worlds.ts';
 

@@ -1,4 +1,4 @@
-import { redactTokens } from './tokens.ts';
+import { redactTokens } from './identity/tokens.ts';
 
 export type LogFields = Record<string, unknown>;
 export type LogSink = (line: string) => void;

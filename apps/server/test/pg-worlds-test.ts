@@ -5,9 +5,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { createWorld, RULES, WorldVersionError, type Action, type Event, type World } from '@brigue/core';
 
-import { applyMigrations } from '../src/migrations.ts';
-import { PgWorldStore } from '../src/pg-worlds.ts';
-import { DuplicateActionError, UnknownWorldError, type StoredAction, type WorldSession } from '../src/worlds.ts';
+import { applyMigrations } from '../src/db/migrations.ts';
+import { PgWorldStore } from '../src/town/pg-worlds.ts';
+import { DuplicateActionError, UnknownWorldError, type StoredAction, type WorldSession } from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z');

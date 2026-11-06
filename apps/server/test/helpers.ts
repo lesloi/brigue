@@ -1,7 +1,7 @@
 import { advance, createWorld, withFirstHouse } from '@brigue/core';
 import type { Action, Event, HouseIdentity, Trade, World } from '@brigue/core';
 
-import type { TownInfo } from '../src/worlds.ts';
+import type { TownInfo } from '../src/town/worlds.ts';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are

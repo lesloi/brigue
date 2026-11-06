@@ -1,9 +1,9 @@
 import { loadConfig } from './config.ts';
-import { createApp } from './http.ts';
+import { createApp } from './http/app.ts';
 import { createLogger } from './logger.ts';
-import { createPgPlayerStore } from './pg-players.ts';
-import { createPgWorldStore } from './pg-worlds.ts';
-import { startScheduler } from './scheduler.ts';
+import { createPgPlayerStore } from './identity/pg-players.ts';
+import { createPgWorldStore } from './town/pg-worlds.ts';
+import { startScheduler } from './town/scheduler.ts';
 
 const config = loadConfig(process.env);
 const logger = createLogger((line) => process.stdout.write(`${line}\n`));

@@ -3,13 +3,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { FORMAT_VERSION, hashJson, PACING, RULES, stateHash, WorldVersionError, type World } from '@brigue/core';
 
-import { SESSION_COOKIE } from '../src/cookies.ts';
-import { createApp } from '../src/http.ts';
+import { SESSION_COOKIE } from '../src/http/cookies.ts';
+import { createApp } from '../src/http/app.ts';
 import { createLogger } from '../src/logger.ts';
-import { playDue } from '../src/scheduler.ts';
-import { MemoryPlayerStore } from '../src/players.ts';
-import { issueToken } from '../src/session.ts';
-import { MemoryWorldStore } from '../src/worlds.ts';
+import { playDue } from '../src/town/scheduler.ts';
+import { MemoryPlayerStore } from '../src/identity/players.ts';
+import { issueToken } from '../src/identity/session.ts';
+import { MemoryWorldStore } from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();

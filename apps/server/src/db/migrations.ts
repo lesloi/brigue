@@ -11,8 +11,9 @@ import type { Pool, PoolClient } from 'pg';
  */
 export const MIGRATION_LOCK = 4_211_902;
 
-function defaultDirectory(): string {
-  return join(import.meta.dirname, '..', 'db', 'migrations');
+/** Where the image ships its migrations: `src/db` sits two levels under the package's `db`. */
+export function defaultMigrationsDirectory(): string {
+  return join(import.meta.dirname, '..', '..', 'db', 'migrations');
 }
 
 /**
@@ -23,7 +24,7 @@ function defaultDirectory(): string {
  *
  * Returns the files it applied, so the caller decides whether to log them.
  */
-export function applyMigrations(pool: Pool, directory = defaultDirectory()): Promise<string[]> {
+export function applyMigrations(pool: Pool, directory = defaultMigrationsDirectory()): Promise<string[]> {
   return withMigrationLock(pool, async (client) => {
     await ensureMigrationsTable(client);
 
@@ -59,7 +60,7 @@ export function applyMigrations(pool: Pool, directory = defaultDirectory()): Pro
  * applied in order and recorded, against an empty schema. The reset uses it so
  * the drop, the rebuild and the surviving rows commit together.
  */
-export async function buildSchema(client: PoolClient, directory = defaultDirectory()): Promise<string[]> {
+export async function buildSchema(client: PoolClient, directory = defaultMigrationsDirectory()): Promise<string[]> {
   await ensureMigrationsTable(client);
 
   const files = await migrationFiles(directory);
@@ -78,7 +79,7 @@ export async function buildSchema(client: PoolClient, directory = defaultDirecto
  * migrations have either not run or not finished. Waiting for the lock means a
  * check that arrives during a migration run answers about the schema after it.
  */
-export function pendingMigrations(pool: Pool, directory = defaultDirectory()): Promise<string[]> {
+export function pendingMigrations(pool: Pool, directory = defaultMigrationsDirectory()): Promise<string[]> {
   return withMigrationLock(pool, async (client) => {
     await ensureMigrationsTable(client);
 

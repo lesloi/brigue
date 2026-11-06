@@ -1,7 +1,7 @@
 import { createWorld, type House } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { drawHouseIdentity, drawTownName, HOUSE_NAMES, PERSON_NAMES, TOWN_NAMES } from '../src/names.ts';
+import { drawHouseIdentity, drawTownName, HOUSE_NAMES, PERSON_NAMES, TOWN_NAMES } from '../src/town/names.ts';
 
 describe('the first house name', () => {
   it('draws a name the town does not use, and an id from it', () => {

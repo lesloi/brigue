@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createLogger } from '../src/logger.ts';
-import { mintToken } from '../src/tokens.ts';
+import { mintToken } from '../src/identity/tokens.ts';
 
 describe('the logger', () => {
   it('redacts fields that could carry a credential', () => {

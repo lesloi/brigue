@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockUnits, type World } from '@brigue/core';
 
-import { projectWorld } from '../src/projection.ts';
+import { projectWorld } from '../src/town/projection.ts';
 import { TEST_TOWN, tick, town } from './helpers.ts';
 
 const SEED = 20261105;

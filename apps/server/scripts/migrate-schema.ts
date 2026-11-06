@@ -1,4 +1,4 @@
-import { applyMigrations, pendingMigrations } from '../src/migrations.ts';
+import { applyMigrations, pendingMigrations } from '../src/db/migrations.ts';
 
 /**
  * The schema of the database, not the world inside it: it applies

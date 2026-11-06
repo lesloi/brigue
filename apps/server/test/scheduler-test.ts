@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PACING, stateHash, withNewcomer, type Action, type Event, type World } from '@brigue/core';
 
 import { createLogger } from '../src/logger.ts';
-import { MemoryPlayerStore } from '../src/players.ts';
-import { playDue, startScheduler } from '../src/scheduler.ts';
-import { issueToken } from '../src/session.ts';
+import { MemoryPlayerStore } from '../src/identity/players.ts';
+import { playDue, startScheduler } from '../src/town/scheduler.ts';
+import { issueToken } from '../src/identity/session.ts';
 import {
   HOUR_MS,
   MemoryWorldStore,
@@ -13,7 +13,7 @@ import {
   type StoredAction,
   type WorldSession,
   type WorldStore,
-} from '../src/worlds.ts';
+} from '../src/town/worlds.ts';
 import { TEST_FIRST_HOUSE, TEST_TOWN, town as playableTown } from './helpers.ts';
 
 const START = new Date('2026-11-05T00:00:00.000Z');

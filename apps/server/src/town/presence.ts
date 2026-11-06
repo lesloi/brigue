@@ -1,6 +1,6 @@
 import { PACING, type World } from '@brigue/core';
 
-import type { Player } from './players.ts';
+import type { Player } from '../identity/players.ts';
 
 export interface Presence {
   world: World;

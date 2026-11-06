@@ -18,15 +18,15 @@ import {
 
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { readSessionCookie, sessionCookie } from './cookies.ts';
-import type { Logger } from './logger.ts';
-import { drawHouseIdentity, drawTownName } from './names.ts';
-import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
-import { applyPresence, type Presence } from './presence.ts';
-import { projectWorld } from './projection.ts';
+import type { Logger } from '../logger.ts';
+import { drawHouseIdentity, drawTownName } from '../town/names.ts';
+import { HouseAlreadyBoundError, type Player, type PlayerStore } from '../identity/players.ts';
+import { applyPresence, type Presence } from '../town/presence.ts';
+import { projectWorld } from '../town/projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
 import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
-import { playDue, type Due } from './scheduler.ts';
-import { authenticate, issueToken } from './session.ts';
+import { playDue, type Due } from '../town/scheduler.ts';
+import { authenticate, issueToken } from '../identity/session.ts';
 import { assertWebRoot, serveStatic } from './static.ts';
 import {
   DuplicateActionError,
@@ -38,7 +38,7 @@ import {
   type TownInfo,
   type WorldSession,
   type WorldStore,
-} from './worlds.ts';
+} from '../town/worlds.ts';
 
 const SESSION_ATTEMPTS_PER_MINUTE = 10;
 const RATE_LIMIT_WINDOW_MS = 60_000;
