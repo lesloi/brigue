@@ -138,6 +138,11 @@ export function resumeTown(token: string): Promise<{ worldId: string; houseId: s
   });
 }
 
+/** Deletes the identity: the house, its queue and the token. */
+export function deletePlayer(): Promise<void> {
+  return sendVoid('/api/player', { method: 'DELETE' });
+}
+
 export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
 }
@@ -203,6 +208,19 @@ async function send<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+/** A call whose answer carries no body, like a deletion. */
+async function sendVoid(path: string, init: RequestInit = {}): Promise<void> {
+  const response = await fetch(path, {
+    credentials: 'same-origin',
+    ...init,
+    headers: { Accept: 'application/json', ...init.headers },
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await errorCode(response));
+  }
 }
 
 async function errorCode(response: Response): Promise<string | null> {

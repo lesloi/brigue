@@ -5,6 +5,7 @@ import {
   ApiError,
   advanceHour,
   cancelAction,
+  deletePlayer,
   hasSession,
   joinTown,
   readPending,
@@ -17,6 +18,7 @@ import {
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
+import { DeleteAccountDialog } from './views/account.tsx';
 import { Create } from './views/create.tsx';
 import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
 import { Marche } from './views/marche.tsx';
@@ -48,6 +50,9 @@ export function App() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [toast, setToast] = useState<Toast | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const pendingToken = useRef<string | null>(null);
@@ -308,6 +313,27 @@ export function App() {
     }
   }
 
+  function askDelete(): void {
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function deleteAccount(): Promise<void> {
+    setDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await deletePlayer();
+      setDeleteOpen(false);
+      await boot();
+      showToast('Votre maison a été supprimée.');
+    } catch (error) {
+      setDeleteError(readMessageFor(error));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   function showFailure(error: unknown): void {
     const offline = error instanceof TypeError;
     setView({
@@ -352,6 +378,7 @@ export function App() {
               onRefresh={() => void refresh()}
               onGoMarket={() => selectTab('marche')}
               onAdvance={() => void advanceOneHour()}
+              onDeleteAccount={askDelete}
             />
           ) : (
             <Marche
@@ -371,6 +398,21 @@ export function App() {
       ) : (
         <Failure title={view.title} message={view.message} onRetry={() => void boot()} />
       )}
+
+      {deleteOpen && view.kind === 'world' ? (
+        <DeleteAccountDialog
+          town={view.data.world.town.name}
+          house={view.data.world.house.name}
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => {
+            if (!deleting) {
+              setDeleteOpen(false);
+            }
+          }}
+          onConfirm={() => void deleteAccount()}
+        />
+      ) : null}
 
       {token !== null ? (
         <TokenDialog

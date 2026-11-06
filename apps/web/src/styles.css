@@ -1208,6 +1208,26 @@ button:disabled {
   margin-top: 14px;
 }
 
+.dialog p.warn {
+  color: var(--accent);
+}
+
+.account {
+  margin: 22px 8px 0;
+  text-align: center;
+}
+
+.account button {
+  background: none;
+  border: 0;
+  padding: 8px;
+  color: var(--mut);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 @media (min-width: 600px) {
   .hero {
     height: 260px;

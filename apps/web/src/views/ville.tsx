@@ -18,10 +18,20 @@ interface VilleProps {
   onRefresh(): void;
   onGoMarket(): void;
   onAdvance(): void;
+  onDeleteAccount(): void;
 }
 
 /** The Ville screen, rendered only from the projection and the journal page. */
-export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, onAdvance }: VilleProps) {
+export function Ville({
+  data,
+  now,
+  advancing,
+  pending,
+  onRefresh,
+  onGoMarket,
+  onAdvance,
+  onDeleteAccount,
+}: VilleProps) {
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('house');
   const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
@@ -258,6 +268,11 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
           </div>
         </section>
       </div>
+      <footer class="account">
+        <button type="button" onClick={onDeleteAccount}>
+          Supprimer mon compte
+        </button>
+      </footer>
     </main>
   );
 }
