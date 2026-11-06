@@ -50,7 +50,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   political role: same house, no seat, no vote; only the starting kit differs — a workshop of its
   trade, eight units of its input and a purse, because its first sale is hours away. The town is
   built without it: the first house is added when the first player joins, so no town waits empty
-  for someone. A human who
+  for someone. Its name is drawn from the town's names at that moment — nothing about the first
+  house is fixed — and the player may rename it later (not built yet). A human who
   arrives later, replacing a finished trade, brings its workshop and nothing else; the founder's
   place, re-founded after its house was deleted, keeps the kit, because it is the opening slot and
   not a newcomer taking an AI's place. The three raw
