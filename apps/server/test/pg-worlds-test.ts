@@ -320,8 +320,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
        VALUES ('saint-aubin', 1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
     );
     await pool.query(
-      `INSERT INTO kings (town_id, season, crowned_at, token_hash, house_name, person_name)
-       VALUES ('saint-aubin', 1, 12, $1, 'Leclerc', 'Aubin')`,
+      `INSERT INTO kings (town_id, crowned_at, token_hash, house_name, person_name)
+       VALUES ('saint-aubin', now(), $1, 'Leclerc', 'Aubin')`,
       [tokenHash],
     );
 

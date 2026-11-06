@@ -35,8 +35,7 @@ interface SurvivingArchive {
 
 interface SurvivingKing {
   town_id: string;
-  season: number;
-  crowned_at: number;
+  crowned_at: Date;
   token_hash: string;
   house_name: string;
   person_name: string;
@@ -71,13 +70,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
             'archive_houses',
             'town_id, season, name, prestige, offices_held, title, generations, wealth_cents',
           );
-      const kings = full
-        ? []
-        : await survivors<SurvivingKing>(
-            client,
-            'kings',
-            'town_id, season, crowned_at, token_hash, house_name, person_name, ordinance, staple_good',
-          );
+      const kings = full ? [] : await survivingKings(client);
       // A spent name stays spent: the archive keeps town ids, and a recycled
       // name would recycle its id into an archived season.
       const townNames = full ? [] : await survivors<{ name: string }>(client, 'town_names', 'name');
@@ -105,10 +98,9 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'kings',
-        ['town_id', 'season', 'crowned_at', 'token_hash', 'house_name', 'person_name', 'ordinance', 'staple_good'],
+        ['town_id', 'crowned_at', 'token_hash', 'house_name', 'person_name', 'ordinance', 'staple_good'],
         kings.map((king) => [
           king.town_id,
-          king.season,
           king.crowned_at,
           king.token_hash,
           king.house_name,
@@ -154,6 +146,47 @@ async function survivors<T>(client: PoolClient, table: string, columns: string):
   const survivors = await client.query(`SELECT ${columns} FROM ${table}`);
 
   return survivors.rows as T[];
+}
+
+/**
+ * The book of kings used to hold the town's hour in an integer. A town hour
+ * cannot become an instant once the town is dropped, so an old book with rows
+ * stops the reset with a named reason instead of a silent cast. The book is
+ * empty today, so an empty old table crosses as nothing.
+ */
+async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
+  const { rows: present } = await client.query<{ present: boolean }>(
+    `SELECT to_regclass('public.kings') IS NOT NULL AS present`,
+  );
+
+  if (present[0]?.present !== true) {
+    return [];
+  }
+
+  const { rows: columns } = await client.query<{ data_type: string }>(
+    `SELECT data_type
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'kings' AND column_name = 'crowned_at'`,
+  );
+
+  if (columns[0]?.data_type !== 'timestamp with time zone') {
+    const { rows: count } = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM kings');
+
+    if ((count[0]?.count ?? 0) > 0) {
+      throw new Error(
+        'the book of kings holds town hours that cannot be converted to instants; delete its rows first, or reset with --full (which also deletes the register)',
+      );
+    }
+
+    return [];
+  }
+
+  const { rows } = await client.query(
+    `SELECT town_id, crowned_at, token_hash, house_name, person_name, ordinance, staple_good
+     FROM kings`,
+  );
+
+  return rows as SurvivingKing[];
 }
 
 async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {

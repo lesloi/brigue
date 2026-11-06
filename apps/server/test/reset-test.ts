@@ -8,6 +8,8 @@ import { previewReset, resetDatabase } from '../src/reset.ts';
 // `pnpm test` as usual.
 const resetUrl = process.env.RESET_DATABASE_URL ?? '';
 
+const CROWNED_AT = new Date('2026-01-01T12:00:00Z');
+
 describe.runIf(resetUrl !== '')('resetDatabase', () => {
   let pool: Pool;
 
@@ -36,9 +38,9 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
        VALUES ('saint-aubin', 1, 'Leclerc', 12, 3, 'roturier', 2, 5000)`,
     );
     await pool.query(
-      `INSERT INTO kings (town_id, season, crowned_at, token_hash, house_name, person_name)
-       VALUES ('saint-aubin', 1, 12, $1, 'Leclerc', 'Aubin')`,
-      [tokenHash],
+      `INSERT INTO kings (town_id, crowned_at, token_hash, house_name, person_name)
+       VALUES ('saint-aubin', $2, $1, 'Leclerc', 'Aubin')`,
+      [tokenHash, CROWNED_AT],
     );
     await pool.query(`INSERT INTO towns (id, name) VALUES ('saint-aubin', 'Saint-Aubin')`);
     await pool.query(
@@ -62,12 +64,14 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     const players = await pool.query('SELECT count(*)::int AS count FROM players');
     const archive = await pool.query('SELECT count(*)::int AS count FROM archive_houses');
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
+    const book = await pool.query<{ crowned_at: Date }>('SELECT crowned_at FROM kings');
     const names = await pool.query('SELECT count(*)::int AS count FROM town_names');
 
     expect(state.rows[0]?.count).toBe(0);
     expect(players.rows[0]?.count).toBe(0);
     expect(archive.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
+    expect(book.rows[0]?.crowned_at.toISOString()).toBe(CROWNED_AT.toISOString());
     expect(names.rows[0]?.count).toBe(1);
     expect(report).toMatchObject({ archivedHouses: 1, kings: 1, townNames: 1, full: false });
     expect(report.applied).toContain('0001_initial.sql');
@@ -113,5 +117,36 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(names.rows[0]?.count).toBe(0);
     expect(migrations.rows[0]?.count).toBeGreaterThan(0);
     expect(report).toMatchObject({ archivedHouses: 0, kings: 0, townNames: 0, full: true });
+  });
+
+  it('refuses an old book of kings that holds town hours', async () => {
+    // Arrange: the schema before the conversion, with one crowned king. A town
+    // hour cannot become an instant, so the reset must stop rather than cast.
+    await pool.query('DROP TABLE kings');
+    await pool.query(
+      `CREATE TABLE kings (
+         town_id text NOT NULL,
+         season integer NOT NULL,
+         crowned_at integer NOT NULL,
+         token_hash text NOT NULL,
+         house_name text NOT NULL,
+         person_name text NOT NULL,
+         ordinance text,
+         staple_good text,
+         PRIMARY KEY (town_id, season)
+       )`,
+    );
+    await pool.query(
+      `INSERT INTO kings (town_id, season, crowned_at, token_hash, house_name, person_name)
+       VALUES ('saint-aubin', 1, 12, $1, 'Leclerc', 'Aubin')`,
+      ['a'.repeat(64)],
+    );
+
+    // Act / Assert
+    await expect(resetDatabase(pool)).rejects.toThrow(/town hours/);
+
+    // The reset rolled back: the old book is still there.
+    const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
+    expect(kings.rows[0]?.count).toBe(1);
   });
 });
