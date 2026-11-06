@@ -30,6 +30,8 @@ export interface PlayerStore {
   listByWorld(worldId: string): Promise<Player[]>;
   /** Revokes every live token of a house, for the thirty-day deletion. */
   revokeHouse(worldId: string, houseId: string, at: Date): Promise<void>;
+  /** Deletes the binding outright, for a player who deletes their identity. */
+  remove(tokenHash: string): Promise<void>;
 }
 
 /**
@@ -92,5 +94,9 @@ export class MemoryPlayerStore implements PlayerStore {
         this.players.set(tokenHash, { ...player, revokedAt: at });
       }
     }
+  }
+
+  async remove(tokenHash: string): Promise<void> {
+    this.players.delete(tokenHash);
   }
 }

@@ -21,7 +21,7 @@ import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookie
 import type { Logger } from './logger.ts';
 import { drawHouseIdentity, drawTownIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
-import { applyPresence, type Presence } from './presence.ts';
+import { applyPresence, removeHouse, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
 import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
@@ -160,13 +160,18 @@ export function createApp(deps: AppDeps): Server {
           case 'GET':
             await readSession(request, response);
             return;
-          case 'DELETE':
-            await closeSession(request, response);
-            return;
           default:
-            methodNotAllowed(response, 'GET, POST, DELETE');
+            methodNotAllowed(response, 'GET, POST');
             return;
         }
+
+      case '/api/player':
+        if (request.method !== 'DELETE') {
+          methodNotAllowed(response, 'DELETE');
+          return;
+        }
+        await deletePlayer(request, response);
+        return;
 
       case '/api/world':
         if (request.method !== 'GET') {
@@ -416,15 +421,45 @@ export function createApp(deps: AppDeps): Server {
     sendJson(response, 200, { worldId: player.worldId, houseId: player.houseId });
   }
 
-  async function closeSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  /**
+   * The player deletes their identity: the house, its queued actions and the
+   * token go at once, and the town goes if it was the last human. The silence
+   * rule waits thirty days; this is the deliberate exit.
+   */
+  async function deletePlayer(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
     if (player === null) {
       return;
     }
 
-    await deps.store.revoke(player.tokenHash, new Date(now()));
-    deps.logger.info('session.revoked', { worldId: player.worldId, houseId: player.houseId });
+    const at = new Date(now());
+
+    try {
+      await deps.worlds.withWorld(async (session) => {
+        const next = structuredClone(sessionWorld(session));
+        removeHouse(next, player.houseId);
+        await session.cancelHouse(player.houseId, at);
+
+        if (humanHouseOf(next) === undefined) {
+          await session.clear();
+          return;
+        }
+
+        await session.save(next, session.snapshot.hourStartedAt, []);
+      }, player.worldId);
+    } catch (error) {
+      // A town already gone leaves only the row to clean.
+      if (!(error instanceof UnknownWorldError)) {
+        throw error;
+      }
+    }
+
+    // The identity dies even when the town could not be written: a failed
+    // delete must not leave a working token behind a house that is gone.
+    await deps.store.revoke(player.tokenHash, at);
+    await deps.store.remove(player.tokenHash);
+    deps.logger.info('player.deleted', { worldId: player.worldId, houseId: player.houseId });
 
     response.writeHead(204, {
       'Cache-Control': 'no-store',

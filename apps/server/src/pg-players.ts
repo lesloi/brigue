@@ -100,6 +100,10 @@ export class PgPlayerStore implements PlayerStore {
     );
   }
 
+  async remove(tokenHash: string): Promise<void> {
+    await this.pool.query('DELETE FROM players WHERE token_hash = $1', [tokenHash]);
+  }
+
   /** Readiness only: one round trip proves the pool can still reach its server. */
   async ping(): Promise<void> {
     await this.pool.query('SELECT 1');

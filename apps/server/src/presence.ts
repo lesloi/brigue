@@ -81,7 +81,7 @@ export function applyPresence(world: World, players: readonly Player[], now: num
 }
 
 /** Removes a house, its people and their seats, and its queued campaign votes. */
-function removeHouse(world: World, houseId: string): void {
+export function removeHouse(world: World, houseId: string): void {
   const removedPeople = new Set<string>();
 
   for (const [personId, person] of Object.entries(world.people)) {

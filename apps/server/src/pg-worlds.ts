@@ -243,6 +243,15 @@ class PgWorldSession implements WorldSession {
     );
   }
 
+  async cancelHouse(houseId: string, at: Date): Promise<void> {
+    await this.client.query(
+      `UPDATE actions
+       SET cancelled_at = $3
+       WHERE town_id = $1 AND house_id = $2 AND cancelled_at IS NULL`,
+      [this.townId, houseId, at],
+    );
+  }
+
   async clear(): Promise<void> {
     // The town goes whole — its state, houses, actions and journal — and the
     // player rows and the sealed seasons, which live outside it, stay. Deleting

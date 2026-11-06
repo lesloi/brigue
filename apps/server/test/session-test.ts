@@ -1,14 +1,14 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, RULES } from '@brigue/core';
+import { createWorld, RULES, withNewcomer } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp, type AppDeps } from '../src/http.ts';
 import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
-import { MemoryWorldStore, UnknownWorldError, type WorldStore } from '../src/worlds.ts';
+import { MemoryWorldStore, UnknownWorldError, type StoredAction, type WorldStore } from '../src/worlds.ts';
 import { TEST_FIRST_HOUSE, TEST_TOWN, town } from './helpers.ts';
 
 interface Harness {
@@ -518,23 +518,64 @@ describe('the session cookie', () => {
     expect(cookieOf(response)).toContain('Max-Age=0');
   });
 
-  it('revokes the token when the session is closed', async () => {
+  it('deletes the identity, the house and the town', async () => {
+    // Arrange: the only human of a town, with a token.
     const harness = await start();
-    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
-    const opened = await login(harness, token);
+    await harness.worlds.createTown(TEST_TOWN, town(7), new Date());
+    const { token, player } = await issueToken(harness.store, TEST_TOWN.id, TEST_FIRST_HOUSE.id);
 
-    const closed = await fetch(`${harness.url}/api/session`, {
+    // Act
+    const response = await fetch(`${harness.url}/api/player`, {
       method: 'DELETE',
-      headers: { Cookie: cookiePair(opened) },
-    });
-    const after = await fetch(`${harness.url}/api/session`, {
-      headers: { Cookie: cookiePair(opened) },
+      headers: { Cookie: `${SESSION_COOKIE}=${token}` },
     });
 
-    expect(closed.status).toBe(204);
-    expect(cookieOf(closed)).toContain('Max-Age=0');
-    expect(after.status).toBe(401);
+    // Assert: the token is dead, the row is gone, and the town went with its
+    // last human.
+    expect(response.status).toBe(204);
+    expect(cookieOf(response)).toContain('Max-Age=0');
     expect(await login(harness, token)).toMatchObject({ status: 401 });
+    expect(await harness.store.findByTokenHash(player.tokenHash)).toBeNull();
+    await expect(harness.worlds.withWorld(async (session) => session.snapshot, TEST_TOWN.id)).rejects.toBeInstanceOf(
+      UnknownWorldError,
+    );
+  });
+
+  it('deletes the house and its queue, and leaves the town to the others', async () => {
+    // Arrange: two human houses, the first with a queued action.
+    const harness = await start();
+    const identity = { id: 'moreau', houseName: 'Moreau', personName: 'Colin Moreau' };
+    await harness.worlds.createTown(TEST_TOWN, withNewcomer(town(7), 'baker', identity), new Date());
+    const gone = await issueToken(harness.store, TEST_TOWN.id, TEST_FIRST_HOUSE.id);
+    const stays = await issueToken(harness.store, TEST_TOWN.id, identity.id);
+    const action: StoredAction = {
+      id: '00000000-0000-4000-8000-00000000000a',
+      houseId: TEST_FIRST_HOUSE.id,
+      playsAt: 1,
+      action: { type: 'market.buy', houseId: TEST_FIRST_HOUSE.id, good: 'wool', units: 1 },
+      receivedAt: new Date(),
+      cancelledAt: null,
+    };
+    await harness.worlds.withWorld(async (session) => {
+      await session.append(action);
+    }, TEST_TOWN.id);
+
+    // Act
+    const response = await fetch(`${harness.url}/api/player`, {
+      method: 'DELETE',
+      headers: { Cookie: `${SESSION_COOKIE}=${gone.token}` },
+    });
+
+    // Assert: the house and its queue are gone, the town and the other player
+    // stay, and the deleted token cannot come back.
+    expect(response.status).toBe(204);
+    expect(await login(harness, stays.token)).toMatchObject({ status: 200 });
+    expect(await login(harness, gone.token)).toMatchObject({ status: 401 });
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
+    expect(world.houses[TEST_FIRST_HOUSE.id]).toBeUndefined();
+    expect(world.houses[identity.id]).toBeDefined();
+    expect(await harness.worlds.withWorld(async (session) => session.actionsBetween(1, 1), TEST_TOWN.id)).toEqual([]);
+    expect(await harness.store.findByTokenHash(gone.player.tokenHash)).toBeNull();
   });
 
   it('drops Secure only when the server is explicitly told to', async () => {

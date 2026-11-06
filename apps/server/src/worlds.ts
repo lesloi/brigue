@@ -56,6 +56,8 @@ export interface WorldSession {
   append(action: StoredAction): Promise<void>;
   /** Marks an unplayed action cancelled; it is never handed to the advance. */
   cancel(id: string, at: Date): Promise<void>;
+  /** Cancels every unplayed action of a house, for an identity that goes. */
+  cancelHouse(houseId: string, at: Date): Promise<void>;
   /** Writes the whole town and appends the events of the span. */
   save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
   /**
@@ -232,6 +234,13 @@ export class MemoryWorldStore implements WorldStore {
 
         if (found !== undefined && found.cancelledAt === null) {
           found.cancelledAt = new Date(at);
+        }
+      },
+      cancelHouse: async (houseId, at) => {
+        for (const action of stored.actions) {
+          if (action.houseId === houseId && action.cancelledAt === null) {
+            action.cancelledAt = new Date(at);
+          }
         }
       },
       save: async (world, hourStartedAt, events) => {
