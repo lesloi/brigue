@@ -7,7 +7,6 @@
     "start": "node src/main.ts",
     "dev": "node --watch src/main.ts",
     "migrate": "node scripts/migrate-schema.ts",
-    "migrate-world": "node scripts/migrate-world.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

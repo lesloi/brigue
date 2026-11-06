@@ -43,8 +43,8 @@ describe('the scripts a command names', () => {
     // Act
     const scripts = referencedScripts(workflow);
 
-    // Assert
-    expect(scripts.length).toBeGreaterThan(0);
+    // Assert: the format-3 release names no script of its own, so this only
+    // guards whatever step a later release adds.
     for (const script of scripts) {
       expect(scriptExists(script), script).toBe(true);
     }
