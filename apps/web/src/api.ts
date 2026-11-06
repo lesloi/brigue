@@ -82,6 +82,8 @@ export interface WorldResponse {
   events: Event[];
   summary: CatchUpSummary;
   stateHash: string;
+  /** How long a deletion waits; the screen says it, the server owns it. */
+  deletionGraceDays: number;
   /** Set only by a server started for local development: it exposes `advanceHour`. */
   dev?: boolean;
 }

@@ -557,6 +557,9 @@ export function createApp(deps: AppDeps): Server {
       // The projected state, not the world: hashing the world would reveal the
       // seed and with it every future the town has not lived yet.
       stateHash: hashJson(projection),
+      // A pacing rule, not town state: the screen says how long a deletion
+      // waits without deciding it.
+      deletionGraceDays: PACING.deletionGraceDays,
       // Outside the projection on purpose: the hash must not depend on how a
       // deployment was started.
       ...(deps.devAdvance === true ? { dev: true } : {}),
@@ -610,6 +613,7 @@ export function createApp(deps: AppDeps): Server {
         refusals: outcome.journal.refusals,
       },
       stateHash: hashJson(projection),
+      deletionGraceDays: PACING.deletionGraceDays,
       dev: true,
     });
   }

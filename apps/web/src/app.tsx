@@ -442,6 +442,7 @@ export function App() {
 
       {deleteOpen && view.kind === 'world' ? (
         <DeleteAccountDialog
+          graceDays={view.data.deletionGraceDays}
           busy={deleting}
           error={deleteError}
           onCancel={() => {

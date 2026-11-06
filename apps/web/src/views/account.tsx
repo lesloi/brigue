@@ -4,6 +4,7 @@ import { Seal } from '../icons.tsx';
 import { Modal } from './modal.tsx';
 
 interface DeleteAccountDialogProps {
+  graceDays: number;
   busy: boolean;
   error: string | null;
   onCancel(): void;
@@ -14,7 +15,7 @@ interface DeleteAccountDialogProps {
  * The one destructive action of the game: it schedules the erasure of the
  * identity, so the safe choice is focused and the copy stays short.
  */
-export function DeleteAccountDialog({ busy, error, onCancel, onConfirm }: DeleteAccountDialogProps) {
+export function DeleteAccountDialog({ graceDays, busy, error, onCancel, onConfirm }: DeleteAccountDialogProps) {
   const cancelButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -34,7 +35,10 @@ export function DeleteAccountDialog({ busy, error, onCancel, onConfirm }: Delete
     >
       <Seal size={34} />
       <h2 id="delete-title">Supprimer votre compte</h2>
-      <p>Le compte et la maison seront supprimés. Vous pourrez le restaurer avant l'échéance.</p>
+      <p>
+        Toutes les données du compte seront supprimées dans {graceDays === 1 ? 'un jour' : `${graceDays} jours`}. Vous
+        pourrez restaurer votre compte avant l'échéance.
+      </p>
       {error !== null ? <p class="warn">{error}</p> : null}
       <div class="dialog-actions">
         <button class="btn outline" type="button" ref={cancelButton} disabled={busy} onClick={onCancel}>
