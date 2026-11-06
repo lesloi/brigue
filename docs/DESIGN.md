@@ -33,9 +33,9 @@ Two rules keep the chapters honest:
 
 ## The town
 
-One world holds several towns. A newcomer takes a free place in the oldest town that has one — a
-human house with no live token, or a new human house while the town is below twenty houses — and a
-town is founded only when every town is full. A town is named when it is founded: a place name is
+One world holds several towns. A newcomer takes a free place in the least-filled town that has
+one — a human house with no live token, or a new human house while the town is below twenty
+houses — the oldest breaking a tie, and a town is founded only when every town is full. A town is named when it is founded: a place name is
 drawn from a list, and no name serves twice in the same database. A town whose humans have all
 gone is never offered to a newcomer; it is on its way out.
 

@@ -19,9 +19,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   too small to hold a solo player's pace.
 
 - **A join takes the first free place; a full world gets a new town.** The towns are visited
-  oldest first. A human house with no live token is a freed place, and a town below twenty houses
-  takes a new human house; a town whose humans have all gone is left to its deletion, never given
-  to a newcomer. When no town has a place, the join founds one — three AI houses and the
+  least filled first — the one that needs people most — and the oldest breaks a tie. A human house
+  with no live token is a freed place, and a town below twenty houses takes a new human house; a
+  town whose humans have all gone is left to its deletion, never given to a newcomer. When no town has a place, the join founds one — three AI houses and the
   newcomer's house — and names it by drawing from a list of places, each name used once per
   database.
 

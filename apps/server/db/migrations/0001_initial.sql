@@ -195,7 +195,10 @@ CREATE TABLE events (
   CHECK ((audience = 'house') = (house_id IS NOT NULL))
 );
 
-CREATE INDEX events_town_at ON events (town_id, at);
+-- The journal is read backwards from a cursor that is an event id, one town at
+-- a time: the index is the pair, not the hour. It also serves the cascade when
+-- a town goes.
+CREATE INDEX events_town_id ON events (town_id, id);
 
 -- A client-generated UUID makes a retried request a duplicate, never a second
 -- action: the id is globally unique, so a retry is caught whatever town it

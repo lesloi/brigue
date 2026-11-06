@@ -138,7 +138,13 @@ export class MemoryWorldStore implements WorldStore {
   }
 
   async listTowns(): Promise<TownInfo[]> {
-    return [...this.towns.values()].map((stored) => ({ ...stored.snapshot.town }));
+    // A stable sort keeps the insertion order — oldest first — on equal counts.
+    return [...this.towns.values()]
+      .sort(
+        (left, right) =>
+          Object.keys(left.snapshot.world.houses).length - Object.keys(right.snapshot.world.houses).length,
+      )
+      .map((stored) => ({ ...stored.snapshot.town }));
   }
 
   async usedTownNames(): Promise<string[]> {

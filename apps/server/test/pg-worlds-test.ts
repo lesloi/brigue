@@ -8,7 +8,7 @@ import { createWorld, RULES, WorldVersionError, type Action, type Event, type Wo
 import { applyMigrations } from '../src/migrations.ts';
 import { PgWorldStore } from '../src/pg-worlds.ts';
 import { DuplicateActionError, UnknownWorldError, type StoredAction, type WorldSession } from '../src/worlds.ts';
-import { TEST_TOWN } from './helpers.ts';
+import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z');
 const databaseUrl = process.env.DATABASE_URL ?? '';
@@ -360,7 +360,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(second.town).toEqual({ id: 'b', name: 'B' });
     expect(first.world.seed).toBe(1);
     expect(second.world.seed).toBe(2);
-    expect(towns.map((town) => town.id).sort()).toEqual(['a', 'b']);
+    // Same size, so the older town comes first.
+    expect(towns.map((entry) => entry.id)).toEqual(['a', 'b']);
   });
 
   it('serialises two joins on the advisory lock', async () => {
@@ -394,6 +395,15 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Assert: the dead town's name is never drawn again.
     expect(await store.usedTownNames()).toContain('Amiens');
     expect(await store.listTowns()).toEqual([]);
+  });
+
+  it('lists the least-filled town first, the oldest on a tie', async () => {
+    // Arrange: an older town of four houses and a younger one of three.
+    await store.createTown({ id: 'old', name: 'Old' }, town(9), START);
+    await store.createTown({ id: 'new', name: 'New' }, createWorld(8), START);
+
+    // Act and assert: the emptier town comes first, whatever its age.
+    expect((await store.listTowns()).map((entry) => entry.id)).toEqual(['new', 'old']);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {

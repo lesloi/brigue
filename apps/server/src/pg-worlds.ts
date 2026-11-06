@@ -92,7 +92,15 @@ export class PgWorldStore implements WorldStore {
   }
 
   async listTowns(): Promise<TownInfo[]> {
-    const { rows } = await this.pool.query<TownInfo>(`SELECT id, name FROM towns ORDER BY created_at, id`);
+    // Least filled first: the join takes the town that needs people most, and
+    // the oldest breaks a tie.
+    const { rows } = await this.pool.query<TownInfo>(
+      `SELECT t.id, t.name
+       FROM towns t
+       LEFT JOIN houses h ON h.town_id = t.id
+       GROUP BY t.id, t.name, t.created_at
+       ORDER BY count(h.id), t.created_at, t.id`,
+    );
 
     return rows;
   }
@@ -198,9 +206,13 @@ class PgWorldSession implements WorldSession {
   }
 
   async findAction(id: string): Promise<StoredAction | null> {
+    // Scoped to the town: another town's house may carry the same id, and its
+    // action must be as unknown here as an id that was never issued.
     const { rows } = await this.client.query(
-      `SELECT id, house_id, plays_at, action, received_at, cancelled_at FROM actions WHERE id = $1`,
-      [id],
+      `SELECT id, house_id, plays_at, action, received_at, cancelled_at
+       FROM actions
+       WHERE id = $1 AND town_id = $2`,
+      [id, this.townId],
     );
     const row = rows[0];
 
@@ -226,8 +238,8 @@ class PgWorldSession implements WorldSession {
     await this.client.query(
       `UPDATE actions
        SET cancelled_at = $2
-       WHERE id = $1 AND cancelled_at IS NULL`,
-      [id, at],
+       WHERE id = $1 AND town_id = $3 AND cancelled_at IS NULL`,
+      [id, at, this.townId],
     );
   }
 

@@ -63,7 +63,7 @@ export class PgPlayerStore implements PlayerStore {
   async revoke(tokenHash: string, at: Date): Promise<void> {
     await this.pool.query(
       `UPDATE players
-       SET revoked_at = $2, last_seen_at = $2
+       SET revoked_at = $2, last_seen_at = GREATEST(last_seen_at, $2)
        WHERE token_hash = $1 AND revoked_at IS NULL`,
       [tokenHash, at],
     );
@@ -72,7 +72,7 @@ export class PgPlayerStore implements PlayerStore {
   async touch(tokenHash: string, at: Date): Promise<void> {
     await this.pool.query(
       `UPDATE players
-       SET last_seen_at = $2
+       SET last_seen_at = GREATEST(last_seen_at, $2)
        WHERE token_hash = $1 AND revoked_at IS NULL`,
       [tokenHash, at],
     );

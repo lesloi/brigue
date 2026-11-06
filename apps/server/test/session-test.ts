@@ -322,8 +322,8 @@ describe('joining the town', () => {
     expect(Object.keys(full.houses)).toHaveLength(20);
   });
 
-  it('takes a free place in an older town before founding a new one', async () => {
-    // Arrange: an older town with no place, a younger one with a freed house.
+  it('takes a free place in a town that has one before founding a new one', async () => {
+    // Arrange: a town with no place, another with a freed house.
     const harness = await start();
     const older = town(7);
     for (let index = 0; index < 16; index += 1) {
@@ -345,6 +345,34 @@ describe('joining the town', () => {
     const body = (await response.json()) as { worldId: string; houseId: string };
 
     // Assert
+    expect(response.status).toBe(201);
+    expect(body.worldId).toBe(younger.id);
+    expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
+  });
+
+  it('takes the least-filled town, not the oldest', async () => {
+    // Arrange: an older town full of houses with a freed place, a younger and
+    // emptier one with a freed place too.
+    const harness = await start();
+    const older = town(7);
+    for (let index = 0; index < 16; index += 1) {
+      const id = `ai-${index}`;
+      older.houses[id] = { ...(older.houses.caron as (typeof older.houses)[string]), id, name: `IA ${index}` };
+      older.people[`person-${id}`] = {
+        ...(older.people['person-caron'] as (typeof older.people)[string]),
+        id: `person-${id}`,
+        houseId: id,
+      };
+    }
+    const younger = { id: 'jeune', name: 'Jeune' };
+    await harness.worlds.createTown(TEST_TOWN, older, new Date());
+    await harness.worlds.createTown(younger, town(8), new Date());
+
+    // Act
+    const response = await join(harness);
+    const body = (await response.json()) as { worldId: string; houseId: string };
+
+    // Assert: the town that needs people most, not the oldest.
     expect(response.status).toBe(201);
     expect(body.worldId).toBe(younger.id);
     expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);

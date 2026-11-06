@@ -2,6 +2,7 @@ import { createWorld } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
 import { MemoryWorldStore, UnknownWorldError, type TownInfo } from '../src/worlds.ts';
+import { town } from './helpers.ts';
 
 describe('the town store', () => {
   it('keeps two towns apart and clears one without the other', async () => {
@@ -29,6 +30,16 @@ describe('the town store', () => {
     // Assert
     await expect(store.withWorld(async (session) => session.snapshot, 'a')).rejects.toBeInstanceOf(UnknownWorldError);
     expect((await store.withWorld(async (session) => session.snapshot, 'b')).town.id).toBe('b');
+  });
+
+  it('lists the least-filled town first, the oldest on a tie', async () => {
+    // Arrange: an older town of four houses and a younger one of three.
+    const store = new MemoryWorldStore();
+    await store.createTown({ id: 'old', name: 'Old' }, town(1), new Date());
+    await store.createTown({ id: 'new', name: 'New' }, createWorld(2), new Date());
+
+    // Act and assert: the emptier town comes first, whatever its age.
+    expect((await store.listTowns()).map((entry) => entry.id)).toEqual(['new', 'old']);
   });
 
   it('keeps a dead town name spent', async () => {
