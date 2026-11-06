@@ -113,3 +113,8 @@ French in the data and in the interface, and the English here is only how we tal
   prepares the heir; refusing it opens the window in which death may come.
 - **Rancune** — a line in a house's register: who beat it, who denounced it, who robbed it, who
   testified against it. The heir keeps it, because the enemies survive the person.
+
+## Identity
+
+- **Compte joueur** — the player's key to a house, called a token in the code: an opaque secret,
+  shown once, with no email, no password and no recovery. Lost, the house is lost.
