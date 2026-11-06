@@ -142,10 +142,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **A token, not an account.** An opaque 256-bit token, stored hashed, shown once, no email, no
   recovery. The token is the whole identity, which is a fair price for zero sign-up. The
   consequence is stated in the interface: lose the token, lose the house. A player who wants to
-  leave for good asks for the deletion: it is scheduled a week out, the house plays no more and
-  the player can do nothing until the deadline, the token stays valid so that reconnecting offers
-  to come back, and when the week is over the scheduler erases the token, the house and its
-  queued actions — with the town when it was the last human. Silence is the other exit, and it
+  leave for good asks for the deletion: it is scheduled a week out, the player can do nothing
+  until the deadline, the token stays valid so that reconnecting offers to come back, and when
+  the week is over the scheduler erases the token, the house and its queued actions — with the
+  town when it was the last human. Silence is the other exit, and it
   waits thirty days.
   Revisit if the game is ever opened to strangers.
 
