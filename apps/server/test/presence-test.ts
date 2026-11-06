@@ -9,8 +9,8 @@ import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore, type Player } from '../src/players.ts';
 import { applyPresence } from '../src/presence.ts';
 import { authenticate, issueToken } from '../src/session.ts';
-import { MemoryWorldStore, UnknownWorldError, WORLD_ID } from '../src/worlds.ts';
-import { town } from './helpers.ts';
+import { MemoryWorldStore, UnknownWorldError } from '../src/worlds.ts';
+import { TEST_TOWN, town } from './helpers.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
@@ -19,7 +19,7 @@ const START = Date.parse('2026-11-05T12:00:00.000Z');
 function player(houseId: string, lastSeenAt: Date, revokedAt: Date | null = null): Player {
   return {
     tokenHash: houseId.padEnd(64, '0'),
-    worldId: WORLD_ID,
+    worldId: TEST_TOWN.id,
     houseId,
     createdAt: lastSeenAt,
     lastSeenAt,
@@ -209,11 +209,11 @@ async function start(
     });
   running.push(close);
 
-  await worlds.createIfAbsent(world, new Date(now), new Date(now));
+  await worlds.createTown(TEST_TOWN, world, new Date(now));
 
   const cookies: Record<string, string> = {};
   for (const entry of players) {
-    const { token } = await issueToken(store, WORLD_ID, entry.houseId, entry.lastSeenAt);
+    const { token } = await issueToken(store, TEST_TOWN.id, entry.houseId, entry.lastSeenAt);
     cookies[entry.houseId] = `${SESSION_COOKIE}=${token}`;
   }
 
@@ -253,12 +253,12 @@ describe('the thirty-day deletion', () => {
     expect(body.world.town.seats.maire.personId).toBeNull();
     expect(await authenticate(harness.store, caronToken)).toBeNull();
 
-    const rows = (await harness.store.listByWorld(WORLD_ID)).filter((row) => row.houseId === 'caron');
+    const rows = (await harness.store.listByWorld(TEST_TOWN.id)).filter((row) => row.houseId === 'caron');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.revokedAt).not.toBeNull();
 
     // The live-house index no longer blocks the freed place.
-    await expect(issueToken(harness.store, WORLD_ID, 'caron', new Date(START))).resolves.toBeDefined();
+    await expect(issueToken(harness.store, TEST_TOWN.id, 'caron', new Date(START))).resolves.toBeDefined();
   });
 
   it('makes a returning player start a fresh first house after more than thirty days', async () => {
@@ -279,9 +279,9 @@ describe('the thirty-day deletion', () => {
     expect(expired.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=;`))).toBe(true);
     expect(await authenticate(harness.store, tokenOf(oldCookie))).toBeNull();
     // The last human house went with the silence, and the town with it.
-    await expect(harness.worlds.withWorld(async (session) => session.snapshot.world)).rejects.toBeInstanceOf(
-      UnknownWorldError,
-    );
+    await expect(
+      harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id),
+    ).rejects.toBeInstanceOf(UnknownWorldError);
 
     // Act: the freed place waits for a human, who chooses a trade on arrival.
     const joined = await fetch(`${harness.url}/api/session`, {

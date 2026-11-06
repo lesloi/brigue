@@ -12,7 +12,7 @@ import {
 import type { Logger } from './logger.ts';
 import type { PlayerStore } from './players.ts';
 import { applyPresence } from './presence.ts';
-import { HOUR_MS, UnknownWorldError, WORLD_ID, type WorldSession, type WorldStore } from './worlds.ts';
+import { HOUR_MS, UnknownWorldError, type TownInfo, type WorldSession, type WorldStore } from './worlds.ts';
 
 export interface Due {
   /** The town after the pass. */
@@ -87,7 +87,8 @@ export interface SchedulerOptions {
 /**
  * The town moves without a reader. The loop looks at the clock, and the lock in
  * the store makes two passes on the same town harmless: the second finds nothing
- * due and writes nothing.
+ * due and writes nothing. Every town is played on its own: a town that fails
+ * must not freeze the others.
  */
 export function startScheduler(options: SchedulerOptions): { stop(): void } {
   const everyMs = options.everyMs ?? 60_000;
@@ -101,6 +102,23 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
     busy = true;
 
     try {
+      const at = options.now();
+      const towns = await options.store.listTowns();
+
+      for (const town of towns) {
+        await playTown(town, at);
+      }
+    } catch (error) {
+      // The list itself is unreachable: the database is down, and every town
+      // waits for the next pass.
+      failure(options.logger, undefined, error);
+    } finally {
+      busy = false;
+    }
+  };
+
+  async function playTown(town: TownInfo, at: Date): Promise<void> {
+    try {
       await options.store.withWorld(async (session) => {
         const world = session.snapshot.world;
 
@@ -110,17 +128,16 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
         // The same silence rule the read path applies, but on its own clock: a
         // town whose last human has gone expires even if nobody comes back.
-        const at = options.now();
-        const presence = applyPresence(world, await options.players.listByWorld(WORLD_ID), at.getTime());
+        const presence = applyPresence(world, await options.players.listByWorld(town.id), at.getTime());
 
         for (const houseId of presence.deletedHouseIds) {
-          await options.players.revokeHouse(WORLD_ID, houseId, at);
-          options.logger.warn('world.house_deleted', { worldId: WORLD_ID, houseId });
+          await options.players.revokeHouse(town.id, houseId, at);
+          options.logger.warn('world.house_deleted', { worldId: town.id, houseId });
         }
 
         if (humanHouseOf(presence.world) === undefined) {
           await session.clear();
-          options.logger.info('town.deleted', { worldId: WORLD_ID });
+          options.logger.info('town.deleted', { worldId: town.id });
           return;
         }
 
@@ -134,28 +151,24 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
         if (due.skipped > 0) {
-          options.logger.warn('town.catch_up_capped', { skipped: due.skipped });
+          options.logger.warn('town.catch_up_capped', { worldId: town.id, skipped: due.skipped });
         }
         if (due.hours > 0) {
-          options.logger.info('town.advanced', { hours: due.hours });
+          options.logger.info('town.advanced', { worldId: town.id, hours: due.hours });
         }
-      });
+      }, town.id);
     } catch (error) {
-      // A town with no player is no town: the read path deletes it, and the
-      // next join starts a new one. That is not a failure to report.
+      // A town deleted between the list and the lock is no town: the next join
+      // starts a new one.
       if (error instanceof UnknownWorldError) {
         return;
       }
 
       // A stopped scheduler leaves every screen healthy and the town frozen, so
       // the failure is logged on every pass: silence is the failure mode.
-      options.logger.warn('town.advance_failed', {
-        detail: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      busy = false;
+      failure(options.logger, town.id, error);
     }
-  };
+  }
 
   const timer = setInterval(() => void pass(), everyMs);
   // The loop must not hold the process open on its own: a deploy that stops the
@@ -165,4 +178,11 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
   return {
     stop: () => clearInterval(timer),
   };
+}
+
+function failure(logger: Logger, worldId: string | undefined, error: unknown): void {
+  logger.warn('town.advance_failed', {
+    ...(worldId === undefined ? {} : { worldId }),
+    detail: error instanceof Error ? error.message : String(error),
+  });
 }

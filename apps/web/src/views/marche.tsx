@@ -115,7 +115,9 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
       <header class="mhead">
         <Seal />
         <div>
-          <div class="eyebrow">Saint-Aubin &middot; an {world.year}</div>
+          <div class="eyebrow">
+            {world.town.name} &middot; an {world.year}
+          </div>
           <h1>Le marché</h1>
         </div>
         <div class="wk">

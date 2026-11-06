@@ -2,6 +2,45 @@ import { randomInt } from 'node:crypto';
 
 import type { HouseIdentity, World } from '@brigue/core';
 
+import type { TownInfo } from './worlds.ts';
+
+/**
+ * The places a town can take. A name is drawn once per database: two towns
+ * with one name would make the register unreadable.
+ */
+export const TOWN_NAMES = [
+  'Amiens',
+  'Arras',
+  'Beauvais',
+  'Béthune',
+  'Blois',
+  'Boulogne',
+  'Bourges',
+  'Bruges',
+  'Cambrai',
+  'Compiègne',
+  'Douai',
+  'Gand',
+  'Laon',
+  'Lille',
+  'Louvain',
+  'Malines',
+  'Meaux',
+  'Mons',
+  'Noyon',
+  'Péronne',
+  'Provins',
+  'Reims',
+  'Rouen',
+  'Saint-Omer',
+  'Senlis',
+  'Soissons',
+  'Tournai',
+  'Troyes',
+  'Valenciennes',
+  'Ypres',
+] as const;
+
 /**
  * The names the first house can take. None of them is an AI house's: a town
  * with two Carons would make the register unreadable.
@@ -89,6 +128,30 @@ function uniqueHouseId(world: World, base: string): string {
   }
 
   return id;
+}
+
+/**
+ * The identity of a new town, drawn when a join finds no free place anywhere:
+ * a name no database has spent yet, and an id derived from it. Names are never
+ * reused, so neither are ids. Once the pool is spent, the fallback is a
+ * numbered place — reachable only by exhausting it.
+ */
+export function drawTownIdentity(taken: readonly string[]): TownInfo {
+  const used = new Set(taken.map((name) => name.toLowerCase()));
+  const free = TOWN_NAMES.filter((name) => !used.has(name.toLowerCase()));
+  const name = free.length > 0 ? free[randomInt(free.length)] : nextBourg(used);
+
+  return { id: slug(name), name };
+}
+
+function nextBourg(used: Set<string>): string {
+  let index = 1;
+
+  while (used.has(`bourg ${index}`)) {
+    index += 1;
+  }
+
+  return `Bourg ${index}`;
 }
 
 function slug(name: string): string {

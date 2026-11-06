@@ -158,9 +158,9 @@ export const FORMAT_VERSION = 1;
 export const RULES = {
   version: 1,
   /**
-   * The first house's starting kit: the first house must buy its input and pay a
-   * few hours of wages before its first sale. Every later arrival starts with
-   * its workshop and nothing else.
+   * The starting kit: a house must buy its input and pay a few hours of wages
+   * before its first sale. Every house gets it, the first as much as a later
+   * arrival.
    */
   startingPurseCents: 45_000,
   startingInputUnits: 8,

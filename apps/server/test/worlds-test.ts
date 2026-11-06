@@ -31,6 +31,17 @@ describe('the town store', () => {
     expect((await store.withWorld(async (session) => session.snapshot, 'b')).town.id).toBe('b');
   });
 
+  it('keeps a dead town name spent', async () => {
+    // Arrange: a town that has lived and gone.
+    const store = new MemoryWorldStore();
+    await store.createTown({ id: 'a', name: 'Amiens' }, createWorld(1), new Date());
+    await store.withWorld(async (session) => session.clear(), 'a');
+
+    // Act and assert: the name is remembered, so it is never drawn again.
+    expect(await store.usedTownNames()).toEqual(['Amiens']);
+    expect(await store.listTowns()).toEqual([]);
+  });
+
   it('creates a town once', async () => {
     // Arrange
     const store = new MemoryWorldStore();

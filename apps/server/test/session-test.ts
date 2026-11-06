@@ -1,15 +1,15 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { RULES } from '@brigue/core';
+import { createWorld, RULES } from '@brigue/core';
 
 import { SESSION_COOKIE } from '../src/cookies.ts';
 import { createApp, type AppDeps } from '../src/http.ts';
 import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
-import { MemoryWorldStore } from '../src/worlds.ts';
-import { TEST_FIRST_HOUSE, town } from './helpers.ts';
+import { MemoryWorldStore, UnknownWorldError, type WorldStore } from '../src/worlds.ts';
+import { TEST_FIRST_HOUSE, TEST_TOWN, town } from './helpers.ts';
 
 interface Harness {
   url: string;
@@ -73,13 +73,13 @@ function cookiePair(response: Response): string {
 describe('the token endpoint', () => {
   it('opens the house of a valid token and sets an httpOnly session cookie', async () => {
     const harness = await start();
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
 
     const response = await login(harness, token);
     const cookie = cookieOf(response) as string;
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ worldId: 'saint-aubin', houseId: 'leclerc' });
+    expect(await response.json()).toEqual({ worldId: TEST_TOWN.id, houseId: 'leclerc' });
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('Secure');
     expect(cookie).toContain('SameSite=Strict');
@@ -90,7 +90,7 @@ describe('the token endpoint', () => {
 
   it('answers a revoked token exactly like an unknown one: 401 and nothing else', async () => {
     const harness = await start();
-    const { token, player } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    const { token, player } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
     await harness.store.revoke(player.tokenHash, new Date());
 
     const unknown = await login(harness, `bgk_${'x'.repeat(43)}`);
@@ -137,7 +137,7 @@ describe('the token endpoint', () => {
 
   it('is rate limited per client, without touching another client', async () => {
     const harness = await start({ trustProxy: true, sessionAttemptsPerMinute: 2 });
-    const valid = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    const valid = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
     const limited = await (async () => {
       expect((await login(harness, 'nope', '203.0.113.7')).status).toBe(401);
       expect((await login(harness, 'nope', '203.0.113.7')).status).toBe(401);
@@ -168,21 +168,25 @@ describe('the token endpoint', () => {
 });
 
 describe('joining the town', () => {
-  it('issues a token for the first human house and creates the world', async () => {
+  it('issues a token for the first human house and founds the town', async () => {
     const harness = await start();
 
     const response = await join(harness);
     const body = (await response.json()) as { token: string; worldId: string; houseId: string };
 
+    // The town is founded here, named by the draw, so its id is not fixed.
+    const towns = await harness.worlds.listTowns();
     expect(response.status).toBe(201);
-    expect(body.worldId).toBe('saint-aubin');
+    expect(towns).toHaveLength(1);
+    expect(body.worldId).toBe(towns[0]?.id);
+    expect(towns[0]?.name).not.toBe('');
     expect(body.houseId).toMatch(/^[a-z0-9-]+$/);
     expect(body.token).toMatch(/^bgk_[A-Za-z0-9_-]{43}$/);
     expect(cookieOf(response)).toContain('HttpOnly');
 
     // The first house is the human one the join drew, and the town is one
     // hour old.
-    const snapshot = await harness.worlds.withWorld(async (session) => session.snapshot);
+    const snapshot = await harness.worlds.withWorld(async (session) => session.snapshot, body.worldId);
     expect(snapshot.world.hour).toBe(1);
     expect(snapshot.world.houses[body.houseId]?.controller).toBe('human');
     expect(snapshot.world.houses[body.houseId]?.name).not.toBe('');
@@ -190,22 +194,23 @@ describe('joining the town', () => {
     // The issued token is the identity: it logs in on the next visit.
     const again = await login(harness, body.token);
     expect(again.status).toBe(200);
-    expect(await again.json()).toEqual({ worldId: 'saint-aubin', houseId: body.houseId });
+    expect(await again.json()).toEqual({ worldId: body.worldId, houseId: body.houseId });
   });
 
   it('hands a second player a new house, not the first one', async () => {
     // Arrange: the first player has the town and its first house.
     const harness = await start();
-    const first = (await (await join(harness)).json()) as { houseId: string };
+    const first = (await (await join(harness)).json()) as { houseId: string; worldId: string };
 
     // Act
     const response = await join(harness);
-    const second = (await response.json()) as { houseId: string };
+    const second = (await response.json()) as { houseId: string; worldId: string };
 
-    // Assert: a house of its own, a workshop, no purse.
+    // Assert: the same town, a house of its own, a workshop, no purse.
     expect(response.status).toBe(201);
+    expect(second.worldId).toBe(first.worldId);
     expect(second.houseId).not.toBe(first.houseId);
-    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, first.worldId);
     expect(world.houses[second.houseId]?.controller).toBe('human');
     expect(world.houses[second.houseId]?.treasuryCents).toBe(RULES.startingPurseCents);
     expect(world.houses[first.houseId]?.treasuryCents).toBe(RULES.startingPurseCents);
@@ -215,20 +220,76 @@ describe('joining the town', () => {
     // Arrange: a town whose first house exists but has no token.
     const harness = await start();
     const base = town(7);
-    await harness.worlds.createIfAbsent(base, new Date(), new Date());
+    await harness.worlds.createTown(TEST_TOWN, base, new Date());
 
     // Act
     const response = await join(harness);
-    const body = (await response.json()) as { houseId: string };
+    const body = (await response.json()) as { houseId: string; worldId: string };
 
     // Assert: the freed place is taken, and no house is added.
     expect(response.status).toBe(201);
+    expect(body.worldId).toBe(TEST_TOWN.id);
     expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
-    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
     expect(Object.keys(world.houses)).toHaveLength(Object.keys(base.houses).length);
   });
 
-  it('refuses when the town has no room for another human', async () => {
+  it('does not hand out a house the deletion pass is about to remove', async () => {
+    // Arrange: a freed house whose last visit is past the deletion threshold.
+    const harness = await start();
+    await harness.worlds.createTown(TEST_TOWN, town(7), new Date());
+    const seen = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+    await harness.store.insert({
+      tokenHash: 'f'.repeat(64),
+      worldId: TEST_TOWN.id,
+      houseId: TEST_FIRST_HOUSE.id,
+      createdAt: seen,
+      lastSeenAt: seen,
+      revokedAt: seen,
+    });
+
+    // Act
+    const response = await join(harness);
+    const body = (await response.json()) as { houseId: string; worldId: string };
+
+    // Assert: a new house, not the one the next read would delete.
+    expect(response.status).toBe(201);
+    expect(body.worldId).toBe(TEST_TOWN.id);
+    expect(body.houseId).not.toBe(TEST_FIRST_HOUSE.id);
+  });
+
+  it('skips a town that vanishes between the list and its lock', async () => {
+    // Arrange: a store whose only town is deleted right after the list.
+    const real = new MemoryWorldStore();
+    await real.createTown(TEST_TOWN, town(7), new Date());
+    let vanish = true;
+    const worlds: WorldStore = {
+      createTown: (info, world, at) => real.createTown(info, world, at),
+      listTowns: () => real.listTowns(),
+      usedTownNames: () => real.usedTownNames(),
+      withWorld: (run, townId) => {
+        if (vanish && townId === TEST_TOWN.id) {
+          vanish = false;
+          return Promise.reject(new UnknownWorldError());
+        }
+
+        return real.withWorld(run, townId);
+      },
+      withJoinLock: (run) => real.withJoinLock(run),
+      close: () => real.close(),
+    };
+    const harness = await start({ worlds });
+
+    // Act
+    const response = await join(harness);
+    const body = (await response.json()) as { worldId: string };
+
+    // Assert: the join founds a town instead of failing.
+    expect(response.status).toBe(201);
+    expect(body.worldId).not.toBe(TEST_TOWN.id);
+  });
+
+  it('founds a second town when no town has a free place', async () => {
     // Arrange: a town at the cap, its only human house taken.
     const harness = await start();
     const base = town(7);
@@ -241,21 +302,71 @@ describe('joining the town', () => {
         houseId: id,
       };
     }
-    await harness.worlds.createIfAbsent(base, new Date(), new Date());
-    await issueToken(harness.store, 'saint-aubin', TEST_FIRST_HOUSE.id, new Date());
+    await harness.worlds.createTown(TEST_TOWN, base, new Date());
+    await issueToken(harness.store, TEST_TOWN.id, TEST_FIRST_HOUSE.id, new Date());
 
     // Act
     const response = await join(harness);
+    const body = (await response.json()) as { worldId: string; houseId: string };
+
+    // Assert: a new town with its own first house, the full one untouched.
+    expect(response.status).toBe(201);
+    expect(body.worldId).not.toBe(TEST_TOWN.id);
+    expect((await harness.worlds.listTowns()).map((town) => town.id).sort()).toEqual(
+      [TEST_TOWN.id, body.worldId].sort(),
+    );
+    const founded = await harness.worlds.withWorld(async (session) => session.snapshot.world, body.worldId);
+    expect(founded.houses[body.houseId]?.controller).toBe('human');
+    expect(Object.keys(founded.houses)).toHaveLength(Object.keys(town(1).houses).length);
+    const full = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
+    expect(Object.keys(full.houses)).toHaveLength(20);
+  });
+
+  it('takes a free place in an older town before founding a new one', async () => {
+    // Arrange: an older town with no place, a younger one with a freed house.
+    const harness = await start();
+    const older = town(7);
+    for (let index = 0; index < 16; index += 1) {
+      const id = `ai-${index}`;
+      older.houses[id] = { ...(older.houses.caron as (typeof older.houses)[string]), id, name: `IA ${index}` };
+      older.people[`person-${id}`] = {
+        ...(older.people['person-caron'] as (typeof older.people)[string]),
+        id: `person-${id}`,
+        houseId: id,
+      };
+    }
+    const younger = { id: 'jeune', name: 'Jeune' };
+    await harness.worlds.createTown(TEST_TOWN, older, new Date());
+    await harness.worlds.createTown(younger, town(8), new Date());
+    await issueToken(harness.store, TEST_TOWN.id, TEST_FIRST_HOUSE.id, new Date());
+
+    // Act: the second town's first house has no live token.
+    const response = await join(harness);
+    const body = (await response.json()) as { worldId: string; houseId: string };
 
     // Assert
-    expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'no_free_house' });
-    expect(cookieOf(response)).toBeUndefined();
+    expect(response.status).toBe(201);
+    expect(body.worldId).toBe(younger.id);
+    expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
+  });
+
+  it('leaves a town whose humans have all gone to the scheduler', async () => {
+    // Arrange: a town of AI houses only, waiting to be deleted.
+    const harness = await start();
+    await harness.worlds.createTown(TEST_TOWN, createWorld(9), new Date());
+
+    // Act
+    const response = await join(harness);
+    const body = (await response.json()) as { worldId: string };
+
+    // Assert: a new town is founded rather than the dead one kept alive.
+    expect(response.status).toBe(201);
+    expect(body.worldId).not.toBe(TEST_TOWN.id);
   });
 
   it('refuses to hand out a token for a world the current rules cannot read', async () => {
     const harness = await start();
-    await harness.worlds.createIfAbsent({ ...town(7), rulesetVersion: RULES.version + 1 }, new Date(), new Date());
+    await harness.worlds.createTown(TEST_TOWN, { ...town(7), rulesetVersion: RULES.version + 1 }, new Date());
 
     const response = await join(harness);
 
@@ -298,8 +409,8 @@ describe('joining the town', () => {
   it('does not change the trade when a token resumes', async () => {
     // Arrange
     const harness = await start();
-    await harness.worlds.createIfAbsent(town(7, 'baker'), new Date(), new Date());
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    await harness.worlds.createTown(TEST_TOWN, town(7, 'baker'), new Date());
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
 
     // Act
     const response = await login(harness, token);
@@ -336,7 +447,7 @@ describe('joining the town', () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: 'invalid_trade' });
     expect(cookieOf(response)).toBeUndefined();
-    await expect(harness.worlds.withWorld(async () => null)).rejects.toThrow();
+    expect(await harness.worlds.listTowns()).toEqual([]);
   });
 
   it('refuses an unknown or null trade', async () => {
@@ -362,7 +473,7 @@ describe('joining the town', () => {
 describe('the session cookie', () => {
   it('reads the house back from the cookie alone', async () => {
     const harness = await start();
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'herse');
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'herse');
     const opened = await login(harness, token);
 
     const response = await fetch(`${harness.url}/api/session`, {
@@ -370,7 +481,7 @@ describe('the session cookie', () => {
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ worldId: 'saint-aubin', houseId: 'herse' });
+    expect(await response.json()).toEqual({ worldId: TEST_TOWN.id, houseId: 'herse' });
   });
 
   it('clears a dead cookie instead of replaying it', async () => {
@@ -386,7 +497,7 @@ describe('the session cookie', () => {
 
   it('revokes the token when the session is closed', async () => {
     const harness = await start();
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
     const opened = await login(harness, token);
 
     const closed = await fetch(`${harness.url}/api/session`, {
@@ -405,7 +516,7 @@ describe('the session cookie', () => {
 
   it('drops Secure only when the server is explicitly told to', async () => {
     const harness = await start({ secureCookies: false });
-    const { token } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
 
     const response = await login(harness, token);
 
@@ -416,7 +527,7 @@ describe('the session cookie', () => {
 describe('the logs', () => {
   it('never contain a token, whether it was accepted, unknown or revoked', async () => {
     const harness = await start();
-    const { token, player } = await issueToken(harness.store, 'saint-aubin', 'leclerc');
+    const { token, player } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
 
     await login(harness, token);
     await login(harness, `bgk_${'x'.repeat(43)}`);

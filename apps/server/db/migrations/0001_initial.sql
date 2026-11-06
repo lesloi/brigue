@@ -14,6 +14,14 @@ CREATE TABLE towns (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- A place name is spent for good. A dead town's name does not come back, and no
+-- id is ever recycled into a sealed season. It carries no town_id and no
+-- cascade: the point is that it outlives the towns.
+CREATE TABLE town_names (
+  name text PRIMARY KEY CHECK (length(name) > 0),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- A token bound to a house, outside the town: the town is versioned and
 -- replayed, a login is not a game rule. `world_id` is the town the token
 -- belongs to. A season's seal keeps the player and takes the house, which is

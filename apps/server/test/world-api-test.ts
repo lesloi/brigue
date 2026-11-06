@@ -9,8 +9,8 @@ import { createLogger } from '../src/logger.ts';
 import { playDue } from '../src/scheduler.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
 import { issueToken } from '../src/session.ts';
-import { MemoryWorldStore, WORLD_ID } from '../src/worlds.ts';
-import { town } from './helpers.ts';
+import { MemoryWorldStore } from '../src/worlds.ts';
+import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -83,12 +83,12 @@ async function start(
   );
 
   const world = options.world ?? town(20261031);
-  await worlds.createIfAbsent(world, new Date(clock.now), new Date(clock.now));
+  await worlds.createTown(TEST_TOWN, world, new Date(clock.now));
 
   const houses = options.houses ?? ['leclerc'];
   const cookies: Record<string, string> = {};
   for (const houseId of houses) {
-    const { token } = await issueToken(store, WORLD_ID, houseId, new Date(clock.now));
+    const { token } = await issueToken(store, TEST_TOWN.id, houseId, new Date(clock.now));
     cookies[houseId] = `${SESSION_COOKIE}=${token}`;
   }
 
@@ -100,7 +100,7 @@ async function start(
         if (due.hours > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
-      });
+      }, TEST_TOWN.id);
     } catch (error) {
       // The loop logs a refused world and leaves it for the reader to report.
       if (!(error instanceof WorldVersionError)) {
@@ -301,7 +301,7 @@ describe('GET /api/world', () => {
       rulesetVersion: RULES.version + 1,
       expected: { formatVersion: world.formatVersion, rulesetVersion: RULES.version },
     });
-    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world);
+    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
     expect(stateHash(after)).toBe(before);
     expect(after.hour).toBe(1);
   });
@@ -325,7 +325,7 @@ describe('GET /api/world', () => {
       rulesetVersion: RULES.version,
       expected: { formatVersion: FORMAT_VERSION, rulesetVersion: RULES.version },
     });
-    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world);
+    const after = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
     expect(stateHash(after)).toBe(before);
     expect(after.hour).toBe(1);
   });
@@ -578,7 +578,7 @@ describe('POST /api/actions', () => {
     // Assert
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ error: 'world_version' });
-    expect(await harness.worlds.withWorld(async (session) => session.findAction(ID_A))).toBeNull();
+    expect(await harness.worlds.withWorld(async (session) => session.findAction(ID_A), TEST_TOWN.id)).toBeNull();
   });
 
   it('rejects a malformed action before it reaches the world', async () => {
@@ -811,7 +811,7 @@ describe('POST /api/dev/advance', () => {
     expect(after.world.hour).toBe(before.world.hour + 1);
     // The simulated hour is saved at the real now: the next natural hour is an
     // hour away, not already owed.
-    const anchor = await harness.worlds.withWorld(async (session) => session.snapshot.hourStartedAt);
+    const anchor = await harness.worlds.withWorld(async (session) => session.snapshot.hourStartedAt, TEST_TOWN.id);
     expect(anchor.getTime()).toBe(harness.clock.now);
     expect(after.dev).toBe(true);
 

@@ -1,6 +1,8 @@
 import { advance, createWorld, withFirstHouse } from '@brigue/core';
 import type { Action, Event, HouseIdentity, Trade, World } from '@brigue/core';
 
+import type { TownInfo } from '../src/worlds.ts';
+
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
  * placed on the hour being stepped.
@@ -12,6 +14,9 @@ export function tick(world: World, actions: readonly Action[] = []): { world: Wo
     actions.map((action) => ({ at: world.hour, action })),
   );
 }
+
+/** The fixture town the tests play; production draws and names its own. */
+export const TEST_TOWN: TownInfo = { id: 'saint-aubin', name: 'Saint-Aubin' };
 
 /** The fixture identity the tests play; production draws its own. */
 export const TEST_FIRST_HOUSE: HouseIdentity = {

@@ -5,15 +5,11 @@ import { countEvent, emptyTally } from './journal.ts';
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
 
-/** The town the single-town path still uses; a join picks or creates its own. */
-export const WORLD_ID = 'saint-aubin';
-
+/** A town a player can join: the id the rows carry, the name the screen shows. */
 export interface TownInfo {
   id: string;
   name: string;
 }
-
-export const DEFAULT_TOWN: TownInfo = { id: WORLD_ID, name: 'Saint-Aubin' };
 
 export interface StoredAction {
   /** Client-generated; the database primary key is what makes a retry a duplicate. */
@@ -70,18 +66,23 @@ export interface WorldSession {
 }
 
 export interface WorldStore {
-  /** Idempotent: a town that already exists keeps its state and its seed. */
-  createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void>;
   /** Idempotent per id: creates the town row and its first state. */
   createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void>;
   /** Every town, oldest first, so a join can look for a free place. */
   listTowns(): Promise<TownInfo[]>;
+  /** Every place name ever drawn, dead towns included: a name is never reused. */
+  usedTownNames(): Promise<string[]>;
   /**
    * Locks the town for the whole callback — the scheduler and the reader both
-   * write, and two passes over the same town would lose one of them. Omitted,
-   * the town is the single-town path's default.
+   * write, and two passes over the same town would lose one of them.
    */
-  withWorld<T>(run: (session: WorldSession) => Promise<T>, townId?: string): Promise<T>;
+  withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T>;
+  /**
+   * Serializes the joins: two newcomers must not take the same freed place, nor
+   * found two towns at once. It spans several towns, so it cannot be the lock
+   * of one `state` row.
+   */
+  withJoinLock<T>(run: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -100,7 +101,6 @@ export class DuplicateActionError extends Error {
 }
 
 interface MemoryWorld {
-  town: TownInfo;
   snapshot: WorldSnapshot;
   actions: StoredAction[];
   events: { id: number; event: Event }[];
@@ -115,20 +115,17 @@ interface MemoryWorld {
  */
 export class MemoryWorldStore implements WorldStore {
   private readonly towns = new Map<string, MemoryWorld>();
+  private readonly names = new Set<string>();
   private queue: Promise<unknown> = Promise.resolve();
-
-  async createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void> {
-    await this.createTown(DEFAULT_TOWN, world, hourStartedAt);
-    void at;
-  }
+  private joinQueue: Promise<unknown> = Promise.resolve();
 
   async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
     if (this.towns.has(town.id)) {
       return;
     }
 
+    this.names.add(town.name);
     this.towns.set(town.id, {
-      town: { ...town },
       snapshot: {
         town: { ...town },
         world: structuredClone(world),
@@ -141,10 +138,14 @@ export class MemoryWorldStore implements WorldStore {
   }
 
   async listTowns(): Promise<TownInfo[]> {
-    return [...this.towns.values()].map((stored) => ({ ...stored.town }));
+    return [...this.towns.values()].map((stored) => ({ ...stored.snapshot.town }));
   }
 
-  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId = DEFAULT_TOWN.id): Promise<T> {
+  async usedTownNames(): Promise<string[]> {
+    return [...this.names];
+  }
+
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {
     const previous = this.queue;
     const current = previous.then(async () => {
       const stored = this.towns.get(townId);
@@ -165,6 +166,18 @@ export class MemoryWorldStore implements WorldStore {
     // A failed callback must not block the queue behind it, but its error still
     // reaches its own caller.
     this.queue = current.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    return current;
+  }
+
+  async withJoinLock<T>(run: () => Promise<T>): Promise<T> {
+    const previous = this.joinQueue;
+    const current = previous.then(() => run());
+
+    this.joinQueue = current.then(
       () => undefined,
       () => undefined,
     );
@@ -217,7 +230,7 @@ export class MemoryWorldStore implements WorldStore {
       },
       save: async (world, hourStartedAt, events) => {
         stored.snapshot = {
-          town: stored.town,
+          town: stored.snapshot.town,
           world: structuredClone(world),
           hourStartedAt: new Date(hourStartedAt),
         };

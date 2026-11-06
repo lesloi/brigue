@@ -35,14 +35,16 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
 
   return (
     <main class="screen">
-      <section class="hero" aria-label="Saint-Aubin">
+      <section class="hero" aria-label={world.town.name}>
         <HeroScene />
         <div class="scrim"></div>
         <div class="id">
           <Seal />
           <div>
             <div class="nm">Maison {house.name}</div>
-            <div class="pl">Saint-Aubin &middot; an {world.year}</div>
+            <div class="pl">
+              {world.town.name} &middot; an {world.year}
+            </div>
           </div>
           <div class="wk">
             h. {world.calendar.hourOfYear}/{world.calendar.hoursPerYear}
@@ -51,7 +53,7 @@ export function Ville({ data, now, advancing, pending, onRefresh, onGoMarket, on
         <div class="cap">
           <div>
             <div class="sub">une ville de la hanse</div>
-            <h1>Saint-Aubin</h1>
+            <h1>{world.town.name}</h1>
           </div>
           <button class="tick" id="refresh" type="button" aria-label="Rafraîchir la ville" onClick={onRefresh}>
             <span id="tick-countdown">{countdownText(world.nextBellAt, now)}</span>

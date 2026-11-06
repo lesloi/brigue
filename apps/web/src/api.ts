@@ -54,6 +54,8 @@ export interface WorldProjection {
     stockCapacityUnits: number;
   };
   town: {
+    id: string;
+    name: string;
     houses: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
     people: Array<{ id: string; houseId: string; name: string }>;
     seats: Record<SeatId, { personId: string | null }>;

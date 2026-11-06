@@ -1,9 +1,8 @@
-import type { Pool, PoolClient } from 'pg';
+import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
 import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
-  DEFAULT_TOWN,
   DuplicateActionError,
   UnknownWorldError,
   type JournalPage,
@@ -26,6 +25,12 @@ interface StateRow {
 }
 
 /**
+ * The key of the join lock: one number for every server, so two instances
+ * serialize their joins together. The value itself is arbitrary.
+ */
+const JOIN_LOCK_KEY = 0x62726967; // 'brig'
+
+/**
  * The towns are the database: one row per thing, keyed by town, and each
  * town's `state` row is what the writer locks. The scheduler and the reader
  * both write, so the lock covers load, advance and save.
@@ -34,14 +39,16 @@ interface StateRow {
  */
 export class PgWorldStore implements WorldStore {
   private readonly pool: Pool;
+  private readonly lockConfig: ClientConfig;
 
-  constructor(pool: Pool) {
+  /**
+   * `lockConfig` builds the one extra connection a join holds. It is not taken
+   * from the pool: a join pins a connection while it waits for the lock, and a
+   * pool full of waiters would starve the join that holds it.
+   */
+  constructor(pool: Pool, lockConfig: ClientConfig = pool.options) {
     this.pool = pool;
-  }
-
-  async createIfAbsent(world: World, hourStartedAt: Date, at: Date): Promise<void> {
-    await this.createTown(DEFAULT_TOWN, world, hourStartedAt);
-    void at;
+    this.lockConfig = lockConfig;
   }
 
   async createTown(town: TownInfo, world: World, hourStartedAt: Date): Promise<void> {
@@ -72,6 +79,7 @@ export class PgWorldStore implements WorldStore {
 
       if (rowCount === 1) {
         await writeWorld(client, town.id, world);
+        await client.query(`INSERT INTO town_names (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [town.name]);
       }
 
       await client.query('COMMIT');
@@ -89,7 +97,13 @@ export class PgWorldStore implements WorldStore {
     return rows;
   }
 
-  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId = DEFAULT_TOWN.id): Promise<T> {
+  async usedTownNames(): Promise<string[]> {
+    const { rows } = await this.pool.query<{ name: string }>(`SELECT name FROM town_names ORDER BY created_at, name`);
+
+    return rows.map((row) => row.name);
+  }
+
+  async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: string): Promise<T> {
     const client = await this.pool.connect();
 
     try {
@@ -104,6 +118,24 @@ export class PgWorldStore implements WorldStore {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  async withJoinLock<T>(run: () => Promise<T>): Promise<T> {
+    // A session-level lock on a connection of its own: the join reads the
+    // towns and then takes a place in one, each in its own transaction, so no
+    // single transaction can carry the lock. The connection is closed after
+    // the pass, which releases the lock whatever happened inside.
+    const { Client } = await import('pg');
+    const client = new Client(this.lockConfig);
+
+    try {
+      await client.connect();
+      await client.query('SELECT pg_advisory_lock($1)', [JOIN_LOCK_KEY]);
+
+      return await run();
+    } finally {
+      await client.end().catch(() => undefined);
     }
   }
 

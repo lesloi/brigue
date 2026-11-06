@@ -11,6 +11,8 @@ import {
   type World,
 } from '@brigue/core';
 
+import type { TownInfo } from './worlds.ts';
+
 /** A workshop as the screen reads it: its chain and hourly figures come from the rules. */
 export interface WorkshopView {
   good: GoodId;
@@ -73,6 +75,8 @@ export interface WorldProjection {
   calendar: CalendarView;
   house: OwnHouseView;
   town: {
+    id: string;
+    name: string;
     houses: PublicHouseView[];
     people: PublicPersonView[];
     seats: Record<SeatId, Seat>;
@@ -92,7 +96,7 @@ export interface WorldProjection {
  * rest of the town at the detail the town itself would show. The seed, the
  * generator and other houses' treasuries never leave the server.
  */
-export function projectWorld(world: World, houseId: string, hourStartedAt: Date): WorldProjection {
+export function projectWorld(town: TownInfo, world: World, houseId: string, hourStartedAt: Date): WorldProjection {
   const house = world.houses[houseId];
   if (!house) {
     // The token points at a house the world no longer holds: a server bug, not
@@ -106,6 +110,8 @@ export function projectWorld(world: World, houseId: string, hourStartedAt: Date)
     calendar: calendarOf(world, hourStartedAt),
     house: ownHouse(house),
     town: {
+      id: town.id,
+      name: town.name,
       houses: Object.values(world.houses)
         .map((candidate) => ({
           id: candidate.id,

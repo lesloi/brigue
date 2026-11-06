@@ -19,7 +19,7 @@ import {
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
 import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
-import { drawHouseIdentity } from './names.ts';
+import { drawHouseIdentity, drawTownIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
@@ -32,9 +32,9 @@ import {
   DuplicateActionError,
   HOUR_MS,
   UnknownWorldError,
-  WORLD_ID,
   type JournalPage,
   type StoredAction,
+  type TownInfo,
   type WorldSession,
   type WorldStore,
 } from './worlds.ts';
@@ -49,6 +49,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const QUEUE_AHEAD_HOURS = 1;
 /** A read returns at most this many journal entries; the rest is counted. */
 const JOURNAL_PAGE = 50;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface AppDeps {
   store: PlayerStore;
@@ -299,27 +300,42 @@ export function createApp(deps: AppDeps): Server {
     const at = new Date(now());
 
     try {
-      // One town, created by the first player; the next ones find it and only
-      // take the house binding. The town is built from its seed, and the first
-      // house — the first house's place — is drawn when its player joins.
-      const town = createWorld(randomSeed());
-      await deps.worlds.createIfAbsent(withFirstHouse(town, trade, drawHouseIdentity(town)), at, at);
-      await assertWorldVersion();
-      const houseId = await ensureHouse(trade);
+      // The join is one critical section: two newcomers must not both take the
+      // same freed place, nor read an empty database and found two towns.
+      const joined = await deps.worlds.withJoinLock(async () => {
+        const towns = await deps.worlds.listTowns();
+        const names = await deps.worlds.usedTownNames();
 
-      if (houseId === null) {
-        deps.logger.warn('session.no_free_house', { ip });
-        sendJson(response, 409, { error: 'no_free_house' });
-        return;
-      }
+        for (const town of towns) {
+          let houseId: string | null;
 
-      const issued = await issueToken(deps.store, WORLD_ID, houseId, at);
-      deps.logger.info('session.joined', { ip, worldId: WORLD_ID, houseId });
+          try {
+            houseId = await takePlace(town.id, trade, at);
+          } catch (error) {
+            // The town went between the list and its lock, or the scheduler
+            // deleted it: the next join will not see it either.
+            if (error instanceof UnknownWorldError) {
+              continue;
+            }
+            // A town of another version is refused, and stops the join: the
+            // format belongs to the database, not to one town.
+            throw error;
+          }
+
+          if (houseId !== null) {
+            return bind(town, houseId, at);
+          }
+        }
+
+        return foundTown(names, trade, at);
+      });
+
+      deps.logger.info('session.joined', { ip, worldId: joined.town.id, houseId: joined.houseId });
       sendJson(
         response,
         201,
-        { worldId: WORLD_ID, houseId, token: issued.token },
-        { 'Set-Cookie': sessionCookie(issued.token, secureCookies) },
+        { worldId: joined.town.id, houseId: joined.houseId, token: joined.token },
+        { 'Set-Cookie': sessionCookie(joined.token, secureCookies) },
       );
     } catch (error) {
       if (error instanceof HouseAlreadyBoundError) {
@@ -329,6 +345,79 @@ export function createApp(deps: AppDeps): Server {
       }
       throw error;
     }
+  }
+
+  /**
+   * The place a newcomer takes in a town: a human house with no live token (a
+   * freed place, or the one the town was created with), else a new human house
+   * until the town is full. A full town offers nothing; the join moves on. A
+   * town whose last human house has gone is on its way out, and is left alone.
+   */
+  async function takePlace(townId: string, trade: Trade, at: Date): Promise<string | null> {
+    return deps.worlds.withWorld(async (session) => {
+      const world = sessionWorld(session);
+
+      if (humanHouseOf(world) === undefined) {
+        return null;
+      }
+
+      const players = await deps.store.listByWorld(townId);
+      const live = new Set(players.filter((player) => player.revokedAt === null).map((player) => player.houseId));
+      const lastSeen = new Map<string, number>();
+
+      for (const player of players) {
+        lastSeen.set(player.houseId, Math.max(lastSeen.get(player.houseId) ?? 0, player.lastSeenAt.getTime()));
+      }
+
+      // A house already past the deletion threshold is due for the next
+      // presence pass: handing it out would hand out a token that pass revokes
+      // at the newcomer's first read.
+      const alive = (houseId: string): boolean => {
+        const seen = lastSeen.get(houseId);
+
+        return seen === undefined || at.getTime() - seen <= PACING.deletionDays * DAY_MS;
+      };
+      const freed = Object.values(world.houses).find(
+        (house) => house.controller === 'human' && !live.has(house.id) && alive(house.id),
+      );
+
+      if (freed !== undefined) {
+        return freed.id;
+      }
+      if (Object.keys(world.houses).length >= RULES.houseCap) {
+        return null;
+      }
+
+      const identity = drawHouseIdentity(world);
+      await session.save(withNewcomer(world, trade, identity), session.snapshot.hourStartedAt, []);
+
+      return identity.id;
+    }, townId);
+  }
+
+  /** No town has a free place: the newcomer founds one, named from the places left. */
+  async function foundTown(
+    names: readonly string[],
+    trade: Trade,
+    at: Date,
+  ): Promise<{ town: TownInfo; houseId: string; token: string }> {
+    const town = drawTownIdentity(names);
+    const world = createWorld(randomSeed());
+    const identity = drawHouseIdentity(world);
+
+    await deps.worlds.createTown(town, withFirstHouse(world, trade, identity), at);
+
+    return bind(town, identity.id, at);
+  }
+
+  async function bind(
+    town: TownInfo,
+    houseId: string,
+    at: Date,
+  ): Promise<{ town: TownInfo; houseId: string; token: string }> {
+    const issued = await issueToken(deps.store, town.id, houseId, at);
+
+    return { town, houseId, token: issued.token };
   }
 
   async function readSession(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -366,7 +455,7 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const outcome = await catchUpTown(player.houseId, player.cursorEventId ?? 0, at);
+    const outcome = await catchUpTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       // The visit arrived after the house was silent for a month: the world has
@@ -394,7 +483,7 @@ export function createApp(deps: AppDeps): Server {
       skipped: caught.skipped,
     });
 
-    const projection = projectWorld(caught.world, player.houseId, caught.hourStartedAt);
+    const projection = projectWorld(outcome.town, caught.world, player.houseId, caught.hourStartedAt);
     await deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
 
     sendJson(response, 200, {
@@ -427,7 +516,7 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
-    const outcome = await advanceTown(player.houseId, player.cursorEventId ?? 0, at);
+    const outcome = await advanceTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
       deps.logger.warn('world.session_expired', { worldId: player.worldId, houseId: player.houseId });
@@ -444,7 +533,7 @@ export function createApp(deps: AppDeps): Server {
       hour: caught.world.hour,
     });
 
-    const projection = projectWorld(caught.world, player.houseId, caught.hourStartedAt);
+    const projection = projectWorld(outcome.town, caught.world, player.houseId, caught.hourStartedAt);
     await deps.store.advanceCursor(player.tokenHash, outcome.journal.lastId);
 
     sendJson(response, 200, {
@@ -496,7 +585,7 @@ export function createApp(deps: AppDeps): Server {
       queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
 
       return queued.filter((action) => action.houseId === player.houseId);
-    });
+    }, player.worldId);
 
     sendJson(response, 200, { actions: actions.map(pendingView) });
   }
@@ -540,7 +629,7 @@ export function createApp(deps: AppDeps): Server {
       await session.cancel(actionId, at);
 
       return { kind: 'cancelled' as const };
-    });
+    }, player.worldId);
 
     switch (outcome.kind) {
       case 'unknown':
@@ -609,7 +698,7 @@ export function createApp(deps: AppDeps): Server {
         await session.append(stored);
 
         return { kind: 'appended' as const, stored };
-      });
+      }, player.worldId);
     } catch (error) {
       // The primary key caught an id another hour already used; the pre-check
       // above covers the common path, this covers a race from another world.
@@ -645,10 +734,10 @@ export function createApp(deps: AppDeps): Server {
     }
   }
 
-  function catchUpTown(houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
+  function catchUpTown(townId: string, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      const presence = await synchronisePresence(WORLD_ID, world, at);
+      const presence = await synchronisePresence(townId, world, at);
 
       // The last human house went with the silence: the town goes too, and the
       // next join starts a new one. The players and the sealed seasons stay.
@@ -683,14 +772,14 @@ export function createApp(deps: AppDeps): Server {
 
       const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
 
-      return { kind: 'caught' as const, result: due, journal };
-    });
+      return { kind: 'caught' as const, town: session.snapshot.town, result: due, journal };
+    }, townId);
   }
 
-  function advanceTown(houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
+  function advanceTown(townId: string, houseId: string, cursor: number, at: Date): Promise<TownOutcome> {
     return deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      const presence = await synchronisePresence(WORLD_ID, world, at);
+      const presence = await synchronisePresence(townId, world, at);
 
       if (humanHouseOf(presence.world) === undefined) {
         await session.clear();
@@ -719,8 +808,13 @@ export function createApp(deps: AppDeps): Server {
 
       const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
 
-      return { kind: 'caught' as const, result: { ...due, hourStartedAt: savedAt }, journal };
-    });
+      return {
+        kind: 'caught' as const,
+        town: session.snapshot.town,
+        result: { ...due, hourStartedAt: savedAt },
+        journal,
+      };
+    }, townId);
   }
 
   async function synchronisePresence(worldId: string, world: World, at: Date): Promise<Presence> {
@@ -744,39 +838,6 @@ export function createApp(deps: AppDeps): Server {
     }
 
     return world;
-  }
-
-  /**
-   * The house the joining player gets: a human house with no live token (a
-   * freed place, or the one the town was just created with), else a new human
-   * house until the town is full. A full town refuses until a finished trade
-   * can be handed over.
-   */
-  async function ensureHouse(trade: Trade): Promise<string | null> {
-    return deps.worlds.withWorld(async (session) => {
-      const world = sessionWorld(session);
-      const players = await deps.store.listByWorld(WORLD_ID);
-      const live = new Set(players.filter((player) => player.revokedAt === null).map((player) => player.houseId));
-      const freed = Object.values(world.houses).find((house) => house.controller === 'human' && !live.has(house.id));
-
-      if (freed !== undefined) {
-        return freed.id;
-      }
-      if (Object.keys(world.houses).length >= RULES.houseCap) {
-        return null;
-      }
-
-      const identity = drawHouseIdentity(world);
-      await session.save(withNewcomer(world, trade, identity), session.snapshot.hourStartedAt, []);
-
-      return identity.id;
-    });
-  }
-
-  async function assertWorldVersion(): Promise<void> {
-    await deps.worlds.withWorld(async (session) => {
-      sessionWorld(session);
-    });
   }
 
   async function identifiedBy(request: IncomingMessage, response: ServerResponse): Promise<Player | null> {
@@ -805,7 +866,7 @@ export function createApp(deps: AppDeps): Server {
 
 type BodyRead = { ok: true; body: unknown } | { ok: false };
 
-type TownOutcome = { kind: 'caught'; result: Due; journal: JournalPage } | { kind: 'gone' };
+type TownOutcome = { kind: 'caught'; town: TownInfo; result: Due; journal: JournalPage } | { kind: 'gone' };
 
 type ActionOutcome =
   | { kind: 'stale'; currentHour: number }
