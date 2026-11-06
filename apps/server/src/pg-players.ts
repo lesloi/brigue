@@ -9,7 +9,8 @@ interface PlayerRow {
   created_at: Date | string;
   last_seen_at: Date | string;
   revoked_at: Date | string | null;
-  cursor_event_id: number;
+  // bigint: the driver hands it back as a string.
+  cursor_event_id: string;
 }
 
 /**
@@ -123,7 +124,8 @@ function rowToPlayer(row: PlayerRow): Player {
     createdAt: asDate(row.created_at),
     lastSeenAt: asDate(row.last_seen_at),
     revokedAt: row.revoked_at === null ? null : asDate(row.revoked_at),
-    cursorEventId: row.cursor_event_id,
+    // bigint comes back as a string.
+    cursorEventId: Number(row.cursor_event_id),
   };
 }
 

@@ -367,21 +367,27 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   it('serialises two joins on the advisory lock', async () => {
-    // Arrange: the first join holds the lock long enough for the second to be
-    // waiting on it if the lock were missing.
+    // Arrange: the first join is inside the lock before the second starts, and
+    // holds it long enough for the second to be waiting if the lock were
+    // missing.
     const order: string[] = [];
+    let entered = (): void => {};
+    const inside = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const first = store.withJoinLock(async () => {
+      order.push('first:start');
+      entered();
+      await delay(150);
+      order.push('first:end');
+    });
+    await inside;
 
     // Act
-    await Promise.all([
-      store.withJoinLock(async () => {
-        order.push('first:start');
-        await delay(150);
-        order.push('first:end');
-      }),
-      store.withJoinLock(async () => {
-        order.push('second');
-      }),
-    ]);
+    const second = store.withJoinLock(async () => {
+      order.push('second');
+    });
+    await Promise.all([first, second]);
 
     // Assert
     expect(order).toEqual(['first:start', 'first:end', 'second']);
