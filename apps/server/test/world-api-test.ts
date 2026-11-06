@@ -378,14 +378,14 @@ describe('GET /api/world', () => {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {
-        ...base.houses.herse,
+        ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ good: 'grain', level: 1, workers: 1 }],
         stock: {},
       };
       world.people[personId] = {
-        ...base.people['person-herse'],
+        ...base.people['person-fournier'],
         id: personId,
         houseId: id,
         name: `Nom ${index}`,

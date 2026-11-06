@@ -107,14 +107,14 @@ describe('dormancy', () => {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {
-        ...base.houses.herse,
+        ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ good: 'grain', level: 1, workers: 1 }],
         stock: {},
       };
       world.people[personId] = {
-        ...base.people['person-herse'],
+        ...base.people['person-fournier'],
         id: personId,
         houseId: id,
         name: `Nom ${index}`,
@@ -133,7 +133,7 @@ describe('dormancy', () => {
   it('treats a house with no live token as dormant, and an AI house as never dormant', () => {
     // Arrange
     const world = aHumanWorld();
-    world.houses.herse.dormant = true;
+    world.houses.fournier.dormant = true;
     const seen = new Date(START - HOUR);
 
     // Act
@@ -142,7 +142,7 @@ describe('dormancy', () => {
     // Assert: a closed session leaves the house dormant even after a visit...
     expect(presence.world.houses.leclerc.dormant).toBe(true);
     // ...and an AI house is always played.
-    expect(presence.world.houses.herse.dormant).toBe(false);
+    expect(presence.world.houses.fournier.dormant).toBe(false);
   });
 
   it('revokes a player row whose house the world no longer holds', () => {

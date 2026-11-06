@@ -130,14 +130,14 @@ describe('the simulation core', () => {
     const base = town(SEED);
     const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
     world.houses.quint = {
-      ...base.houses.herse,
+      ...base.houses.fournier,
       id: 'quint',
       name: 'Quint',
       workshops: [{ good: 'grain', level: 1, workers: 1 }],
       stock: {},
     };
     world.people['person-quint'] = {
-      ...base.people['person-herse'],
+      ...base.people['person-fournier'],
       id: 'person-quint',
       houseId: 'quint',
       name: 'Jean Quint',
@@ -426,14 +426,14 @@ describe('the simulation core', () => {
       const id = `house-${index}`;
       const personId = `person-${index}`;
       world.houses[id] = {
-        ...base.houses.herse,
+        ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ good: 'grain', level: 1, workers: 1 }],
         stock: {},
       };
       world.people[personId] = {
-        ...base.people['person-herse'],
+        ...base.people['person-fournier'],
         id: personId,
         houseId: id,
         name: `Nom ${index}`,

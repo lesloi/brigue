@@ -19,6 +19,24 @@ function playPeriod(world: World, actions: Action[] = []): World {
   return playHalfDay(world, actions).world;
 }
 
+/** The cloth price the bell sets for a half-day flow, drift aside. */
+function pricedCloth(flowUnits: number): number {
+  const hours = HOURS_PER_YEAR / 2;
+
+  return nextPriceCents({
+    priceCents: RULES.market.cloth.referenceCents,
+    referenceCents: RULES.market.cloth.referenceCents,
+    absorbedUnits: RULES.market.cloth.absorbedUnits * hours,
+    scaleUnits: RULES.market.cloth.scaleUnits * hours,
+    flowUnits,
+    driftCents: 0,
+    pressureDivisor: RULES.pricePressureDivisor,
+    reversionDivisor: RULES.priceReversionDivisor,
+    floorCents: RULES.priceFloorCents,
+    ceilCents: RULES.priceCeilCents,
+  });
+}
+
 describe('nextPriceCents', () => {
   const base = {
     priceCents: 1240,
@@ -90,13 +108,13 @@ describe('the market of a hour', () => {
     const { world } = playWeek(town(SEED));
 
     // Act and assert: sold minus bought, per good. The first house produces but
-    // does not sell; every AI house sells what it produced.
+    // does not sell; every AI house buys its input and sells what it produced.
     expect(world.marketFlow).toEqual({
-      wool: -2,
+      wool: -6,
       cloth: 6,
-      grain: 0,
+      grain: -4,
       bread: 4,
-      wood: 0,
+      wood: -4,
       planks: 4,
     });
   });
@@ -115,39 +133,35 @@ describe('the market of a hour', () => {
     expect(after.marketFlow.cloth).toBe(26);
   });
 
-  it('lets a purchase raise the price the following hour', () => {
-    // Arrange
+  it('lets a purchase of a finished good raise the price the following hour', () => {
+    // Arrange: Caron makes and sells six cloth an hour, so a half-day prices
+    // seventy-two units; the player buys twenty more.
     const control = playPeriod(town(SEED));
-    const bought = playPeriod(town(SEED), [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 20 }]);
+    const bought = playPeriod(town(SEED), [{ type: 'market.buy', houseId: 'leclerc', good: 'cloth', units: 20 }]);
+    const townFlow = 6 * (HOURS_PER_YEAR / 2);
 
-    // Act: twenty fewer wool on the market than in the control hour.
-    const difference = bought.market.wool - control.market.wool;
+    // Act: twenty fewer cloth on the market than in the control hour.
+    const difference = bought.market.cloth - control.market.cloth;
 
     // Assert
-    expect(difference).toBe(
-      Math.trunc(
-        (20 * RULES.market.wool.referenceCents) /
-          (RULES.pricePressureDivisor * RULES.market.wool.scaleUnits * (HOURS_PER_YEAR / 2)),
-      ),
-    );
+    expect(difference).toBe(pricedCloth(townFlow - 20) - pricedCloth(townFlow));
   });
 
-  it('lets an unclaimed wool glut lower the price', () => {
-    // Arrange: Vandermeersch sells four wool a hour; here the weaver buys four,
-    // so the town's wool balance is closer to level and the glut is smaller.
-    const glut = playPeriod(town(SEED));
-    const balanced = playPeriod(town(SEED), [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 4 }]);
+  it('lets an unclaimed cloth glut lower the price', () => {
+    // Arrange: a house sells twenty cloth it did not make, against the town
+    // that only sold what its workshops produced.
+    const selling = town(SEED);
+    selling.houses.leclerc.workshops = [];
+    selling.houses.leclerc.stock = { cloth: 20 };
+    const glut = playPeriod(selling, [{ type: 'market.sell', houseId: 'leclerc', good: 'cloth', units: 20 }]);
+    const control = playPeriod(town(SEED));
+    const townFlow = 6 * (HOURS_PER_YEAR / 2);
 
-    // Act: four units of imbalance, half a scale of four.
-    const difference = balanced.market.wool - glut.market.wool;
+    // Act: twenty units of extra cloth on top of the AI's own seventy-two.
+    const difference = glut.market.cloth - control.market.cloth;
 
     // Assert
-    expect(difference).toBe(
-      Math.trunc(
-        (4 * RULES.market.wool.referenceCents) /
-          (RULES.pricePressureDivisor * RULES.market.wool.scaleUnits * (HOURS_PER_YEAR / 2)),
-      ),
-    );
+    expect(difference).toBe(pricedCloth(townFlow + 20) - pricedCloth(townFlow));
   });
 
   it('prices a sale against the town that did not sell', () => {

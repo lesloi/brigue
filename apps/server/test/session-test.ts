@@ -214,7 +214,8 @@ describe('joining the town', () => {
   it('binds a player to a human house with no live token', async () => {
     // Arrange: a town whose first house exists but has no token.
     const harness = await start();
-    await harness.worlds.createIfAbsent(town(7), new Date(), new Date());
+    const base = town(7);
+    await harness.worlds.createIfAbsent(base, new Date(), new Date());
 
     // Act
     const response = await join(harness);
@@ -224,14 +225,14 @@ describe('joining the town', () => {
     expect(response.status).toBe(201);
     expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world);
-    expect(Object.keys(world.houses)).toHaveLength(7);
+    expect(Object.keys(world.houses)).toHaveLength(Object.keys(base.houses).length);
   });
 
   it('refuses when the town has no room for another human', async () => {
     // Arrange: a town at the cap, its only human house taken.
     const harness = await start();
     const base = town(7);
-    for (let index = 0; index < 13; index += 1) {
+    for (let index = 0; index < 16; index += 1) {
       const id = `ai-${index}`;
       base.houses[id] = { ...(base.houses.caron as (typeof base.houses)[string]), id, name: `IA ${index}` };
       base.people[`person-${id}`] = {

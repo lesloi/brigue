@@ -423,12 +423,15 @@ function driftPrices(world: World, events: EventDraft[]): void {
     world.rng = rng;
 
     const before = world.market[good];
+    // The countryside supplies the raw goods at the current price: their price
+    // is not moved by the town's flow, only by chance and the pull home.
+    const raw = RULES.recipes[good] === null;
     const after = nextPriceCents({
       priceCents: before,
       referenceCents: RULES.market[good].referenceCents,
       absorbedUnits: RULES.market[good].absorbedUnits * hours,
       scaleUnits: RULES.market[good].scaleUnits * hours,
-      flowUnits: world.marketFlow[good],
+      flowUnits: raw ? undefined : world.marketFlow[good],
       driftCents: roll - RULES.priceDriftCents,
       pressureDivisor: RULES.pricePressureDivisor,
       reversionDivisor: RULES.priceReversionDivisor,
