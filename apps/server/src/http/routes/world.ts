@@ -97,7 +97,14 @@ export async function advanceHour(
     return;
   }
 
-  const outcome = await advanceTown(townAccess(context), player.townId, player.houseId, player.cursorEventId ?? 0, at);
+  const outcome = await advanceTown(
+    townAccess(context),
+    player.townId,
+    player.houseId,
+    player.cursorEventId ?? 0,
+    at,
+    context.now,
+  );
 
   if (outcome.kind === 'gone') {
     context.deps.logger.warn('world.session_expired', { townId: player.townId, houseId: player.houseId });

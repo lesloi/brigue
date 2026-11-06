@@ -62,13 +62,17 @@ export function catchUpTown(
   }, townId);
 }
 
-/** Local development only: plays one hour now and re-anchors the next natural hour on `at`. */
+/**
+ * Local development only: plays one hour now and re-anchors the next natural
+ * hour on a fresh clock read, after the hour was played.
+ */
 export function advanceTown(
   access: TownAccess,
   townId: number,
   houseId: string,
   cursor: number,
   at: Date,
+  now: () => number,
 ): Promise<TownOutcome> {
   return access.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
@@ -96,14 +100,15 @@ export function advanceTown(
     wake(due.world, houseId);
     // The hour was simulated, not lived. Put the next natural hour an hour
     // from the real now, instead of stacking a backlog.
-    await session.save(due.world, at, due.events);
+    const savedAt = new Date(now());
+    await session.save(due.world, savedAt, due.events);
 
     const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
 
     return {
       kind: 'caught' as const,
       town: session.snapshot.town,
-      result: { ...due, hourStartedAt: at },
+      result: { ...due, hourStartedAt: savedAt },
       journal,
     };
   }, townId);
