@@ -225,8 +225,10 @@ CREATE TABLE actions (
 CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, seq);
 
 -- The sealed season keeps the register and the book of kings, and no ordinary
--- reset touches them; a full reset deletes them too. They are keyed by town
--- and season: two towns can seal a season in the same year. No foreign key to
+-- reset touches them; a full reset deletes them too. The register is keyed by
+-- town and season: two towns can seal a season in the same year. The book of
+-- kings is keyed by the player and the instant: the crown follows the player,
+-- and a town's hour means nothing once the town is gone. No foreign key to
 -- `towns`: a town's death must not take its chronicle with it.
 CREATE TABLE archive_houses (
   town_id text NOT NULL,
@@ -242,12 +244,11 @@ CREATE TABLE archive_houses (
 
 CREATE TABLE kings (
   town_id text NOT NULL,
-  season integer NOT NULL,
-  crowned_at integer NOT NULL,
+  crowned_at timestamptz NOT NULL,
   token_hash text NOT NULL,
   house_name text NOT NULL,
   person_name text NOT NULL,
   ordinance text,
   staple_good text,
-  PRIMARY KEY (town_id, season)
+  PRIMARY KEY (token_hash, crowned_at)
 );
