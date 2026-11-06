@@ -171,6 +171,8 @@ export function actionErrorText(code: string | null): string {
       return "Cette ville n'est plus compatible avec le serveur.";
     case 'no_free_house':
       return "Cette ville n'a plus de maison libre.";
+    case 'deletion_pending':
+      return 'Cette maison est en cours de suppression.';
     default:
       return "L'action n'a pas pu être envoyée.";
   }

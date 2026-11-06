@@ -5,11 +5,12 @@ import {
   ApiError,
   advanceHour,
   cancelAction,
-  deletePlayer,
-  hasSession,
+  cancelDeletion,
   joinTown,
   readPending,
+  readSession,
   readWorld,
+  requestDeletion,
   resumeTown,
   sendAction,
   type PendingActionView,
@@ -18,7 +19,7 @@ import {
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
-import { DeleteAccountDialog } from './views/account.tsx';
+import { ClosingHouse, DeleteAccountDialog } from './views/account.tsx';
 import { Create } from './views/create.tsx';
 import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
 import { Marche } from './views/marche.tsx';
@@ -29,6 +30,7 @@ type View =
   | { kind: 'loading' }
   | { kind: 'create' }
   | { kind: 'world'; data: WorldResponse }
+  | { kind: 'closing'; after: string }
   | { kind: 'lost' }
   | { kind: 'failure'; title: string; message: string };
 
@@ -50,6 +52,8 @@ export function App() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -109,8 +113,14 @@ export function App() {
     setLostError(null);
 
     try {
-      if (!(await hasSession())) {
+      const session = await readSession();
+
+      if (session === null) {
         setView({ kind: 'create' });
+        return;
+      }
+      if (session.deletionAfter !== null) {
+        setView({ kind: 'closing', after: session.deletionAfter });
         return;
       }
 
@@ -137,8 +147,14 @@ export function App() {
         // A half-completed join already set the cookie, or a fast second tap
         // raced the first: recover the session before asking for a token.
         try {
-          if (await hasSession()) {
-            await load();
+          const session = await readSession();
+
+          if (session !== null) {
+            if (session.deletionAfter !== null) {
+              setView({ kind: 'closing', after: session.deletionAfter });
+            } else {
+              await load();
+            }
             return;
           }
           setView({ kind: 'lost' });
@@ -302,7 +318,13 @@ export function App() {
     setLostError(null);
 
     try {
-      await resumeTown(candidate);
+      const session = await resumeTown(candidate);
+
+      if (session.deletionAfter !== null) {
+        setView({ kind: 'closing', after: session.deletionAfter });
+        return;
+      }
+
       await load();
     } catch (error) {
       setLostError(
@@ -323,14 +345,31 @@ export function App() {
     setDeleteError(null);
 
     try {
-      await deletePlayer();
+      const { deleteAfter } = await requestDeletion();
       setDeleteOpen(false);
-      await boot();
-      showToast('Votre maison a été supprimée.');
+      setView({ kind: 'closing', after: deleteAfter });
     } catch (error) {
       setDeleteError(readMessageFor(error));
     } finally {
       setDeleting(false);
+    }
+  }
+
+  async function restore(): Promise<void> {
+    setRestoring(true);
+    setRestoreError(null);
+
+    try {
+      await cancelDeletion();
+      await boot();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        await boot();
+        return;
+      }
+      setRestoreError(readMessageFor(error));
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -393,6 +432,8 @@ export function App() {
           <div class="fade" aria-hidden="true"></div>
           <Nav tab={tab} onSelect={selectTab} />
         </div>
+      ) : view.kind === 'closing' ? (
+        <ClosingHouse after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />
       ) : view.kind === 'lost' ? (
         <LostHouse busy={resuming} error={lostError} onResume={(candidate) => void resume(candidate)} />
       ) : (

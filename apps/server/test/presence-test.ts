@@ -24,6 +24,7 @@ function player(houseId: string, lastSeenAt: Date, revokedAt: Date | null = null
     createdAt: lastSeenAt,
     lastSeenAt,
     revokedAt,
+    deleteAfter: null,
   };
 }
 
@@ -306,8 +307,8 @@ describe('the thirty-day deletion', () => {
     // Assert: a starter house, not the old money, and no inherited seat.
     expect(joined.status).toBe(201);
     expect(read.status).toBe(200);
-    // A drawn first house, not the deleted one, and none of its money.
-    expect(houseId).not.toBe('leclerc');
+    // A new town, so the drawn name may be any place: what matters is that the
+    // old money and the old seat did not cross.
     expect(body.world.house.id).toBe(houseId);
     expect(body.world.house.treasuryCents).toBe(RULES.startingPurseCents);
     expect(body.world.house.workshops).toEqual([

@@ -9,6 +9,7 @@ interface PlayerRow {
   created_at: Date | string;
   last_seen_at: Date | string;
   revoked_at: Date | string | null;
+  delete_after: Date | string | null;
   // bigint: the driver hands it back as a string.
   cursor_event_id: string;
 }
@@ -41,7 +42,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, cursor_event_id
+      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
        FROM players
        WHERE token_hash = $1`,
       [tokenHash],
@@ -81,7 +82,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async listByWorld(worldId: string): Promise<Player[]> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, cursor_event_id
+      `SELECT token_hash, world_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
        FROM players
        WHERE world_id = $1
        ORDER BY created_at, token_hash`,
@@ -100,8 +101,21 @@ export class PgPlayerStore implements PlayerStore {
     );
   }
 
-  async remove(tokenHash: string): Promise<void> {
-    await this.pool.query('DELETE FROM players WHERE token_hash = $1', [tokenHash]);
+  async markDeletion(tokenHash: string, at: Date): Promise<void> {
+    await this.pool.query(
+      `UPDATE players
+       SET delete_after = COALESCE(delete_after, $2)
+       WHERE token_hash = $1`,
+      [tokenHash, at],
+    );
+  }
+
+  async cancelDeletion(tokenHash: string): Promise<void> {
+    await this.pool.query('UPDATE players SET delete_after = NULL WHERE token_hash = $1', [tokenHash]);
+  }
+
+  async deleteHouse(worldId: string, houseId: string): Promise<void> {
+    await this.pool.query('DELETE FROM players WHERE world_id = $1 AND house_id = $2', [worldId, houseId]);
   }
 
   /** Readiness only: one round trip proves the pool can still reach its server. */
@@ -128,6 +142,7 @@ function rowToPlayer(row: PlayerRow): Player {
     createdAt: asDate(row.created_at),
     lastSeenAt: asDate(row.last_seen_at),
     revokedAt: row.revoked_at === null ? null : asDate(row.revoked_at),
+    deleteAfter: row.delete_after === null ? null : asDate(row.delete_after),
     // bigint comes back as a string.
     cursorEventId: Number(row.cursor_event_id),
   };

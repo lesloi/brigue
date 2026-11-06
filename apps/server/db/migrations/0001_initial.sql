@@ -35,6 +35,10 @@ CREATE TABLE players (
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
   last_seen_at timestamptz NOT NULL DEFAULT now(),
   revoked_at timestamptz,
+  -- Set when the player asks to delete their identity. The binding stays live
+  -- so they can come back before the deadline; when it passes, the scheduler
+  -- erases the house, its queue and every row of the house.
+  delete_after timestamptz,
   -- The last journal entry this reader has seen. It only moves forward.
   cursor_event_id bigint NOT NULL DEFAULT 0
 );

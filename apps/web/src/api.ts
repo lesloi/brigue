@@ -103,14 +103,21 @@ export class ApiError extends Error {
   }
 }
 
-export async function hasSession(): Promise<boolean> {
+export interface SessionInfo {
+  worldId: string;
+  houseId: string;
+  /** Set when a deletion is scheduled: the deadline, in ISO. */
+  deletionAfter: string | null;
+}
+
+export async function readSession(): Promise<SessionInfo | null> {
   const response = await fetch('/api/session', { credentials: 'same-origin' });
 
   if (response.status === 200) {
-    return true;
+    return (await response.json()) as SessionInfo;
   }
   if (response.status === 401) {
-    return false;
+    return null;
   }
 
   throw new ApiError(response.status, await errorCode(response));
@@ -130,7 +137,7 @@ export function joinTown(trade: Trade): Promise<Joined> {
   });
 }
 
-export function resumeTown(token: string): Promise<{ worldId: string; houseId: string }> {
+export function resumeTown(token: string): Promise<SessionInfo> {
   return send('/api/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -138,9 +145,14 @@ export function resumeTown(token: string): Promise<{ worldId: string; houseId: s
   });
 }
 
-/** Deletes the identity: the house, its queue and the token. */
-export function deletePlayer(): Promise<void> {
-  return sendVoid('/api/player', { method: 'DELETE' });
+/** Schedules the erasure of the identity; the token stays valid until then. */
+export function requestDeletion(): Promise<{ deleteAfter: string }> {
+  return send('/api/player/deletion', { method: 'POST' });
+}
+
+/** Cancels a scheduled erasure: the player came back. */
+export function cancelDeletion(): Promise<void> {
+  return sendVoid('/api/player/deletion', { method: 'DELETE' });
 }
 
 export function readWorld(): Promise<WorldResponse> {

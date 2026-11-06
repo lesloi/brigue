@@ -241,6 +241,10 @@ export const PACING = {
   // no vacation mode. The boundary is strict, so exactly thirty days still
   // reads and the next read deletes.
   deletionDays: 30,
+  // A deletion request is not immediate: the token stays valid for a week so the
+  // player can come back, and the scheduler erases the identity at the deadline.
+  // Calibration, not a rule.
+  deletionGraceDays: 7,
 } as const;
 
 export const START_YEAR = 1401;

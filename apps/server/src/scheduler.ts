@@ -11,7 +11,7 @@ import {
 
 import type { Logger } from './logger.ts';
 import type { PlayerStore } from './players.ts';
-import { applyPresence } from './presence.ts';
+import { applyPresence, removeHouse } from './presence.ts';
 import { HOUR_MS, UnknownWorldError, type TownInfo, type WorldSession, type WorldStore } from './worlds.ts';
 
 export interface Due {
@@ -119,7 +119,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
   async function playTown(town: TownInfo, at: Date): Promise<void> {
     try {
-      await options.store.withWorld(async (session) => {
+      const erased = await options.store.withWorld(async (session) => {
         const world = session.snapshot.world;
 
         if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
@@ -128,17 +128,30 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
         // The same silence rule the read path applies, but on its own clock: a
         // town whose last human has gone expires even if nobody comes back.
-        const presence = applyPresence(world, await options.players.listByWorld(town.id), at.getTime());
+        const players = await options.players.listByWorld(town.id);
+        const presence = applyPresence(world, players, at.getTime());
 
         for (const houseId of presence.deletedHouseIds) {
           await options.players.revokeHouse(town.id, houseId, at);
           options.logger.warn('world.house_deleted', { worldId: town.id, houseId });
         }
 
+        // The identities whose week is over go before the hour plays: a house
+        // being erased must not act again.
+        const expired = players.filter(
+          (player) => player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
+        );
+        const houses = new Set(expired.map((player) => player.houseId));
+
+        for (const houseId of houses) {
+          removeHouse(presence.world, houseId);
+          await session.cancelHouse(houseId, at);
+        }
+
         if (humanHouseOf(presence.world) === undefined) {
           await session.clear();
           options.logger.info('town.deleted', { worldId: town.id });
-          return;
+          return expired;
         }
 
         const due = await playDue(
@@ -147,7 +160,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           at,
         );
 
-        if (due.hours > 0 || presence.changed) {
+        if (due.hours > 0 || presence.changed || houses.size > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
         if (due.skipped > 0) {
@@ -156,7 +169,16 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         if (due.hours > 0) {
           options.logger.info('town.advanced', { worldId: town.id, hours: due.hours });
         }
+
+        return expired;
       }, town.id);
+
+      // The rows go once the world has committed: a failed save leaves the
+      // identity whole, and the next pass tries again.
+      for (const houseId of new Set(erased.map((player) => player.houseId))) {
+        await options.players.deleteHouse(town.id, houseId);
+        options.logger.info('player.deleted', { worldId: town.id, houseId });
+      }
     } catch (error) {
       // A town deleted between the list and the lock is no town: the next join
       // starts a new one.

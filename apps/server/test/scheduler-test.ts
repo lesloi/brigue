@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PACING, stateHash, type Action, type Event, type World } from '@brigue/core';
+import { PACING, stateHash, withNewcomer, type Action, type Event, type World } from '@brigue/core';
 
 import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/players.ts';
@@ -340,6 +340,67 @@ describe('startScheduler', () => {
     expect(logs.some((line) => line.includes('town.advance_failed') && line.includes('bad'))).toBe(true);
     expect((await real.withWorld(async (session) => session.snapshot, 'good')).world.hour).toBe(2);
     expect((await real.withWorld(async (session) => session.snapshot, 'bad')).world.hour).toBe(1);
+  });
+
+  it('erases an identity whose week is over, and the town with it', async () => {
+    // Arrange: the only human asked for the deletion a week ago.
+    vi.useFakeTimers();
+    const store = await town();
+    const players = new MemoryPlayerStore();
+    const { player } = await issueToken(
+      players,
+      TEST_TOWN.id,
+      TEST_FIRST_HOUSE.id,
+      new Date(START.getTime() - 8 * 24 * HOUR),
+    );
+    await players.markDeletion(player.tokenHash, new Date(START.getTime() - HOUR));
+    const scheduler = startScheduler({
+      store,
+      players,
+      logger: createLogger(() => {}),
+      now: () => new Date(START),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(1_000);
+    scheduler.stop();
+
+    // Assert: the house, the row and the town are gone.
+    await expect(store.withWorld(async (session) => session.snapshot, TEST_TOWN.id)).rejects.toBeInstanceOf(
+      UnknownWorldError,
+    );
+    expect(await players.listByWorld(TEST_TOWN.id)).toEqual([]);
+  });
+
+  it('erases one house and leaves the town to the others', async () => {
+    // Arrange: two humans, one of them past the deadline.
+    vi.useFakeTimers();
+    const store = new MemoryWorldStore();
+    const players = new MemoryPlayerStore();
+    const identity = { id: 'moreau', houseName: 'Moreau', personName: 'Colin Moreau' };
+    await store.createTown(TEST_TOWN, withNewcomer(playableTown(20261105), 'baker', identity), START);
+    const gone = await issueToken(players, TEST_TOWN.id, TEST_FIRST_HOUSE.id, START);
+    const stays = await issueToken(players, TEST_TOWN.id, identity.id, START);
+    await players.markDeletion(gone.player.tokenHash, new Date(START.getTime() - HOUR));
+    const scheduler = startScheduler({
+      store,
+      players,
+      logger: createLogger(() => {}),
+      now: () => new Date(START),
+      everyMs: 1_000,
+    });
+
+    // Act
+    await vi.advanceTimersByTimeAsync(1_000);
+    scheduler.stop();
+
+    // Assert: the erased house and its row are gone, the other keeps the town.
+    const world = (await store.withWorld(async (session) => session.snapshot, TEST_TOWN.id)).world;
+    expect(world.houses[TEST_FIRST_HOUSE.id]).toBeUndefined();
+    expect(world.houses[identity.id]).toBeDefined();
+    expect(await players.findByTokenHash(gone.player.tokenHash)).toBeNull();
+    expect(await players.findByTokenHash(stays.player.tokenHash)).not.toBeNull();
   });
 
   it('stays quiet when there is no town yet', async () => {

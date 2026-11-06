@@ -58,8 +58,10 @@ grudges, but nothing runs: the workshop is idle, the stock is still a target, an
 votes no more. The holder stays a candidate by default, so a challenger turns the next election
 into a normal contest. After thirty days without a visit, the house is deleted and the token with
 it — no return, no vacation mode — and, when no human house is left, the town goes too. A player
-who wants to leave for good deletes the identity: the house and its queued actions go at once,
-and the town goes with its last human. The server checks on its own rhythm; no visit is needed.
+who wants to leave for good asks for the deletion: it is scheduled a week out, the player can do
+nothing until then, and the token stays valid so that reconnecting offers to come back. When the
+week is over the house and its queued actions go, and the town with its last human. The server
+checks on its own rhythm; no visit is needed.
 
 The cap is the point. Twenty houses for twelve seats is scarcity; twelve seats for twenty houses
 is a queue.

@@ -28,6 +28,7 @@ export async function issueToken(
     createdAt: now,
     lastSeenAt: now,
     revokedAt: null,
+    deleteAfter: null,
   };
 
   await store.insert(player);

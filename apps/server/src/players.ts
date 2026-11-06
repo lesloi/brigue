@@ -9,6 +9,8 @@ export interface Player {
   /** The last journal entry this reader has seen. */
   cursorEventId?: number;
   revokedAt: Date | null;
+  /** Set when the player asks to delete their identity: the erasure deadline. */
+  deleteAfter: Date | null;
 }
 
 export class HouseAlreadyBoundError extends Error {
@@ -30,8 +32,12 @@ export interface PlayerStore {
   listByWorld(worldId: string): Promise<Player[]>;
   /** Revokes every live token of a house, for the thirty-day deletion. */
   revokeHouse(worldId: string, houseId: string, at: Date): Promise<void>;
-  /** Deletes the binding outright, for a player who deletes their identity. */
-  remove(tokenHash: string): Promise<void>;
+  /** Schedules the erasure of an identity; a second request keeps the first. */
+  markDeletion(tokenHash: string, at: Date): Promise<void>;
+  /** Cancels a scheduled erasure: the player came back. */
+  cancelDeletion(tokenHash: string): Promise<void>;
+  /** Deletes every row of a house, for an identity the scheduler erased. */
+  deleteHouse(worldId: string, houseId: string): Promise<void>;
 }
 
 /**
@@ -96,7 +102,27 @@ export class MemoryPlayerStore implements PlayerStore {
     }
   }
 
-  async remove(tokenHash: string): Promise<void> {
-    this.players.delete(tokenHash);
+  async markDeletion(tokenHash: string, at: Date): Promise<void> {
+    const player = this.players.get(tokenHash);
+
+    if (player !== undefined && player.deleteAfter === null) {
+      this.players.set(tokenHash, { ...player, deleteAfter: new Date(at) });
+    }
+  }
+
+  async cancelDeletion(tokenHash: string): Promise<void> {
+    const player = this.players.get(tokenHash);
+
+    if (player !== undefined) {
+      this.players.set(tokenHash, { ...player, deleteAfter: null });
+    }
+  }
+
+  async deleteHouse(worldId: string, houseId: string): Promise<void> {
+    for (const [tokenHash, player] of this.players) {
+      if (player.worldId === worldId && player.houseId === houseId) {
+        this.players.delete(tokenHash);
+      }
+    }
   }
 }

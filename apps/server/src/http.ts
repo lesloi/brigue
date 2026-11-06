@@ -17,11 +17,11 @@ import {
 } from '@brigue/core';
 
 import { ACTION_ID_PATTERN, parseActionSubmission, withHouse } from './actions.ts';
-import { clearedSessionCookie, readSessionCookie, sessionCookie } from './cookies.ts';
+import { readSessionCookie, sessionCookie } from './cookies.ts';
 import type { Logger } from './logger.ts';
 import { drawHouseIdentity, drawTownIdentity } from './names.ts';
 import { HouseAlreadyBoundError, type Player, type PlayerStore } from './players.ts';
-import { applyPresence, removeHouse, type Presence } from './presence.ts';
+import { applyPresence, type Presence } from './presence.ts';
 import { projectWorld } from './projection.ts';
 import { createRateLimiter, type RateLimiter } from './rate-limit.ts';
 import { BodyTooLargeError, methodNotAllowed, readJson, sendJson, unauthorized } from './respond.ts';
@@ -49,6 +49,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000;
 const QUEUE_AHEAD_HOURS = 1;
 /** A read returns at most this many journal entries; the rest is counted. */
 const JOURNAL_PAGE = 50;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface AppDeps {
   store: PlayerStore;
@@ -165,13 +166,18 @@ export function createApp(deps: AppDeps): Server {
             return;
         }
 
-      case '/api/player':
-        if (request.method !== 'DELETE') {
-          methodNotAllowed(response, 'DELETE');
-          return;
+      case '/api/player/deletion':
+        switch (request.method) {
+          case 'POST':
+            await requestDeletion(request, response);
+            return;
+          case 'DELETE':
+            await cancelDeletion(request, response);
+            return;
+          default:
+            methodNotAllowed(response, 'POST, DELETE');
+            return;
         }
-        await deletePlayer(request, response);
-        return;
 
       case '/api/world':
         if (request.method !== 'GET') {
@@ -291,13 +297,14 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
+    if (closingOf(player, new Date(now())).kind === 'due') {
+      deps.logger.warn('session.deletion_due', { ip, worldId: player.worldId, houseId: player.houseId });
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
     deps.logger.info('session.opened', { ip, worldId: player.worldId, houseId: player.houseId });
-    sendJson(
-      response,
-      200,
-      { worldId: player.worldId, houseId: player.houseId },
-      { 'Set-Cookie': sessionCookie(token, secureCookies) },
-    );
+    sendJson(response, 200, sessionBody(player), { 'Set-Cookie': sessionCookie(token, secureCookies) });
   }
 
   async function joinTown(response: ServerResponse, ip: string, trade: Trade): Promise<void> {
@@ -418,15 +425,21 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    sendJson(response, 200, { worldId: player.worldId, houseId: player.houseId });
+    if (closingOf(player, new Date(now())).kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    sendJson(response, 200, sessionBody(player));
   }
 
   /**
-   * The player deletes their identity: the house, its queued actions and the
-   * token go at once, and the town goes if it was the last human. The silence
-   * rule waits thirty days; this is the deliberate exit.
+   * The player asks to delete their identity. The request is scheduled, not
+   * immediate: the token stays valid so they can come back, and the scheduler
+   * erases the house, its queue and the row at the deadline. A second request
+   * keeps the first deadline.
    */
-  async function deletePlayer(request: IncomingMessage, response: ServerResponse): Promise<void> {
+  async function requestDeletion(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const player = await identifiedBy(request, response);
 
     if (player === null) {
@@ -434,38 +447,58 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
+    const closing = closingOf(player, at);
 
-    try {
-      await deps.worlds.withWorld(async (session) => {
-        const next = structuredClone(sessionWorld(session));
-        removeHouse(next, player.houseId);
-        await session.cancelHouse(player.houseId, at);
-
-        if (humanHouseOf(next) === undefined) {
-          await session.clear();
-          return;
-        }
-
-        await session.save(next, session.snapshot.hourStartedAt, []);
-      }, player.worldId);
-    } catch (error) {
-      // A town already gone leaves only the row to clean.
-      if (!(error instanceof UnknownWorldError)) {
-        throw error;
-      }
+    if (closing.kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return;
     }
 
-    // The identity dies even when the town could not be written: a failed
-    // delete must not leave a working token behind a house that is gone.
-    await deps.store.revoke(player.tokenHash, at);
-    await deps.store.remove(player.tokenHash);
-    deps.logger.info('player.deleted', { worldId: player.worldId, houseId: player.houseId });
+    const after =
+      closing.kind === 'pending' ? closing.after : new Date(at.getTime() + PACING.deletionGraceDays * DAY_MS);
 
-    response.writeHead(204, {
-      'Cache-Control': 'no-store',
-      'Set-Cookie': clearedSessionCookie(secureCookies),
-    });
+    if (closing.kind === 'none') {
+      await deps.store.markDeletion(player.tokenHash, after);
+      deps.logger.info('player.deletion_scheduled', {
+        worldId: player.worldId,
+        houseId: player.houseId,
+        deleteAfter: after.toISOString(),
+      });
+    }
+
+    sendJson(response, 200, { deleteAfter: after.toISOString() });
+  }
+
+  /** The player comes back before the deadline: the scheduled erasure is off. */
+  async function cancelDeletion(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const player = await identifiedBy(request, response);
+
+    if (player === null) {
+      return;
+    }
+
+    const closing = closingOf(player, new Date(now()));
+
+    if (closing.kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return;
+    }
+
+    if (closing.kind === 'pending') {
+      await deps.store.cancelDeletion(player.tokenHash);
+      deps.logger.info('player.deletion_cancelled', { worldId: player.worldId, houseId: player.houseId });
+    }
+
+    response.writeHead(204, { 'Cache-Control': 'no-store' });
     response.end();
+  }
+
+  function sessionBody(player: Player): Record<string, unknown> {
+    return {
+      worldId: player.worldId,
+      houseId: player.houseId,
+      deletionAfter: player.deleteAfter?.toISOString() ?? null,
+    };
   }
 
   async function readWorld(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -476,6 +509,11 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
+
     const outcome = await catchUpTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
@@ -537,6 +575,11 @@ export function createApp(deps: AppDeps): Server {
     }
 
     const at = new Date(now());
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
+
     const outcome = await advanceTown(player.worldId, player.houseId, player.cursorEventId ?? 0, at);
 
     if (outcome.kind === 'gone') {
@@ -599,6 +642,10 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
+    if (refuseClosing(player, response, new Date(now()))) {
+      return;
+    }
+
     const actions = await deps.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
       const queued: StoredAction[] = [];
@@ -617,12 +664,17 @@ export function createApp(deps: AppDeps): Server {
     if (player === null) {
       return;
     }
+
+    const at = new Date(now());
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
     if (!ACTION_ID_PATTERN.test(id)) {
       sendJson(response, 404, { error: 'unknown_action' });
       return;
     }
 
-    const at = new Date(now());
     const actionId = id.toLowerCase();
     const outcome = await deps.worlds.withWorld(async (session) => {
       const { world, hourStartedAt } = session.snapshot;
@@ -675,6 +727,12 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
+    const at = new Date(now());
+
+    if (refuseClosing(player, response, at)) {
+      return;
+    }
+
     const read = await readBody(request, response);
     if (!read.ok) {
       return;
@@ -686,7 +744,6 @@ export function createApp(deps: AppDeps): Server {
       return;
     }
 
-    const at = new Date(now());
     let outcome: ActionOutcome;
     try {
       outcome = await deps.worlds.withWorld(async (session) => {
@@ -859,6 +916,35 @@ export function createApp(deps: AppDeps): Server {
     }
 
     return world;
+  }
+
+  type Closing = { kind: 'none' } | { kind: 'pending'; after: Date } | { kind: 'due' };
+
+  /** What a deletion state allows: everything, only the way back, or nothing. */
+  function closingOf(player: Player, at: Date): Closing {
+    if (player.deleteAfter === null) {
+      return { kind: 'none' };
+    }
+
+    return player.deleteAfter.getTime() <= at.getTime()
+      ? { kind: 'due' }
+      : { kind: 'pending', after: player.deleteAfter };
+  }
+
+  /** A closing identity can only come back: every other route refuses it. */
+  function refuseClosing(player: Player, response: ServerResponse, at: Date): boolean {
+    const closing = closingOf(player, at);
+
+    if (closing.kind === 'none') {
+      return false;
+    }
+    if (closing.kind === 'due') {
+      unauthorized(response, secureCookies, true);
+      return true;
+    }
+
+    sendJson(response, 409, { error: 'deletion_pending', deleteAfter: closing.after.toISOString() });
+    return true;
   }
 
   async function identifiedBy(request: IncomingMessage, response: ServerResponse): Promise<Player | null> {
