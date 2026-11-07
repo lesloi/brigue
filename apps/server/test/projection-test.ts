@@ -185,7 +185,7 @@ describe('the projection calendar', () => {
     expect(projection.house.residenceLevel).toBe(1);
     expect(projection.house.ladder).toEqual({
       title: 'bourgeois',
-      residence: 'Chambre',
+      residence: 'Masure',
       titlePrestige: 80,
       residencePrestige: 0,
       servicePrestige: 200,
@@ -194,7 +194,7 @@ describe('the projection calendar', () => {
       stockDefence: 10,
       workshopLevelCap: 3,
       nextTitle: { title: 'notable', priceCents: 120_000 },
-      nextResidence: { level: 2, name: 'Foyer', priceCents: 80_000, opened: true, hours: 1 },
+      nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true, hours: 1 },
     });
     expect(projection.house.prestige).toBe(80 + 0 + 200);
     expect(projection.house.build).toEqual({

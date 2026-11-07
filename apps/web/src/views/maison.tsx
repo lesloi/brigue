@@ -136,6 +136,74 @@ export function Maison({
               </button>
             </form>
             {renameError !== null ? <p class="warn">{renameError}</p> : null}
+            {ladder.nextTitle === null ? (
+              <div class="row empty">
+                <div class="nm">
+                  <b>Prince</b>
+                  <p>Il n'y a pas de degré au-dessus.</p>
+                </div>
+              </div>
+            ) : (
+              <div class="wait">
+                <div class="nm">
+                  <b>Titre de {titleName(ladder.nextTitle.title)}</b>
+                  <p>
+                    {titleHint(
+                      titleQueued || building,
+                      house.sites.some((site) => site.work === 'title'),
+                    )}
+                  </p>
+                </div>
+                <button
+                  class="btn"
+                  type="button"
+                  // A title in flight does not lock the next degree: only a build,
+                  // a residence under way and this button's own request do.
+                  disabled={
+                    titleQueued ||
+                    !ladder.nextTitle ||
+                    busy === 'title' ||
+                    house.treasuryCents < ladder.nextTitle.priceCents
+                  }
+                  onClick={onBuyTitle}
+                >
+                  <span class="btn-label">
+                    <Price cents={ladder.nextTitle.priceCents} />
+                  </span>
+                </button>
+              </div>
+            )}
+            {ladder.nextResidence === null ? (
+              <div class="row empty">
+                <div class="nm">
+                  <b>Palais</b>
+                  <p>La résidence ne se dépasse pas.</p>
+                </div>
+              </div>
+            ) : (
+              <div class="wait">
+                <div class="nm">
+                  <b>{ladder.nextResidence.name}</b>
+                  <p>{residenceHint(ladder, titleName)}</p>
+                </div>
+                <button
+                  class="btn"
+                  type="button"
+                  disabled={
+                    building ||
+                    residenceQueued ||
+                    !ladder.nextResidence.opened ||
+                    busy === 'residence' ||
+                    house.treasuryCents < ladder.nextResidence.priceCents
+                  }
+                  onClick={onUpgradeResidence}
+                >
+                  <span class="btn-label">
+                    <Price cents={ladder.nextResidence.priceCents} />
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         </section>
 
@@ -191,82 +259,6 @@ export function Maison({
           ) : null}
         </section>
 
-        <section class="sec" aria-labelledby="ladder-title">
-          <div class="h">
-            <b id="ladder-title">Le rang</b>
-          </div>
-          <div class="card">
-            {ladder.nextTitle === null ? (
-              <div class="row empty">
-                <div class="nm">
-                  <b>Prince</b>
-                  <p>Il n'y a pas de degré au-dessus.</p>
-                </div>
-              </div>
-            ) : (
-              <div class="wait">
-                <div class="nm">
-                  <b>Titre de {titleName(ladder.nextTitle.title)}</b>
-                  <p>
-                    {titleHint(
-                      titleQueued || building,
-                      house.sites.some((site) => site.work === 'title'),
-                    )}
-                  </p>
-                </div>
-                <button
-                  class="btn"
-                  type="button"
-                  // A title in flight does not lock the next degree: only a build,
-                  // a residence under way and this button's own request do.
-                  disabled={
-                    titleQueued ||
-                    !ladder.nextTitle ||
-                    busy === 'title' ||
-                    house.treasuryCents < ladder.nextTitle.priceCents
-                  }
-                  onClick={onBuyTitle}
-                >
-                  <span class="btn-label">
-                    <Price cents={ladder.nextTitle.priceCents} />
-                  </span>
-                </button>
-              </div>
-            )}
-            {ladder.nextResidence === null ? (
-              <div class="row empty">
-                <div class="nm">
-                  <b>Le palais</b>
-                  <p>La résidence ne se dépasse pas.</p>
-                </div>
-              </div>
-            ) : (
-              <div class="wait">
-                <div class="nm">
-                  <b>{ladder.nextResidence.name}</b>
-                  <p>{residenceHint(ladder, titleName)}</p>
-                </div>
-                <button
-                  class="btn"
-                  type="button"
-                  disabled={
-                    building ||
-                    residenceQueued ||
-                    !ladder.nextResidence.opened ||
-                    busy === 'residence' ||
-                    house.treasuryCents < ladder.nextResidence.priceCents
-                  }
-                  onClick={onUpgradeResidence}
-                >
-                  <span class="btn-label">
-                    <Price cents={ladder.nextResidence.priceCents} />
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
-
         <section class="sec" aria-labelledby="attente-title">
           <div class="h">
             <b id="attente-title">En attente</b>
@@ -317,13 +309,13 @@ function titleHint(queued: boolean, delivering: boolean): string {
 
 /**
  * What holds the next residence level, or how long it takes: a door the title
- * has not opened yet, works already bought, or the hours the upgrade costs.
+ * has not opened yet, or the hours the upgrade costs.
  */
 function residenceHint(ladder: WorldResponse['world']['house']['ladder'], nameOf: (title: TitleId) => string): string {
   const next = ladder.nextResidence;
 
   if (next === null) {
-    return 'Le niveau douze ne se dépasse pas.';
+    return 'La résidence ne se dépasse pas.';
   }
   if (!next.opened) {
     return `Prérequis : titre de ${nameOf(ladder.nextTitle?.title ?? ladder.title)}`;

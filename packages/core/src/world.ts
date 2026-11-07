@@ -119,23 +119,23 @@ export const TITLE_LADDER: Record<TitleId, TitleStep> = {
  * the cap only stops what service adds on top.
  */
 export const RESIDENCE_LADDER: readonly ResidenceStep[] = [
-  { name: 'Chambre', prestige: 0, prestigeCap: 200, stockDefence: 10, workshops: 1, priceCents: 0 },
-  { name: 'Foyer', prestige: 50, prestigeCap: 300, stockDefence: 14, workshops: 1, priceCents: 80_000 },
-  { name: 'Cuisine', prestige: 70, prestigeCap: 400, stockDefence: 18, workshops: 2, priceCents: 160_000 },
-  { name: 'Logis', prestige: 90, prestigeCap: 500, stockDefence: 22, workshops: 2, priceCents: 320_000 },
-  { name: 'Galerie', prestige: 120, prestigeCap: 600, stockDefence: 26, workshops: 2, priceCents: 640_000 },
+  { name: 'Masure', prestige: 0, prestigeCap: 200, stockDefence: 10, workshops: 1, priceCents: 0 },
+  { name: 'Masure', prestige: 50, prestigeCap: 300, stockDefence: 14, workshops: 1, priceCents: 80_000 },
+  { name: 'Maison', prestige: 70, prestigeCap: 400, stockDefence: 18, workshops: 2, priceCents: 160_000 },
+  { name: 'Maison', prestige: 90, prestigeCap: 500, stockDefence: 22, workshops: 2, priceCents: 320_000 },
+  { name: 'Logis', prestige: 120, prestigeCap: 600, stockDefence: 26, workshops: 2, priceCents: 640_000 },
   {
-    name: 'Bastide',
+    name: 'Logis',
     prestige: 160,
     prestigeCap: 700,
     stockDefence: 30,
     workshops: 3,
     priceCents: 1_280_000,
   },
-  { name: 'Tour', prestige: 200, prestigeCap: 800, stockDefence: 34, workshops: 3, priceCents: 2_560_000 },
-  { name: 'Maison haute', prestige: 250, prestigeCap: 900, stockDefence: 38, workshops: 3, priceCents: 5_120_000 },
+  { name: 'Gentilhommière', prestige: 200, prestigeCap: 800, stockDefence: 34, workshops: 3, priceCents: 2_560_000 },
+  { name: 'Gentilhommière', prestige: 250, prestigeCap: 900, stockDefence: 38, workshops: 3, priceCents: 5_120_000 },
   {
-    name: 'Aile',
+    name: 'Manoir',
     prestige: 300,
     prestigeCap: 1000,
     stockDefence: 42,
@@ -143,7 +143,7 @@ export const RESIDENCE_LADDER: readonly ResidenceStep[] = [
     priceCents: 10_240_000,
   },
   {
-    name: 'Corps de logis',
+    name: 'Manoir',
     prestige: 360,
     prestigeCap: 1100,
     stockDefence: 46,
@@ -151,7 +151,7 @@ export const RESIDENCE_LADDER: readonly ResidenceStep[] = [
     priceCents: 20_480_000,
   },
   {
-    name: 'Hôtel',
+    name: 'Château',
     prestige: 430,
     prestigeCap: 1200,
     stockDefence: 50,
