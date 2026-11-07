@@ -69,13 +69,13 @@ export function Maison({
 
     return workshop === undefined ? 'l’atelier' : workshopName(workshop.good).toLowerCase();
   };
-  const building = house.sites.length > 0;
+  // A workshop's works lock the builders; the remise of a title does not, it is
+  // the town's own door. A second degree waits only on the first being
+  // delivered, which is what `titleQueued` and the site of a title say.
+  const building = house.sites.some((site) => site.work !== 'title');
   // The queued purchases wait for their order to play: the next degree is
   // already bought as far as this hour is concerned.
   const titleQueued = pending.some((action) => action.type === 'house.buy_title');
-  // "En attente" counts the hours before the order plays and the works after
-  // it: the line that says when the degree lands belongs to both.
-  const titleComing = titleQueued || house.sites.some((site) => site.work === 'title') || pending.length > 0;
   const residenceQueued = pending.some((action) => action.type === 'house.upgrade_residence');
   const renameQueued = name.trim() !== house.name;
 
@@ -107,7 +107,7 @@ export function Maison({
         </div>
       </section>
 
-      <HouseBar data={data} mode="house" />
+      <HouseBar data={data} mode="house" pending={pending} />
 
       {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
@@ -115,7 +115,6 @@ export function Maison({
         <section class="sec" aria-labelledby="maison-title">
           <div class="h">
             <b id="maison-title">Maison {house.name}</b>
-            <span>{titleName(house.title)}</span>
           </div>
           <div class="card">
             <div class="ladder-row">
@@ -233,7 +232,6 @@ export function Maison({
         <section class="sec" aria-labelledby="ladder-title">
           <div class="h">
             <b id="ladder-title">Le rang</b>
-            <span>{titleName(ladder.title)}</span>
           </div>
           <div class="card">
             {ladder.nextTitle === null ? (
@@ -247,15 +245,21 @@ export function Maison({
               <div class="wait">
                 <div class="nm">
                   <b>Titre de {titleName(ladder.nextTitle.title)}</b>
-                  {titleComing ? <p>Obtenu au prochain midi ou minuit.</p> : null}
+                  <p>
+                    {titleHint(
+                      titleQueued || building,
+                      house.sites.some((site) => site.work === 'title'),
+                    )}
+                  </p>
                 </div>
                 <button
                   class="btn"
                   type="button"
+                  // A title in flight does not lock the next degree: only a build,
+                  // a residence under way and this button's own request do.
                   disabled={
-                    building ||
                     titleQueued ||
-                    residenceQueued ||
+                    !ladder.nextTitle ||
                     busy === 'title' ||
                     house.treasuryCents < ladder.nextTitle.priceCents
                   }
@@ -337,6 +341,21 @@ export function Maison({
       </div>
     </main>
   );
+}
+
+/**
+ * What the next degree waits for: the order in flight, a builder on another
+ * works, or nothing at all — in which case the line says how it is delivered.
+ */
+function titleHint(queued: boolean, delivering: boolean): string {
+  if (queued) {
+    return 'Commande en attente pour cette heure.';
+  }
+  if (delivering) {
+    return 'Le titre en cours est remis au prochain midi ou minuit.';
+  }
+
+  return 'Obtenu au prochain midi ou minuit.';
 }
 
 /**
@@ -442,7 +461,7 @@ function SiteLine({
 /** How long an engagement has left, in the town's hours, never in wall minutes. */
 function endCountdown(hoursLeft: number): string {
   if (hoursLeft <= 0) {
-    return 'à la prochaine avance';
+    return 'À la prochaine avance';
   }
 
   return `${formatCount(hoursLeft)} h`;

@@ -127,7 +127,7 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
         </div>
       </header>
 
-      <HouseBar data={data} mode="ville" />
+      <HouseBar data={data} mode="ville" pending={pending} />
 
       <div class="body">
         {pending.length > 0 ? (

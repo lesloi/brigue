@@ -15,6 +15,13 @@ export interface TradeIntent {
 }
 
 /** One action the server holds for the current or next hour. */
+/** What a queued action costs when it plays, as far as the screen knows it. */
+export interface CommittedCents {
+  titleCents: number;
+  residenceCents: number;
+  buildCents: number;
+}
+
 export interface PendingActionView {
   id: string;
   hour: number;

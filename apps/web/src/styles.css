@@ -970,7 +970,8 @@ button:disabled {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(94px + env(safe-area-inset-bottom));
+  /* The top of the screen, under the safe area: the bar and the nav stay clear. */
+  top: calc(14px + env(safe-area-inset-top));
   width: min(calc(100% - 40px), 560px);
   padding: 10px 14px;
   border-radius: 12px;

@@ -21,7 +21,7 @@ export function pendingHourText(action: PendingActionView, currentHour: number):
     return 'à la prochaine lecture';
   }
   if (action.hour === currentHour) {
-    return "à la prochaine avance de l'heure";
+    return "À la prochaine avance de l'heure";
   }
 
   return "dans l'heure qui vient";

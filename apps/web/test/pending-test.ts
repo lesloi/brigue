@@ -13,7 +13,7 @@ describe('a queued action', () => {
 
   it('says the time left, not the hour it plays', () => {
     expect(pendingHourText(action(11), 12)).toBe('à la prochaine lecture');
-    expect(pendingHourText(action(12), 12)).toBe("à la prochaine avance de l'heure");
+    expect(pendingHourText(action(12), 12)).toBe("À la prochaine avance de l'heure");
     expect(pendingHourText(action(13), 12)).toBe("dans l'heure qui vient");
   });
 });

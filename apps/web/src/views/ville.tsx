@@ -84,7 +84,7 @@ export function Ville({
         </div>
       </section>
 
-      <HouseBar data={data} mode="ville" />
+      <HouseBar data={data} mode="ville" pending={pending} />
 
       {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
