@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 
 import type { WorldResponse } from '../api.ts';
 
@@ -7,9 +7,19 @@ import type { WorldResponse } from '../api.ts';
  * it was started with DEV_ADVANCE. The button has no place in production, and
  * every screen carries it so a player can watch a site from the screen it
  * belongs to.
+ *
+ * The click is answered at once: the town's own reply is what turns the button
+ * back, so a slow hour never looks like a dead button, and two fast clicks
+ * never play three hours.
  */
 export function DevBar({ data, busy, onAdvance }: { data: WorldResponse; busy: boolean; onAdvance(): void }) {
-  const [last, setLast] = useState<number | null>(null);
+  const [asked, setAsked] = useState(false);
+
+  useEffect(() => {
+    if (!busy) {
+      setAsked(false);
+    }
+  }, [busy]);
 
   return (
     <div class="dev">
@@ -17,15 +27,15 @@ export function DevBar({ data, busy, onAdvance }: { data: WorldResponse; busy: b
         id="advance-hour"
         type="button"
         title="Mode développement : simule une heure"
-        disabled={busy}
+        disabled={busy || asked}
         onClick={() => {
-          setLast(data.world.hour);
+          setAsked(true);
           onAdvance();
         }}
       >
-        Heure suivante
+        {asked ? '…' : 'Heure suivante'}
       </button>
-      {last === null ? null : <span class="dev-note">heure {last} jouée</span>}
+      <span class="dev-note">heure {data.world.hour}</span>
     </div>
   );
 }

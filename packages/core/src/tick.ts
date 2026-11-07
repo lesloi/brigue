@@ -122,19 +122,23 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   }
 
   // What fell due is paid before the hour's trade, so an engagement resolved in
-  // the same hour as its last action already counts for that hour.
-  resolveEngagements(next, events);
+  // the same hour as its last action already counts for that hour. Its lines
+  // belong to the world, not to the week's trades: they are gathered apart and
+  // placed after the actions that opened them.
+  const town: EventDraft[] = [];
+  resolveEngagements(next, town);
 
   // The AI houses decide in the same breath as the players, at the same price:
-  // both buy before the hour moves the market.
-  aiHousesBuy(next, flow, events);
+  // both buy before the hour moves the market. Their lines go with the town's.
+  aiHousesBuy(next, flow, town);
 
   // Production, then the AI's sale, then upkeep: an AI pays its workshops from
   // the price it just took. The prices move at the bells only, so every trade of
-  // the half-day happens at the price the players saw.
-  runWorkshops(next, events);
-  aiHousesSell(next, flow, events);
-  payUpkeep(next, events);
+  // the half-day happens at the price the players saw. Every line goes with the
+  // town's, so no AI's trade interrupts the house's own run.
+  runWorkshops(next, town);
+  aiHousesSell(next, flow, town);
+  payUpkeep(next, town);
 
   const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
 
@@ -145,7 +149,7 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   }
 
   if (bell) {
-    driftPrices(next, events);
+    driftPrices(next, town);
   }
 
   // Noon closes the candidacies: what is in the open map counts tonight, what
@@ -158,8 +162,12 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   // The scrutiny closes the year: every seat is up, once a day, and everyone
   // present ages a year.
   if (next.hour % HOURS_PER_YEAR === 0) {
-    holdScrutiny(next, events);
+    holdScrutiny(next, town);
   }
+
+  // The hour reads as it was written: what the house asked and got, then what
+  // the town did with it. A reader looking for their own line finds it first.
+  events.push(...town);
 
   next.hour += 1;
   next.year = START_YEAR + Math.floor((next.hour - 1) / HOURS_PER_YEAR);

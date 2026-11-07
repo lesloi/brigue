@@ -159,11 +159,6 @@ export function siteWorkText(site: ProjectedSite, workshopNameOf: (id: string) =
   }
 }
 
-/** Where a queued action lands, said against the town's clock. */
-export function pendingHourText(action: PendingActionView, currentHour: number): string {
-  return action.hour <= currentHour ? 'cette heure' : "l'heure suivante";
-}
-
 export function seatName(seat: SeatId): string {
   switch (seat) {
     case 'maire':

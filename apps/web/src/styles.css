@@ -82,6 +82,11 @@ button:disabled {
   padding-bottom: calc(104px + env(safe-area-inset-bottom));
 }
 
+.hero-house {
+  height: 168px;
+  margin-bottom: 26px;
+}
+
 .hero {
   position: relative;
   margin: calc(10px + env(safe-area-inset-top)) 12px 0;
@@ -168,6 +173,14 @@ button:disabled {
   align-items: flex-end;
   gap: 10px;
   color: #fff;
+}
+
+.cap .cap-right {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
 }
 
 .cap h1 {
@@ -1215,6 +1228,14 @@ button:disabled {
 
   .cap {
     bottom: 44px;
+  }
+
+  .cap .cap-right {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
   }
 
   .cap h1 {

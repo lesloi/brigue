@@ -1,4 +1,4 @@
-import { TRADES, type Trade } from '@brigue/core/world';
+import { TRADES, type TitleId, type Trade } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
 import type { PendingActionView, ProjectedSite, ProjectedWorkshop, WorldResponse } from '../api.ts';
@@ -6,14 +6,15 @@ import {
   formatCents,
   formatCount,
   pendingActionText,
-  pendingHourText,
   siteWorkText,
   titleName,
   tradeChainText,
   tradeName,
   workshopName,
 } from '../format.ts';
+import { HouseScene } from '../house-scene.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { pendingHourText } from '../pending.ts';
 import { DevBar } from './devbar.tsx';
 import { HouseBar } from './housebar.tsx';
 
@@ -80,18 +81,31 @@ export function Maison({
 
   return (
     <main class="screen">
-      <header class="mhead">
-        <Seal />
-        <div>
-          <div class="eyebrow">
-            {world.town.name} &middot; an {world.year}
+      <section class="hero hero-house" aria-label={house.name}>
+        <HouseScene residenceLevel={house.residenceLevel} />
+        <div class="scrim"></div>
+        <div class="id">
+          <Seal />
+          <div>
+            <div class="nm">Maison {house.name}</div>
+            <div class="pl">
+              {world.town.name} &middot; an {world.year}
+            </div>
           </div>
-          <h1>La maison</h1>
+          <div class="wk">
+            h. {world.calendar.hourOfYear}/{world.calendar.hoursPerYear}
+          </div>
         </div>
-        <div class="wk">
-          h. {world.calendar.hourOfYear}/{world.calendar.hoursPerYear}
+        <div class="cap">
+          <div>
+            <div class="sub">{titleName(house.title)}</div>
+            <h1>Résidence {formatCount(house.residenceLevel)}</h1>
+          </div>
+          <div class="cap-right">
+            {house.workshops.length} atelier{house.workshops.length > 1 ? 's' : ''}
+          </div>
         </div>
-      </header>
+      </section>
 
       <HouseBar data={data} mode="house" />
 
@@ -264,18 +278,13 @@ export function Maison({
               <div class="wait">
                 <div class="nm">
                   <b>Résidence niveau {formatCount(ladder.nextResidence.level)}</b>
-                  <p>
-                    {ladder.nextResidence.opened
-                      ? `${formatCount(ladder.nextResidence.hours)} h de travaux.`
-                      : `Prérequis : titre de ${titleName(ladder.nextTitle?.title ?? ladder.title)}`}
-                  </p>
+                  <p>{residenceHint(ladder, titleName)}</p>
                 </div>
                 <button
                   class="btn"
                   type="button"
                   disabled={
                     building ||
-                    titleQueued ||
                     residenceQueued ||
                     !ladder.nextResidence.opened ||
                     busy === 'residence' ||
@@ -328,6 +337,23 @@ export function Maison({
       </div>
     </main>
   );
+}
+
+/**
+ * What holds the next residence level, or how long it takes: a door the title
+ * has not opened yet, works already bought, or the hours the upgrade costs.
+ */
+function residenceHint(ladder: WorldResponse['world']['house']['ladder'], nameOf: (title: TitleId) => string): string {
+  const next = ladder.nextResidence;
+
+  if (next === null) {
+    return 'Le niveau douze ne se dépasse pas.';
+  }
+  if (!next.opened) {
+    return `Prérequis : titre de ${nameOf(ladder.nextTitle?.title ?? ladder.title)}`;
+  }
+
+  return `${formatCount(next.hours)} h de travaux.`;
 }
 
 /** A price with the coin that says it is one, shared by every button that costs. */

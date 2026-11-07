@@ -19,7 +19,6 @@ import {
   goodName,
   goodQuantity,
   pendingActionText,
-  pendingHourText,
   readErrorText,
   refusalText,
   seatName,
@@ -406,11 +405,6 @@ describe('pending actions', () => {
     expect(pendingActionText(pending[0] as PendingActionView)).toBe('Achat de 5 blés');
     expect(pendingActionText(pending[2] as PendingActionView)).toBe('Vente de 4 blés');
     expect(pendingActionText(pending[4] as PendingActionView)).toBe('Candidature à la mairie');
-  });
-
-  it('says where a queued action lands against the clock', () => {
-    expect(pendingHourText(pending[0] as PendingActionView, 3)).toBe('cette heure');
-    expect(pendingHourText({ ...pending[0], hour: 4 } as PendingActionView, 3)).toBe("l'heure suivante");
   });
 
   it("values the queued actions at the town's prices", () => {

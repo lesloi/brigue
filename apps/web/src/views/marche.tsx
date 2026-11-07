@@ -2,7 +2,8 @@ import type { GoodId } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
-import { formatCents, formatCount, goodName, pendingActionText, pendingHourText } from '../format.ts';
+import { pendingHourText } from '../pending.ts';
+import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
 import {
   buyMax,
   FINISHED_GOODS,
