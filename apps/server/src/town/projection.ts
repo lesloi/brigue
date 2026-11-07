@@ -1,13 +1,26 @@
 import {
+  displayedPrestige,
   GOODS,
   HOURS_PER_YEAR,
+  nextTitle,
+  RESIDENCE_LADDER,
+  residenceOf,
   RULES,
+  stockCapacityUnits,
   stockUnits,
+  TITLE_LADDER,
+  titleOf,
+  workshopCapacity,
+  workshopLevelCap,
+  type Engagement,
   type GoodId,
   type House,
   type Law,
   type Seat,
   type SeatId,
+  type SiteWork,
+  type TitleId,
+  type Trade,
   type World,
 } from '@brigue/core';
 
@@ -15,13 +28,47 @@ import type { TownInfo } from './worlds.ts';
 
 /** A workshop as the screen reads it: its chain and hourly figures come from the rules. */
 export interface WorkshopView {
+  id: string;
   good: GoodId;
   level: number;
-  workers: number;
   input: GoodId | null;
   outputUnitsPerHour: number;
   inputUnitsPerHour: number;
-  wagesCentsPerHour: number;
+  upkeepCentsPerHour: number;
+  /** What this workshop gives the warehouse at its level. */
+  capacityUnits: number;
+  /** Whether the house's degree allows one more level, and how long it takes. */
+  canUpgrade: boolean;
+  upgradeHours: number | null;
+}
+
+/** A site under way: what it is for, and the hour it closes. */
+export interface SiteView {
+  id: string;
+  dueAt: number;
+  work: SiteWork['work'];
+  trade: Trade | null;
+  workshopId: string | null;
+}
+
+/**
+ * The ladder as the screen reads it. Every figure the Maison needs is computed
+ * here: the client draws the gate, it never decides whether it may pass.
+ */
+export interface LadderView {
+  title: TitleId;
+  /** What the house's residence level is called, never "residence 3". */
+  residence: string;
+  titlePrestige: number;
+  residencePrestige: number;
+  /** What service earned, already capped by the level. */
+  servicePrestige: number;
+  prestigeCap: number;
+  workshops: number;
+  stockDefence: number;
+  workshopLevelCap: number;
+  nextTitle: { title: TitleId; priceCents: number } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
 export interface OwnHouseView {
@@ -30,14 +77,21 @@ export interface OwnHouseView {
   treasuryCents: number;
   debtCents: number;
   favour: number;
+  /** The prestige the screens show: title plus residence plus capped service. */
   prestige: number;
   career: number;
   dormant: boolean;
+  title: TitleId;
+  residenceLevel: number;
+  ladder: LadderView;
   workshops: WorkshopView[];
   stock: Partial<Record<GoodId, number>>;
   /** What the stock holds in total, and the warehouse's cap: the client sums nothing. */
   stockUnits: number;
   stockCapacityUnits: number;
+  build: { priceCents: number; hours: number; level: number; room: number; cap: number };
+  sites: SiteView[];
+  rename: { priceCents: number };
 }
 
 /** What the town knows about another house: its name and standing, not its purse. */
@@ -108,7 +162,7 @@ export function projectWorld(town: TownInfo, world: World, houseId: string, hour
     hour: world.hour,
     year: world.year,
     calendar: calendarOf(world, hourStartedAt),
-    house: ownHouse(house),
+    house: ownHouse(world, house),
     town: {
       id: town.id,
       name: town.name,
@@ -116,7 +170,7 @@ export function projectWorld(town: TownInfo, world: World, houseId: string, hour
         .map((candidate) => ({
           id: candidate.id,
           name: candidate.name,
-          prestige: candidate.prestige,
+          prestige: displayedPrestige(candidate),
           dormant: candidate.dormant,
         }))
         .sort((left, right) => left.id.localeCompare(right.id)),
@@ -168,16 +222,44 @@ function calendarOf(world: World, hourStartedAt: Date): CalendarView {
   };
 }
 
-function ownHouse(house: House): OwnHouseView {
+function ownHouse(world: World, house: House): OwnHouseView {
+  const residence = RESIDENCE_LADDER[residenceOf(house) - 1];
+  const title = titleOf(house);
+  const next = nextTitle(title);
+
   return {
     id: house.id,
     name: house.name,
     treasuryCents: house.treasuryCents,
     debtCents: house.debtCents,
     favour: house.favour,
-    prestige: house.prestige,
+    prestige: displayedPrestige(house),
     career: house.career,
     dormant: house.dormant,
+    title,
+    residenceLevel: residenceOf(house),
+    ladder: {
+      title,
+      residence: residence.name,
+      titlePrestige: TITLE_LADDER[title].prestige,
+      residencePrestige: residence.prestige,
+      servicePrestige: Math.min(house.prestige, residence.prestigeCap),
+      prestigeCap: residence.prestigeCap,
+      workshops: residence.workshops,
+      stockDefence: residence.stockDefence,
+      workshopLevelCap: workshopLevelCap(house),
+      nextTitle: next === undefined ? null : { title: next, priceCents: TITLE_LADDER[next].priceCents },
+      nextResidence:
+        residenceOf(house) >= RESIDENCE_LADDER.length
+          ? null
+          : {
+              level: residenceOf(house) + 1,
+              name: RESIDENCE_LADDER[residenceOf(house)]!.name,
+              priceCents: RESIDENCE_LADDER[residenceOf(house)].priceCents,
+              opened: residenceOf(house) < TITLE_LADDER[title].residenceLevel,
+              hours: RULES.improvementHours[residenceOf(house) + 1] ?? RULES.siteHours,
+            },
+    },
     workshops: house.workshops.map((workshop) => {
       const recipe = RULES.recipes[workshop.good];
       const outputUnitsPerHour = workshop.level * RULES.outputPerLevel;
@@ -187,11 +269,46 @@ function ownHouse(house: House): OwnHouseView {
         input: recipe?.input ?? null,
         outputUnitsPerHour,
         inputUnitsPerHour: recipe === null ? 0 : outputUnitsPerHour * recipe.perUnit,
-        wagesCentsPerHour: workshop.workers * RULES.wagePerWorkerCents,
+        upkeepCentsPerHour: workshop.level * RULES.upkeepPerWorkshopLevelCents,
+        capacityUnits: workshopCapacity(workshop.level),
+        canUpgrade: workshop.level < workshopLevelCap(house),
+        upgradeHours: RULES.improvementHours[workshop.level + 1] ?? null,
       };
     }),
     stock: structuredClone(house.stock),
     stockUnits: stockUnits(house),
-    stockCapacityUnits: RULES.stockCapacityUnits,
+    stockCapacityUnits: stockCapacityUnits(house),
+    build: {
+      priceCents: RULES.buildCents,
+      hours: RULES.siteHours,
+      level: RULES.builtWorkshopLevel,
+      room: Math.max(0, residence.workshops - house.workshops.length - buildingCount(world, house.id, 'build')),
+      cap: residence.workshops,
+    },
+    sites: world.engagements.flatMap((engagement) =>
+      engagement.kind === 'site' && engagement.houseId === house.id
+        ? [{ id: engagement.id, dueAt: engagement.dueAt, ...siteWorkOf(engagement) }]
+        : [],
+    ),
+    rename: { priceCents: RULES.renameCents },
   };
+}
+
+/** The sites of one kind a house has open: a build in progress counts on the cap. */
+function buildingCount(world: World, houseId: string, work: SiteWork['work']): number {
+  return world.engagements.filter(
+    (engagement) => engagement.kind === 'site' && engagement.houseId === houseId && engagement.work === work,
+  ).length;
+}
+
+/** What a site is for, as the screen names it: a trade, a workshop, the house. */
+function siteWorkOf(site: Extract<Engagement, { kind: 'site' }>) {
+  switch (site.work) {
+    case 'build':
+      return { work: site.work, trade: site.trade, workshopId: null };
+    case 'upgrade':
+      return { work: site.work, trade: null, workshopId: site.workshopId };
+    default:
+      return { work: site.work, trade: null, workshopId: null };
+  }
 }

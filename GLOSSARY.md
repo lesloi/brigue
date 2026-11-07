@@ -48,12 +48,13 @@ French in the data and in the interface, and the English here is only how we tal
   exceptional measures, and jury duty.
 - **Carrière** — the offices a house has held. It gates the floor of the pyramid the house may
   stand for, and it falls one floor at death.
-- **Titre** — the house's rank, from roturier to prince. Bought at the town hall, lost by a court
-  or by death.
+- **Titre** — the house's rank, from roturier to prince. Bought, obtained at the next noon or
+  midnight, lost by a court or by death.
 - **Faveur** — favour: the standing that makes a house electable. Earned by service (a mandate, a
   jury, a vote with the winner) and by visible spending (a gift, a work, a banquet); lost by
   offence.
-- **Prestige** — prestige: what the town thinks of the house; the residence level caps it.
+- **Prestige** — prestige: what the town thinks of the house. The title's and the residence's
+  shares are bought; what service adds is capped by the residence level.
 - **Livre des rois** — the clerk's record of the crowned kings: their player, house, person, day
   and the time it took, kept across towns.
 
@@ -97,17 +98,20 @@ French in the data and in the interface, and the English here is only how we tal
 - **Pain** — bread, the good the town eats.
 - **Bois** — wood, the raw material of planks.
 - **Planche** — plank, the good the town builds with.
-- **Entrepôt** — the warehouse: finished goods, with a capacity fixed by the house's residence
-  level.
+- **Entrepôt** — the warehouse: finished goods. Its capacity is what the house's workshops hold
+  between them.
 
 ## The person
 
 - **Attributs** — artisanat, parole, intrigue. Raised by use, capped by the trade and the title,
   and lost with the person.
-- **Métier** — the trade a player chooses at creation: weaver, baker, carpenter. One at a time;
-  another can be learned, which converts the workshop.
+- **Métier** — the trade a workshop practises: weaver, baker, carpenter. A player chooses one at
+  creation; to change it, the house builds a workshop of the other trade and destroys the old one.
+- **Atelier** — the workshop: one trade, one level. It produces into the warehouse, holds its share
+  of the warehouse's capacity, and costs an upkeep for every level it has.
+- **Entretien** — the upkeep of a workshop, one level's share an hour; nothing while it is a works.
 - **Résidence** — the house's one ladder: the title opens a level, money pays for it, and the level
-  sets the prestige cap, the defence of the stock, the capacity and the number of workshops.
+  sets the prestige cap, the defence of the stock and the number of workshops.
 - **Héritier** — the next person of the house. Chosen at retirement; taken, unprepared, by death.
 - **Retraite** — the clean handover at fifty, chosen by the player. It keeps the estate and
   prepares the heir; refusing it opens the window in which death may come.

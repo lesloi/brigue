@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockUnits, type World } from '@brigue/core';
+import { GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockCapacityUnits, stockUnits, type World } from '@brigue/core';
 
 import { projectWorld } from '../src/town/projection.ts';
 import { TEST_TOWN, tick, town } from './helpers.ts';
@@ -94,13 +94,16 @@ describe('the projection calendar', () => {
     // Assert
     expect(projection.house.workshops).toEqual([
       {
+        id: 'workshop-1',
         good: 'bread',
         level: 2,
-        workers: 2,
         input: 'grain',
         outputUnitsPerHour: 4,
         inputUnitsPerHour: 4,
-        wagesCentsPerHour: 240,
+        upkeepCentsPerHour: 240,
+        capacityUnits: 200,
+        canUpgrade: false,
+        upgradeHours: 3,
       },
     ]);
   });
@@ -108,40 +111,46 @@ describe('the projection calendar', () => {
   it('carries zero input for a raw workshop', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ good: 'wool', level: 2, workers: 1 }];
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops[0]).toEqual({
+      id: 'workshop-1',
       good: 'wool',
       level: 2,
-      workers: 1,
       input: null,
       outputUnitsPerHour: 4,
       inputUnitsPerHour: 0,
-      wagesCentsPerHour: 120,
+      upkeepCentsPerHour: 240,
+      capacityUnits: 200,
+      canUpgrade: false,
+      upgradeHours: 3,
     });
   });
 
-  it('scales the weekly figures with the level and the workers', () => {
+  it('scales the hourly figures with the level', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ good: 'cloth', level: 3, workers: 1 }];
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 3 }];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
     expect(projection.house.workshops[0]).toEqual({
+      id: 'workshop-1',
       good: 'cloth',
       level: 3,
-      workers: 1,
       input: 'wool',
       outputUnitsPerHour: 6,
       inputUnitsPerHour: 6,
-      wagesCentsPerHour: 120,
+      upkeepCentsPerHour: 360,
+      capacityUnits: 350,
+      canUpgrade: false,
+      upgradeHours: 6,
     });
   });
 
@@ -156,7 +165,50 @@ describe('the projection calendar', () => {
     expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
     expect(projection.house.stockUnits).toBe(stockUnits(world.houses.leclerc));
     expect(projection.house.stockUnits).toBe(8);
-    expect(projection.house.stockCapacityUnits).toBe(RULES.stockCapacityUnits);
+    expect(projection.house.stockCapacityUnits).toBe(stockCapacityUnits(world.houses.leclerc));
+  });
+
+  it('carries the ladder in its three shares, its names and the doors', () => {
+    // Arrange: a fait, bourgeois, whose level 2 opens the residence 2.
+    const world = town(SEED);
+    world.houses.leclerc.title = 'bourgeois';
+    world.houses.leclerc.prestige = 10_000;
+    world.engagements = [
+      { id: 'engagement-1', kind: 'site', houseId: 'leclerc', dueAt: world.hour + 6, work: 'title' },
+    ];
+
+    // Act
+    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+
+    // Assert
+    expect(projection.house.title).toBe('bourgeois');
+    expect(projection.house.residenceLevel).toBe(1);
+    expect(projection.house.ladder).toEqual({
+      title: 'bourgeois',
+      residence: 'Masure',
+      titlePrestige: 80,
+      residencePrestige: 0,
+      servicePrestige: 200,
+      prestigeCap: 200,
+      workshops: 1,
+      stockDefence: 10,
+      workshopLevelCap: 3,
+      nextTitle: { title: 'notable', priceCents: 120_000 },
+      nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true, hours: 1 },
+    });
+    expect(projection.house.prestige).toBe(80 + 0 + 200);
+    expect(projection.house.build).toEqual({
+      priceCents: RULES.buildCents,
+      hours: RULES.siteHours,
+      level: RULES.builtWorkshopLevel,
+      room: 0,
+      cap: 1,
+    });
+    expect(projection.house.sites).toEqual([
+      { id: 'engagement-1', dueAt: world.hour + 6, work: 'title', trade: null, workshopId: null },
+    ]);
+    expect(projection.house.rename).toEqual({ priceCents: RULES.renameCents });
+    expect(projection.town.houses.find((house) => house.id === 'leclerc')?.prestige).toBe(280);
   });
 
   it('carries the year of prices and their references', () => {

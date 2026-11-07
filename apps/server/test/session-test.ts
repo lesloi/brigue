@@ -434,13 +434,16 @@ describe('joining the town', () => {
     expect(read.status).toBe(200);
     expect(world.world.house.workshops).toEqual([
       {
+        id: 'workshop-1',
         good: 'bread',
         level: 2,
-        workers: 2,
         input: 'grain',
         outputUnitsPerHour: 4,
         inputUnitsPerHour: 4,
-        wagesCentsPerHour: 240,
+        upkeepCentsPerHour: 240,
+        capacityUnits: 200,
+        canUpgrade: false,
+        upgradeHours: 3,
       },
     ]);
     expect(world.world.house.stock.grain).toBe(8);
@@ -465,13 +468,16 @@ describe('joining the town', () => {
     expect(response.status).toBe(200);
     expect(world.world.house.workshops).toEqual([
       {
+        id: 'workshop-1',
         good: 'bread',
         level: 2,
-        workers: 2,
         input: 'grain',
         outputUnitsPerHour: 4,
         inputUnitsPerHour: 4,
-        wagesCentsPerHour: 240,
+        upkeepCentsPerHour: 240,
+        capacityUnits: 200,
+        canUpgrade: false,
+        upgradeHours: 3,
       },
     ]);
   });

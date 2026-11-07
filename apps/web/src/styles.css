@@ -77,7 +77,14 @@ button:disabled {
 .screen {
   width: 100%;
   max-width: 720px;
-  padding-bottom: calc(116px + env(safe-area-inset-bottom));
+  /* The floating bar is 14px up from the bottom and 77px tall; the page ends
+     just above it, with nothing the bar would cover. */
+  padding-bottom: calc(104px + env(safe-area-inset-bottom));
+}
+
+.hero-house {
+  height: 168px;
+  margin-bottom: 26px;
 }
 
 .hero {
@@ -166,6 +173,14 @@ button:disabled {
   align-items: flex-end;
   gap: 10px;
   color: #fff;
+}
+
+.cap .cap-right {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
 }
 
 .cap h1 {
@@ -526,71 +541,22 @@ button:disabled {
   color: var(--good);
 }
 
-.cal {
-  margin: 20px 12px 0;
-}
-
-.cal .h {
-  margin: 0 8px 8px;
-}
-
-.cal-card {
-  background: var(--surf);
-  border-radius: 18px;
-  box-shadow: var(--shadow-soft);
-  padding: 12px 14px 11px;
-}
-
-.hours {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 4px;
-}
-
-.hours li {
-  height: 25px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  background: #f5f2ea;
-  color: var(--mut);
-  font-size: 9.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.hours li.now {
-  background: var(--accent);
-  color: #fff;
-}
-
-.hours li.scrutiny {
-  box-shadow: inset 0 0 0 1px var(--gold);
-  color: #8a5f14;
-}
-
-.hours li.now.scrutiny {
-  box-shadow: inset 0 0 0 2px #f0d59a;
-  color: #fff;
-}
-
-.cal-line {
-  margin: 10px 0 0;
-  padding-top: 9px;
-  border-top: 1px solid var(--line);
-  color: var(--mut);
-  font-size: 11.5px;
-  line-height: 1.35;
-}
-
 /* The development-only control: dashed and quiet, so it never reads as a game action. */
 .dev {
   display: flex;
   justify-content: center;
   margin: 14px 20px 0;
+}
+
+.dev {
+  gap: 10px;
+}
+
+.dev-note {
+  align-self: center;
+  font-size: 11px;
+  color: var(--mut);
+  font-variant-numeric: tabular-nums;
 }
 
 .dev button {
@@ -958,7 +924,7 @@ button:disabled {
   border-radius: 24px;
   box-shadow: var(--shadow-float);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   padding: 7px 8px;
   z-index: 20;
 }
@@ -994,7 +960,7 @@ button:disabled {
   transform: translateX(-50%);
   bottom: 0;
   width: min(100%, 720px);
-  height: calc(96px + env(safe-area-inset-bottom));
+  height: calc(92px + env(safe-area-inset-bottom));
   background: linear-gradient(180deg, rgba(246, 244, 239, 0), var(--bg) 62%);
   pointer-events: none;
   z-index: 10;
@@ -1004,7 +970,8 @@ button:disabled {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(94px + env(safe-area-inset-bottom));
+  /* The top of the screen, under the safe area: the bar and the nav stay clear. */
+  top: calc(14px + env(safe-area-inset-top));
   width: min(calc(100% - 40px), 560px);
   padding: 10px 14px;
   border-radius: 12px;
@@ -1256,21 +1223,20 @@ button:disabled {
     font-size: 18px;
   }
 
-  .cal {
-    margin-left: 20px;
-    margin-right: 20px;
-  }
-
-  .hours {
-    grid-template-columns: repeat(24, 1fr);
-  }
-
   .body {
     padding: 22px 20px 0;
   }
 
   .cap {
     bottom: 44px;
+  }
+
+  .cap .cap-right {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
   }
 
   .cap h1 {
@@ -1280,4 +1246,88 @@ button:disabled {
   .ev p {
     font-size: 13.5px;
   }
+}
+
+/* The Maison screen: the ladder's figures, its doors, and the buildings. */
+.ladder-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 14px 2px;
+}
+
+.ladder-row span {
+  font-variant-numeric: tabular-nums;
+  color: var(--mut);
+  font-size: 12px;
+}
+
+.ladder-detail {
+  margin: 0 0 10px;
+  padding: 0 14px;
+  font-size: 11.5px;
+  color: var(--mut);
+  line-height: 1.35;
+}
+
+.rename {
+  display: grid;
+  gap: 6px;
+  padding: 4px 14px 14px;
+}
+
+.rename label {
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--mut);
+  font-weight: 700;
+}
+
+.rename input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfaf6;
+  padding: 10px 11px;
+  font-size: 15px;
+}
+
+.row .actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.sec .trade-list {
+  margin: 0 8px 8px;
+}
+
+.sec > .btn.wide {
+  margin: 0 8px 8px;
+  width: calc(100% - 16px);
+}
+
+/* A button's text is a line of its own: the flex inside it centers as one,
+   where inline content would hang from the baseline. */
+.btn-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+/* A price inside a button: the coin first, so a cost never reads as a count.
+   Its own class, because `.price` already names a good's price on the Marché. */
+.btn-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.btn-price svg {
+  flex: none;
 }

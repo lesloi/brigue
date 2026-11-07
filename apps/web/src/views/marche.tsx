@@ -2,7 +2,8 @@ import type { GoodId } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
 import type { PendingActionView, TradeIntent, WorldResponse } from '../api.ts';
-import { formatCents, formatCount, goodName, pendingActionText, pendingHourText } from '../format.ts';
+import { pendingHourText } from '../pending.ts';
+import { formatCents, formatCount, goodName, pendingActionText } from '../format.ts';
 import {
   buyMax,
   FINISHED_GOODS,
@@ -13,7 +14,8 @@ import {
   RAW_GOODS,
   sellMax,
 } from '../trade.ts';
-import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { Seal, WorkshopThumb } from '../icons.tsx';
+import { HouseBar } from './housebar.tsx';
 
 interface MarcheProps {
   data: WorldResponse;
@@ -125,20 +127,7 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
         </div>
       </header>
 
-      <section class="mstats" aria-label="Ta maison">
-        <div>
-          <ResourceIcon kind="coins" />
-          <span class="v">{formatCents(house.treasuryCents)}</span>
-          <span class="l">écus</span>
-        </div>
-        <div>
-          <ResourceIcon kind="warehouse" />
-          <span class="v">
-            {formatCount(house.stockUnits)} / {formatCount(house.stockCapacityUnits)}
-          </span>
-          <span class="l">entrepôt</span>
-        </div>
-      </section>
+      <HouseBar data={data} mode="ville" pending={pending} />
 
       <div class="body">
         {pending.length > 0 ? (

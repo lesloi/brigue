@@ -43,9 +43,8 @@ offered to a newcomer; it is on its way out.
 
 Twenty houses at most, three of them AI at the opening. The town is founded when its first player
 joins: three AI houses and the first player's house are created together, so no town waits empty
-for someone. That house takes a name
-drawn from the town's names, and may be renamed later (not built yet). Its offices do not
-exist yet:
+for someone. That house is offered a name, which its player may keep or replace at once, and may
+buy again later. Its offices do not exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
 A human who arrives later chooses a trade and takes a free place with the same kit as the first
@@ -159,9 +158,10 @@ take the price, they do not time it, so the flow stays regular and the price rea
 Marché marks the prices that have left their band around the reference, so the flow is visible,
 not only described.
 
-Capacity is fixed by the house's residence level, and there is no spoilage. What reduces a stock is
-theft: a secret coup resolved two hours later, the thief's intrigue against the target's
-defence. A failure leaves a proof at the clerk's office; a success leaves no automatic proof,
+The warehouse's capacity is what the house's workshops hold: every workshop gives 100 units at
+its first level, 200 at its second, 350 at its third, and more as it grows, so a second building
+is a second store. There is no spoilage. What reduces a stock is theft: a secret coup resolved
+two hours later, the thief's intrigue against the target's defence. A failure leaves a proof at the clerk's office; a success leaves no automatic proof,
 though an investigation may still find one. A victim who
 has been struck hard is harder to strike again for a while — the shield rises with each hostile
 act and fades with the hours.
@@ -171,18 +171,27 @@ act and fades with the hours.
 Three attributes, raised by use: **artisanat, parole, intrigue**. Returns diminish, and the
 ceiling is set by the trade and the title. They belong to the person and die with them.
 
-A person keeps one trade at a time — weaver, baker, carpenter — and can learn another, which
-converts the workshop. The **residence** is one ladder: the title opens a level, money pays for
-it, and the level sets the prestige cap, the defence of the stock, the capacity of the warehouse
-and the number of workshops.
+A workshop is bound to one trade — weaver, baker, carpenter — and a house may hold several,
+even two of the same trade. There is no conversion: to change what the house makes, it builds
+another workshop and destroys the old one, and it can never destroy its last. A workshop is
+built at the first level; each further level takes longer, and it produces nothing while it
+grows. A house pays an upkeep for every workshop that runs, one level's share an hour, and
+nothing for a workshop under works.
+
+The **residence** is one ladder: the title opens a level, money pays for it, and the level sets
+the prestige cap, the defence of the stock and the number of workshops. The two purchases are
+separate: the title is bought first, then the level it opened. A title is obtained at the next
+noon or midnight, a workshop and a residence upgrade when their works are done.
 
 **Favour** is the currency of elections. It is earned by service — a mandate held, a
 jury served, a vote cast with the winner — and by visible acts: a gift to the treasury, a funded
 work, a banquet. Crimes take it away.
 
-Twelve titles, bought at the town hall: roturier, bourgeois, notable, patricien, écuyer,
-chevalier, baron, vicomte, comte, marquis, duc, prince. Each gives prestige and opens a level of
-residence and some offices. The title belongs to the house, and **falls one degree at death**.
+Twelve titles: roturier, bourgeois, notable, patricien, écuyer, chevalier, baron, vicomte, comte,
+marquis, duc, prince. Each gives prestige, opens a level of residence and a ceiling on a
+workshop's level, and some offices. The title and the residence belong to the house; the title
+**falls one degree at death**. Prestige as the screen shows it is the title's, plus the
+residence's, plus what service earned — and only the service is capped by the residence.
 
 A character enters at twenty. At fifty, retirement is offered. Refusing it opens a window in
 which death may come at any scrutiny, with a chance that rises until it reaches certainty around a
@@ -192,7 +201,8 @@ connected.
 
 The heir keeps the house — money, workshops, stock, grudges — keeps the career one floor lower,
 loses the seats,
-drops one title, pays about fifteen per cent of the estate in duty and funerals, and starts with
+drops one title, one residence level and one level from every workshop, pays about fifteen per
+cent of the estate in duty and funerals, and starts with
 ten in each attribute plus a tenth of what the parent had gained. Retirement is clean and lets
 the player choose the heir; death takes the choice away.
 
@@ -201,7 +211,8 @@ the player choose the heir; death takes the choice away.
 A house is a place, a person holds an office, and every house has a controller:
 
 ```
-House  = { id, name, controller, treasury, title, prestige, favour, career, workshops, stock, grudges }
+House    = { id, name, controller, treasury, title, residence, prestige, favour, career, workshops, stock, grudges }
+Workshop = { id, trade, level }
 Person = { id, houseId, name, age, attributes, alive }
 Seat   = { personId | null }
 ```

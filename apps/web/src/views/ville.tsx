@@ -1,11 +1,13 @@
 import { useState } from 'preact/hooks';
 
-import type { CalendarView, PendingActionView, WorldResponse } from '../api.ts';
+import type { PendingActionView, WorldResponse } from '../api.ts';
 import { eventLine, journalCountsText, ledgerEvents, type LedgerFilter } from '../events.ts';
 import { netPendingFor } from '../trade.ts';
-import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
+import { formatCents, formatCount, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { DevBar } from './devbar.tsx';
+import { HouseBar } from './housebar.tsx';
 
 const LEDGER_LIMIT = 8;
 
@@ -36,9 +38,6 @@ export function Ville({
   const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
   const house = world.house;
-  const workshop = house.workshops[0];
-  const output = workshop?.good ?? null;
-  const input = workshop?.input ?? null;
   const nameOf = houseName(world);
   const ledger = ledgerEvents(events, house.id, ledgerFilter);
   const shownLedger = expanded ? ledger : ledger.slice(0, LEDGER_LIMIT);
@@ -85,32 +84,9 @@ export function Ville({
         </div>
       </section>
 
-      <section class="res" aria-label="Ressources">
-        <div class="c">
-          <ResourceIcon kind="coins" />
-          <span class="v">{formatCents(house.treasuryCents)}</span>
-          <span class="l">écus</span>
-        </div>
-        <div class="c">
-          {output !== null ? <ResourceIcon kind={output} /> : null}
-          <span class="v">{output !== null ? formatCount(house.stock[output] ?? 0) : '—'}</span>
-          <span class="l">{output !== null ? goodName(output) : 'stock'}</span>
-        </div>
-        <div class="c">
-          {input !== null ? <ResourceIcon kind={input} /> : null}
-          <span class="v">{input !== null ? formatCount(house.stock[input] ?? 0) : '—'}</span>
-          <span class="l">{input !== null ? goodName(input) : 'matière'}</span>
-        </div>
-        <div class="c">
-          <ResourceIcon kind="favour" />
-          <span class="v">{formatCount(house.favour)}</span>
-          <span class="l">faveur</span>
-        </div>
-      </section>
+      <HouseBar data={data} mode="ville" pending={pending} />
 
-      <Calendar calendar={world.calendar} year={world.year} now={now} />
-
-      {data.dev === true ? <DevBar busy={advancing} onAdvance={onAdvance} /> : null}
+      {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
         <section class="sec" aria-labelledby="house-title">
@@ -277,26 +253,6 @@ export function Ville({
   );
 }
 
-/**
- * Local development only: the server sets `dev` on the payload it serves when
- * it was started with DEV_ADVANCE. The button has no place in production.
- */
-function DevBar({ busy, onAdvance }: { busy: boolean; onAdvance(): void }) {
-  return (
-    <div class="dev">
-      <button
-        id="advance-hour"
-        type="button"
-        title="Mode développement : simule une heure"
-        disabled={busy}
-        onClick={onAdvance}
-      >
-        Heure suivante
-      </button>
-    </div>
-  );
-}
-
 export function houseName(world: WorldResponse['world']): (houseId: string) => string {
   const names = new Map(world.town.houses.map((house) => [house.id, house.name]));
   names.set(world.house.id, world.house.name);
@@ -312,17 +268,6 @@ export function countdownText(nextBellAt: string, now: number): string {
   }
 
   return `cloche dans ${durationText(remaining)}`;
-}
-
-/** The same countdown for the scrutiny the projection dates, never a computed one. */
-export function scrutinyText(nextScrutinyAt: string, now: number): string {
-  const remaining = new Date(nextScrutinyAt).getTime() - now;
-
-  if (!Number.isFinite(remaining) || remaining <= 0) {
-    return 'scrutin imminent';
-  }
-
-  return `scrutin dans ${durationText(remaining)}`;
 }
 
 /** How long ago the town enacted a law, said in hours from its own clock. */
@@ -347,44 +292,6 @@ function durationText(remaining: number): string {
   }
 
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function Calendar({ calendar, year, now }: { calendar: CalendarView; year: number; now: number }) {
-  const hours = Array.from({ length: calendar.hoursPerYear }, (_, index) => index + 1);
-  // The projection dates the next scrutiny by its absolute hour; the cell is
-  // that hour's place in the year, so a scrutiny moved earlier still lands on
-  // the right cell.
-  const scrutinyHourOfYear = ((calendar.nextScrutinyHour - 1) % calendar.hoursPerYear) + 1;
-
-  return (
-    <section class="cal" aria-labelledby="cal-title">
-      <div class="h">
-        <b id="cal-title">Le calendrier</b>
-        <span>
-          an {year} &middot; heure {calendar.hourOfYear} sur {calendar.hoursPerYear}
-        </span>
-      </div>
-      <div class="cal-card">
-        <ol class="hours" aria-label={`Heure ${calendar.hourOfYear} sur ${calendar.hoursPerYear}`}>
-          {hours.map((hour) => (
-            <li
-              key={hour}
-              class={[hour === calendar.hourOfYear ? 'now' : '', hour === scrutinyHourOfYear ? 'scrutiny' : '']
-                .filter(Boolean)
-                .join(' ')}
-              aria-current={hour === calendar.hourOfYear ? 'true' : undefined}
-              title={hour === scrutinyHourOfYear ? 'Scrutin' : `Heure ${hour}`}
-            >
-              <span>{hour}</span>
-            </li>
-          ))}
-        </ol>
-        <p class="cal-line">
-          {scrutinyText(calendar.nextScrutinyAt, now)} &middot; toutes les charges sont remises en jeu.
-        </p>
-      </div>
-    </section>
-  );
 }
 
 function WorkshopRow({

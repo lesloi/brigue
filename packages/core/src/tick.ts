@@ -3,17 +3,31 @@ import type { Action, Event, EventDraft, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
   GOODS,
+  HOURS_PER_YEAR,
+  nextTitle,
   PRICE_HISTORY_BELLS,
+  residenceOf,
+  RESIDENCE_LADDER,
   RULES,
   seatHolder,
   SEATS,
   START_YEAR,
+  stockCapacityUnits,
   stockUnits,
   takeSeat,
-  HOURS_PER_YEAR,
+  TITLE_LADDER,
+  titleOf,
+  TRADES,
+  TRADE_CHAINS,
+  workshopCap,
+  workshopLevelCap,
+  type Engagement,
   type GoodId,
+  type House,
   type Person,
   type SeatId,
+  type SiteWork,
+  type Trade,
   type World,
 } from './world.ts';
 
@@ -108,19 +122,23 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   }
 
   // What fell due is paid before the hour's trade, so an engagement resolved in
-  // the same hour as its last action already counts for that hour.
-  resolveEngagements(next, events);
+  // the same hour as its last action already counts for that hour. Its lines
+  // belong to the world, not to the week's trades: they are gathered apart and
+  // placed after the actions that opened them.
+  const town: EventDraft[] = [];
+  resolveEngagements(next, town);
 
   // The AI houses decide in the same breath as the players, at the same price:
-  // both buy before the hour moves the market.
-  aiHousesBuy(next, flow, events);
+  // both buy before the hour moves the market. Their lines go with the town's.
+  aiHousesBuy(next, flow, town);
 
-  // Production, then the AI's sale, then wages: an AI pays its workers from the
-  // price it just took. The prices move at the bells only, so every trade of the
-  // half-day happens at the price the players saw.
-  runWorkshops(next, events);
-  aiHousesSell(next, flow, events);
-  payWages(next, events);
+  // Production, then the AI's sale, then upkeep: an AI pays its workshops from
+  // the price it just took. The prices move at the bells only, so every trade of
+  // the half-day happens at the price the players saw. Every line goes with the
+  // town's, so no AI's trade interrupts the house's own run.
+  runWorkshops(next, town);
+  aiHousesSell(next, flow, town);
+  payUpkeep(next, town);
 
   const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
 
@@ -131,7 +149,7 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   }
 
   if (bell) {
-    driftPrices(next, events);
+    driftPrices(next, town);
   }
 
   // Noon closes the candidacies: what is in the open map counts tonight, what
@@ -144,8 +162,12 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   // The scrutiny closes the year: every seat is up, once a day, and everyone
   // present ages a year.
   if (next.hour % HOURS_PER_YEAR === 0) {
-    holdScrutiny(next, events);
+    holdScrutiny(next, town);
   }
+
+  // The hour reads as it was written: what the house asked and got, then what
+  // the town did with it. A reader looking for their own line finds it first.
+  events.push(...town);
 
   next.hour += 1;
   next.year = START_YEAR + Math.floor((next.hour - 1) / HOURS_PER_YEAR);
@@ -158,7 +180,22 @@ function isKnownAction(value: unknown): value is Action {
 
   const type = (value as { type?: unknown }).type;
 
-  return type === 'market.buy' || type === 'market.sell' || type === 'council.campaign';
+  return (
+    type === 'market.buy' ||
+    type === 'market.sell' ||
+    type === 'council.campaign' ||
+    type === 'workshop.build' ||
+    type === 'workshop.destroy' ||
+    type === 'workshop.upgrade' ||
+    type === 'house.buy_title' ||
+    type === 'house.upgrade_residence' ||
+    type === 'house.rename'
+  );
+}
+
+/** A stored action's trade came through the same database and parser. */
+function isKnownTrade(trade: unknown): trade is Trade {
+  return typeof trade === 'string' && (TRADES as readonly string[]).includes(trade);
 }
 
 /** A stored action's good went through a database and a JSON parser too. */
@@ -198,6 +235,28 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
     return;
   }
 
+  // A degree or a residence level is bought once: two purchases for the same
+  // next object would charge twice and deliver once, since the works of the
+  // first already opens the second.
+  if (action.type === 'house.buy_title' && sitesOf(world, house.id, 'title') > 0) {
+    refuse(events, action, house.id, 'site_in_progress', true);
+    return;
+  }
+  if (action.type === 'house.upgrade_residence' && sitesOf(world, house.id, 'residence') > 0) {
+    refuse(events, action, house.id, 'site_in_progress', true);
+    return;
+  }
+
+  // A site already under way cannot be doubled: the house has one builder, and
+  // two sites of one kind would race for the same workshop or the same degree.
+  const building = world.engagements.some(
+    (engagement) => engagement.kind === 'site' && engagement.houseId === house.id,
+  );
+  if (building && action.type !== 'market.buy' && action.type !== 'market.sell' && action.type !== 'council.campaign') {
+    refuse(events, action, house.id, 'site_in_progress', true);
+    return;
+  }
+
   switch (action.type) {
     case 'market.buy': {
       if (!isKnownGood(action.good)) {
@@ -217,7 +276,7 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       }
       // The warehouse is one capacity for all goods, and a purchase is atomic:
       // it is refused whole, never trimmed to what would fit.
-      if (stockUnits(house) + action.units > RULES.stockCapacityUnits) {
+      if (stockUnits(house) + action.units > stockCapacityUnits(house)) {
         refuse(events, action, house.id, 'stock_full', true);
         return;
       }
@@ -307,7 +366,248 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       });
       return;
     }
+
+    case 'workshop.build': {
+      if (!isKnownTrade(action.trade)) {
+        refuse(events, action, house.id, 'unknown_trade', true);
+        return;
+      }
+      // The residence counts the sites as well as the buildings: two builds in
+      // two hours must not slip past a cap of one.
+      if (house.workshops.length + sitesOf(world, house.id, 'build') >= workshopCap(house)) {
+        refuse(events, action, house.id, 'workshop_cap', true);
+        return;
+      }
+      if (house.treasuryCents < RULES.buildCents) {
+        refuse(events, action, house.id, 'insufficient_funds', true);
+        return;
+      }
+
+      house.treasuryCents -= RULES.buildCents;
+      openSite(world, house.id, { work: 'build', trade: action.trade }, RULES.siteHours, events);
+      return;
+    }
+
+    case 'workshop.destroy': {
+      const workshop = findWorkshop(house, action.workshopId);
+      if (workshop === undefined) {
+        refuse(events, action, house.id, 'unknown_workshop', true);
+        return;
+      }
+      // The last workshop is the house's livelihood: destroying it would leave
+      // a house that can neither produce nor rebuild. It is refused, not sold.
+      if (house.workshops.length <= 1) {
+        refuse(events, action, house.id, 'last_workshop', true);
+        return;
+      }
+
+      house.workshops = house.workshops.filter((candidate) => candidate.id !== workshop.id);
+      // Nothing is refunded, and the warehouse keeps its goods: a stock over the
+      // new capacity is sold down, never confiscated.
+      events.push({
+        type: 'workshop.destroyed',
+        audience: { houseId: house.id },
+        houseId: house.id,
+        workshopId: workshop.id,
+        good: workshop.good,
+      });
+      return;
+    }
+
+    case 'workshop.upgrade': {
+      const workshop = findWorkshop(house, action.workshopId);
+      if (workshop === undefined) {
+        refuse(events, action, house.id, 'unknown_workshop', true);
+        return;
+      }
+      const target = workshop.level + 1;
+      if (target > workshopLevelCap(house) || target > RULES.improvementHours.length - 1) {
+        refuse(events, action, house.id, 'level_cap', true);
+        return;
+      }
+
+      // An improvement costs hours, never money: the level is the work itself.
+      openSite(world, house.id, { work: 'upgrade', workshopId: workshop.id }, improvementHours(target), events);
+      return;
+    }
+
+    case 'house.buy_title': {
+      const next = nextTitle(titleOf(house));
+      if (next === undefined) {
+        refuse(events, action, house.id, 'no_next_title', true);
+        return;
+      }
+      const price = TITLE_LADDER[next].priceCents;
+      if (house.treasuryCents < price) {
+        refuse(events, action, house.id, 'insufficient_funds', true);
+        return;
+      }
+
+      house.treasuryCents -= price;
+      // A degree is obtained at the next noon or midnight, whatever the hour of
+      // the purchase: the half-day is the calendar's, not a second clock.
+      const dueAt = nextBellAfter(world.hour, RULES.titleHours);
+      openSite(world, house.id, { work: 'title' }, dueAt - world.hour, events);
+      events.push({ type: 'house.title_bought', audience: 'town', houseId: house.id, title: next });
+      return;
+    }
+
+    case 'house.upgrade_residence': {
+      const target = residenceOf(house) + 1;
+      const opened = TITLE_LADDER[titleOf(house)].residenceLevel;
+      if (target > RESIDENCE_LADDER.length) {
+        refuse(events, action, house.id, 'no_next_residence', true);
+        return;
+      }
+      // The title opens the level, money pays for it: a house below its degree
+      // buys up to what the degree opened, and no further.
+      if (target > opened) {
+        refuse(events, action, house.id, 'title_open', true);
+        return;
+      }
+      const price = RESIDENCE_LADDER[target - 1].priceCents;
+      if (house.treasuryCents < price) {
+        refuse(events, action, house.id, 'insufficient_funds', true);
+        return;
+      }
+
+      house.treasuryCents -= price;
+      openSite(world, house.id, { work: 'residence' }, improvementHours(target), events);
+      return;
+    }
+
+    case 'house.rename': {
+      if (typeof action.name !== 'string') {
+        refuse(events, action, house.id, 'invalid_name', true);
+        return;
+      }
+      const name = action.name.trim();
+      if (!isValidName(name)) {
+        refuse(events, action, house.id, 'invalid_name', true);
+        return;
+      }
+      if (nameIsTaken(world, name, house.id)) {
+        refuse(events, action, house.id, 'name_taken', true);
+        return;
+      }
+      if (house.treasuryCents < RULES.renameCents) {
+        refuse(events, action, house.id, 'insufficient_funds', true);
+        return;
+      }
+
+      house.treasuryCents -= RULES.renameCents;
+      renameHouse(world, house, name, events);
+      return;
+    }
   }
+}
+
+/** A stored workshop id went through the parser too: only a string names one. */
+function findWorkshop(house: House, workshopId: unknown) {
+  if (typeof workshopId !== 'string') {
+    return undefined;
+  }
+
+  return house.workshops.find((candidate) => candidate.id === workshopId);
+}
+
+/** The workshops a house has open: not under an improvement, which stops it. */
+function openWorkshops(world: World, house: House) {
+  const closed = new Set(
+    world.engagements.flatMap((engagement) =>
+      engagement.kind === 'site' && engagement.houseId === house.id && engagement.work === 'upgrade'
+        ? [engagement.workshopId]
+        : [],
+    ),
+  );
+
+  return house.workshops.filter((workshop) => !closed.has(workshop.id));
+}
+
+/** The sites a house has under way of one kind. */
+function sitesOf(world: World, houseId: string, work: SiteWork['work']): number {
+  return world.engagements.filter(
+    (engagement) => engagement.kind === 'site' && engagement.houseId === houseId && engagement.work === work,
+  ).length;
+}
+
+function openSite(world: World, houseId: string, work: SiteWork, hours: number, events: EventDraft[]): void {
+  world.engagementSeq += 1;
+  const engagement = {
+    id: `engagement-${world.engagementSeq}`,
+    kind: 'site' as const,
+    houseId,
+    dueAt: world.hour + hours,
+    ...work,
+  };
+  world.engagements.push(engagement);
+  events.push({
+    type: 'engagement.opened',
+    audience: { houseId },
+    engagementId: engagement.id,
+    kind: 'site',
+    houseId,
+    dueAt: engagement.dueAt,
+  });
+}
+
+/** The improvement takes at least the title's half-day, and lands on a bell. */
+function improvementHours(level: number): number {
+  return RULES.improvementHours[Math.min(level, RULES.improvementHours.length - 1)] ?? RULES.siteHours;
+}
+
+function nextBellAfter(hour: number, minHours: number): number {
+  const target = hour + minHours;
+  const half = HOURS_PER_YEAR / 2;
+
+  return Math.ceil(target / half) * half;
+}
+
+export const NAME_MAX_LENGTH = 24;
+
+export function isValidName(name: string): boolean {
+  return name.length > 0 && name.length <= NAME_MAX_LENGTH && /^[\p{L}][\p{L} '’-]*$/u.test(name);
+}
+
+/** Names compare without case, accent or repeated space: two Carons are one. */
+export function nameKey(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A name is unique in its town; the server also refuses one across towns. */
+export function nameIsTaken(world: World, name: string, exceptHouseId?: string): boolean {
+  const key = nameKey(name);
+
+  return Object.values(world.houses).some((house) => house.id !== exceptHouseId && nameKey(house.name) === key);
+}
+
+/**
+ * The house takes the name, and its living people take it with it: a dynasty's
+ * people carry its name, and the dead keep the one they died with.
+ */
+export function renameHouse(world: World, house: House, name: string, events: EventDraft[]): void {
+  const before = house.name;
+  house.name = name;
+
+  for (const person of Object.values(world.people)) {
+    if (person.houseId === house.id && person.alive) {
+      person.name = renamePerson(person.name, before, name);
+    }
+  }
+
+  events.push({ type: 'house.renamed', audience: 'town', houseId: house.id, before, after: name });
+}
+
+/** `Colin Leclerc` becomes `Colin Moreau`: the given name stays, the dynasty moves. */
+export function renamePerson(personName: string, before: string, after: string): string {
+  const witness = personName.endsWith(before) ? personName.slice(0, personName.length - before.length) : '';
+
+  return witness === '' ? after : `${witness}${after}`;
 }
 
 export interface PriceInput {
@@ -371,7 +671,9 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: EventDr
       continue;
     }
 
-    for (const workshop of house.workshops) {
+    // A workshop under improvement buys nothing: it will not eat until its
+    // site is closed, and an AI that stocked for it would overflow the loft.
+    for (const workshop of openWorkshops(world, house)) {
       const recipe = RULES.recipes[workshop.good];
 
       if (recipe === null) {
@@ -387,7 +689,7 @@ function aiHousesBuy(world: World, flow: Record<GoodId, number>, events: EventDr
 
       const priceCents = world.market[recipe.input];
       const affordable = Math.floor(house.treasuryCents / priceCents);
-      const room = RULES.stockCapacityUnits - stockUnits(house);
+      const room = stockCapacityUnits(house) - stockUnits(house);
       const units = Math.min(shortfall, affordable, room);
 
       if (units <= 0) {
@@ -467,7 +769,9 @@ function runWorkshops(world: World, events: EventDraft[]): void {
       continue;
     }
 
-    for (const workshop of house.workshops) {
+    // A workshop under improvement is a building site: it makes nothing, and
+    // the upkeep it does not pay is the cost of the hours it takes.
+    for (const workshop of openWorkshops(world, house)) {
       const wanted = workshop.level * RULES.outputPerLevel;
       const recipe = RULES.recipes[workshop.good];
       const available = recipe ? (house.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
@@ -491,7 +795,7 @@ function runWorkshops(world: World, events: EventDraft[]): void {
       // them out of nothing. Both must stop at the warehouse's cap, and the
       // units that do not fit are refused with an event, never dropped.
       const netPerUnit = 1 - (recipe?.perUnit ?? 0);
-      const room = RULES.stockCapacityUnits - stockUnits(house);
+      const room = stockCapacityUnits(house) - stockUnits(house);
       const units = netPerUnit <= 0 ? makeable : Math.min(makeable, Math.floor(Math.max(0, room) / netPerUnit));
 
       if (units < makeable) {
@@ -568,8 +872,13 @@ function aiHousesSell(world: World, flow: Record<GoodId, number>, events: EventD
   }
 }
 
-/** Wages come after the AI's sale, so a house pays from the price it just took. */
-function payWages(world: World, events: EventDraft[]): void {
+/**
+ * The upkeep of a workshop is one level's share, paid for every workshop that is
+ * not under construction or improvement: a site stops the building, and it
+ * stops what the building costs to run. Come after the AI's sale, so a house
+ * pays from the price it just took.
+ */
+function payUpkeep(world: World, events: EventDraft[]): void {
   for (const houseId of Object.keys(world.houses).sort()) {
     const house = world.houses[houseId];
 
@@ -577,28 +886,31 @@ function payWages(world: World, events: EventDraft[]): void {
       continue;
     }
 
-    let workers = 0;
-    for (const workshop of house.workshops) {
-      workers += workshop.workers;
-    }
+    const building = new Set(
+      world.engagements.flatMap((engagement) =>
+        engagement.kind === 'site' && engagement.houseId === houseId && engagement.work === 'upgrade'
+          ? [engagement.workshopId]
+          : [],
+      ),
+    );
+    const levels = house.workshops
+      .filter((workshop) => !building.has(workshop.id))
+      .reduce((total, workshop) => total + workshop.level, 0);
 
-    employeesArePaid(world, houseId, workers, events);
+    upkeepIsPaid(houseId, house, levels * RULES.upkeepPerWorkshopLevelCents, events);
   }
 }
 
-function employeesArePaid(world: World, houseId: string, workers: number, events: EventDraft[]): void {
-  const house = world.houses[houseId];
-  const wages = workers * RULES.wagePerWorkerCents;
-
-  if (wages > 0) {
-    const paid = Math.min(house.treasuryCents, wages);
+function upkeepIsPaid(houseId: string, house: House, upkeep: number, events: EventDraft[]): void {
+  if (upkeep > 0) {
+    const paid = Math.min(house.treasuryCents, upkeep);
     house.treasuryCents -= paid;
 
     if (paid > 0) {
-      events.push({ type: 'house.wages_paid', audience: { houseId }, houseId, amountCents: paid });
+      events.push({ type: 'house.upkeep_paid', audience: { houseId }, houseId, amountCents: paid });
     }
-    if (paid < wages) {
-      const shortfallCents = wages - paid;
+    if (paid < upkeep) {
+      const shortfallCents = upkeep - paid;
       house.debtCents += shortfallCents;
       events.push({ type: 'house.penniless', audience: { houseId }, houseId, shortfallCents });
     }
@@ -627,9 +939,23 @@ function resolveEngagements(world: World, events: EventDraft[]): void {
     return;
   }
 
-  world.engagements = world.engagements.filter((engagement) => engagement.dueAt > world.hour);
+  // A dormant house plays nothing, its sites included: what fell due for it
+  // stays in the world and resolves at the visit that wakes it. The cost was
+  // paid, and the journal must not claim a work done that never was.
+  const waiting = due.filter(
+    (engagement) =>
+      engagement.kind === 'site' &&
+      (world.houses[engagement.houseId] === undefined || world.houses[engagement.houseId]?.dormant === true),
+  );
+  world.engagements = world.engagements.filter(
+    (engagement) => engagement.dueAt > world.hour || waiting.includes(engagement),
+  );
 
   for (const engagement of due) {
+    if (waiting.includes(engagement)) {
+      continue;
+    }
+
     events.push({
       type: 'engagement.resolved',
       audience: 'town',
@@ -639,7 +965,117 @@ function resolveEngagements(world: World, events: EventDraft[]): void {
       dueAt: engagement.dueAt,
       resolvedAt: world.hour,
     });
+
+    if (engagement.kind === 'site') {
+      completeSite(world, engagement, events);
+    }
   }
+}
+
+/**
+ * What a site was opened for. The house or the workshop can be gone — destroyed,
+ * converted, the house deleted — so every step is a check, never a throw: the
+ * cost was paid when the site was opened, and a site that outlived its object
+ * has nothing left to finish.
+ */
+function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>, events: EventDraft[]): void {
+  const house = world.houses[site.houseId];
+  if (house === undefined) {
+    return;
+  }
+
+  switch (site.work) {
+    case 'build': {
+      if (house.workshops.length >= workshopCap(house)) {
+        events.push({
+          type: 'workshop.build_lost',
+          audience: { houseId: house.id },
+          houseId: house.id,
+          trade: site.trade,
+          paidCents: RULES.buildCents,
+        });
+        return;
+      }
+      world.workshopSeq = (world.workshopSeq ?? highestWorkshopSeq(world)) + 1;
+      const workshop = {
+        id: `workshop-${world.workshopSeq}`,
+        good: TRADE_CHAINS[site.trade].output,
+        level: RULES.builtWorkshopLevel,
+      };
+      house.workshops.push(workshop);
+      events.push({
+        type: 'workshop.built',
+        audience: { houseId: house.id },
+        houseId: house.id,
+        workshopId: workshop.id,
+        trade: site.trade,
+      });
+      return;
+    }
+    case 'upgrade': {
+      const workshop = house.workshops.find((candidate) => candidate.id === site.workshopId);
+      if (workshop === undefined) {
+        return;
+      }
+      workshop.level += 1;
+      events.push({
+        type: 'workshop.upgraded',
+        audience: { houseId: house.id },
+        houseId: house.id,
+        workshopId: workshop.id,
+        level: workshop.level,
+      });
+      return;
+    }
+    case 'residence': {
+      const level = Math.min(residenceOf(house) + 1, TITLE_LADDER[titleOf(house)].residenceLevel);
+      house.residenceLevel = level;
+      events.push({
+        type: 'house.residence_received',
+        audience: { houseId: house.id },
+        houseId: house.id,
+        level,
+        dueAt: site.dueAt,
+        resolvedAt: world.hour,
+      });
+      return;
+    }
+    case 'title': {
+      const next = nextTitle(titleOf(house));
+      if (next === undefined) {
+        return;
+      }
+      house.title = next;
+      // The residence never exceeds what the new degree opens: buying a degree
+      // below a residence already paid for leaves the residence where it is.
+      if (residenceOf(house) > TITLE_LADDER[next].residenceLevel) {
+        house.residenceLevel = TITLE_LADDER[next].residenceLevel;
+      }
+      events.push({
+        type: 'house.title_received',
+        audience: 'town',
+        houseId: house.id,
+        title: next,
+        dueAt: site.dueAt,
+        resolvedAt: world.hour,
+      });
+    }
+  }
+}
+
+/** A world stored without the counter still numbers its workshops in one run. */
+function highestWorkshopSeq(world: World): number {
+  let highest = 0;
+  for (const house of Object.values(world.houses)) {
+    for (const workshop of house.workshops) {
+      const drawn = Number(workshop.id.replace(/^workshop-/, ''));
+      if (Number.isInteger(drawn)) {
+        highest = Math.max(highest, drawn);
+      }
+    }
+  }
+
+  return highest;
 }
 
 function holdScrutiny(world: World, events: EventDraft[]): void {

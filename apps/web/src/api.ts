@@ -1,4 +1,4 @@
-import type { Event, GoodId, Law, SeatId, Trade } from '@brigue/core';
+import type { Event, GoodId, Law, SeatId, TitleId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
@@ -15,24 +15,70 @@ export interface TradeIntent {
 }
 
 /** One action the server holds for the current or next hour. */
+/** What a queued action costs when it plays, as far as the screen knows it. */
+export interface CommittedCents {
+  titleCents: number;
+  residenceCents: number;
+  buildCents: number;
+}
+
 export interface PendingActionView {
   id: string;
   hour: number;
-  type: 'market.buy' | 'market.sell' | 'council.campaign';
+  type:
+    | 'market.buy'
+    | 'market.sell'
+    | 'council.campaign'
+    | 'workshop.build'
+    | 'workshop.destroy'
+    | 'workshop.upgrade'
+    | 'house.buy_title'
+    | 'house.upgrade_residence';
   good?: GoodId;
   units?: number;
   seatId?: SeatId;
+  trade?: Trade;
+  workshopId?: string;
+  /** The degree a title purchase buys, so the queue can name it. */
+  title?: TitleId;
 }
 
 /** A workshop as the server projects it: the chain's input is not the client's rule. */
 export interface ProjectedWorkshop {
+  id: string;
   good: GoodId;
   level: number;
-  workers: number;
   input: GoodId | null;
   outputUnitsPerHour: number;
   inputUnitsPerHour: number;
-  wagesCentsPerHour: number;
+  upkeepCentsPerHour: number;
+  capacityUnits: number;
+  canUpgrade: boolean;
+  upgradeHours: number | null;
+}
+
+/** A site under way, and the hour it closes. */
+export interface ProjectedSite {
+  id: string;
+  dueAt: number;
+  work: 'build' | 'upgrade' | 'residence' | 'title';
+  trade: Trade | null;
+  workshopId: string | null;
+}
+
+/** The ladder, every figure already computed by the server. */
+export interface ProjectedLadder {
+  title: TitleId;
+  residence: string;
+  titlePrestige: number;
+  residencePrestige: number;
+  servicePrestige: number;
+  prestigeCap: number;
+  workshops: number;
+  stockDefence: number;
+  workshopLevelCap: number;
+  nextTitle: { title: TitleId; priceCents: number } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
 export interface WorldProjection {
@@ -48,10 +94,16 @@ export interface WorldProjection {
     prestige: number;
     career: number;
     dormant: boolean;
+    title: TitleId;
+    residenceLevel: number;
+    ladder: ProjectedLadder;
     workshops: ProjectedWorkshop[];
     stock: Partial<Record<GoodId, number>>;
     stockUnits: number;
     stockCapacityUnits: number;
+    build: { priceCents: number; hours: number; level: number; room: number; cap: number };
+    sites: ProjectedSite[];
+    rename: { priceCents: number };
   };
   town: {
     id: number;
@@ -91,7 +143,12 @@ export interface WorldResponse {
 export type ActionIntent =
   | { type: 'market.buy'; good: GoodId; units: number }
   | { type: 'market.sell'; good: GoodId; units: number }
-  | { type: 'council.campaign'; seatId: SeatId };
+  | { type: 'council.campaign'; seatId: SeatId }
+  | { type: 'workshop.build'; trade: Trade }
+  | { type: 'workshop.destroy'; workshopId: string }
+  | { type: 'workshop.upgrade'; workshopId: string }
+  | { type: 'house.buy_title' }
+  | { type: 'house.upgrade_residence' };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -185,6 +242,15 @@ export async function readPending(): Promise<PendingActionView[]> {
   const body = await send<{ actions: PendingActionView[] }>('/api/actions');
 
   return body.actions;
+}
+
+/** The house's name, changed at once: an identity, not a trade of the hour. */
+export function renameHouse(name: string): Promise<{ name: string }> {
+  return send('/api/house/name', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
 }
 
 export async function cancelAction(id: string): Promise<void> {
