@@ -127,7 +127,9 @@ export function Maison({
                 onInput={(event) => setName(event.currentTarget.value)}
               />
               <button class="btn outline" type="submit" disabled={!renameQueued || busy === 'rename'}>
-                Renommer <Price cents={house.rename.priceCents} />
+                <span class="btn-label">
+                  Renommer <Price cents={house.rename.priceCents} />
+                </span>
               </button>
             </form>
             {renameError !== null ? <p class="warn">{renameError}</p> : null}
@@ -179,7 +181,9 @@ export function Maison({
               disabled={building || busy === 'build'}
               onClick={() => setChoosing(true)}
             >
-              Bâtir un atelier <Price cents={house.build.priceCents} /> · {formatCount(house.build.hours)} h
+              <span class="btn-label">
+                Bâtir un atelier <Price cents={house.build.priceCents} /> · {formatCount(house.build.hours)} h
+              </span>
             </button>
           ) : null}
         </section>
@@ -223,7 +227,9 @@ export function Maison({
                   disabled={building || busy === 'title' || house.treasuryCents < ladder.nextTitle.priceCents}
                   onClick={onBuyTitle}
                 >
-                  <Price cents={ladder.nextTitle.priceCents} />
+                  <span class="btn-label">
+                    <Price cents={ladder.nextTitle.priceCents} />
+                  </span>
                 </button>
               </div>
             )}
@@ -255,7 +261,9 @@ export function Maison({
                   }
                   onClick={onUpgradeResidence}
                 >
-                  <Price cents={ladder.nextResidence.priceCents} />
+                  <span class="btn-label">
+                    <Price cents={ladder.nextResidence.priceCents} />
+                  </span>
                 </button>
               </div>
             )}

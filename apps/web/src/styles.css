@@ -1277,6 +1277,15 @@ button:disabled {
   width: calc(100% - 16px);
 }
 
+/* A button's text is a line of its own: the flex inside it centers as one,
+   where inline content would hang from the baseline. */
+.btn-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
 /* A price inside a button: the coin first, so a cost never reads as a count. */
 .price {
   display: inline-flex;
