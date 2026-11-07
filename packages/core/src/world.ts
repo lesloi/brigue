@@ -480,11 +480,14 @@ export const PACING = {
   // backlog it cannot replay is not simulated, so the town only counts the
   // hours it lived.
   maxCatchUpHours: 744,
-  // Seven real days: the journal keeps what a reader back after a silence could
-  // still want, and the cut follows the wall clock. A scheduler stopped longer
-  // than this loses the days before the stop.
+  // Seven real days: the chronicle keeps what a reader back after a silence
+  // could still want, and the cut follows the wall clock. A scheduler stopped
+  // longer than this loses the days before the stop. Calibration, not a rule.
+  chronicleRetentionHours: 7 * 24,
+  // Thirty real days: a private message waits as long as a dynasty may stay
+  // silent and still come back, since the mailbox is read on the visit.
   // Calibration, not a rule.
-  journalRetentionHours: 7 * 24,
+  messageRetentionHours: 30 * 24,
   // Three days without a visit is enough to say the player has stopped playing;
   // the dynasty goes dormant, keeps its estate and its seat, and casts no vote.
   // Calibration, not a rule.

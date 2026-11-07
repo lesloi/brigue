@@ -11,30 +11,6 @@ import {
   tradeName,
 } from './format.ts';
 
-/** The three cuts of the journal: the dynasty's own story, everything, the prices. */
-export type LedgerFilter = 'dynasty' | 'all' | 'prices';
-
-/**
- * The default is the dynasty's own story plus the town's politics; the AI's
- * market noise and the price lines stay behind the other cuts. `prices` is
- * where chapter I's lesson lives; `all` is the whole page.
- */
-export function ledgerEvents(events: readonly Event[], dynastyId: string, filter: LedgerFilter): Event[] {
-  switch (filter) {
-    case 'all':
-      return [...events];
-    case 'prices':
-      return events.filter((event) => event.type === 'market.price_changed');
-    case 'dynasty':
-      return events.filter(
-        (event) =>
-          ('dynastyId' in event && event.dynastyId === dynastyId) ||
-          event.type.startsWith('council.') ||
-          event.type.startsWith('engagement.'),
-      );
-  }
-}
-
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';
 
 export interface EventLine {
@@ -163,7 +139,9 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'council.campaigned':
       return {
         tone: 'council',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est dans ${formatCount(event.countsAt - event.at)} heures.`,
+        // A stored message keeps no town hour, so the line names the scrutiny's
+        // own hour rather than a countdown from the moment it was written.
+        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est à l'heure ${formatCount(event.countsAt)}.`,
       };
 
     case 'engagement.resolved': {

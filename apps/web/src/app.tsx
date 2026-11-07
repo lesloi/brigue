@@ -7,6 +7,7 @@ import {
   cancelAction,
   cancelDeletion,
   joinTown,
+  markMessagesRead,
   readCandidate,
   readPending,
   readSession,
@@ -24,8 +25,10 @@ import {
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
 import { ClosingDynasty, DeleteAccountDialog } from './views/account.tsx';
+import { Courrier } from './views/courrier.tsx';
 import { Create } from './views/create.tsx';
 import { Failure, LostDynasty, TokenDialog } from './views/gate.tsx';
+import { Greffe } from './views/greffe.tsx';
 import { Maison } from './views/maison.tsx';
 import { Marche } from './views/marche.tsx';
 import { Nav } from './views/nav.tsx';
@@ -248,6 +251,23 @@ export function App() {
       const fresh = pendingToken.current;
       pendingToken.current = null;
       setToken(fresh);
+    }
+  }
+
+  async function markRead(): Promise<void> {
+    // The badge is cosmetic: a failed call leaves it in place, and the next
+    // visit tries again.
+    if (view.kind !== 'world' || view.data.unreadMessages === 0) {
+      return;
+    }
+
+    try {
+      await markMessagesRead();
+      setView((current) =>
+        current.kind === 'world' ? { kind: 'world', data: { ...current.data, unreadMessages: 0 } } : current,
+      );
+    } catch {
+      // Nothing to say: the inbox is already on screen.
     }
   }
 
@@ -529,6 +549,10 @@ export function App() {
               onAdvance={() => void advanceOneHour()}
               onDeleteAccount={askDelete}
             />
+          ) : tab === 'courrier' ? (
+            <Courrier data={view.data} onSeen={() => void markRead()} />
+          ) : tab === 'greffe' ? (
+            <Greffe data={view.data} />
           ) : tab === 'maison' ? (
             <Maison
               data={view.data}
@@ -573,7 +597,7 @@ export function App() {
             />
           )}
           <div class="fade" aria-hidden="true"></div>
-          <Nav tab={tab} onSelect={selectTab} />
+          <Nav tab={tab} unread={view.data.unreadMessages} onSelect={selectTab} />
         </div>
       ) : view.kind === 'closing' ? (
         <ClosingDynasty after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />

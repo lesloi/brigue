@@ -35,6 +35,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       TEST_TOWN.id,
     ]);
     await pool.query('DELETE FROM players WHERE town_id = $1', [TEST_TOWN.id]);
+    // The mail has no town column, so the cascade does not reach it.
+    await pool.query('TRUNCATE messages RESTART IDENTITY');
     await pool.query('TRUNCATE towns RESTART IDENTITY CASCADE');
   }
 
@@ -165,131 +167,100 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(found?.cancelledAt).toBeInstanceOf(Date);
   });
 
-  it('appends the events of a pass to the journal and reads them back for a dynasty', async () => {
-    // Arrange: three shapes, one of them private to a dynasty.
+  it('writes each line to its own page and reads both back', async () => {
+    // Arrange: one public chronicle line and one message of the weaver.
     const world: World = {
-      ...createWorld(2_147_483_646),
+      ...town(2_147_483_646),
       hour: 7,
       rng: 1_234_567_890,
       market: { cloth: 1301, wool: 377, grain: 259, bread: 521, wood: 301, planks: 979 },
     };
-    const events: Event[] = [
-      {
-        type: 'market.bought',
-        audience: 'town',
-        at: 7,
-        dynastyId: 'leclerc',
-        good: 'wool',
-        units: 2,
-        priceCents: 380,
-        totalCents: 760,
-      },
-      {
-        type: 'council.election_held',
-        audience: 'town',
-        at: 7,
-        seatId: 'maire',
-        winnerDynastyId: 'caron',
-        votes: { leclerc: 1, caron: 2 },
-      },
-      {
-        type: 'workshop.idle',
-        audience: { dynastyId: 'leclerc' },
-        at: 7,
-        dynastyId: 'leclerc',
-        good: 'cloth',
-        input: 'wool',
-        missingUnits: 0,
-      },
-    ];
+    const chronicle: Event = {
+      type: 'council.election_held',
+      audience: 'town',
+      at: 7,
+      seatId: 'maire',
+      winnerDynastyId: 'caron',
+      votes: { leclerc: 1, caron: 2 },
+    };
+    const mail: Event = {
+      type: 'workshop.built',
+      audience: { dynastyId: 'leclerc' },
+      at: 7,
+      dynastyId: 'leclerc',
+      workshopId: 'workshop-2',
+      trade: 'baker',
+    };
     const hourStartedAt = new Date(START.getTime() + 42_000);
     await store.createTown(TEST_TOWN.name, world, START);
 
     // Act
     await withWorld(async (session) => {
-      await session.save(world, hourStartedAt, events);
+      await session.save(world, hourStartedAt, [chronicle, mail]);
     });
     const read = await withWorld(async (session) => ({
       snapshot: session.snapshot,
-      events: await session.recentEvents(50, 'leclerc'),
+      chronicle: await session.recentChronicle(50),
+      mail: await session.recentMessages(50, 'leclerc'),
     }));
 
-    // Assert
+    // Assert: the town sees the election, the weaver sees the workshop, and no
+    // page carries the other's line.
     expect(read.snapshot.world).toEqual(world);
     expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
-    expect(read.events).toEqual(events);
+    expect(read.chronicle).toEqual([chronicle]);
+    // A message keeps no town hour: it comes back with `at` at zero.
+    expect(read.mail.messages).toEqual([{ ...mail, at: 0 }]);
+    expect(read.mail.unread).toBe(1);
   });
 
-  it('reads the newest page in time order, leaving the older lines behind', async () => {
-    // Arrange: four town events, one private to another dynasty, read two at a
-    // time for this dynasty.
-    const world = createWorld(3);
+  it('reads the newest page of a mailbox in time order, leaving the older lines behind', async () => {
+    // Arrange: four private lines for the weaver, read two at a time.
+    const world = town(3);
     await store.createTown(TEST_TOWN.name, world, START);
-    const events: Event[] = [
-      {
-        type: 'market.bought',
-        audience: 'town',
-        at: 1,
-        dynastyId: 'leclerc',
-        good: 'wool',
-        units: 1,
-        priceCents: 380,
-        totalCents: 380,
-      },
-      {
-        type: 'action.refused',
-        audience: { dynastyId: 'leclerc' },
-        at: 2,
-        dynastyId: 'leclerc',
-        action: 'market.buy',
-        reason: 'insufficient_funds',
-      },
-      {
-        type: 'market.sold',
-        audience: 'town',
-        at: 3,
-        dynastyId: 'caron',
-        good: 'cloth',
-        units: 2,
-        priceCents: 1240,
-        revenueCents: 2480,
-      },
-      {
-        type: 'workshop.produced',
-        audience: { dynastyId: 'leclerc' },
-        at: 4,
-        dynastyId: 'leclerc',
-        good: 'cloth',
-        units: 3,
-      },
-    ];
+    const mail: Event[] = [1, 2, 3, 4].map((at) => ({
+      type: 'dynasty.debt_repaid',
+      audience: { dynastyId: 'leclerc' },
+      at,
+      dynastyId: 'leclerc',
+      amountCents: at * 120,
+    }));
 
     // Act
     await withWorld(async (session) => {
-      await session.save(world, START, events);
+      await session.save(world, START, mail);
     });
-    const page = await withWorld(async (session) => session.recentEvents(2, 'leclerc'));
+    const page = await withWorld(async (session) => session.recentMessages(2, 'leclerc'));
 
-    // Assert: the last two entries, in time order.
-    expect(page).toEqual(events.slice(2));
+    // Assert: the last two entries, in time order, and the badge counts the page.
+    expect(page.messages.map((message) => (message.type === 'dynasty.debt_repaid' ? message.amountCents : -1))).toEqual(
+      [360, 480],
+    );
+    expect(page.unread).toBe(2);
   });
 
   it('clears the town, its queue and its journal, and keeps players and the sealed seasons', async () => {
-    // Arrange: a town with an action and an event, plus what lives outside it.
-    const world = { ...createWorld(8), hour: 5 };
+    // Arrange: a town with an action, a chronicle line and a message, plus what
+    // lives outside it.
+    const world = { ...town(8), hour: 5 };
     await store.createTown(TEST_TOWN.name, world, START);
     await withWorld(async (session) => {
       await session.append(storedAction(randomUUID(), 5, buy(2)));
       await session.save(world, START, [
         {
-          type: 'market.bought',
+          type: 'council.election_held',
           audience: 'town',
           at: 5,
+          seatId: 'maire',
+          winnerDynastyId: null,
+          votes: {},
+        },
+        {
+          type: 'dynasty.debt_repaid',
+          audience: { dynastyId: 'leclerc' },
+          at: 5,
           dynastyId: 'leclerc',
-          good: 'wool',
-          units: 1,
-          priceCents: 380,
-          totalCents: 380,
+          amountCents: 120,
         },
       ]);
     });
@@ -311,6 +282,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const state = await pool.query('SELECT count(*)::int AS count FROM state');
     const dynasties = await pool.query('SELECT count(*)::int AS count FROM dynasties');
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
+    const messages = await pool.query('SELECT count(*)::int AS count FROM messages');
     const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
     const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE town_id = $1', [TEST_TOWN.id]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
@@ -318,6 +290,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(state.rows[0]?.count).toBe(0);
     expect(dynasties.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
+    expect(messages.rows[0]?.count).toBe(0);
     expect(actions.rows[0]?.count).toBe(0);
     expect(players.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
@@ -405,10 +378,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     ]);
 
     // Act
-    await store.pruneJournal(TEST_TOWN.id, cut);
+    await store.pruneJournal(TEST_TOWN.id, cut, new Date('2000-01-01T00:00:00.000Z'));
 
     // Assert: the town hour plays no part; the write instant decides.
-    const page = await withWorld(async (session) => session.recentEvents(120, 'leclerc'));
+    const page = await withWorld(async (session) => session.recentChronicle(120));
     const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
     expect(page.map((event) => event.at)).toEqual(range(50, 120));
     expect(rows.rows[0]?.count).toBe(71);
@@ -424,7 +397,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [TEST_TOWN.id, cut]);
 
     // Act
-    await store.pruneJournal(TEST_TOWN.id, cut);
+    await store.pruneJournal(TEST_TOWN.id, cut, new Date('2000-01-01T00:00:00.000Z'));
 
     // Assert
     const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
@@ -444,11 +417,73 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     ]);
 
     // Act: there is no page floor and no town-hour exception.
-    await store.pruneJournal(TEST_TOWN.id, cut);
+    await store.pruneJournal(TEST_TOWN.id, cut, new Date('2000-01-01T00:00:00.000Z'));
 
     // Assert
     const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
     expect(rows.rows[0]?.count).toBe(0);
+  });
+
+  it('prunes the mail on its own cut, which outlives the chronicle', async () => {
+    // Arrange: 120 messages, the first 49 written a day before the mail cut.
+    await store.createTown(TEST_TOWN.name, town(4), START);
+    await withWorld(async (session) => {
+      await session.save(
+        session.snapshot.world,
+        START,
+        Array.from({ length: 120 }, (_, index): Event => ({
+          type: 'dynasty.debt_repaid',
+          audience: { dynastyId: 'leclerc' },
+          at: index + 1,
+          dynastyId: 'leclerc',
+          amountCents: index + 1,
+        })),
+      );
+    });
+    await pool.query(`UPDATE messages SET recorded_at = $1 WHERE id < 50`, [new Date('2000-01-01T00:00:00.000Z')]);
+
+    // Act: the mail cut is a day after the first batch, the chronicle cut later.
+    await store.pruneJournal(TEST_TOWN.id, new Date('2010-01-08T00:00:00.000Z'), new Date('2000-01-08T00:00:00.000Z'));
+
+    // Assert: the mail keeps the 71 recent lines, whatever the chronicle cut says.
+    const page = await withWorld(async (session) => session.recentMessages(120, 'leclerc'));
+    expect(page.messages.map((message) => (message.type === 'dynasty.debt_repaid' ? message.amountCents : -1))).toEqual(
+      range(50, 120),
+    );
+    const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
+    expect(rows.rows[0]?.count).toBe(71);
+  });
+
+  it('marks the mail read without locking the town', async () => {
+    // Arrange: three unread messages for the weaver.
+    await store.createTown(TEST_TOWN.name, town(5), START);
+    await withWorld(async (session) => {
+      await session.save(
+        session.snapshot.world,
+        START,
+        Array.from({ length: 3 }, (_, index): Event => ({
+          type: 'dynasty.debt_repaid',
+          audience: { dynastyId: 'leclerc' },
+          at: index + 1,
+          dynastyId: 'leclerc',
+          amountCents: 120,
+        })),
+      );
+    });
+    const before = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    expect(before.unread).toBe(3);
+
+    // Act
+    await store.markMessagesRead('leclerc');
+
+    // Assert: the flag is off, the lines stay, and an AI dynasty has no mail.
+    const after = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const caron = await withWorld(async (session) => session.recentMessages(50, 'caron'));
+    const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
+    expect(after.unread).toBe(0);
+    expect(after.messages).toHaveLength(3);
+    expect(caron.unread).toBe(0);
+    expect(rows.rows[0]?.count).toBe(3);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {
@@ -483,9 +518,16 @@ function buy(units: number): Action {
   return { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units };
 }
 
-/** One town event per hour, so a cut has a visible order to work on. */
+/** One chronicle line per hour, so a cut has a visible order to work on. */
 function priceAt(hour: number): Event {
-  return { type: 'market.price_changed', audience: 'town', at: hour, good: 'wool', before: 100, after: 101 };
+  return {
+    type: 'council.election_held',
+    audience: 'town',
+    at: hour,
+    seatId: 'maire',
+    winnerDynastyId: null,
+    votes: {},
+  };
 }
 
 function hours(from: number, to: number): Event[] {

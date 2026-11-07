@@ -309,18 +309,12 @@ describe('the warehouse', () => {
     // Act
     const { world: after, events } = playWeek(world);
 
-    // Assert
+    // Assert: the cloth is in the stock, and the hour wrote no journal line.
     expect(after.dynasties.leclerc.stock.cloth).toBe(4);
     expect(after.dynasties.leclerc.stock.wool).toBe(4);
     expect(after.dynasties.leclerc.treasuryCents).toBe(treasuryCents);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'workshop.produced',
-        audience: { dynastyId: 'leclerc' },
-        dynastyId: 'leclerc',
-        good: 'cloth',
-        units: 4,
-      }),
+    expect(events.filter((event) => event.type.startsWith('market.') || event.type.startsWith('workshop.'))).toEqual(
+      [],
     );
   });
 
@@ -337,19 +331,11 @@ describe('the warehouse', () => {
       { type: 'market.sell', dynastyId: 'leclerc', good: 'cloth', units: 4 },
     ]);
 
-    // Assert
+    // Assert: the purse and the stock moved; the sale is the Marché screen's.
     expect(after.dynasties.leclerc.treasuryCents).toBe(priceCents * 4);
     expect(after.dynasties.leclerc.stock.cloth).toBe(6);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'market.sold',
-        audience: 'town',
-        dynastyId: 'leclerc',
-        good: 'cloth',
-        units: 4,
-        priceCents,
-        revenueCents: priceCents * 4,
-      }),
+    expect(events.filter((event) => event.type.startsWith('market.') || event.type.startsWith('workshop.'))).toEqual(
+      [],
     );
   });
 
@@ -443,14 +429,10 @@ describe('the warehouse', () => {
     const sold = playWeek(full.world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'cloth', units: 10 }]);
     const bought = playWeek(sold.world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 10 }]);
 
-    // Assert
+    // Assert: the buy was refused while full, then went through, and the loom
+    // wove four of the ten wool into cloth.
     expect(full.events).toContainEqual(expect.objectContaining({ type: 'action.refused', reason: 'stock_full' }));
-    expect(bought.events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', dynastyId: 'leclerc', good: 'wool', units: 10 }),
-    );
-    expect(bought.events).toContainEqual(
-      expect.objectContaining({ type: 'workshop.produced', dynastyId: 'leclerc', good: 'cloth', units: 4 }),
-    );
+    expect(bought.world.dynasties.leclerc.stock.cloth).toBe(stockCapacityUnits(bought.world.dynasties.leclerc) - 6);
     expect(stockUnits(bought.world.dynasties.leclerc)).toBe(stockCapacityUnits(bought.world.dynasties.leclerc));
   });
 
@@ -484,22 +466,24 @@ describe('the warehouse', () => {
 
 describe('an AI dynasty', () => {
   it('buys the input its chain lacks instead of idling', () => {
-    // Arrange: Caron has no wool, Fournier no grain, Charpentier no wood.
-    const { events, world } = playWeek(town(SEED));
+    // Arrange: Caron has no wool, Fournier no grain, Charpentier no wood, and
+    // each opens the hour with the same purse.
+    const base = town(SEED);
+    const before = Object.fromEntries(
+      Object.values(base.dynasties)
+        .filter((dynasty) => dynasty.controller === 'ai')
+        .map((dynasty) => [dynasty.id, dynasty.treasuryCents]),
+    );
 
-    // Assert
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', dynastyId: 'caron', good: 'wool', units: 6 }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', dynastyId: 'fournier', good: 'grain', units: 4 }),
-    );
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', dynastyId: 'charpentier', good: 'wood', units: 4 }),
-    );
-    expect(world.dynasties.caron.stock).toEqual({});
-    expect(world.dynasties.fournier.stock).toEqual({});
-    expect(world.dynasties.charpentier.stock).toEqual({});
+    // Act
+    const { world } = playWeek(base);
+
+    // Assert: an idle workshop would only pay upkeep and lose money; every AI
+    // ends the hour richer, having bought its input and sold what it made.
+    for (const [dynastyId, purse] of Object.entries(before)) {
+      expect(world.dynasties[dynastyId]?.treasuryCents).toBeGreaterThan(purse);
+      expect(world.dynasties[dynastyId]?.stock).toEqual({});
+    }
   });
 
   it('sells its whole stock every hour', () => {
@@ -524,7 +508,9 @@ describe('an AI dynasty', () => {
     // Assert
     expect(world.dynasties.leclerc.stock.cloth).toBe(4);
     expect(world.dynasties.leclerc.stock.wool).toBe(4);
-    expect(events.filter((event) => event.type === 'market.sold' && event.dynastyId === 'leclerc')).toEqual([]);
+    expect(events.filter((event) => event.type.startsWith('market.') || event.type.startsWith('workshop.'))).toEqual(
+      [],
+    );
   });
 
   it("does not sell a dormant dynasty's stock", () => {
@@ -538,23 +524,31 @@ describe('an AI dynasty', () => {
 
     // Assert
     expect(after.dynasties.caron.stock.cloth).toBe(5);
-    expect(events.filter((event) => event.type === 'market.sold' && event.dynastyId === 'caron')).toEqual([]);
+    expect(events.filter((event) => event.type.startsWith('market.') || event.type.startsWith('workshop.'))).toEqual(
+      [],
+    );
   });
 
   it('never idles once it can pay for its input', () => {
-    // Arrange
+    // Arrange: Caron is the only seller of cloth, so the good's flow for an hour
+    // is exactly what it wove and sold — no event names the idle any more.
     let current = town(SEED);
-    const idles: Event[] = [];
+    const wovenPerHour: number[] = [];
 
     // Act: a long run, because a demand that switches on and off would show here.
     for (let hour = 0; hour < 200; hour += 1) {
-      const result = playWeek(current);
-      current = result.world;
-      idles.push(...result.events.filter((event) => event.type === 'workshop.idle' && event.dynastyId === 'caron'));
+      const before = current.marketFlow.cloth ?? 0;
+      current = playWeek(current).world;
+      const after = current.marketFlow.cloth ?? 0;
+
+      // A bell closes the period and empties the flow, so that hour is lost.
+      if (after >= before) {
+        wovenPerHour.push(after - before);
+      }
     }
 
-    // Assert
-    expect(idles).toEqual([]);
+    // Assert: six cloth every hour it could be read, never a zero.
+    expect(new Set(wovenPerHour)).toEqual(new Set([6]));
   });
 
   it('settles the prices instead of making them saw', () => {
@@ -598,61 +592,53 @@ describe('an AI dynasty', () => {
     world.dynasties.caron.stock = {};
 
     // Act
-    const { events } = playWeek(world);
+    const { world: after } = playWeek(world);
 
-    // Assert
-    expect(events.filter((event) => event.type === 'market.bought' && event.dynastyId === 'caron')).toEqual([]);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'workshop.idle',
-        audience: { dynastyId: 'caron' },
-        dynastyId: 'caron',
-        good: 'cloth',
-        input: 'wool',
-        missingUnits: 6,
-      }),
-    );
+    // Assert: no wool went to Caron and no cloth came out, so its side of the
+    // hour's flow is empty; the others' trades are untouched.
+    expect(after.marketFlow).toEqual({ wool: 0, cloth: 0, grain: -4, bread: 4, wood: -4, planks: 4 });
+    expect(after.dynasties.caron.stock).toEqual({});
   });
 
   it('never buys an input it does not need', () => {
-    // Arrange
+    // Arrange: ten hours, short of the first bell, so the flow accumulates.
     let current = town(SEED);
-    const bought = new Map<string, Set<string>>();
 
     // Act
-    for (let hour = 0; hour < 20; hour += 1) {
-      const result = playWeek(current);
-      current = result.world;
-      for (const event of result.events) {
-        if (event.type !== 'market.bought') {
-          continue;
-        }
-        const goods = bought.get(event.dynastyId) ?? new Set<string>();
-        goods.add(event.good);
-        bought.set(event.dynastyId, goods);
-      }
+    for (let hour = 0; hour < 10; hour += 1) {
+      current = playWeek(current).world;
     }
 
-    // Assert: one input per chain, and only the chain that needs it.
-    expect([...bought.keys()].sort()).toEqual(['caron', 'charpentier', 'fournier']);
-    expect([...(bought.get('caron') ?? [])]).toEqual(['wool']);
-    expect([...(bought.get('charpentier') ?? [])]).toEqual(['wood']);
-    expect([...(bought.get('fournier') ?? [])]).toEqual(['grain']);
+    // Assert: each chain bought its own input and nothing else. An extra
+    // purchase would show on the good's flow.
+    expect(current.marketFlow).toEqual({
+      wool: -60,
+      cloth: 60,
+      grain: -40,
+      bread: 40,
+      wood: -40,
+      planks: 40,
+    });
   });
 
   it('pays the same price as the player does in the same hour', () => {
-    // Arrange
+    // Arrange: the wooL price the hour shows, and the upkeep each workshop pays.
     const world = town(SEED);
-    const priceCents = world.market.wool;
+    const woolCents = world.market.wool;
+    const clothCents = world.market.cloth;
+    const upkeepOf = (dynasty: World['dynasties'][string]) =>
+      dynasty.workshops.reduce((total, workshop) => total + workshop.level, 0) * RULES.upkeepPerWorkshopLevelCents;
+    const playerPurse = world.dynasties.leclerc.treasuryCents;
+    const caronPurse = world.dynasties.caron.treasuryCents;
+    const playerUpkeep = upkeepOf(world.dynasties.leclerc);
+    const caronUpkeep = upkeepOf(world.dynasties.caron);
 
-    // Act
-    const { events } = playWeek(world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 2 }]);
+    // Act: the player and Caron both buy wool in the same hour.
+    const { world: after } = playWeek(world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 2 }]);
 
-    // Assert
-    const purchases = events.filter((event) => event.type === 'market.bought' && event.good === 'wool');
-    expect(purchases).toHaveLength(2);
-    for (const purchase of purchases) {
-      expect(purchase).toMatchObject({ priceCents });
-    }
+    // Assert: the same wool price for both, and Caron sold its six cloth at the
+    // hour's price.
+    expect(after.dynasties.leclerc.treasuryCents).toBe(playerPurse - 2 * woolCents - playerUpkeep);
+    expect(after.dynasties.caron.treasuryCents).toBe(caronPurse - 6 * woolCents + 6 * clothCents - caronUpkeep);
   });
 });

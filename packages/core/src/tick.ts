@@ -116,9 +116,11 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
     // A stored action can be anything: it went through a database and a JSON
     // parser. An unknown one is refused, never skipped, and never thrown.
     if (!isKnownAction(candidate)) {
+      // No dynasty to answer: the line is kept for the court, and the town's
+      // chronicle never carries what has no reader.
       events.push({
         type: 'action.refused',
-        audience: 'town',
+        audience: 'court',
         action: 'unknown',
         dynastyId: 'unknown',
         reason: 'unknown_action',
@@ -138,14 +140,14 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
 
   // The AI dynasties decide in the same breath as the players, at the same price:
   // both buy before the hour moves the market. Their lines go with the town's.
-  aiDynastiesBuy(next, flow, town);
+  aiDynastiesBuy(next, flow);
 
   // Production, then the AI's sale, then upkeep: an AI pays its workshops from
   // the price it just took. The prices move at the bells only, so every trade of
   // the half-day happens at the price the players saw. Every line goes with the
   // town's, so no AI's trade interrupts the dynasty's own run.
   runWorkshops(next, town);
-  aiDynastiesSell(next, flow, town);
+  aiDynastiesSell(next, flow);
   payUpkeep(next, town);
 
   // At the start of the year, before the noon bell closes the candidacies, an
@@ -163,7 +165,7 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   }
 
   if (bell) {
-    driftPrices(next, town);
+    driftPrices(next);
   }
 
   // Noon closes the candidacies: what is in the open map counts tonight, what
@@ -228,8 +230,8 @@ function refuse(
   events.push({
     type: 'action.refused',
     // A dynasty's own refusal is its business; one naming a dynasty the town no
-    // longer holds has no reader but the town.
-    audience: knownDynasty ? { dynastyId: id } : 'town',
+    // longer holds has no mailbox and waits for the court.
+    audience: knownDynasty ? { dynastyId: id } : 'court',
     action: action.type,
     dynastyId: id,
     reason,
@@ -297,15 +299,9 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       dynasty.treasuryCents -= totalCents;
       dynasty.stock[action.good] = (dynasty.stock[action.good] ?? 0) + action.units;
       flow[action.good] -= action.units;
-      events.push({
-        type: 'market.bought',
-        audience: 'town',
-        dynastyId: dynasty.id,
-        good: action.good,
-        units: action.units,
-        priceCents,
-        totalCents,
-      });
+      // The trade itself has no journal line: the Marché screen holds the
+      // price, the stock and the flow. Only what the town must be told — a
+      // refusal, a loss — is written.
       return;
     }
 
@@ -335,15 +331,6 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
         dynasty.stock[action.good] = left;
       }
       flow[action.good] += action.units;
-      events.push({
-        type: 'market.sold',
-        audience: 'town',
-        dynastyId: dynasty.id,
-        good: action.good,
-        units: action.units,
-        priceCents,
-        revenueCents,
-      });
       return;
     }
 
@@ -401,7 +388,7 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       }
 
       dynasty.treasuryCents -= RULES.buildCents;
-      openSite(world, dynasty.id, { work: 'build', trade: action.trade }, RULES.siteHours, events);
+      openSite(world, dynasty.id, { work: 'build', trade: action.trade }, RULES.siteHours);
       return;
     }
 
@@ -444,7 +431,7 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       }
 
       // An improvement costs hours, never money: the level is the work itself.
-      openSite(world, dynasty.id, { work: 'upgrade', workshopId: workshop.id }, improvementHours(target), events);
+      openSite(world, dynasty.id, { work: 'upgrade', workshopId: workshop.id }, improvementHours(target));
       return;
     }
 
@@ -464,8 +451,7 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       // A degree is obtained at the next noon or midnight, whatever the hour of
       // the purchase: the half-day is the calendar's, not a second clock.
       const dueAt = nextBellAfter(world.hour, RULES.titleHours);
-      openSite(world, dynasty.id, { work: 'title' }, dueAt - world.hour, events);
-      events.push({ type: 'dynasty.title_bought', audience: 'town', dynastyId: dynasty.id, title: next });
+      openSite(world, dynasty.id, { work: 'title' }, dueAt - world.hour);
       return;
     }
 
@@ -489,7 +475,7 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       }
 
       dynasty.treasuryCents -= price;
-      openSite(world, dynasty.id, { work: 'residence' }, improvementHours(target), events);
+      openSite(world, dynasty.id, { work: 'residence' }, improvementHours(target));
       return;
     }
   }
@@ -524,23 +510,14 @@ function sitesOf(world: World, dynastyId: string, work: SiteWork['work']): numbe
   ).length;
 }
 
-function openSite(world: World, dynastyId: string, work: SiteWork, hours: number, events: EventDraft[]): void {
+function openSite(world: World, dynastyId: string, work: SiteWork, hours: number): void {
   world.engagementSeq += 1;
-  const engagement = {
+  world.engagements.push({
     id: `engagement-${world.engagementSeq}`,
     kind: 'site' as const,
     dynastyId,
     dueAt: world.hour + hours,
     ...work,
-  };
-  world.engagements.push(engagement);
-  events.push({
-    type: 'engagement.opened',
-    audience: { dynastyId },
-    engagementId: engagement.id,
-    kind: 'site',
-    dynastyId,
-    dueAt: engagement.dueAt,
   });
 }
 
@@ -598,11 +575,6 @@ export function renameDynasty(world: World, dynasty: Dynasty, request: DynastyRe
   }
 
   return { ok: true, name };
-}
-
-/** A journal line for a name given after the creation; the creation writes none. */
-export function dynastyRenamed(dynasty: Dynasty, before: string): EventDraft {
-  return { type: 'dynasty.renamed', audience: 'town', dynastyId: dynasty.id, before, after: dynasty.name };
 }
 
 /** The names of the town's dynasties, the renamed one aside. */
@@ -672,7 +644,7 @@ export function nextPriceCents(input: PriceInput): number {
  * more than the output makes the AI's demand switch on and off with a one-hour
  * lag, and the price saws. The price is the guard.
  */
-function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, events: EventDraft[]): void {
+function aiDynastiesBuy(world: World, flow: Record<GoodId, number>): void {
   for (const dynastyId of Object.keys(world.dynasties).sort()) {
     const dynasty = world.dynasties[dynastyId];
 
@@ -708,20 +680,11 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, events: Even
       dynasty.treasuryCents -= units * priceCents;
       dynasty.stock[recipe.input] = (dynasty.stock[recipe.input] ?? 0) + units;
       flow[recipe.input] -= units;
-      events.push({
-        type: 'market.bought',
-        audience: 'town',
-        dynastyId: dynasty.id,
-        good: recipe.input,
-        units,
-        priceCents,
-        totalCents: units * priceCents,
-      });
     }
   }
 }
 
-function driftPrices(world: World, events: EventDraft[]): void {
+function driftPrices(world: World): void {
   // A world stored before the history existed starts its record at this bell.
   world.marketHistory ??= {};
 
@@ -750,10 +713,7 @@ function driftPrices(world: World, events: EventDraft[]): void {
       ceilCents: RULES.priceCeilCents,
     });
 
-    if (after !== before) {
-      world.market[good] = after;
-      events.push({ type: 'market.price_changed', audience: 'town', good, before, after });
-    }
+    world.market[good] = after;
 
     // One point per bell even when the price holds: the chart must not skip a
     // quiet bell, or two changes would look adjacent.
@@ -786,16 +746,6 @@ function runWorkshops(world: World, events: EventDraft[]): void {
       const available = recipe ? (dynasty.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
       const makeable = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
 
-      if (recipe && makeable < wanted) {
-        events.push({
-          type: 'workshop.idle',
-          audience: { dynastyId: dynasty.id },
-          dynastyId: dynasty.id,
-          good: workshop.good,
-          input: recipe.input,
-          missingUnits: wanted - makeable,
-        });
-      }
       if (makeable === 0) {
         continue;
       }
@@ -832,13 +782,6 @@ function runWorkshops(world: World, events: EventDraft[]): void {
       // Production credits the warehouse, never the purse: the sale is a
       // separate action, at the hour's price.
       dynasty.stock[workshop.good] = (dynasty.stock[workshop.good] ?? 0) + units;
-      events.push({
-        type: 'workshop.produced',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
-        good: workshop.good,
-        units,
-      });
     }
   }
 }
@@ -849,7 +792,7 @@ function runWorkshops(world: World, events: EventDraft[]): void {
  * keeps its stock, because holding for a better hour is the player's bet; a
  * dormant dynasty keeps everything it had.
  */
-function aiDynastiesSell(world: World, flow: Record<GoodId, number>, events: EventDraft[]): void {
+function aiDynastiesSell(world: World, flow: Record<GoodId, number>): void {
   for (const dynastyId of Object.keys(world.dynasties).sort()) {
     const dynasty = world.dynasties[dynastyId];
 
@@ -868,15 +811,6 @@ function aiDynastiesSell(world: World, flow: Record<GoodId, number>, events: Eve
       dynasty.treasuryCents += revenueCents;
       delete dynasty.stock[good];
       flow[good] += units;
-      events.push({
-        type: 'market.sold',
-        audience: 'town',
-        dynastyId: dynasty.id,
-        good,
-        units,
-        priceCents,
-        revenueCents,
-      });
     }
   }
 }
@@ -915,9 +849,6 @@ function upkeepIsPaid(dynastyId: string, dynasty: Dynasty, upkeep: number, event
     const paid = Math.min(dynasty.treasuryCents, upkeep);
     dynasty.treasuryCents -= paid;
 
-    if (paid > 0) {
-      events.push({ type: 'dynasty.upkeep_paid', audience: { dynastyId }, dynastyId, amountCents: paid });
-    }
     if (paid < upkeep) {
       const shortfallCents = upkeep - paid;
       dynasty.debtCents += shortfallCents;
@@ -964,16 +895,6 @@ function resolveEngagements(world: World, events: EventDraft[]): void {
     if (waiting.includes(engagement)) {
       continue;
     }
-
-    events.push({
-      type: 'engagement.resolved',
-      audience: 'town',
-      engagementId: engagement.id,
-      kind: engagement.kind,
-      dynastyId: engagement.dynastyId,
-      dueAt: engagement.dueAt,
-      resolvedAt: world.hour,
-    });
 
     if (engagement.kind === 'site') {
       completeSite(world, engagement, events);
@@ -1037,16 +958,8 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
       return;
     }
     case 'residence': {
-      const level = Math.min(residenceOf(dynasty) + 1, TITLE_LADDER[titleOf(dynasty)].residenceLevel);
-      dynasty.residenceLevel = level;
-      events.push({
-        type: 'dynasty.residence_received',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
-        level,
-        dueAt: site.dueAt,
-        resolvedAt: world.hour,
-      });
+      // The level is read on the Maison screen; the town has no line for it.
+      dynasty.residenceLevel = Math.min(residenceOf(dynasty) + 1, TITLE_LADDER[titleOf(dynasty)].residenceLevel);
       return;
     }
     case 'title': {
@@ -1062,7 +975,7 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
       }
       events.push({
         type: 'dynasty.title_received',
-        audience: 'town',
+        audience: { dynastyId: dynasty.id },
         dynastyId: dynasty.id,
         title: next,
         dueAt: site.dueAt,

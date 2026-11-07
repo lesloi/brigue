@@ -297,7 +297,9 @@ describe('joining the town', () => {
         return real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
-      pruneJournal: (townId, before) => real.pruneJournal(townId, before),
+      markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      pruneJournal: (townId, chronicleBefore, messagesBefore) =>
+        real.pruneJournal(townId, chronicleBefore, messagesBefore),
       close: () => real.close(),
     };
     const harness = await start({ worlds });

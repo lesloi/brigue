@@ -108,7 +108,7 @@ export interface WorldProjection {
   town: {
     id: number;
     name: string;
-    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
+    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean; residenceLevel: number }>;
     people: Array<{ id: string; dynastyId: string; name: string }>;
     seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];
@@ -127,7 +127,12 @@ export interface CatchUpSummary {
 
 export interface WorldResponse {
   world: WorldProjection;
-  events: Event[];
+  /** The dynasty's private mail, newest page, in the order it happened. */
+  messages: Event[];
+  /** The town's public chronicle, newest page, in the order it happened. */
+  chronicle: Event[];
+  /** How many messages came after the reader's watermark, at most a page. */
+  unreadMessages: number;
   summary: CatchUpSummary;
   stateHash: string;
   /** How long a deletion waits; the screen says it, the server owns it. */
@@ -235,6 +240,11 @@ export function cancelDeletion(): Promise<void> {
 
 export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
+}
+
+/** The player opened the Courrier: the unread badge goes back to zero. */
+export function markMessagesRead(): Promise<{ unreadMessages: number }> {
+  return send('/api/messages/read', { method: 'POST' });
 }
 
 /** Local development only: plays the next hour now. The server refuses in production. */

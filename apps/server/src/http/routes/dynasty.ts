@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { dynastyRenamed, NAME_PRICE, renameDynasty } from '@brigue/core';
+import { NAME_PRICE, renameDynasty } from '@brigue/core';
 
 import { NameInUseError, sessionWorld } from '../../town/worlds.ts';
 import type { BoundPlayer } from '../../identity/players.ts';
@@ -100,12 +100,11 @@ async function renameInTown(context: AppContext, bound: BoundPlayer, name: strin
     });
 
     switch (outcome.ok ? 'renamed' : outcome.reason) {
-      case 'renamed': {
-        const before = dynasty.name;
-        await session.save(next, hourStartedAt, [{ ...dynastyRenamed(renamed, before), at: world.hour }]);
+      case 'renamed':
+        // A name is identity, not a journal line: the Maison screen carries it.
+        await session.save(next, hourStartedAt, []);
 
         return { kind: 'renamed' as const, name: renamed.name };
-      }
       case 'name_taken':
         return { kind: 'taken' as const };
       case 'insufficient_funds':

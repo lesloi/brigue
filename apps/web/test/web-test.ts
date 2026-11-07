@@ -3,7 +3,7 @@ import { GOODS } from '@brigue/core/world';
 import { describe, expect, it } from 'vitest';
 
 import type { PendingActionView } from '../src/api.ts';
-import { eventLine, ledgerEvents } from '../src/events.ts';
+import { eventLine } from '../src/events.ts';
 import {
   buyMax,
   FINISHED_GOODS,
@@ -26,7 +26,8 @@ import {
   tradeName,
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
-import { catchUpText, countdownText, lawAgeText } from '../src/views/ville.tsx';
+import { catchUpText } from '../src/views/greffe.tsx';
+import { countdownText, lawAgeText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
   leclerc: 'Leclerc',
@@ -252,7 +253,7 @@ describe('eventLine', () => {
     // has already closed this year's.
     expect(line.tone).toBe('council');
     expect(line.text).toContain('candidature à la mairie');
-    expect(line.text).toContain('dans 36 heures');
+    expect(line.text).toContain("à l'heure 48");
   });
 
   it('counts a late engagement in hours', () => {
@@ -379,60 +380,12 @@ describe('tab history', () => {
   it('seeds the tab from the hash and validates history state', () => {
     expect(tabFromHash('#marche')).toBe('marche');
     expect(tabFromHash('#maison')).toBe('maison');
+    expect(tabFromHash('#courrier')).toBe('courrier');
+    expect(tabFromHash('#greffe')).toBe('greffe');
     expect(tabFromHash('#conseil')).toBe('ville');
     expect(tabFromHash('')).toBe('ville');
     expect(stateOf(null)).toBeNull();
     expect(stateOf({ tab: 'marche', pushed: true })).toEqual({ tab: 'marche', pushed: true });
-  });
-});
-
-describe('the ledger filter', () => {
-  const events: Event[] = [
-    {
-      type: 'market.sold',
-      audience: 'town',
-
-      at: 0,
-      dynastyId: 'leclerc',
-      good: 'cloth',
-      units: 2,
-      priceCents: 1240,
-      revenueCents: 2480,
-    },
-    {
-      type: 'market.bought',
-      audience: 'town',
-
-      at: 0,
-      dynastyId: 'caron',
-      good: 'wool',
-      units: 6,
-      priceCents: 380,
-      totalCents: 2280,
-    },
-    { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerDynastyId: 'caron', votes: {} },
-    { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
-    { type: 'dynasty.upkeep_paid', audience: { dynastyId: 'leclerc' }, at: 0, dynastyId: 'leclerc', amountCents: 240 },
-  ];
-
-  it('keeps the dynasty and the town politics by default', () => {
-    // Act
-    const filtered = ledgerEvents(events, 'leclerc', 'dynasty');
-
-    // Assert
-    expect(filtered.map((event) => event.type)).toEqual([
-      'market.sold',
-      'council.election_held',
-      'dynasty.upkeep_paid',
-    ]);
-  });
-
-  it('keeps only the prices in the prices cut', () => {
-    expect(ledgerEvents(events, 'leclerc', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
-  });
-
-  it('keeps everything in the full cut', () => {
-    expect(ledgerEvents(events, 'leclerc', 'all')).toEqual(events);
   });
 });
 

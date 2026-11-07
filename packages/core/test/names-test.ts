@@ -12,7 +12,6 @@ import {
   RULES,
   sanitizeName,
   withFirstDynasty,
-  dynastyRenamed,
   type Action,
   type World,
 } from '../src/index.ts';
@@ -122,15 +121,9 @@ describe('renaming a dynasty', () => {
       priceCents: NAME_PRICE.renameCents,
     });
 
-    // Assert: the name is identity, not trade, so the town is told of it.
+    // Assert: the name is identity, not trade: it moves the dynasty and its
+    // living people, and the purse pays for it.
     expect(outcome).toEqual({ ok: true, name: 'Moreau' });
-    expect(dynastyRenamed(world.dynasties.leclerc!, 'Leclerc')).toEqual({
-      type: 'dynasty.renamed',
-      audience: 'town',
-      dynastyId: 'leclerc',
-      before: 'Leclerc',
-      after: 'Moreau',
-    });
     expect(world.dynasties.leclerc?.id).toBe('leclerc');
     expect(world.dynasties.leclerc?.name).toBe('Moreau');
     expect(world.dynasties.leclerc?.treasuryCents).toBe(treasury - NAME_PRICE.renameCents);

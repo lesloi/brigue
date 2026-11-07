@@ -13,11 +13,23 @@ export interface TownAccess {
   logger: Logger;
 }
 
-export type TownOutcome = { kind: 'caught'; town: TownInfo; result: Due; events: Event[] } | { kind: 'gone' };
+export type TownOutcome =
+  | {
+      kind: 'caught';
+      town: TownInfo;
+      result: Due;
+      /** The newest page of the dynasty's mail, in the order it happened. */
+      messages: Event[];
+      /** The newest page of the town's public chronicle, in time order. */
+      chronicle: Event[];
+      /** What the badge counts: the unread messages of the box, at most a page. */
+      unread: number;
+    }
+  | { kind: 'gone' };
 
 /**
  * A read wakes the town when the scheduler has left it more than an hour
- * behind, and returns the newest page of its journal.
+ * behind, and returns the newest page of its mail and of the town's chronicle.
  */
 export function catchUpTown(access: TownAccess, townId: number, dynastyId: string, at: Date): Promise<TownOutcome> {
   return access.worlds.withWorld(async (session) => {
@@ -50,9 +62,17 @@ export function catchUpTown(access: TownAccess, townId: number, dynastyId: strin
       await session.save(due.world, due.hourStartedAt, due.events);
     }
 
-    const events = await session.recentEvents(JOURNAL_PAGE, dynastyId);
+    const mail = await session.recentMessages(JOURNAL_PAGE, dynastyId);
+    const chronicle = await session.recentChronicle(JOURNAL_PAGE);
 
-    return { kind: 'caught' as const, town: session.snapshot.town, result: due, events };
+    return {
+      kind: 'caught' as const,
+      town: session.snapshot.town,
+      result: due,
+      messages: mail.messages,
+      chronicle,
+      unread: mail.unread,
+    };
   }, townId);
 }
 
@@ -96,13 +116,16 @@ export function advanceTown(
     const savedAt = new Date(now());
     await session.save(due.world, savedAt, due.events);
 
-    const events = await session.recentEvents(JOURNAL_PAGE, dynastyId);
+    const mail = await session.recentMessages(JOURNAL_PAGE, dynastyId);
+    const chronicle = await session.recentChronicle(JOURNAL_PAGE);
 
     return {
       kind: 'caught' as const,
       town: session.snapshot.town,
       result: { ...due, hourStartedAt: savedAt },
-      events,
+      messages: mail.messages,
+      chronicle,
+      unread: mail.unread,
     };
   }, townId);
 }

@@ -16,7 +16,6 @@ export {
 export { advanceRng, drawBelow, MINSTD_MODULUS } from './prng.ts';
 export {
   advance,
-  dynastyRenamed,
   nextPriceCents,
   renameDynasty,
   renamePerson,

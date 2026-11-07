@@ -1,16 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { advance, type Action, type World } from '@brigue/core';
-
-import { town } from '../../../packages/core/test/helpers.ts';
+import { advance, stockCapacityUnits, type Action, type World } from '../src/index.ts';
+import { town } from './helpers.ts';
 
 const SEED = 20261109;
 
 /**
- * A journal reads like a ledger: what the player asked and what became of it
- * comes first, in the order they asked; the town's own steps follow. The hour
- * is written whole, so the reader's lines must not fall between two purchases
- * of another dynasty.
+ * The messages of an hour read in the order the hour lived: what the player
+ * asked and got comes first, in the order they asked; the town's own steps
+ * follow. The hour is written whole, so a reader's line must not fall between
+ * two of another dynasty's.
  */
 describe('the order of an hour', () => {
   const play = (world: World, actions: Action[] = []) =>
@@ -20,62 +19,49 @@ describe('the order of an hour', () => {
       actions.map((action) => ({ at: world.hour, action })),
     ).events;
 
-  it('opens the site of a title before saying the title was bought', () => {
-    // Arrange: a purse that pays for the degree.
+  it('keeps a refusal before the message the town writes afterwards', () => {
+    // Arrange: the warehouse is one unit short of full, and the looms ask for
+    // four wool; the action sells grain the dynasty does not hold.
     const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    world.dynasties.leclerc.stock = { cloth: stockCapacityUnits(world.dynasties.leclerc) - 1 };
 
     // Act
-    const events = play(world, [{ type: 'dynasty.buy_title', dynastyId: 'leclerc' }]);
+    const events = play(world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }]);
 
-    // Assert
-    const opened = events.findIndex((event) => event.type === 'engagement.opened' && event.dynastyId === 'leclerc');
-    const bought = events.findIndex((event) => event.type === 'dynasty.title_bought');
-    expect(opened).toBeGreaterThanOrEqual(0);
-    expect(bought).toBeGreaterThan(opened);
-  });
-
-  it('never lets the dynasty’s lines fall between two steps of the town', () => {
-    // Arrange: the player buys on the market while the AI dynasties trade too.
-    const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
-
-    // Act
-    const events = play(world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 4 }]);
-
-    // Assert: the dynasty's own action opens the hour, and every line after it
-    // belongs to the town's steps, whichever dynasty it names.
-    expect(events[0]).toMatchObject({ type: 'market.bought', dynastyId: 'leclerc' });
-  });
-
-  it('keeps a refusal before the sale it prevented', () => {
-    // Arrange: a dynasty that cannot afford its degree.
-    const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 0;
-
-    // Act
-    const events = play(world, [{ type: 'dynasty.buy_title', dynastyId: 'leclerc' }]);
-
-    // Assert
-    expect(events[0]?.type).toBe('action.refused');
-    expect(events.some((event) => event.type === 'dynasty.title_bought')).toBe(false);
+    // Assert: the refusal opens the hour, and the overflow of the town's own
+    // step comes after it.
+    const refused = events.findIndex((event) => event.type === 'action.refused');
+    const overflow = events.findIndex((event) => event.type === 'workshop.overflow');
+    expect(refused).toBe(0);
+    expect(overflow).toBeGreaterThan(refused);
   });
 
   it('keeps the order of two actions of one hour', () => {
-    // Arrange: a sale then a purchase, as the player queued them.
+    // Arrange: a sale the dynasty cannot make, then a good the town does not
+    // trade.
     const world = town(SEED);
-    world.dynasties.leclerc.stock = { cloth: 4 };
+    const unknown = { type: 'market.buy', dynastyId: 'leclerc', good: 'silk', units: 1 } as unknown as Action;
 
     // Act
-    const events = play(world, [
-      { type: 'market.sell', dynastyId: 'leclerc', good: 'cloth', units: 2 },
-      { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 1 },
-    ]);
+    const events = play(world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }, unknown]);
 
     // Assert
-    const sold = events.findIndex((event) => event.type === 'market.sold' && event.dynastyId === 'leclerc');
-    const bought = events.findIndex((event) => event.type === 'market.bought' && event.dynastyId === 'leclerc');
-    expect(sold).toBeGreaterThanOrEqual(0);
-    expect(bought).toBeGreaterThan(sold);
+    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'insufficient_stock' });
+    expect(events[1]).toMatchObject({ type: 'action.refused', reason: 'unknown_good' });
+  });
+
+  it('writes the hour of every message it returns', () => {
+    // Arrange
+    const world = town(SEED);
+
+    // Act
+    const events = play(world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }]);
+
+    // Assert
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      expect(event.at).toBe(world.hour);
+    }
   });
 });

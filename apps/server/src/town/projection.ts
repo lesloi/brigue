@@ -101,6 +101,12 @@ export interface PublicDynastyView {
   name: string;
   prestige: number;
   dormant: boolean;
+  /**
+   * The residence a dynasty has reached. Public because the screen shows it on
+   * the register of dynasties; an event no longer tells the town when it grows,
+   * since it is the buyer's own line.
+   */
+  residenceLevel: number;
 }
 
 /** A person the client may name when a seat points at them. No attributes, no age. */
@@ -173,6 +179,7 @@ export function projectWorld(town: TownInfo, world: World, dynastyId: string, ho
           name: candidate.name,
           prestige: displayedPrestige(candidate),
           dormant: candidate.dormant,
+          residenceLevel: candidate.residenceLevel ?? 1,
         }))
         .sort((left, right) => left.id.localeCompare(right.id)),
       people: Object.values(world.people)

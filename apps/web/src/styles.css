@@ -930,6 +930,7 @@ button:disabled {
 }
 
 .nav-item {
+  position: relative;
   appearance: none;
   border: 0;
   background: transparent;
@@ -947,6 +948,24 @@ button:disabled {
 
 .nav-item.on {
   color: var(--accent);
+}
+
+/* The unread count sits on the Courrier tab; it is the only number the bar
+   carries, so it must read at a glance on a phone. */
+.nav-badge {
+  position: absolute;
+  top: 0;
+  right: calc(50% - 19px);
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
 }
 
 .nav-item:disabled {

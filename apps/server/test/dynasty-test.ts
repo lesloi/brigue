@@ -140,7 +140,7 @@ describe('the dynasty name', () => {
     expect(after.dynasties.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
   });
 
-  it('writes the rename in the journal as the town’s business', async () => {
+  it('keeps a rename out of the journal: a name is identity, not a town affair', async () => {
     // Arrange
     const world = town(7);
     world.dynasties.leclerc.treasuryCents = 100_000;
@@ -150,9 +150,13 @@ describe('the dynasty name', () => {
     await rename(harness, 'Moreau');
     const response = await fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookie } });
 
-    // Assert
-    const body = (await response.json()) as { events: Array<{ type: string; after?: string }> };
-    expect(body.events).toContainEqual(expect.objectContaining({ type: 'dynasty.renamed', after: 'Moreau' }));
+    // Assert: no chronicle line, no message; the Maison screen carries the name.
+    const body = (await response.json()) as {
+      messages: Array<{ type: string }>;
+      chronicle: Array<{ type: string }>;
+    };
+    expect(body.messages).toEqual([]);
+    expect(body.chronicle).toEqual([]);
   });
 
   it('refuses a name another dynasty carries, whatever its case', async () => {

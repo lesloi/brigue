@@ -180,11 +180,15 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         options.logger.info('player.deleted', { townId: town.id, dynastyId });
       }
 
-      // The journal keeps the last seven real days: what fell out of the window
-      // goes, even on a pass that played nothing. A town that was just deleted
-      // carries no hour.
+      // The chronicle keeps the last seven real days and the mail thirty: what
+      // fell out of each window goes, even on a pass that played nothing. A town
+      // that was just deleted carries no hour.
       if (outcome.hour !== null) {
-        await pruneJournal(town.id, new Date(at.getTime() - PACING.journalRetentionHours * HOUR_MS));
+        await pruneJournal(
+          town.id,
+          new Date(at.getTime() - PACING.chronicleRetentionHours * HOUR_MS),
+          new Date(at.getTime() - PACING.messageRetentionHours * HOUR_MS),
+        );
       }
     } catch (error) {
       // A town deleted between the list and the lock is no town: the next join
@@ -199,9 +203,9 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
     }
   }
 
-  async function pruneJournal(townId: number, before: Date): Promise<void> {
+  async function pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void> {
     try {
-      await options.store.pruneJournal(townId, before);
+      await options.store.pruneJournal(townId, chronicleBefore, messagesBefore);
     } catch (error) {
       // A journal that cannot be pruned grows, but the town must keep playing:
       // this failure gets its own line and the next pass tries again.

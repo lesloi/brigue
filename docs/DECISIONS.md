@@ -184,7 +184,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The server holds the world; the client renders it.** The client stores nothing: no local save
   to version, to lose with a cleared browser, or to reconcile between two devices. It receives a
-  projection of the world and the newest page of its journal, and it computes no rule. Revisit if
+  projection of the world and the newest page of its mail and of the town's chronicle, and it
+  computes no rule. Revisit if
   the game has to be playable offline for long stretches.
 
 - **The town moves without a reader; a scheduler advances it.** `tick` is pure, so the server can
@@ -214,15 +215,24 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   list of queued actions does not advance the town either; the town's own hour is the only
   applied verdict, and the wall clock only bounds how far ahead an action may be placed.
 
-- **The journal is a sliding window, not a feed.** A scheduler writes events nobody is reading, so
-  every event carries its hour and its audience, the log has growing ids, and the filter by audience
-  happens at read time. A read returns the newest fifty events the reader may see: there is no
-  per-reader cursor, so one reader's visit can never hide a line from another, and two readers of
-  one town get the same page. In a full town those fifty lines are roughly an hour of the town's
-  life; the seven days below are a ceiling on what is kept, not a history the screen promises.
-  Every town pass drops the events written more than seven real days ago, by the wall clock
-  (`PACING.journalRetentionHours`), so a scheduler stopped longer than a week loses the days before
-  the stop. The book of kings carries what lasts; the journal carries only what is recent.
+- **The journal is two pages: a private mailbox and a public chronicle.** A scheduler writes
+  while nobody reads, so every event carries its hour and its audience. A line addressed to the
+  town is a chronicle line: small, shared, and the same page for every reader — an election that
+  changed a seat, later a law. A line addressed to a dynasty is a message: a refusal, a work built
+  or lost, a debt paid or unpaid, a candidacy, an election result. Only a human dynasty has a
+  mailbox, addressed by its dynasty id (minted once for the whole server); an AI one reads
+  nothing, so its private lines are written for nobody. The chronicle
+  keeps seven real days and the mail thirty (`PACING.chronicleRetentionHours`,
+  `PACING.messageRetentionHours`), cut by the wall clock at the write, so a scheduler stopped
+  longer loses the days before the stop. A read returns the newest fifty of each in time order;
+  there is no per-reader filter, so one reader's visit can never hide a line from another. A message
+  is unread until the player opens the Courrier, which marks the box read; the `read` flag is the
+  whole unread state, there is no cursor on the account, and it hides no line. The badge counts at
+  most the page it can open, and opening marks the whole box: mail older than the newest fifty is
+  pruned unseen rather than shown twice. The Courrier and the Greffe are the
+  only screens that render the journal: a trade lives on the Marché, production and works on the
+  Maison, and an event no screen needs is not written. The book of kings carries what lasts; the
+  journal carries only what is recent.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new

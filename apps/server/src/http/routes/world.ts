@@ -62,7 +62,9 @@ export async function readWorld(
 
   sendJson(response, 200, {
     world: projection,
-    events: outcome.events,
+    messages: outcome.messages,
+    chronicle: outcome.chronicle,
+    unreadMessages: outcome.unread,
     summary: {
       hours: caught.hours,
       skipped: caught.skipped,
@@ -127,7 +129,9 @@ export async function advanceHour(
 
   sendJson(response, 200, {
     world: projection,
-    events: outcome.events,
+    messages: outcome.messages,
+    chronicle: outcome.chronicle,
+    unreadMessages: outcome.unread,
     summary: {
       hours: caught.hours,
       skipped: caught.skipped,
@@ -136,6 +140,38 @@ export async function advanceHour(
     deletionGraceDays: PACING.deletionGraceDays,
     dev: true,
   });
+}
+
+/**
+ * The player opened the Courrier: every message of the box is marked read. The
+ * flag is the whole unread state, and it hides no line.
+ */
+export async function markMessagesRead(
+  context: AppContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+): Promise<void> {
+  const player = await identifiedBy(context, request, response);
+
+  if (player === null) {
+    return;
+  }
+
+  const at = new Date(context.now());
+
+  if (refuseClosing(context, player, response, at)) {
+    return;
+  }
+
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
+  await context.deps.worlds.markMessagesRead(bound.dynastyId);
+
+  sendJson(response, 200, { unreadMessages: 0 });
 }
 
 function townAccess(context: AppContext): TownAccess {

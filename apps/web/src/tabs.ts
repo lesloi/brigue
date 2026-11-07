@@ -7,7 +7,7 @@
  * tested without a browser.
  */
 
-export type Tab = 'ville' | 'marche' | 'maison';
+export type Tab = 'ville' | 'marche' | 'maison' | 'courrier' | 'greffe';
 
 export interface TabHistory {
   tab: Tab;
@@ -15,7 +15,7 @@ export interface TabHistory {
   pushed: boolean;
 }
 
-const TABS: readonly Tab[] = ['ville', 'marche', 'maison'];
+const TABS: readonly Tab[] = ['ville', 'marche', 'maison', 'courrier', 'greffe'];
 
 export function tabFromHash(hash: string): Tab {
   const candidate = hash.replace(/^#/, '');

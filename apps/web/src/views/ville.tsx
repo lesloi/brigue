@@ -1,15 +1,10 @@
-import { useState } from 'preact/hooks';
-
 import type { PendingActionView, WorldResponse } from '../api.ts';
-import { eventLine, ledgerEvents, type LedgerFilter } from '../events.ts';
 import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 import { DevBar } from './devbar.tsx';
 import { DynastyBar } from './dynastybar.tsx';
-
-const LEDGER_LIMIT = 8;
 
 interface VilleProps {
   data: WorldResponse;
@@ -34,13 +29,9 @@ export function Ville({
   onAdvance,
   onDeleteAccount,
 }: VilleProps) {
-  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('dynasty');
-  const [expanded, setExpanded] = useState(false);
-  const { world, events, summary } = data;
+  const { world } = data;
   const dynasty = world.dynasty;
   const nameOf = dynastyName(world);
-  const ledger = ledgerEvents(events, dynasty.id, ledgerFilter);
-  const shownLedger = expanded ? ledger : ledger.slice(0, LEDGER_LIMIT);
 
   return (
     <main class="screen">
@@ -139,81 +130,6 @@ export function Ville({
               </div>
             ) : null}
           </div>
-        </section>
-
-        <section class="sec" aria-labelledby="journal-title">
-          <div class="h">
-            <b id="journal-title">Le journal</b>
-            <span>
-              {ledger.length} ligne{ledger.length > 1 ? 's' : ''}
-            </span>
-          </div>
-          <div class="filters">
-            <div class="segmented" role="group" aria-label="Filtrer le registre">
-              <button
-                type="button"
-                class={ledgerFilter === 'dynasty' ? 'on' : ''}
-                aria-pressed={ledgerFilter === 'dynasty'}
-                onClick={() => {
-                  setLedgerFilter('dynasty');
-                  setExpanded(false);
-                }}
-              >
-                Ma dynastie
-              </button>
-              <button
-                type="button"
-                class={ledgerFilter === 'all' ? 'on' : ''}
-                aria-pressed={ledgerFilter === 'all'}
-                onClick={() => {
-                  setLedgerFilter('all');
-                  setExpanded(false);
-                }}
-              >
-                Tout
-              </button>
-              <button
-                type="button"
-                class={ledgerFilter === 'prices' ? 'on' : ''}
-                aria-pressed={ledgerFilter === 'prices'}
-                onClick={() => {
-                  setLedgerFilter('prices');
-                  setExpanded(false);
-                }}
-              >
-                Prix
-              </button>
-            </div>
-          </div>
-          <CatchUpNote summary={summary} />
-          <div class="card">
-            {ledger.length === 0 ? (
-              <div class="row empty">
-                <div class="nm">
-                  <b>Rien au journal</b>
-                  <p>Rien pour ce filtre au journal.</p>
-                </div>
-              </div>
-            ) : (
-              shownLedger.map((event) => {
-                const line = eventLine(event, dynasty.id, nameOf);
-
-                return (
-                  <div class="ev">
-                    <span class={`dot ${line.tone}`} aria-hidden="true"></span>
-                    <p>{line.text}</p>
-                  </div>
-                );
-              })
-            )}
-          </div>
-          {ledger.length > LEDGER_LIMIT ? (
-            <div class="more">
-              <button class="btn outline wide" type="button" onClick={() => setExpanded(!expanded)}>
-                {expanded ? 'Réduire' : `Voir les ${ledger.length - LEDGER_LIMIT} autres`}
-              </button>
-            </div>
-          ) : null}
         </section>
 
         <section class="sec" aria-labelledby="laws-title">
@@ -373,29 +289,4 @@ function WorkshopRow({
       </div>
     </div>
   );
-}
-
-function CatchUpNote({ summary }: { summary: WorldResponse['summary'] }) {
-  const text = catchUpText(summary);
-
-  if (text === null) {
-    return null;
-  }
-
-  return <p class="note">{text}</p>;
-}
-
-/** What the journal page does not show, said with the grammar of its count. */
-export function catchUpText(summary: WorldResponse['summary']): string | null {
-  const parts: string[] = [];
-  const hours = (count: number) => `${formatCount(count)} heure${count > 1 ? 's' : ''}`;
-
-  if (summary.hours >= 1) {
-    parts.push(`${hours(summary.hours)} vécue${summary.hours > 1 ? 's' : ''} depuis votre dernière visite.`);
-  }
-  if (summary.skipped > 0) {
-    parts.push(`${hours(summary.skipped)} sautée${summary.skipped > 1 ? 's' : ''} faute de place dans le rattrapage.`);
-  }
-
-  return parts.length === 0 ? null : parts.join(' ');
 }
