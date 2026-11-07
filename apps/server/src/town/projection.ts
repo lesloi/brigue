@@ -57,6 +57,8 @@ export interface SiteView {
  */
 export interface LadderView {
   title: TitleId;
+  /** What the house's residence level is called, never "residence 3". */
+  residence: string;
   titlePrestige: number;
   residencePrestige: number;
   /** What service earned, already capped by the level. */
@@ -66,7 +68,7 @@ export interface LadderView {
   stockDefence: number;
   workshopLevelCap: number;
   nextTitle: { title: TitleId; priceCents: number } | null;
-  nextResidence: { level: number; priceCents: number; opened: boolean; hours: number } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
 export interface OwnHouseView {
@@ -238,6 +240,7 @@ function ownHouse(world: World, house: House): OwnHouseView {
     residenceLevel: residenceOf(house),
     ladder: {
       title,
+      residence: residence.name,
       titlePrestige: TITLE_LADDER[title].prestige,
       residencePrestige: residence.prestige,
       servicePrestige: Math.min(house.prestige, residence.prestigeCap),
@@ -251,6 +254,7 @@ function ownHouse(world: World, house: House): OwnHouseView {
           ? null
           : {
               level: residenceOf(house) + 1,
+              name: RESIDENCE_LADDER[residenceOf(house)]!.name,
               priceCents: RESIDENCE_LADDER[residenceOf(house)].priceCents,
               opened: residenceOf(house) < TITLE_LADDER[title].residenceLevel,
               hours: RULES.improvementHours[residenceOf(house) + 1] ?? RULES.siteHours,

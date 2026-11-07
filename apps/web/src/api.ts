@@ -69,6 +69,7 @@ export interface ProjectedSite {
 /** The ladder, every figure already computed by the server. */
 export interface ProjectedLadder {
   title: TitleId;
+  residence: string;
   titlePrestige: number;
   residencePrestige: number;
   servicePrestige: number;
@@ -77,7 +78,7 @@ export interface ProjectedLadder {
   stockDefence: number;
   workshopLevelCap: number;
   nextTitle: { title: TitleId; priceCents: number } | null;
-  nextResidence: { level: number; priceCents: number; opened: boolean; hours: number } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
 export interface WorldProjection {

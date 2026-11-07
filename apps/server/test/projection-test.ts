@@ -168,7 +168,7 @@ describe('the projection calendar', () => {
     expect(projection.house.stockCapacityUnits).toBe(stockCapacityUnits(world.houses.leclerc));
   });
 
-  it('carries the ladder in its three shares, the doors and the sites', () => {
+  it('carries the ladder in its three shares, its names and the doors', () => {
     // Arrange: a fait, bourgeois, whose level 2 opens the residence 2.
     const world = town(SEED);
     world.houses.leclerc.title = 'bourgeois';
@@ -185,6 +185,7 @@ describe('the projection calendar', () => {
     expect(projection.house.residenceLevel).toBe(1);
     expect(projection.house.ladder).toEqual({
       title: 'bourgeois',
+      residence: 'Chambre',
       titlePrestige: 80,
       residencePrestige: 0,
       servicePrestige: 200,
@@ -193,7 +194,7 @@ describe('the projection calendar', () => {
       stockDefence: 10,
       workshopLevelCap: 3,
       nextTitle: { title: 'notable', priceCents: 120_000 },
-      nextResidence: { level: 2, priceCents: 80_000, opened: true, hours: 1 },
+      nextResidence: { level: 2, name: 'Foyer', priceCents: 80_000, opened: true, hours: 1 },
     });
     expect(projection.house.prestige).toBe(80 + 0 + 200);
     expect(projection.house.build).toEqual({

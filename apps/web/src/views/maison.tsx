@@ -1,12 +1,11 @@
 import { TRADES, type TitleId, type Trade } from '@brigue/core/world';
 import { useState } from 'preact/hooks';
 
-import type { PendingActionView, ProjectedSite, ProjectedWorkshop, WorldResponse } from '../api.ts';
+import type { PendingActionView, ProjectedWorkshop, WorldResponse } from '../api.ts';
 import {
   formatCents,
   formatCount,
   pendingActionText,
-  siteWorkText,
   titleName,
   tradeChainText,
   tradeName,
@@ -64,11 +63,6 @@ export function Maison({
   const ladder = house.ladder;
   const [name, setName] = useState(house.name);
   const [choosing, setChoosing] = useState(false);
-  const workshopNameOf = (id: string) => {
-    const workshop = house.workshops.find((candidate) => candidate.id === id);
-
-    return workshop === undefined ? 'l’atelier' : workshopName(workshop.good).toLowerCase();
-  };
   // A workshop's works lock the builders; the remise of a title does not, it is
   // the town's own door. A second degree waits only on the first being
   // delivered, which is what `titleQueued` and the site of a title say.
@@ -99,7 +93,7 @@ export function Maison({
         <div class="cap">
           <div>
             <div class="sub">{titleName(house.title)}</div>
-            <h1>Résidence {formatCount(house.residenceLevel)}</h1>
+            <h1>{ladder.residence}</h1>
           </div>
           <div class="cap-right">
             {house.workshops.length} atelier{house.workshops.length > 1 ? 's' : ''}
@@ -117,24 +111,6 @@ export function Maison({
             <b id="maison-title">Maison {house.name}</b>
           </div>
           <div class="card">
-            <div class="ladder-row">
-              <b>Prestige</b>
-              <span>
-                {formatCount(house.prestige)} / {formatCount(ladder.prestigeCap)}
-              </span>
-            </div>
-            <p class="ladder-detail">
-              {formatCount(ladder.titlePrestige)} du titre, {formatCount(ladder.residencePrestige)} de la résidence,{' '}
-              {formatCount(ladder.servicePrestige)} de service.
-            </p>
-            <div class="ladder-row">
-              <b>Résidence</b>
-              <span>niveau {formatCount(house.residenceLevel)}</span>
-            </div>
-            <p class="ladder-detail">
-              {formatCount(ladder.workshops)} atelier{ladder.workshops > 1 ? 's' : ''} au plus, entretien du stock{' '}
-              {formatCount(ladder.stockDefence)}.
-            </p>
             <form
               class="rename"
               onSubmit={(event) => {
@@ -215,20 +191,6 @@ export function Maison({
           ) : null}
         </section>
 
-        {house.sites.length > 0 ? (
-          <section class="sec" aria-labelledby="chantiers-title">
-            <div class="h">
-              <b id="chantiers-title">Chantiers</b>
-              <span>{house.sites.length}</span>
-            </div>
-            <div class="card">
-              {house.sites.map((site) => (
-                <SiteLine key={site.id} site={site} worldHour={world.hour} nameOf={workshopNameOf} />
-              ))}
-            </div>
-          </section>
-        ) : null}
-
         <section class="sec" aria-labelledby="ladder-title">
           <div class="h">
             <b id="ladder-title">Le rang</b>
@@ -274,14 +236,14 @@ export function Maison({
             {ladder.nextResidence === null ? (
               <div class="row empty">
                 <div class="nm">
-                  <b>Résidence au plus haut</b>
-                  <p>Le niveau douze ne se dépasse pas.</p>
+                  <b>Le palais</b>
+                  <p>La résidence ne se dépasse pas.</p>
                 </div>
               </div>
             ) : (
               <div class="wait">
                 <div class="nm">
-                  <b>Résidence niveau {formatCount(ladder.nextResidence.level)}</b>
+                  <b>{ladder.nextResidence.name}</b>
                   <p>{residenceHint(ladder, titleName)}</p>
                 </div>
                 <button
@@ -342,11 +304,6 @@ export function Maison({
     </main>
   );
 }
-
-/**
- * What the next degree waits for: the order in flight, a builder on another
- * works, or nothing at all — in which case the line says how it is delivered.
- */
 function titleHint(queued: boolean, delivering: boolean): string {
   if (queued) {
     return 'Commande en attente pour cette heure.';
@@ -435,34 +392,4 @@ function WorkshopLine({
       </div>
     </div>
   );
-}
-
-function SiteLine({
-  site,
-  worldHour,
-  nameOf,
-}: {
-  site: ProjectedSite;
-  worldHour: number;
-  nameOf: (workshopId: string) => string;
-}) {
-  return (
-    <div class="wait">
-      <div class="nm">
-        <b>{siteWorkText(site, nameOf)}</b>
-        <p>
-          clos à l'heure {formatCount(site.dueAt)} · {endCountdown(site.dueAt - worldHour)}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/** How long an engagement has left, in the town's hours, never in wall minutes. */
-function endCountdown(hoursLeft: number): string {
-  if (hoursLeft <= 0) {
-    return 'À la prochaine avance';
-  }
-
-  return `${formatCount(hoursLeft)} h`;
 }

@@ -83,6 +83,12 @@ export interface TitleStep {
 }
 
 export interface ResidenceStep {
+  /**
+   * What the level is called on the screen. A house is not "residence 3": the
+   * ladder names its rooms in the town's tongue, so the player reads a place
+   * and not a rank.
+   */
+  name: string;
   prestige: number;
   prestigeCap: number;
   stockDefence: number;
@@ -113,18 +119,46 @@ export const TITLE_LADDER: Record<TitleId, TitleStep> = {
  * the cap only stops what service adds on top.
  */
 export const RESIDENCE_LADDER: readonly ResidenceStep[] = [
-  { prestige: 0, prestigeCap: 200, stockDefence: 10, workshops: 1, priceCents: 0 },
-  { prestige: 50, prestigeCap: 300, stockDefence: 14, workshops: 1, priceCents: 80_000 },
-  { prestige: 70, prestigeCap: 400, stockDefence: 18, workshops: 2, priceCents: 160_000 },
-  { prestige: 90, prestigeCap: 500, stockDefence: 22, workshops: 2, priceCents: 320_000 },
-  { prestige: 120, prestigeCap: 600, stockDefence: 26, workshops: 2, priceCents: 640_000 },
-  { prestige: 160, prestigeCap: 700, stockDefence: 30, workshops: 3, priceCents: 1_280_000 },
-  { prestige: 200, prestigeCap: 800, stockDefence: 34, workshops: 3, priceCents: 2_560_000 },
-  { prestige: 250, prestigeCap: 900, stockDefence: 38, workshops: 3, priceCents: 5_120_000 },
-  { prestige: 300, prestigeCap: 1000, stockDefence: 42, workshops: 3, priceCents: 10_240_000 },
-  { prestige: 360, prestigeCap: 1100, stockDefence: 46, workshops: 4, priceCents: 20_480_000 },
-  { prestige: 430, prestigeCap: 1200, stockDefence: 50, workshops: 4, priceCents: 40_960_000 },
-  { prestige: 510, prestigeCap: 1300, stockDefence: 54, workshops: 4, priceCents: 81_920_000 },
+  { name: 'Chambre', prestige: 0, prestigeCap: 200, stockDefence: 10, workshops: 1, priceCents: 0 },
+  { name: 'Foyer', prestige: 50, prestigeCap: 300, stockDefence: 14, workshops: 1, priceCents: 80_000 },
+  { name: 'Cuisine', prestige: 70, prestigeCap: 400, stockDefence: 18, workshops: 2, priceCents: 160_000 },
+  { name: 'Logis', prestige: 90, prestigeCap: 500, stockDefence: 22, workshops: 2, priceCents: 320_000 },
+  { name: 'Galerie', prestige: 120, prestigeCap: 600, stockDefence: 26, workshops: 2, priceCents: 640_000 },
+  {
+    name: 'Bastide',
+    prestige: 160,
+    prestigeCap: 700,
+    stockDefence: 30,
+    workshops: 3,
+    priceCents: 1_280_000,
+  },
+  { name: 'Tour', prestige: 200, prestigeCap: 800, stockDefence: 34, workshops: 3, priceCents: 2_560_000 },
+  { name: 'Maison haute', prestige: 250, prestigeCap: 900, stockDefence: 38, workshops: 3, priceCents: 5_120_000 },
+  {
+    name: 'Aile',
+    prestige: 300,
+    prestigeCap: 1000,
+    stockDefence: 42,
+    workshops: 3,
+    priceCents: 10_240_000,
+  },
+  {
+    name: 'Corps de logis',
+    prestige: 360,
+    prestigeCap: 1100,
+    stockDefence: 46,
+    workshops: 4,
+    priceCents: 20_480_000,
+  },
+  {
+    name: 'Hôtel',
+    prestige: 430,
+    prestigeCap: 1200,
+    stockDefence: 50,
+    workshops: 4,
+    priceCents: 40_960_000,
+  },
+  { name: 'Palais', prestige: 510, prestigeCap: 1300, stockDefence: 54, workshops: 4, priceCents: 81_920_000 },
 ];
 
 /**
@@ -163,6 +197,13 @@ export function stockCapacityUnits(house: House): number {
   }
 
   return capacity;
+}
+
+/** What a residence level is called. */
+export function residenceName(level: number): string {
+  const step = RESIDENCE_LADDER[Math.max(0, Math.min(level, RESIDENCE_LADDER.length)) - 1];
+
+  return step?.name ?? RESIDENCE_LADDER[0]!.name;
 }
 
 /** How many workshops the residence allows. */

@@ -29,6 +29,7 @@ export {
   nextTitle,
   PACING,
   PRICE_HISTORY_BELLS,
+  residenceName,
   residenceOf,
   RESIDENCE_LADDER,
   RULES,
