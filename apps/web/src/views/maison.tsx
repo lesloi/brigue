@@ -14,10 +14,12 @@ import {
   workshopName,
 } from '../format.ts';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { DevBar } from './devbar.tsx';
 import { HouseBar } from './housebar.tsx';
 
 interface MaisonProps {
   data: WorldResponse;
+  advancing: boolean;
   pending: PendingActionView[];
   cancelling: string | null;
   busy: string | null;
@@ -29,6 +31,7 @@ interface MaisonProps {
   onUpgradeResidence(): void;
   onRename(name: string): void;
   onCancel(id: string): void;
+  onAdvance(): void;
 }
 
 const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCompare(tradeName(right), 'fr'));
@@ -41,6 +44,7 @@ const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCo
  */
 export function Maison({
   data,
+  advancing,
   pending,
   cancelling,
   busy,
@@ -52,6 +56,7 @@ export function Maison({
   onUpgradeResidence,
   onRename,
   onCancel,
+  onAdvance,
 }: MaisonProps) {
   const { world } = data;
   const house = world.house;
@@ -67,6 +72,9 @@ export function Maison({
   // The queued purchases wait for their order to play: the next degree is
   // already bought as far as this hour is concerned.
   const titleQueued = pending.some((action) => action.type === 'house.buy_title');
+  // "En attente" counts the hours before the order plays and the works after
+  // it: the line that says when the degree lands belongs to both.
+  const titleComing = titleQueued || house.sites.some((site) => site.work === 'title') || pending.length > 0;
   const residenceQueued = pending.some((action) => action.type === 'house.upgrade_residence');
   const renameQueued = name.trim() !== house.name;
 
@@ -86,6 +94,8 @@ export function Maison({
       </header>
 
       <HouseBar data={data} mode="house" />
+
+      {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
         <section class="sec" aria-labelledby="maison-title">
@@ -223,7 +233,7 @@ export function Maison({
               <div class="wait">
                 <div class="nm">
                   <b>Titre de {titleName(ladder.nextTitle.title)}</b>
-                  <p>Obtenu au prochain midi ou minuit.</p>
+                  {titleComing ? <p>Obtenu au prochain midi ou minuit.</p> : null}
                 </div>
                 <button
                   class="btn"

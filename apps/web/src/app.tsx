@@ -495,6 +495,7 @@ export function App() {
           ) : tab === 'maison' ? (
             <Maison
               data={view.data}
+              advancing={advancing}
               pending={pending}
               cancelling={cancelling}
               busy={houseBusy}
@@ -522,6 +523,7 @@ export function App() {
               }
               onRename={(name) => void rename(name)}
               onCancel={(id) => void cancel(id)}
+              onAdvance={() => void advanceOneHour()}
             />
           ) : (
             <Marche

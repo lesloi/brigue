@@ -6,6 +6,7 @@ import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { DevBar } from './devbar.tsx';
 import { HouseBar } from './housebar.tsx';
 
 const LEDGER_LIMIT = 8;
@@ -85,7 +86,7 @@ export function Ville({
 
       <HouseBar data={data} mode="ville" />
 
-      {data.dev === true ? <DevBar busy={advancing} onAdvance={onAdvance} /> : null}
+      {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
         <section class="sec" aria-labelledby="house-title">
@@ -249,26 +250,6 @@ export function Ville({
         </button>
       </footer>
     </main>
-  );
-}
-
-/**
- * Local development only: the server sets `dev` on the payload it serves when
- * it was started with DEV_ADVANCE. The button has no place in production.
- */
-function DevBar({ busy, onAdvance }: { busy: boolean; onAdvance(): void }) {
-  return (
-    <div class="dev">
-      <button
-        id="advance-hour"
-        type="button"
-        title="Mode développement : simule une heure"
-        disabled={busy}
-        onClick={onAdvance}
-      >
-        Heure suivante
-      </button>
-    </div>
   );
 }
 

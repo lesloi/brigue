@@ -535,6 +535,17 @@ button:disabled {
   margin: 14px 20px 0;
 }
 
+.dev {
+  gap: 10px;
+}
+
+.dev-note {
+  align-self: center;
+  font-size: 11px;
+  color: var(--mut);
+  font-variant-numeric: tabular-nums;
+}
+
 .dev button {
   border: 1px dashed rgba(110, 103, 91, 0.45);
   background: transparent;
