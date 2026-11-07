@@ -64,6 +64,10 @@ export function Maison({
     return workshop === undefined ? 'l’atelier' : workshopName(workshop.good).toLowerCase();
   };
   const building = house.sites.length > 0;
+  // The queued purchases wait for their order to play: the next degree is
+  // already bought as far as this hour is concerned.
+  const titleQueued = pending.some((action) => action.type === 'house.buy_title');
+  const residenceQueued = pending.some((action) => action.type === 'house.upgrade_residence');
   const renameQueued = name.trim() !== house.name;
 
   return (
@@ -224,7 +228,13 @@ export function Maison({
                 <button
                   class="btn"
                   type="button"
-                  disabled={building || busy === 'title' || house.treasuryCents < ladder.nextTitle.priceCents}
+                  disabled={
+                    building ||
+                    titleQueued ||
+                    residenceQueued ||
+                    busy === 'title' ||
+                    house.treasuryCents < ladder.nextTitle.priceCents
+                  }
                   onClick={onBuyTitle}
                 >
                   <span class="btn-label">
@@ -255,6 +265,8 @@ export function Maison({
                   type="button"
                   disabled={
                     building ||
+                    titleQueued ||
+                    residenceQueued ||
                     !ladder.nextResidence.opened ||
                     busy === 'residence' ||
                     house.treasuryCents < ladder.nextResidence.priceCents
@@ -311,7 +323,7 @@ export function Maison({
 /** A price with the coin that says it is one, shared by every button that costs. */
 function Price({ cents }: { cents: number }) {
   return (
-    <span class="price">
+    <span class="btn-price">
       <ResourceIcon kind="coins" />
       {formatCents(cents)}
     </span>

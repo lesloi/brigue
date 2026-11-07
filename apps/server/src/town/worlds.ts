@@ -42,6 +42,11 @@ export interface StoredAction {
   receivedAt: Date;
   /** Set when the player cancels before it plays; the row stays for dedup and replay. */
   cancelledAt: Date | null;
+  /**
+   * The degree a title purchase buys, read at the order and kept for the
+   * screen: the world replay derives it, so this is a label, never a rule.
+   */
+  title?: string;
 }
 
 export type JournalCounts = Partial<Record<Event['type'], number>>;

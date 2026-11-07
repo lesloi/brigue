@@ -1,6 +1,16 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { GOODS, SEATS, TRADES, type Action, type GoodId, type SeatId, type Trade } from '@brigue/core';
+import {
+  GOODS,
+  nextTitle,
+  SEATS,
+  titleOf,
+  TRADES,
+  type Action,
+  type GoodId,
+  type SeatId,
+  type Trade,
+} from '@brigue/core';
 
 import { currentHourOf, DuplicateActionError, sessionWorld, type StoredAction } from '../../town/worlds.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
@@ -203,6 +213,11 @@ export async function appendAction(
         action: withHouse(submission.intent, bound.houseId),
         receivedAt: at,
         cancelledAt: null,
+        // The degree is named when the order is taken, from the house as it is
+        // then, so no later purchase changes what this line says.
+        ...(submission.intent.type === 'house.buy_title'
+          ? { title: nextTitle(titleOf(world.houses[bound.houseId]!)) }
+          : {}),
       };
       await session.append(stored);
 
@@ -255,6 +270,7 @@ function pendingView(stored: StoredAction): Record<string, unknown> {
       : {}),
     ...(action.type === 'council.campaign' ? { seatId: action.seatId } : {}),
     ...(action.type === 'workshop.build' ? { trade: action.trade } : {}),
+    ...(action.type === 'house.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
     ...(action.type === 'workshop.destroy' || action.type === 'workshop.upgrade'
       ? { workshopId: action.workshopId }
       : {}),

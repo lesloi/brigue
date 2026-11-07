@@ -191,6 +191,21 @@ describe('the house name', () => {
 });
 
 describe('the action view of the ladder', () => {
+  it('names the degree a queued title buys', async () => {
+    // Arrange: a house that can pay for its next degree.
+    const world = town(7);
+    world.houses.leclerc.treasuryCents = 1_000_000;
+    const harness = await start(world);
+
+    // Act
+    await post(harness, { type: 'house.buy_title' });
+    const response = await fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookie } });
+
+    // Assert
+    const body = (await response.json()) as { actions: Array<Record<string, unknown>> };
+    expect(body.actions).toContainEqual(expect.objectContaining({ type: 'house.buy_title', title: 'bourgeois' }));
+  });
+
   it('lists a build with its trade, and a purchase with no field', async () => {
     // Arrange
     const harness = await start();

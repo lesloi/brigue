@@ -227,6 +227,18 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
     return;
   }
 
+  // A degree or a residence level is bought once: two purchases for the same
+  // next object would charge twice and deliver once, since the works of the
+  // first already opens the second.
+  if (action.type === 'house.buy_title' && sitesOf(world, house.id, 'title') > 0) {
+    refuse(events, action, house.id, 'site_in_progress', true);
+    return;
+  }
+  if (action.type === 'house.upgrade_residence' && sitesOf(world, house.id, 'residence') > 0) {
+    refuse(events, action, house.id, 'site_in_progress', true);
+    return;
+  }
+
   // A site already under way cannot be doubled: the house has one builder, and
   // two sites of one kind would race for the same workshop or the same degree.
   const building = world.engagements.some(

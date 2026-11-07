@@ -298,6 +298,27 @@ describe('workshops, trades and the ladder', () => {
     expect(leased(after, 'leclerc').residenceLevel).toBe(1);
   });
 
+  it('charges a title bought twice in one hour only once', () => {
+    // Arrange: the same degree ordered twice before the hour plays.
+    const world = town(SEED);
+    world.houses.leclerc.treasuryCents = 1_000_000;
+
+    // Act
+    const { world: after, events } = tick(world, [
+      { type: 'house.buy_title', houseId: 'leclerc' },
+      { type: 'house.buy_title', houseId: 'leclerc' },
+    ]);
+
+    // Assert: one works, one charge, one refusal.
+    expect(events.filter((event) => event.type === 'house.title_bought')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'house.title_bought')[0]).toEqual(
+      expect.objectContaining({ title: 'bourgeois' }),
+    );
+    expect(refusal(events, 'site_in_progress')).toBeDefined();
+    expect(world.houses.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeGreaterThanOrEqual(60_000);
+    expect(world.houses.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeLessThan(60_000 + 100_000);
+  });
+
   it('pays for a residence level the title opened, and the level caps prestige and workshops', () => {
     // Arrange: a bourgeois has opened level 2; level 1 holds one workshop.
     const world = town(SEED);

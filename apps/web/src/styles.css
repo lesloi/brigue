@@ -1286,14 +1286,15 @@ button:disabled {
   gap: 5px;
 }
 
-/* A price inside a button: the coin first, so a cost never reads as a count. */
-.price {
+/* A price inside a button: the coin first, so a cost never reads as a count.
+   Its own class, because `.price` already names a good's price on the Marché. */
+.btn-price {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
 }
 
-.price svg {
+.btn-price svg {
   flex: none;
 }

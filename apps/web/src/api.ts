@@ -32,6 +32,8 @@ export interface PendingActionView {
   seatId?: SeatId;
   trade?: Trade;
   workshopId?: string;
+  /** The degree a title purchase buys, so the queue can name it. */
+  title?: TitleId;
 }
 
 /** A workshop as the server projects it: the chain's input is not the client's rule. */

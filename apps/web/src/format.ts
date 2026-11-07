@@ -139,7 +139,7 @@ export function pendingActionText(action: PendingActionView): string {
     case 'workshop.upgrade':
       return "Agrandissement d'un atelier";
     case 'house.buy_title':
-      return "Achat d'un titre";
+      return action.title === undefined ? "Achat d'un titre" : `Achat du titre de ${titleName(action.title)}`;
     case 'house.upgrade_residence':
       return 'Élévation de la résidence';
   }
