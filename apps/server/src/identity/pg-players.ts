@@ -11,8 +11,6 @@ interface PlayerRow {
   last_seen_at: Date | string;
   revoked_at: Date | string | null;
   delete_after: Date | string | null;
-  // bigint: the driver hands it back as a string.
-  cursor_event_id: string;
 }
 
 /**
@@ -46,7 +44,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
+      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
        FROM players
        WHERE token_hash = $1`,
       [tokenHash],
@@ -63,7 +61,7 @@ export class PgPlayerStore implements PlayerStore {
         `UPDATE players
          SET town_id = $2, dynasty_id = $3, last_seen_at = GREATEST(last_seen_at, $4)
          WHERE token_hash = $1 AND town_id IS NULL AND dynasty_id IS NULL AND revoked_at IS NULL
-         RETURNING token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id`,
+         RETURNING token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after`,
         [tokenHash, townId, dynastyId, at],
       );
 
@@ -76,15 +74,6 @@ export class PgPlayerStore implements PlayerStore {
       }
       throw error;
     }
-  }
-
-  async advanceCursor(tokenHash: string, cursor: number): Promise<void> {
-    await this.pool.query(
-      `UPDATE players
-       SET cursor_event_id = GREATEST(cursor_event_id, $2)
-       WHERE token_hash = $1`,
-      [tokenHash, cursor],
-    );
   }
 
   async revoke(tokenHash: string, at: Date): Promise<void> {
@@ -107,7 +96,7 @@ export class PgPlayerStore implements PlayerStore {
 
   async listByTown(townId: number): Promise<Player[]> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
+      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
        FROM players
        WHERE town_id = $1
        ORDER BY created_at, token_hash`,
@@ -181,8 +170,6 @@ function rowToPlayer(row: PlayerRow): Player {
     lastSeenAt: asDate(row.last_seen_at),
     revokedAt: row.revoked_at === null ? null : asDate(row.revoked_at),
     deleteAfter: row.delete_after === null ? null : asDate(row.delete_after),
-    // bigint comes back as a string.
-    cursorEventId: Number(row.cursor_event_id),
   };
 }
 

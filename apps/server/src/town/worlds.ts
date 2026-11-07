@@ -6,11 +6,8 @@ import {
   WorldVersionError,
   type Action,
   type Event,
-  type RefusalReason,
   type World,
 } from '@brigue/core';
-
-import { countEvent, emptyTally } from './journal.ts';
 
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -22,7 +19,7 @@ export function currentHourOf(world: World, hourStartedAt: Date, at: Date): numb
   return world.hour + Math.min(elapsed, PACING.maxCatchUpHours);
 }
 
-/** A read returns at most this many journal entries; the rest is counted. */
+/** A read returns at most this many journal entries: the newest page. */
 export const JOURNAL_PAGE = 50;
 
 /** A town a player can join: the id the rows carry, the name the screen shows. */
@@ -49,20 +46,6 @@ export interface StoredAction {
   title?: string;
 }
 
-export type JournalCounts = Partial<Record<Event['type'], number>>;
-export type JournalRefusals = Partial<Record<RefusalReason, number>>;
-
-export interface JournalPage {
-  /** The newest entries after the cursor, in the order they happened. */
-  events: Event[];
-  /** The newest entry's id: the cursor jumps over what the counts cover. */
-  lastId: number;
-  /** What the page left behind, counted by type. */
-  counts: JournalCounts;
-  /** The refused actions among them, counted by reason. */
-  refusals: JournalRefusals;
-}
-
 export interface WorldSnapshot {
   town: TownInfo;
   world: World;
@@ -75,8 +58,8 @@ export interface WorldSession {
   readonly snapshot: WorldSnapshot;
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
   actionsBetween(from: number, to: number): Promise<StoredAction[]>;
-  /** The journal after a reader's cursor, and how much is left beyond the page. */
-  eventsSince(afterId: number, limit: number, dynastyId: string): Promise<JournalPage>;
+  /** The newest entries the reader may see, in the order they happened. */
+  recentEvents(limit: number, dynastyId: string): Promise<Event[]>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
   /** Marks an unplayed action cancelled; it is never handed to the advance. */
@@ -126,12 +109,12 @@ export interface WorldStore {
    */
   withJoinLock<T>(run: () => Promise<T>): Promise<T>;
   /**
-   * Drops the journal older than `oldestKeptHour`, keeping the newest page
-   * whatever its age, so the journal always has one to show. Its own statement,
-   * outside the state lock: a prune that fails must not roll back an hour the
-   * town already lived.
+   * Drops the journal written before `before`. Its own statement, outside the
+   * state lock: a prune that fails must not roll back an hour the town already
+   * lived. The cutoff is the server's clock; each row carries the database's
+   * instant at insertion, so the boundary is only as exact as the two clocks.
    */
-  pruneJournal(townId: number, oldestKeptHour: number): Promise<void>;
+  pruneJournal(townId: number, before: Date): Promise<void>;
   /**
    * The keys of every human dynasty's name, the whole server over: the global
    * ranking reads human dynasties by name, so no two of them may share one. An AI
@@ -170,7 +153,7 @@ export class DuplicateActionError extends Error {
 interface MemoryWorld {
   snapshot: WorldSnapshot;
   actions: StoredAction[];
-  events: { id: number; event: Event }[];
+  events: { id: number; event: Event; recordedAt: Date }[];
   nextEventId: number;
 }
 
@@ -185,6 +168,12 @@ export class MemoryWorldStore implements WorldStore {
   private nextTownId = 1;
   private queue: Promise<unknown> = Promise.resolve();
   private joinQueue: Promise<unknown> = Promise.resolve();
+  /** The instant an event is written, for the real-time journal cut. */
+  private readonly now: () => Date;
+
+  constructor(now: () => Date = () => new Date()) {
+    this.now = now;
+  }
 
   async createTown(name: string, world: World, hourStartedAt: Date): Promise<TownInfo> {
     const town: TownInfo = { id: this.nextTownId, name };
@@ -221,17 +210,13 @@ export class MemoryWorldStore implements WorldStore {
     );
   }
 
-  async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
+  async pruneJournal(townId: number, before: Date): Promise<void> {
     const stored = this.towns.get(townId);
 
     if (stored === undefined) {
       return;
     }
-    // The page floor is by id, like the SQL boundary: the newest entries stay
-    // even when every one of them predates the cut.
-    const pageStart = Math.max(0, stored.events.length - JOURNAL_PAGE);
-    const keepFrom = stored.events[pageStart]?.id ?? Number.POSITIVE_INFINITY;
-    stored.events = stored.events.filter((entry) => entry.event.at >= oldestKeptHour || entry.id >= keepFrom);
+    stored.events = stored.events.filter((entry) => entry.recordedAt >= before);
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
@@ -284,20 +269,10 @@ export class MemoryWorldStore implements WorldStore {
           .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
           .sort((left, right) => left.playsAt - right.playsAt)
           .map((action) => structuredClone(action)),
-      eventsSince: async (afterId, limit, dynastyId) => {
-        const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, dynastyId));
-        const page = visible.slice(-limit);
-        const tally = emptyTally();
+      recentEvents: async (limit, dynastyId) => {
+        const visible = stored.events.filter((entry) => isVisibleTo(entry.event, dynastyId));
 
-        for (const entry of visible.slice(0, visible.length - page.length)) {
-          countEvent(tally, entry.event);
-        }
-
-        return {
-          events: page.map((entry) => structuredClone(entry.event)),
-          lastId: page.at(-1)?.id ?? afterId,
-          ...tally,
-        };
+        return visible.slice(Math.max(0, visible.length - limit)).map((entry) => structuredClone(entry.event));
       },
       findAction: async (id) => {
         const found = stored.actions.find((action) => action.id === id);
@@ -331,7 +306,7 @@ export class MemoryWorldStore implements WorldStore {
           hourStartedAt: new Date(hourStartedAt),
         };
         for (const event of events) {
-          stored.events.push({ id: stored.nextEventId, event: structuredClone(event) });
+          stored.events.push({ id: stored.nextEventId, event: structuredClone(event), recordedAt: this.now() });
           stored.nextEventId += 1;
         }
       },

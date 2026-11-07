@@ -82,55 +82,58 @@ describe('the town store', () => {
     expect(await store.listTowns()).toHaveLength(2);
   });
 
-  it('drops the journal older than the cut and keeps the newest page', async () => {
-    // Arrange: two pages and a bit of entries, one per hour.
-    const store = new MemoryWorldStore();
-    const created = await store.createTown('A', createWorld(1), new Date());
+  it('drops the journal written more than seven days ago', async () => {
+    // Arrange: two batches written a week apart.
+    let now = new Date('2026-01-01T00:00:00.000Z');
+    const store = new MemoryWorldStore(() => now);
+    const created = await store.createTown('A', createWorld(1), now);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 120));
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 60));
+    }, created.id);
+    now = new Date('2026-01-09T00:00:00.000Z');
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(61, 120));
     }, created.id);
 
-    // Act: the cut alone would leave twelve entries; the page floor keeps the
-    // newest fifty whatever their age.
-    await store.pruneJournal(created.id, 109);
+    // Act: the cut is seven days after the first batch, before the second.
+    await store.pruneJournal(created.id, new Date('2026-01-08T00:00:00.000Z'));
 
-    // Assert: the page still reads, and nothing older than it survives.
-    const page = await store.withWorld(async (session) => session.eventsSince(0, 100, 'leclerc'), created.id);
-    expect(page.events.map((event) => event.at)).toEqual(range(71, 120));
+    // Assert: the second batch survives whole.
+    const page = await store.withWorld(async (session) => session.recentEvents(120, 'leclerc'), created.id);
+    expect(page.map((event) => event.at)).toEqual(range(61, 120));
   });
 
-  it('keeps an entry exactly on the cut, and counts what the page leaves', async () => {
+  it('keeps an entry exactly on the cut', async () => {
     // Arrange
-    const store = new MemoryWorldStore();
-    const created = await store.createTown('A', createWorld(1), new Date());
-    await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 120));
-    }, created.id);
-
-    // Act: seventy-one entries are at or after the cut, so the page floor does
-    // not decide the boundary.
-    await store.pruneJournal(created.id, 50);
-
-    // Assert: the strict cut keeps its own hour; the page counts the rest.
-    const page = await store.withWorld(async (session) => session.eventsSince(0, 10, 'leclerc'), created.id);
-    expect(page.events.map((event) => event.at)).toEqual(range(111, 120));
-    expect(page.counts).toEqual({ 'market.price_changed': 61 });
-  });
-
-  it('keeps a journal shorter than a page whole', async () => {
-    // Arrange: ten entries, all older than the cut.
-    const store = new MemoryWorldStore();
-    const created = await store.createTown('A', createWorld(1), new Date());
+    const written = new Date('2026-01-01T00:00:00.000Z');
+    const store = new MemoryWorldStore(() => written);
+    const created = await store.createTown('A', createWorld(1), written);
     await store.withWorld(async (session) => {
       await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 10));
     }, created.id);
 
-    // Act: there is no newer page to protect the entries with, so only the
-    // floor keeps them.
-    await store.pruneJournal(created.id, 1_000);
+    // Act: the cut is the write instant itself.
+    await store.pruneJournal(created.id, written);
 
     // Assert
-    const page = await store.withWorld(async (session) => session.eventsSince(0, 100, 'leclerc'), created.id);
-    expect(page.events.map((event) => event.at)).toEqual(range(1, 10));
+    const page = await store.withWorld(async (session) => session.recentEvents(100, 'leclerc'), created.id);
+    expect(page.map((event) => event.at)).toEqual(range(1, 10));
+  });
+
+  it('leaves no page behind when the whole journal is older than the cut', async () => {
+    // Arrange: ten entries, all written before the cut.
+    const written = new Date('2026-01-01T00:00:00.000Z');
+    const store = new MemoryWorldStore(() => written);
+    const created = await store.createTown('A', createWorld(1), written);
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 10));
+    }, created.id);
+
+    // Act: there is no page floor any more.
+    await store.pruneJournal(created.id, new Date('2026-01-08T00:00:00.000Z'));
+
+    // Assert
+    const page = await store.withWorld(async (session) => session.recentEvents(100, 'leclerc'), created.id);
+    expect(page).toEqual([]);
   });
 });

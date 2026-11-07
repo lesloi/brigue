@@ -2,13 +2,10 @@ import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import { nameKey, residenceOf, titleOf } from '@brigue/core';
 import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
-import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
   DuplicateActionError,
-  JOURNAL_PAGE,
   NameInUseError,
   UnknownWorldError,
-  type JournalPage,
   type StoredAction,
   type TownInfo,
   type WorldSession,
@@ -115,23 +112,8 @@ export class PgWorldStore implements WorldStore {
     return rows.map((row) => row.name);
   }
 
-  async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
-    // The boundary is the id of the newest page's oldest entry; a journal with
-    // fewer than a page has none, and `id < NULL` deletes nothing. The index on
-    // (town_id, id) serves both the boundary and the walk back from the newest.
-    await this.pool.query(
-      `DELETE FROM events
-       WHERE town_id = $1
-         AND at < $2
-         AND id < (
-           SELECT id FROM events
-           WHERE town_id = $1
-           ORDER BY id DESC
-           OFFSET $3
-           LIMIT 1
-         )`,
-      [townId, oldestKeptHour, JOURNAL_PAGE - 1],
-    );
+  async pruneJournal(townId: number, before: Date): Promise<void> {
+    await this.pool.query(`DELETE FROM events WHERE town_id = $1 AND recorded_at < $2`, [townId, before]);
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
@@ -220,36 +202,19 @@ class PgWorldSession implements WorldSession {
     return rows.map(rowToStoredAction);
   }
 
-  async eventsSince(afterId: number, limit: number, dynastyId: string): Promise<JournalPage> {
-    // Dynasty-visible in one place, so the page and its counts cannot disagree.
+  async recentEvents(limit: number, dynastyId: string): Promise<Event[]> {
     const visible = `(audience = 'town' OR (audience = 'dynasty' AND dynasty_id = $2))`;
     const { rows } = await this.client.query(
       `SELECT id, at, audience, dynasty_id, type, payload
        FROM events
-       WHERE town_id = $4 AND id > $1 AND ${visible}
+       WHERE town_id = $3 AND ${visible}
        ORDER BY id DESC
-       LIMIT $3`,
-      [afterId, dynastyId, limit, this.townId],
+       LIMIT $1`,
+      [limit, dynastyId, this.townId],
     );
+
     // The query walks back from the newest; the page reads forward in time.
-    const newest = rows.slice().reverse();
-    const events = newest.map(rowToEvent);
-    const lastId = events.length === 0 ? afterId : Number(rows[0].id);
-    const tally = emptyTally();
-
-    if (newest.length > 0) {
-      const oldest = Number(newest[0].id);
-      const { rows: grouped } = await this.client.query(
-        `SELECT type, payload->>'reason' AS reason, count(*)::int AS count
-         FROM events
-         WHERE town_id = $4 AND id > $1 AND id < $3 AND ${visible}
-         GROUP BY type, payload->>'reason'`,
-        [afterId, dynastyId, oldest, this.townId],
-      );
-      foldGrouped(tally, grouped.map(toGroupedCount));
-    }
-
-    return { events, lastId, ...tally };
+    return rows.slice().reverse().map(rowToEvent);
   }
 
   async findAction(id: string): Promise<StoredAction | null> {
@@ -769,10 +734,6 @@ function rowToEvent(row: {
   const audience = row.audience === 'dynasty' ? { dynastyId: row.dynasty_id ?? '' } : row.audience;
 
   return { ...row.payload, type: row.type, audience, at: row.at } as Event;
-}
-
-function toGroupedCount(row: { type: string; reason: string | null; count: number | string }): GroupedCount {
-  return { type: row.type, reason: row.reason, count: Number(row.count) };
 }
 
 function rowToStoredAction(row: {

@@ -49,20 +49,6 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     expect(await store.findByTokenHash(tokenHash)).toBeNull();
   });
 
-  it('moves the journal cursor forward and never back', async () => {
-    // Arrange
-    const tokenHash = 'a'.repeat(64);
-    await store.insert(player(tokenHash));
-
-    // Act: a retried read may report an older cursor, and it must not rewind.
-    await store.advanceCursor(tokenHash, 12);
-    await store.advanceCursor(tokenHash, 7);
-
-    // Assert
-    const found = await store.findByTokenHash(tokenHash);
-    expect(found?.cursorEventId).toBe(12);
-  });
-
   it('binds an account a reset left without a dynasty, and only once', async () => {
     // Arrange
     const tokenHash = 'a'.repeat(64);
@@ -126,6 +112,5 @@ function player(tokenHash: string): Omit<Player, 'playerId'> {
     lastSeenAt: at,
     revokedAt: null,
     deleteAfter: null,
-    cursorEventId: 0,
   };
 }

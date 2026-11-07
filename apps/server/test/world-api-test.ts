@@ -43,8 +43,6 @@ interface WorldBody {
   summary: {
     hours: number;
     skipped: number;
-    counts: Partial<Record<string, number>>;
-    refusals: Partial<Record<string, number>>;
   };
   stateHash: string;
   dev?: boolean;
@@ -61,7 +59,7 @@ async function start(
 ): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
-  const worlds = new MemoryWorldStore();
+  const worlds = new MemoryWorldStore(() => new Date(clock.now));
   const logs: string[] = [];
   const logger = createLogger((line) => logs.push(line));
   const server = createApp({
@@ -95,15 +93,13 @@ async function start(
   // The scheduler's pass, minus the timer: what the loop would do on its own.
   const play = async (): Promise<void> => {
     try {
-      const hour = await worlds.withWorld(async (session) => {
+      await worlds.withWorld(async (session) => {
         const due = await playDue(session, session.snapshot, new Date(clock.now));
         if (due.hours > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
-
-        return due.world.hour;
       }, TEST_TOWN.id);
-      await worlds.pruneJournal(TEST_TOWN.id, hour - PACING.journalRetentionHours);
+      await worlds.pruneJournal(TEST_TOWN.id, new Date(clock.now - PACING.journalRetentionHours * HOUR));
     } catch (error) {
       // The loop logs a refused world and leaves it for the reader to report.
       if (!(error instanceof WorldVersionError)) {
@@ -209,7 +205,7 @@ describe('GET /api/world', () => {
     expect(first.world.hour).toBe(1);
   });
 
-  it('catches a month up when the scheduler never ran, and counts what it left behind', async () => {
+  it('catches a month up when the scheduler never ran, and keeps the newest page', async () => {
     // Arrange: the loop is down; a visit is the only thing that wakes the town.
     const harness = await start();
     await harness.lapse(30 * 24 * HOUR);
@@ -224,11 +220,9 @@ describe('GET /api/world', () => {
     // The page is the newest fifty, in time order, up to the last hour lived.
     expect(body.events).toHaveLength(50);
     expect(Number(body.events.at(-1)?.at)).toBe(720);
-    // The rest is counted, not sent.
-    expect(body.summary.counts['market.bought']).toBeGreaterThan(50);
   });
 
-  it('keeps the last hour on the following read that has nothing to play', async () => {
+  it('returns the same page on a read that has nothing to play', async () => {
     // Arrange: the read is the backstop and only wakes a town more than an
     // hour behind, so the loop must have missed two.
     const harness = await start();
@@ -238,17 +232,15 @@ describe('GET /api/world', () => {
     // Act
     const second = await worldBody(harness);
 
-    // Assert: the cursor consumed the page; the hours are neither played nor
-    // shown twice.
+    // Assert: the page is a window; a read is not a consumption.
     expect(first.summary.hours).toBe(2);
     expect(first.events.length).toBeGreaterThan(0);
-    expect(second.events).toEqual([]);
+    expect(second.events).toEqual(first.events);
     expect(second.summary.hours).toBe(0);
-    expect(second.summary.counts).toEqual({});
     expect(second.stateHash).toBe(first.stateHash);
   });
 
-  it('shows the newest page and forgets what it counted', async () => {
+  it('shows the newest page on every read', async () => {
     // Arrange: a month of entries, far more than one page.
     const harness = await start();
     await harness.lapse(30 * 24 * HOUR);
@@ -257,12 +249,10 @@ describe('GET /api/world', () => {
     // Act
     const second = await worldBody(harness);
 
-    // Assert: the cursor jumped to the newest entry, so the counted entries
-    // are never shown again, and a second read has nothing left.
+    // Assert
     expect(first.events).toHaveLength(50);
-    expect(second.events).toEqual([]);
+    expect(second.events).toEqual(first.events);
     expect(second.summary.hours).toBe(0);
-    expect(second.summary.counts).toEqual({});
   });
 
   it('leaves a town one hour behind to the scheduler', async () => {
@@ -490,11 +480,10 @@ describe('POST /api/actions', () => {
     const replay = await postAction(harness, submitted);
     const body = await worldBody(harness);
 
-    // Assert: the hour is not replayed, and the cursor has already consumed
-    // the page that carried the first application.
+    // Assert: the hour is not replayed, and the journal page is the same.
     expect(replay.status).toBe(409);
     expect(await replay.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
-    expect(body.events).toEqual([]);
+    expect(body.events).toEqual(applied.events);
     expect(body.stateHash).toBe(applied.stateHash);
     expect(body.summary.hours).toBe(0);
     expect(applied.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);

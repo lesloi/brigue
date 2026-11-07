@@ -37,8 +37,8 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const townId = Number(townRows[0]?.id);
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, dynasty_id, created_at, last_seen_at, delete_after, cursor_event_id)
-       VALUES ($1, $2, 'leclerc', $3, $4, $5, 7)
+      `INSERT INTO players (token_hash, town_id, dynasty_id, created_at, last_seen_at, delete_after)
+       VALUES ($1, $2, 'leclerc', $3, $4, $5)
        RETURNING player_id`,
       [tokenHash, townId, CREATED_AT, LAST_SEEN_AT, DELETE_AFTER],
     );
@@ -76,9 +76,8 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       last_seen_at: Date;
       revoked_at: Date | null;
       delete_after: Date | null;
-      cursor_event_id: string;
     }>(
-      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
+      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
        FROM players`,
     );
     const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
@@ -95,8 +94,6 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(players.rows[0]?.created_at.toISOString()).toBe(CREATED_AT.toISOString());
     expect(players.rows[0]?.last_seen_at.toISOString()).toBe(LAST_SEEN_AT.toISOString());
     expect(players.rows[0]?.delete_after?.toISOString()).toBe(DELETE_AFTER.toISOString());
-    // The journal restarts, so the cursor cannot survive it.
-    expect(Number(players.rows[0]?.cursor_event_id)).toBe(0);
     expect(kings.rows).toHaveLength(1);
     expect(Number(kings.rows[0]?.player_id)).toBe(playerId);
     expect(kings.rows[0]?.crowned_at.toISOString()).toBe(CROWNED_AT.toISOString());

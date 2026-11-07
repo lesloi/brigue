@@ -22,7 +22,7 @@ describe('advanceTown', () => {
     const savedAt = new Date(START.getTime() + 1_042);
 
     // Act
-    const outcome = await advanceTown(access, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, 0, at, () => savedAt.getTime());
+    const outcome = await advanceTown(access, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, at, () => savedAt.getTime());
 
     // Assert: both the result and the stored town carry the post-advance read.
     expect(outcome.kind).toBe('caught');

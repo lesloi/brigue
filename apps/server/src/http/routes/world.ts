@@ -30,7 +30,7 @@ export async function readWorld(
     return;
   }
 
-  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, bound.cursorEventId ?? 0, at);
+  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, at);
 
   if (outcome.kind === 'gone') {
     // The visit arrived after the dynasty was silent for a month: the world has
@@ -59,16 +59,13 @@ export async function readWorld(
   });
 
   const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
-  await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
     world: projection,
-    events: outcome.journal.events,
+    events: outcome.events,
     summary: {
       hours: caught.hours,
       skipped: caught.skipped,
-      counts: outcome.journal.counts,
-      refusals: outcome.journal.refusals,
     },
     // The projected state, not the world: hashing the world would reveal the
     // seed and with it every future the town has not lived yet.
@@ -109,14 +106,7 @@ export async function advanceHour(
     return;
   }
 
-  const outcome = await advanceTown(
-    townAccess(context),
-    bound.townId,
-    bound.dynastyId,
-    bound.cursorEventId ?? 0,
-    at,
-    context.now,
-  );
+  const outcome = await advanceTown(townAccess(context), bound.townId, bound.dynastyId, at, context.now);
 
   if (outcome.kind === 'gone') {
     context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
@@ -134,16 +124,13 @@ export async function advanceHour(
   });
 
   const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
-  await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
     world: projection,
-    events: outcome.journal.events,
+    events: outcome.events,
     summary: {
       hours: caught.hours,
       skipped: caught.skipped,
-      counts: outcome.journal.counts,
-      refusals: outcome.journal.refusals,
     },
     stateHash: hashJson(projection),
     deletionGraceDays: PACING.deletionGraceDays,

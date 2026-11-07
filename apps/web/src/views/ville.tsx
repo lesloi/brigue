@@ -1,7 +1,7 @@
 import { useState } from 'preact/hooks';
 
 import type { PendingActionView, WorldResponse } from '../api.ts';
-import { eventLine, journalCountsText, ledgerEvents, type LedgerFilter } from '../events.ts';
+import { eventLine, ledgerEvents, type LedgerFilter } from '../events.ts';
 import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
@@ -191,7 +191,7 @@ export function Ville({
               <div class="row empty">
                 <div class="nm">
                   <b>Rien au journal</b>
-                  <p>Rien pour ce filtre depuis votre dernière visite.</p>
+                  <p>Rien pour ce filtre au journal.</p>
                 </div>
               </div>
             ) : (
@@ -395,11 +395,6 @@ export function catchUpText(summary: WorldResponse['summary']): string | null {
   }
   if (summary.skipped > 0) {
     parts.push(`${hours(summary.skipped)} sautée${summary.skipped > 1 ? 's' : ''} faute de place dans le rattrapage.`);
-  }
-
-  const counted = journalCountsText(summary.counts, summary.refusals);
-  if (counted !== null) {
-    parts.push(`En dehors de cette page : ${counted}.`);
   }
 
   return parts.length === 0 ? null : parts.join(' ');

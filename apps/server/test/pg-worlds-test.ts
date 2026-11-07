@@ -211,19 +211,16 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     });
     const read = await withWorld(async (session) => ({
       snapshot: session.snapshot,
-      journal: await session.eventsSince(0, 50, 'leclerc'),
+      events: await session.recentEvents(50, 'leclerc'),
     }));
 
     // Assert
     expect(read.snapshot.world).toEqual(world);
     expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
-    expect(read.journal.events).toEqual(events);
-    expect(read.journal.lastId).toBeGreaterThan(0);
-    expect(read.journal.counts).toEqual({});
-    expect(read.journal.refusals).toEqual({});
+    expect(read.events).toEqual(events);
   });
 
-  it('reads the newest page and counts the entries it leaves behind', async () => {
+  it('reads the newest page in time order, leaving the older lines behind', async () => {
     // Arrange: four town events, one private to another dynasty, read two at a
     // time for this dynasty.
     const world = createWorld(3);
@@ -271,13 +268,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await withWorld(async (session) => {
       await session.save(world, START, events);
     });
-    const page = await withWorld(async (session) => session.eventsSince(0, 2, 'leclerc'));
+    const page = await withWorld(async (session) => session.recentEvents(2, 'leclerc'));
 
-    // Assert: the last two entries, in time order, and the earlier two counted
-    // — one of them a refusal, by reason.
-    expect(page.events).toEqual(events.slice(2));
-    expect(page.counts).toEqual({ 'market.bought': 1, 'action.refused': 1 });
-    expect(page.refusals).toEqual({ insufficient_funds: 1 });
+    // Assert: the last two entries, in time order.
+    expect(page).toEqual(events.slice(2));
   });
 
   it('clears the town, its queue and its journal, and keeps players and the sealed seasons', async () => {
@@ -398,57 +392,63 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
   });
 
-  it('drops the journal older than the cut and keeps the newest page', async () => {
-    // Arrange: two pages and a bit of entries, one per hour.
+  it('drops the journal written before the real-time cut', async () => {
+    // Arrange: 120 entries, the first 49 written a day before the cut.
     await store.createTown(TEST_TOWN.name, createWorld(4), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 120));
     });
+    const cut = new Date('2000-01-08T00:00:00.000Z');
+    await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1 AND at < 50`, [
+      TEST_TOWN.id,
+      new Date('2000-01-01T00:00:00.000Z'),
+    ]);
 
-    // Act: the cut alone would leave twelve entries; the page floor keeps the
-    // newest fifty whatever their age.
-    await store.pruneJournal(TEST_TOWN.id, 109);
+    // Act
+    await store.pruneJournal(TEST_TOWN.id, cut);
 
-    // Assert
-    const page = await withWorld(async (session) => session.eventsSince(0, 100, 'leclerc'));
+    // Assert: the town hour plays no part; the write instant decides.
+    const page = await withWorld(async (session) => session.recentEvents(120, 'leclerc'));
     const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
-    expect(page.events.map((event) => event.at)).toEqual(range(71, 120));
-    expect(rows.rows[0]?.count).toBe(50);
+    expect(page.map((event) => event.at)).toEqual(range(50, 120));
+    expect(rows.rows[0]?.count).toBe(71);
   });
 
-  it('keeps the entry exactly on the cut', async () => {
+  it('keeps the entry written exactly on the cut', async () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(5), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 120));
     });
+    const cut = new Date('2026-11-07T00:00:00.000Z');
+    await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [TEST_TOWN.id, cut]);
 
-    // Act: seventy-one entries are at or after the cut, so the page floor does
-    // not decide the boundary.
-    await store.pruneJournal(TEST_TOWN.id, 50);
+    // Act
+    await store.pruneJournal(TEST_TOWN.id, cut);
 
     // Assert
-    const rows = await pool.query<{ count: number; oldest: number }>(
-      `SELECT count(*)::int AS count, min(at)::int AS oldest FROM events WHERE town_id = $1`,
-      [TEST_TOWN.id],
-    );
-    expect(rows.rows[0]).toEqual({ count: 71, oldest: 50 });
+    const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
+    expect(rows.rows[0]?.count).toBe(120);
   });
 
-  it('deletes nothing from a journal shorter than a page', async () => {
-    // Arrange: ten entries, all older than the cut.
+  it('leaves no page behind when the whole journal predates the cut', async () => {
+    // Arrange: ten entries, all written before the cut.
     await store.createTown(TEST_TOWN.name, createWorld(6), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 10));
     });
+    const cut = new Date('2000-01-08T00:00:00.000Z');
+    await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [
+      TEST_TOWN.id,
+      new Date('2000-01-01T00:00:00.000Z'),
+    ]);
 
-    // Act: there is no newer page to protect the entries with, so only the
-    // floor keeps them.
-    await store.pruneJournal(TEST_TOWN.id, 1_000);
+    // Act: there is no page floor and no town-hour exception.
+    await store.pruneJournal(TEST_TOWN.id, cut);
 
     // Assert
     const rows = await pool.query('SELECT count(*)::int AS count FROM events WHERE town_id = $1', [TEST_TOWN.id]);
-    expect(rows.rows[0]?.count).toBe(10);
+    expect(rows.rows[0]?.count).toBe(0);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {

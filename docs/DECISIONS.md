@@ -174,7 +174,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The server holds the world; the client renders it.** The client stores nothing: no local save
   to version, to lose with a cleared browser, or to reconcile between two devices. It receives a
-  projection of the world and the events since it last read, and it computes no rule. Revisit if
+  projection of the world and the newest page of its journal, and it computes no rule. Revisit if
   the game has to be playable offline for long stretches.
 
 - **The town moves without a reader; a scheduler advances it.** `tick` is pure, so the server can
@@ -204,15 +204,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   list of queued actions does not advance the town either; the town's own hour is the only
   applied verdict, and the wall clock only bounds how far ahead an action may be placed.
 
-- **The journal is a feed, not an archive.** A scheduler writes events nobody is reading, so every
-  event carries its instant and its audience, the log has growing ids, and the filter by audience
-  happens at read time. Each player holds a cursor outside the world, like the last visit. A read
-  returns the newest fifty events since that cursor in detail, and counts the rest by type and by
-  refusal. Every town pass drops the events older than 168 town hours — seven days when the
-  scheduler keeps pace, `PACING.journalRetentionHours` — keeping the newest fifty whatever their
-  age, so the journal always has a page. The cut follows the town's hour, not the wall clock, so a
-  frozen town keeps its journal, and the table is bounded by a week of the town's own events. The
-  book of kings carries what lasts; the journal carries only what is new.
+- **The journal is a sliding window, not a feed.** A scheduler writes events nobody is reading, so
+  every event carries its hour and its audience, the log has growing ids, and the filter by audience
+  happens at read time. A read returns the newest fifty events the reader may see: there is no
+  per-reader cursor, so one reader's visit can never hide a line from another, and two readers of
+  one town get the same page. In a full town those fifty lines are roughly an hour of the town's
+  life; the seven days below are a ceiling on what is kept, not a history the screen promises.
+  Every town pass drops the events written more than seven real days ago, by the wall clock
+  (`PACING.journalRetentionHours`), so a scheduler stopped longer than a week loses the days before
+  the stop. The book of kings carries what lasts; the journal carries only what is recent.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new

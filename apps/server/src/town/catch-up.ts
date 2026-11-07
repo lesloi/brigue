@@ -1,10 +1,10 @@
-import { humanDynastyOf, type World } from '@brigue/core';
+import { humanDynastyOf, type Event, type World } from '@brigue/core';
 
 import type { PlayerStore } from '../identity/players.ts';
 import type { Logger } from '../logger.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { playDue, type Due } from './scheduler.ts';
-import { HOUR_MS, JOURNAL_PAGE, type JournalPage, type TownInfo, type WorldStore, sessionWorld } from './worlds.ts';
+import { HOUR_MS, JOURNAL_PAGE, type TownInfo, type WorldStore, sessionWorld } from './worlds.ts';
 
 export interface TownAccess {
   /** Accounts, for presence and deletion. */
@@ -13,19 +13,13 @@ export interface TownAccess {
   logger: Logger;
 }
 
-export type TownOutcome = { kind: 'caught'; town: TownInfo; result: Due; journal: JournalPage } | { kind: 'gone' };
+export type TownOutcome = { kind: 'caught'; town: TownInfo; result: Due; events: Event[] } | { kind: 'gone' };
 
 /**
  * A read wakes the town when the scheduler has left it more than an hour
- * behind, and returns what this reader has not seen yet.
+ * behind, and returns the newest page of its journal.
  */
-export function catchUpTown(
-  access: TownAccess,
-  townId: number,
-  dynastyId: string,
-  cursor: number,
-  at: Date,
-): Promise<TownOutcome> {
+export function catchUpTown(access: TownAccess, townId: number, dynastyId: string, at: Date): Promise<TownOutcome> {
   return access.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
     const presence = await synchronisePresence(access, townId, world, at);
@@ -56,9 +50,9 @@ export function catchUpTown(
       await session.save(due.world, due.hourStartedAt, due.events);
     }
 
-    const journal = await session.eventsSince(cursor, JOURNAL_PAGE, dynastyId);
+    const events = await session.recentEvents(JOURNAL_PAGE, dynastyId);
 
-    return { kind: 'caught' as const, town: session.snapshot.town, result: due, journal };
+    return { kind: 'caught' as const, town: session.snapshot.town, result: due, events };
   }, townId);
 }
 
@@ -70,7 +64,6 @@ export function advanceTown(
   access: TownAccess,
   townId: number,
   dynastyId: string,
-  cursor: number,
   at: Date,
   now: () => number,
 ): Promise<TownOutcome> {
@@ -103,13 +96,13 @@ export function advanceTown(
     const savedAt = new Date(now());
     await session.save(due.world, savedAt, due.events);
 
-    const journal = await session.eventsSince(cursor, JOURNAL_PAGE, dynastyId);
+    const events = await session.recentEvents(JOURNAL_PAGE, dynastyId);
 
     return {
       kind: 'caught' as const,
       town: session.snapshot.town,
       result: { ...due, hourStartedAt: savedAt },
-      journal,
+      events,
     };
   }, townId);
 }
