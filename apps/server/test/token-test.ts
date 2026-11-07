@@ -52,13 +52,13 @@ describe('the binding', () => {
     expect((await store.findByTokenHash(player.tokenHash))?.lastSeenAt).toEqual(later);
   });
 
-  it('opens exactly one house', async () => {
+  it('opens exactly one dynasty', async () => {
     const store = new MemoryPlayerStore();
     const leclerc = await issueToken(store, 1, 'leclerc');
     const caron = await issueToken(store, 1, 'caron');
 
-    expect(await authenticate(store, leclerc.token)).toMatchObject({ townId: 1, houseId: 'leclerc' });
-    expect(await authenticate(store, caron.token)).toMatchObject({ townId: 1, houseId: 'caron' });
+    expect(await authenticate(store, leclerc.token)).toMatchObject({ townId: 1, dynastyId: 'leclerc' });
+    expect(await authenticate(store, caron.token)).toMatchObject({ townId: 1, dynastyId: 'caron' });
   });
 
   it.each([undefined, '', 'bgk_', 'not-a-token', `bgk_${'x'.repeat(43)}`])('refuses %j', async (token) => {
@@ -77,7 +77,7 @@ describe('the binding', () => {
     expect(await authenticate(store, token)).toBeNull();
   });
 
-  it('holds one live token per house, and allows a new one after revoke', async () => {
+  it('holds one live token per dynasty, and allows a new one after revoke', async () => {
     const store = new MemoryPlayerStore();
     const first = await issueToken(store, 1, 'leclerc');
 
@@ -92,6 +92,6 @@ describe('the binding', () => {
     const { player } = await issueToken(store, 2, 'herse');
 
     expect(player).not.toHaveProperty('world');
-    expect(player).toMatchObject({ townId: 2, houseId: 'herse' });
+    expect(player).toMatchObject({ townId: 2, dynastyId: 'herse' });
   });
 });

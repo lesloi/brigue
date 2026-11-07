@@ -9,26 +9,26 @@ import type { EngagementKind, GoodId, SeatId, TitleId, Trade } from './world.ts'
  */
 
 /**
- * Who may read an event. The town sees its own affairs; a house sees its ledger;
+ * Who may read an event. The town sees its own affairs; a dynasty sees its ledger;
  * the court sees what is kept for it. A court event is never returned to a
- * house.
+ * dynasty.
  */
-export type Audience = 'town' | 'court' | { houseId: string };
+export type Audience = 'town' | 'court' | { dynastyId: string };
 
 export type Action =
-  | { type: 'market.buy'; houseId: string; good: GoodId; units: number }
-  | { type: 'market.sell'; houseId: string; good: GoodId; units: number }
-  | { type: 'council.campaign'; houseId: string; seatId: SeatId }
-  | { type: 'workshop.build'; houseId: string; trade: Trade }
-  | { type: 'workshop.destroy'; houseId: string; workshopId: string }
-  | { type: 'workshop.upgrade'; houseId: string; workshopId: string }
-  | { type: 'house.buy_title'; houseId: string }
-  | { type: 'house.upgrade_residence'; houseId: string };
+  | { type: 'market.buy'; dynastyId: string; good: GoodId; units: number }
+  | { type: 'market.sell'; dynastyId: string; good: GoodId; units: number }
+  | { type: 'council.campaign'; dynastyId: string; seatId: SeatId }
+  | { type: 'workshop.build'; dynastyId: string; trade: Trade }
+  | { type: 'workshop.destroy'; dynastyId: string; workshopId: string }
+  | { type: 'workshop.upgrade'; dynastyId: string; workshopId: string }
+  | { type: 'dynasty.buy_title'; dynastyId: string }
+  | { type: 'dynasty.upgrade_residence'; dynastyId: string };
 
 export type RefusalReason =
   | 'unknown_action'
-  | 'unknown_house'
-  | 'dormant_house'
+  | 'unknown_dynasty'
+  | 'dormant_dynasty'
   | 'unknown_seat'
   | 'unknown_good'
   | 'invalid_quantity'
@@ -52,12 +52,12 @@ type EventBody =
   | {
       type: 'action.refused';
       action: Action['type'] | 'unknown';
-      houseId: string;
+      dynastyId: string;
       reason: RefusalReason;
     }
   | {
       type: 'market.bought';
-      houseId: string;
+      dynastyId: string;
       good: GoodId;
       units: number;
       priceCents: number;
@@ -66,33 +66,33 @@ type EventBody =
   | { type: 'market.price_changed'; good: GoodId; before: number; after: number }
   | {
       type: 'market.sold';
-      houseId: string;
+      dynastyId: string;
       good: GoodId;
       units: number;
       priceCents: number;
       revenueCents: number;
     }
-  | { type: 'workshop.produced'; houseId: string; good: GoodId; units: number }
-  | { type: 'workshop.overflow'; houseId: string; good: GoodId; refusedUnits: number }
-  | { type: 'workshop.idle'; houseId: string; good: GoodId; input: GoodId; missingUnits: number }
-  | { type: 'workshop.built'; houseId: string; workshopId: string; trade: Trade }
-  | { type: 'workshop.destroyed'; houseId: string; workshopId: string; good: GoodId }
-  | { type: 'workshop.upgraded'; houseId: string; workshopId: string; level: number }
-  | { type: 'workshop.build_lost'; houseId: string; trade: Trade; paidCents: number }
-  | { type: 'house.title_bought'; houseId: string; title: TitleId }
-  | { type: 'house.title_received'; houseId: string; title: TitleId; dueAt: number; resolvedAt: number }
-  | { type: 'house.residence_received'; houseId: string; level: number; dueAt: number; resolvedAt: number }
-  | { type: 'house.renamed'; houseId: string; before: string; after: string }
-  | { type: 'house.upkeep_paid'; houseId: string; amountCents: number }
-  | { type: 'house.penniless'; houseId: string; shortfallCents: number }
-  | { type: 'house.debt_repaid'; houseId: string; amountCents: number }
-  | { type: 'council.campaigned'; houseId: string; seatId: SeatId; favourSpent: number; countsAt: number }
-  | { type: 'engagement.opened'; engagementId: string; kind: EngagementKind; houseId: string; dueAt: number }
+  | { type: 'workshop.produced'; dynastyId: string; good: GoodId; units: number }
+  | { type: 'workshop.overflow'; dynastyId: string; good: GoodId; refusedUnits: number }
+  | { type: 'workshop.idle'; dynastyId: string; good: GoodId; input: GoodId; missingUnits: number }
+  | { type: 'workshop.built'; dynastyId: string; workshopId: string; trade: Trade }
+  | { type: 'workshop.destroyed'; dynastyId: string; workshopId: string; good: GoodId }
+  | { type: 'workshop.upgraded'; dynastyId: string; workshopId: string; level: number }
+  | { type: 'workshop.build_lost'; dynastyId: string; trade: Trade; paidCents: number }
+  | { type: 'dynasty.title_bought'; dynastyId: string; title: TitleId }
+  | { type: 'dynasty.title_received'; dynastyId: string; title: TitleId; dueAt: number; resolvedAt: number }
+  | { type: 'dynasty.residence_received'; dynastyId: string; level: number; dueAt: number; resolvedAt: number }
+  | { type: 'dynasty.renamed'; dynastyId: string; before: string; after: string }
+  | { type: 'dynasty.upkeep_paid'; dynastyId: string; amountCents: number }
+  | { type: 'dynasty.penniless'; dynastyId: string; shortfallCents: number }
+  | { type: 'dynasty.debt_repaid'; dynastyId: string; amountCents: number }
+  | { type: 'council.campaigned'; dynastyId: string; seatId: SeatId; favourSpent: number; countsAt: number }
+  | { type: 'engagement.opened'; engagementId: string; kind: EngagementKind; dynastyId: string; dueAt: number }
   | {
       type: 'engagement.resolved';
       engagementId: string;
       kind: EngagementKind;
-      houseId: string;
+      dynastyId: string;
       seatId?: SeatId;
       dueAt: number;
       /** The hour the town actually reached: equal to `dueAt` unless late. */
@@ -102,18 +102,18 @@ type EventBody =
   | {
       type: 'council.election_held';
       seatId: SeatId;
-      winnerHouseId: string;
+      winnerDynastyId: string;
       votes: Record<string, number>;
     };
 
 /** An event as a step builds it: the hour is stamped by `advance`. */
 export type EventDraft = EventBody & { audience: Audience };
 
-/** What one house may read of an hour: every event carries the hour it happened on. */
+/** What one dynasty may read of an hour: every event carries the hour it happened on. */
 export type Event = EventDraft & { at: number };
 
-/** What one house may read of an hour. The court has no reader yet. */
-export function isVisibleTo(event: EventDraft, houseId: string): boolean {
+/** What one dynasty may read of an hour. The court has no reader yet. */
+export function isVisibleTo(event: EventDraft, dynastyId: string): boolean {
   if (event.audience === 'town') {
     return true;
   }
@@ -121,9 +121,9 @@ export function isVisibleTo(event: EventDraft, houseId: string): boolean {
     return false;
   }
 
-  return event.audience.houseId === houseId;
+  return event.audience.dynastyId === dynastyId;
 }
 
-export function visibleTo(events: readonly Event[], houseId: string): Event[] {
-  return events.filter((event) => isVisibleTo(event, houseId));
+export function visibleTo(events: readonly Event[], dynastyId: string): Event[] {
+  return events.filter((event) => isVisibleTo(event, dynastyId));
 }

@@ -82,7 +82,7 @@ button:disabled {
   padding-bottom: calc(104px + env(safe-area-inset-bottom));
 }
 
-.hero-house {
+.hero-dynasty {
   height: 168px;
   margin-bottom: 26px;
 }
@@ -1042,7 +1042,7 @@ button:disabled {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.gate-card .house-name {
+.gate-card .dynasty-name {
   margin-bottom: 2px;
 }
 

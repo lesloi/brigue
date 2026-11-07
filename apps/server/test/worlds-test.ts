@@ -46,7 +46,7 @@ describe('the town store', () => {
   });
 
   it('lists the least-filled town first, the oldest on a tie', async () => {
-    // Arrange: an older town of four houses and a younger one of three.
+    // Arrange: an older town of four dynasties and a younger one of three.
     const store = new MemoryWorldStore();
     const old = await store.createTown('Old', town(1), new Date());
     const young = await store.createTown('New', createWorld(2), new Date());

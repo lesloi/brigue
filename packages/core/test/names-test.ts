@@ -1,22 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  HOUSE_NAMES,
+  DYNASTY_NAMES,
   createWorld,
   isValidName,
   nameIsTaken,
   nameKey,
   NAME_MAX_LENGTH,
   NAME_PRICE,
-  renameHouse,
+  renameDynasty,
   RULES,
   sanitizeName,
-  withFirstHouse,
-  houseRenamed,
+  withFirstDynasty,
+  dynastyRenamed,
   type Action,
   type World,
 } from '../src/index.ts';
-import { TEST_FIRST_HOUSE, tick, town } from './helpers.ts';
+import { TEST_FIRST_DYNASTY, tick, town } from './helpers.ts';
 
 const SEED = 20261107;
 
@@ -66,11 +66,11 @@ describe('a name as it is kept', () => {
 });
 
 describe('a name taken in the town', () => {
-  it('refuses what another house carries, whatever its case, and accepts its own', () => {
+  it('refuses what another dynasty carries, whatever its case, and accepts its own', () => {
     // Arrange
-    const names = Object.values(town(SEED).houses).map((house) => house.name);
+    const names = Object.values(town(SEED).dynasties).map((dynasty) => dynasty.name);
 
-    // Act and assert: the renamed house's own name is asked without it.
+    // Act and assert: the renamed dynasty's own name is asked without it.
     expect(nameIsTaken(names, 'caron')).toBe(true);
     expect(nameIsTaken(names, 'CARON')).toBe(true);
     expect(nameIsTaken(names, 'Moreau')).toBe(false);
@@ -87,7 +87,7 @@ describe('the rename as the town asks for it', () => {
   it('refuses the queued rename: a name is identity, not a trade of the hour', () => {
     // Arrange
     const world = town(SEED);
-    const queued = { type: 'house.rename', houseId: 'leclerc', name: 'Moreau' } as unknown as Action;
+    const queued = { type: 'dynasty.rename', dynastyId: 'leclerc', name: 'Moreau' } as unknown as Action;
 
     // Act
     const { world: after, events } = tick(world, [queued]);
@@ -95,45 +95,45 @@ describe('the rename as the town asks for it', () => {
     // Assert: refused as an action the town does not know, and the name did not
     // move — the upkeep of the hour is all that touched the purse.
     expect(events).toContainEqual(expect.objectContaining({ type: 'action.refused', reason: 'unknown_action' }));
-    expect(after.houses.leclerc?.name).toBe('Leclerc');
-    expect(after.houses.leclerc?.treasuryCents).toBe(
-      (world.houses.leclerc?.treasuryCents ?? 0) - RULES.upkeepPerWorkshopLevelCents * 2,
+    expect(after.dynasties.leclerc?.name).toBe('Leclerc');
+    expect(after.dynasties.leclerc?.treasuryCents).toBe(
+      (world.dynasties.leclerc?.treasuryCents ?? 0) - RULES.upkeepPerWorkshopLevelCents * 2,
     );
   });
 });
 
-describe('renaming a house', () => {
-  it('renames the house and its living people, keeping the id and the dead, and charges the price', () => {
-    // Arrange: a house with the founder alive and an ancestor dead.
+describe('renaming a dynasty', () => {
+  it('renames the dynasty and its living people, keeping the id and the dead, and charges the price', () => {
+    // Arrange: a dynasty with the founder alive and an ancestor dead.
     const world = town(SEED);
     world.people['person-leclerc-old'] = {
       id: 'person-leclerc-old',
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       name: 'Hugues Leclerc',
       age: 80,
       attributes: { artisanat: 10, parole: 10, intrigue: 10 },
       alive: false,
     };
-    const treasury = world.houses.leclerc?.treasuryCents ?? 0;
+    const treasury = world.dynasties.leclerc?.treasuryCents ?? 0;
 
     // Act
-    const outcome = renameHouse(world, world.houses.leclerc!, {
+    const outcome = renameDynasty(world, world.dynasties.leclerc!, {
       name: '  Moreau ',
       priceCents: NAME_PRICE.renameCents,
     });
 
     // Assert: the name is identity, not trade, so the town is told of it.
     expect(outcome).toEqual({ ok: true, name: 'Moreau' });
-    expect(houseRenamed(world.houses.leclerc!, 'Leclerc')).toEqual({
-      type: 'house.renamed',
+    expect(dynastyRenamed(world.dynasties.leclerc!, 'Leclerc')).toEqual({
+      type: 'dynasty.renamed',
       audience: 'town',
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       before: 'Leclerc',
       after: 'Moreau',
     });
-    expect(world.houses.leclerc?.id).toBe('leclerc');
-    expect(world.houses.leclerc?.name).toBe('Moreau');
-    expect(world.houses.leclerc?.treasuryCents).toBe(treasury - NAME_PRICE.renameCents);
+    expect(world.dynasties.leclerc?.id).toBe('leclerc');
+    expect(world.dynasties.leclerc?.name).toBe('Moreau');
+    expect(world.dynasties.leclerc?.treasuryCents).toBe(treasury - NAME_PRICE.renameCents);
     expect(world.people['person-leclerc']?.name).toBe('Colin Moreau');
     expect(world.people['person-leclerc-old']?.name).toBe('Hugues Leclerc');
   });
@@ -141,14 +141,14 @@ describe('renaming a house', () => {
   it('changes the name for nothing at creation, and writes no journal line', () => {
     // Arrange
     const world = town(SEED);
-    const treasury = world.houses.leclerc?.treasuryCents ?? 0;
+    const treasury = world.dynasties.leclerc?.treasuryCents ?? 0;
 
-    // Act: the first house takes the name its player kept.
-    const outcome = renameHouse(world, world.houses.leclerc!, { name: 'Moreau', priceCents: 0 });
+    // Act: the first dynasty takes the name its player kept.
+    const outcome = renameDynasty(world, world.dynasties.leclerc!, { name: 'Moreau', priceCents: 0 });
 
     // Assert: kept, and unpaid.
     expect(outcome).toEqual({ ok: true, name: 'Moreau' });
-    expect(world.houses.leclerc?.treasuryCents).toBe(treasury);
+    expect(world.dynasties.leclerc?.treasuryCents).toBe(treasury);
     expect(world.people['person-leclerc']?.name).toBe('Colin Moreau');
   });
 
@@ -166,67 +166,67 @@ describe('renaming a house', () => {
       const world = town(SEED);
 
       // Act
-      const outcome = renameHouse(world, world.houses.leclerc!, {
+      const outcome = renameDynasty(world, world.dynasties.leclerc!, {
         name: attempt.name,
         priceCents: attempt.priceCents,
       });
 
-      // Assert: a refusal comes back as an answer, not a throw, and the house stays.
+      // Assert: a refusal comes back as an answer, not a throw, and the dynasty stays.
       expect(outcome).toEqual({ ok: false, reason: attempt.reason });
-      expect(world.houses.leclerc?.name).toBe('Leclerc');
-      expect(world.houses.leclerc?.treasuryCents).toBe(town(SEED).houses.leclerc?.treasuryCents);
+      expect(world.dynasties.leclerc?.name).toBe('Leclerc');
+      expect(world.dynasties.leclerc?.treasuryCents).toBe(town(SEED).dynasties.leclerc?.treasuryCents);
     }
   });
 
-  it('refuses a name a human house of another town carries, and lets an AI name through', () => {
-    // Arrange: another town with a human Caron, and a human house of this seed.
+  it('refuses a name a human dynasty of another town carries, and lets an AI name through', () => {
+    // Arrange: another town with a human Caron, and a human dynasty of this seed.
     const world = town(SEED);
     const elsewhere = new Set([nameKey('Caron')]);
 
     // Act
-    const refused = renameHouse(world, world.houses.leclerc!, {
+    const refused = renameDynasty(world, world.dynasties.leclerc!, {
       name: 'CARON',
       priceCents: 0,
       takenElsewhere: elsewhere,
     });
-    const accepted = renameHouse(world, world.houses.leclerc!, {
+    const accepted = renameDynasty(world, world.dynasties.leclerc!, {
       name: 'Moreau',
       priceCents: 0,
       takenElsewhere: new Set(),
     });
 
-    // Assert: a human house elsewhere collides, whatever its case.
+    // Assert: a human dynasty elsewhere collides, whatever its case.
     expect(refused).toEqual({ ok: false, reason: 'name_taken' });
     expect(accepted).toEqual({ ok: true, name: 'Moreau' });
   });
 });
 
 describe('the creation', () => {
-  it('names the first house from what it is given, with an id that is not its name', () => {
+  it('names the first dynasty from what it is given, with an id that is not its name', () => {
     // Arrange
-    const identity = { ...TEST_FIRST_HOUSE, id: 'house-7f3a', houseName: 'Moreau', personName: 'Colin Moreau' };
+    const identity = { ...TEST_FIRST_DYNASTY, id: 'dynasty-7f3a', dynastyName: 'Moreau', personName: 'Colin Moreau' };
 
     // Act
-    const world = withFirstHouse(createWorld(SEED), 'weaver', identity);
+    const world = withFirstDynasty(createWorld(SEED), 'weaver', identity);
 
     // Assert
-    expect(world.houses['house-7f3a']?.name).toBe('Moreau');
-    expect(world.people['person-house-7f3a']?.name).toBe('Colin Moreau');
+    expect(world.dynasties['dynasty-7f3a']?.name).toBe('Moreau');
+    expect(world.people['person-dynasty-7f3a']?.name).toBe('Colin Moreau');
   });
 });
 
 describe('the suggested names', () => {
-  it('never carries an AI house name and never repeats itself', () => {
+  it('never carries an AI dynasty name and never repeats itself', () => {
     // Arrange
     const seen = new Set<string>();
 
     // Act
-    for (const name of HOUSE_NAMES) {
+    for (const name of DYNASTY_NAMES) {
       seen.add(nameKey(name));
     }
 
     // Assert: the pool is distinct on the key the uniqueness reads.
-    expect(seen.size).toBe(HOUSE_NAMES.length);
+    expect(seen.size).toBe(DYNASTY_NAMES.length);
     for (const ai of ['Caron', 'Fournier', 'Charpentier']) {
       expect(seen.has(nameKey(ai))).toBe(false);
     }
@@ -238,6 +238,6 @@ describe('the suggested names', () => {
 
     // Assert: the price is calibration, and the world holds no rule of its own.
     expect(NAME_PRICE.renameCents).toBeGreaterThan(0);
-    expect(Object.values(world.houses).length).toBe(3);
+    expect(Object.values(world.dynasties).length).toBe(3);
   });
 });

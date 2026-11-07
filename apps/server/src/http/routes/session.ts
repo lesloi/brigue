@@ -3,20 +3,20 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
   createWorld,
-  humanHouseOf,
-  renameHouse,
+  humanDynastyOf,
+  renameDynasty,
   RULES,
   TRADES,
-  withFirstHouse,
+  withFirstDynasty,
   withNewcomer,
   type NameRefusal,
   type Trade,
   type World,
 } from '@brigue/core';
 
-import { closingOf, HouseAlreadyBoundError, type Player } from '../../identity/players.ts';
+import { closingOf, DynastyAlreadyBoundError, type Player } from '../../identity/players.ts';
 import { authenticate, issueToken } from '../../identity/session.ts';
-import { drawHouseIdentity, drawTownName } from '../../town/names.ts';
+import { drawDynastyIdentity, drawTownName } from '../../town/names.ts';
 import { NameInUseError, sessionWorld, UnknownWorldError, type TownInfo } from '../../town/worlds.ts';
 import { identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readSessionCookie, sessionCookie } from '../cookies.ts';
@@ -101,13 +101,13 @@ export async function openSession(
     return;
   }
 
-  // The cookie is an identity too: an account a reset left without a house
+  // The cookie is an identity too: an account a reset left without a dynasty
   // takes a new one with the trade it chooses, instead of a second account.
   // The choice is an explicit action; no read ever binds.
   const cookiePlayer = await authenticate(context.deps.store, readSessionCookie(request.headers.cookie));
 
   if (cookiePlayer !== null) {
-    await chooseHouse(context, response, ip, cookiePlayer, trade as Trade, claim);
+    await chooseDynasty(context, response, ip, cookiePlayer, trade as Trade, claim);
     return;
   }
 
@@ -146,12 +146,12 @@ async function resumeSession(context: AppContext, response: ServerResponse, ip: 
   }
 
   if (closingOf(player, new Date(context.now())).kind === 'due') {
-    context.deps.logger.warn('session.deletion_due', { ip, townId: player.townId, houseId: player.houseId });
+    context.deps.logger.warn('session.deletion_due', { ip, townId: player.townId, dynastyId: player.dynastyId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
 
-  context.deps.logger.info('session.opened', { ip, townId: player.townId, houseId: player.houseId });
+  context.deps.logger.info('session.opened', { ip, townId: player.townId, dynastyId: player.dynastyId });
   sendJson(response, 200, sessionBody(player), { 'Set-Cookie': sessionCookie(token, context.secureCookies) });
 }
 
@@ -174,16 +174,16 @@ async function joinTown(
       const candidate = await claim();
       const elsewhere = await humanNamesElsewhere(context);
       const placed = await takePlace(context, trade, candidate, elsewhere, at);
-      const { token } = await issueToken(context.deps.store, placed.town.id, placed.houseId, at);
+      const { token } = await issueToken(context.deps.store, placed.town.id, placed.dynastyId, at);
 
-      return { townId: placed.town.id, houseId: placed.houseId, token };
+      return { townId: placed.town.id, dynastyId: placed.dynastyId, token };
     });
 
-    context.deps.logger.info('session.joined', { ip, townId: joined.townId, houseId: joined.houseId });
+    context.deps.logger.info('session.joined', { ip, townId: joined.townId, dynastyId: joined.dynastyId });
     sendJson(
       response,
       201,
-      { townId: joined.townId, houseId: joined.houseId, token: joined.token },
+      { townId: joined.townId, dynastyId: joined.dynastyId, token: joined.token },
       { 'Set-Cookie': sessionCookie(joined.token, context.secureCookies) },
     );
   } catch (error) {
@@ -195,12 +195,12 @@ async function joinTown(
 }
 
 /**
- * The trade of an account that already holds a live cookie. A house-less
- * account gets a house back — the token and the player id stay — and a bound
+ * The trade of an account that already holds a live cookie. A dynasty-less
+ * account gets a dynasty back — the token and the player id stay — and a bound
  * one just gets its session again, so a retried tap never opens a second
  * account. Refused while a deletion is scheduled or due, like every route.
  */
-async function chooseHouse(
+async function chooseDynasty(
   context: AppContext,
   response: ServerResponse,
   ip: string,
@@ -239,14 +239,14 @@ async function chooseHouse(
       if (current.revokedAt !== null) {
         return { kind: 'refused' as const };
       }
-      if (current.houseId !== null) {
+      if (current.dynastyId !== null) {
         return { kind: 'bound' as const, player: current };
       }
 
       const candidate = await claim();
       const elsewhere = await humanNamesElsewhere(context);
       const placed = await takePlace(context, trade, candidate, elsewhere, at);
-      const rebound = await context.deps.store.rebind(player.tokenHash, placed.town.id, placed.houseId, at);
+      const rebound = await context.deps.store.rebind(player.tokenHash, placed.town.id, placed.dynastyId, at);
 
       return rebound === null ? { kind: 'refused' as const } : { kind: 'rebound' as const, player: rebound };
     });
@@ -273,7 +273,7 @@ async function chooseHouse(
       ip,
       playerId: outcome.player.playerId,
       townId: outcome.player.townId,
-      houseId: outcome.player.houseId,
+      dynastyId: outcome.player.dynastyId,
     });
   }
   // No new token: the returning account keeps its own, and there is nothing
@@ -288,9 +288,9 @@ async function refusedJoin(
   ip: string,
   error: unknown,
 ): Promise<boolean> {
-  if (error instanceof HouseAlreadyBoundError) {
-    context.deps.logger.warn('session.no_free_house', { ip });
-    sendJson(response, 409, { error: 'no_free_house' });
+  if (error instanceof DynastyAlreadyBoundError) {
+    context.deps.logger.warn('session.no_free_dynasty', { ip });
+    sendJson(response, 409, { error: 'no_free_dynasty' });
     return true;
   }
   if (error instanceof NameRefusedError) {
@@ -310,7 +310,7 @@ async function refusedJoin(
   return false;
 }
 
-/** The name a join kept is one the server already carries, in a human house. */
+/** The name a join kept is one the server already carries, in a human dynasty. */
 class NameTakenError extends Error {
   constructor() {
     super('the name is taken');
@@ -319,10 +319,10 @@ class NameTakenError extends Error {
 }
 
 /**
- * The place a join takes: a free house in a town, else a town of its own. The
+ * The place a join takes: a free dynasty in a town, else a town of its own. The
  * caller holds the join lock, so two joins never take the same place, and the
  * place is written here — before the token, so a failure after it leaves a
- * house the next join takes, under that join's own name. The house it returns
+ * dynasty the next join takes, under that join's own name. The dynasty it returns
  * is the one written: the place's own id when it waited, the candidate's when
  * it is new.
  */
@@ -332,7 +332,7 @@ async function takePlace(
   candidate: Candidate,
   elsewhere: ReadonlySet<string>,
   at: Date,
-): Promise<{ town: TownInfo; houseId: string }> {
+): Promise<{ town: TownInfo; dynastyId: string }> {
   for (const town of await context.deps.worlds.listTowns()) {
     let placed: string | null;
 
@@ -350,24 +350,24 @@ async function takePlace(
     }
 
     if (placed !== null) {
-      return { town, houseId: placed };
+      return { town, dynastyId: placed };
     }
   }
 
   const name = drawTownName();
   const world = createWorld(randomSeed());
-  const houseId = settle(world, trade, candidate, elsewhere, 'first');
+  const dynastyId = settle(world, trade, candidate, elsewhere, 'first');
 
-  return { town: await context.deps.worlds.createTown(name, world, at), houseId };
+  return { town: await context.deps.worlds.createTown(name, world, at), dynastyId };
 }
 
 /**
- * The place a newcomer takes in a town: a human house no player has ever taken
+ * The place a newcomer takes in a town: a human dynasty no player has ever taken
  * (the one the town was just created with, or a place whose token was never
- * issued), else a new human house until the town is full. A house a player has
+ * issued), else a new human dynasty until the town is full. A dynasty a player has
  * taken stays theirs while it is silent — a revoked token does not give it away
  * — until the silence rule deletes it. A full town offers nothing; the join
- * moves on. A town whose last human house has gone is on its way out, and is
+ * moves on. A town whose last human dynasty has gone is on its way out, and is
  * left alone.
  */
 async function takePlaceIn(
@@ -380,50 +380,52 @@ async function takePlaceIn(
   return context.deps.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
 
-    if (humanHouseOf(world) === undefined) {
+    if (humanDynastyOf(world) === undefined) {
       return null;
     }
 
     const players = await context.deps.store.listByTown(town.id);
-    const taken = new Set(players.map((player) => player.houseId));
-    const free = Object.values(world.houses).find((house) => house.controller === 'human' && !taken.has(house.id));
+    const taken = new Set(players.map((player) => player.dynastyId));
+    const free = Object.values(world.dynasties).find(
+      (dynasty) => dynasty.controller === 'human' && !taken.has(dynasty.id),
+    );
 
     if (free !== undefined) {
       // The place waits with the name its first player would have had: the one
       // this player kept takes over, unpaid, as at creation.
       const next = structuredClone(world);
-      const outcome = renameHouse(next, next.houses[free.id]!, {
-        name: candidate.houseName,
+      const outcome = renameDynasty(next, next.dynasties[free.id]!, {
+        name: candidate.dynastyName,
         priceCents: 0,
         takenElsewhere: elsewhere,
       });
       if (!outcome.ok) {
-        throw refusalOf(outcome.reason, candidate.houseName);
+        throw refusalOf(outcome.reason, candidate.dynastyName);
       }
 
       await session.save(next, session.snapshot.hourStartedAt, []);
       return free.id;
     }
-    if (Object.keys(world.houses).length >= RULES.houseCap) {
+    if (Object.keys(world.dynasties).length >= RULES.dynastyCap) {
       return null;
     }
 
     const next = structuredClone(world);
-    const houseId = settle(next, trade, candidate, elsewhere, 'newcomer');
+    const dynastyId = settle(next, trade, candidate, elsewhere, 'newcomer');
     await session.save(next, session.snapshot.hourStartedAt, []);
 
-    return houseId;
+    return dynastyId;
   }, town.id);
 }
 
 /**
- * Adds a house under the name it kept, and gives the world back changed in
+ * Adds a dynasty under the name it kept, and gives the world back changed in
  * place: the identity carries an opaque id, the name is the player's, and the
  * person is named after it. The two builders share that shape, and the name is
- * judged here — against the houses of the town and the human ones elsewhere —
- * before the caller writes anything. Returns the id the house was written
+ * judged here — against the dynasties of the town and the human ones elsewhere —
+ * before the caller writes anything. Returns the id the dynasty was written
  * under: the candidate's, unless this world already holds it, in which case a
- * client is replaying a candidate and the house is minted again rather than
+ * client is replaying a candidate and the dynasty is minted again rather than
  * overwriting the one that carries the id.
  */
 function settle(
@@ -433,27 +435,33 @@ function settle(
   elsewhere: ReadonlySet<string>,
   kind: 'first' | 'newcomer',
 ): string {
-  const houseId = Object.hasOwn(world.houses, candidate.id) ? drawHouseIdentity(candidate.houseName).id : candidate.id;
+  const dynastyId = Object.hasOwn(world.dynasties, candidate.id)
+    ? drawDynastyIdentity(candidate.dynastyName).id
+    : candidate.id;
   const firstName = candidate.personName.split(' ')[0] ?? '';
   const identity = {
-    id: houseId,
-    houseName: candidate.houseName,
-    personName: `${firstName} ${candidate.houseName}`.trim(),
+    id: dynastyId,
+    dynastyName: candidate.dynastyName,
+    personName: `${firstName} ${candidate.dynastyName}`.trim(),
   };
-  const placed = kind === 'first' ? withFirstHouse(world, trade, identity) : withNewcomer(world, trade, identity);
-  const house = placed.houses[houseId];
-  if (house === undefined) {
-    throw new Error(`the house ${houseId} was not added to the world`);
+  const placed = kind === 'first' ? withFirstDynasty(world, trade, identity) : withNewcomer(world, trade, identity);
+  const dynasty = placed.dynasties[dynastyId];
+  if (dynasty === undefined) {
+    throw new Error(`the dynasty ${dynastyId} was not added to the world`);
   }
 
-  const outcome = renameHouse(placed, house, { name: candidate.houseName, priceCents: 0, takenElsewhere: elsewhere });
+  const outcome = renameDynasty(placed, dynasty, {
+    name: candidate.dynastyName,
+    priceCents: 0,
+    takenElsewhere: elsewhere,
+  });
   if (!outcome.ok) {
-    throw refusalOf(outcome.reason, candidate.houseName);
+    throw refusalOf(outcome.reason, candidate.dynastyName);
   }
 
   Object.assign(world, placed);
 
-  return houseId;
+  return dynastyId;
 }
 
 /**
@@ -476,7 +484,7 @@ class NameRefusedError extends Error {
 function sessionBody(player: Player): Record<string, unknown> {
   return {
     townId: player.townId,
-    houseId: player.houseId,
+    dynastyId: player.dynastyId,
     deletionAfter: player.deleteAfter?.toISOString() ?? null,
   };
 }

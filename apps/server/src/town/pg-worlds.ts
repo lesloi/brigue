@@ -97,7 +97,7 @@ export class PgWorldStore implements WorldStore {
     const { rows } = await this.pool.query<{ id: string; name: string }>(
       `SELECT t.id, t.name
        FROM towns t
-       LEFT JOIN houses h ON h.town_id = t.id
+       LEFT JOIN dynasties h ON h.town_id = t.id
        GROUP BY t.id, t.name, t.created_at
        ORDER BY count(h.id), t.created_at, t.id`,
     );
@@ -106,10 +106,10 @@ export class PgWorldStore implements WorldStore {
   }
 
   async listHumanNames(): Promise<string[]> {
-    // Only human houses: the three AI houses carry the same names in every
+    // Only human dynasties: the three AI dynasties carry the same names in every
     // town, and the partial index on the table is the same filter.
     const { rows } = await this.pool.query<{ name: string }>(
-      `SELECT name FROM houses WHERE controller = 'human' ORDER BY name`,
+      `SELECT name FROM dynasties WHERE controller = 'human' ORDER BY name`,
     );
 
     return rows.map((row) => row.name);
@@ -194,7 +194,7 @@ class PgWorldSession implements WorldSession {
    * The keys of a town read from a schema before the column. The read carries
    * the names, and `writeWorld` writes every key; what a town read by an older
    * server left as `'legacy:…'` is replaced here, one statement, and only where
-   * no human house already holds the key. The reservation is not a name, so
+   * no human dynasty already holds the key. The reservation is not a name, so
    * the second statement only fires for a town the old index never saw twice.
    */
   private async fillUnkeyedKeys(): Promise<void> {
@@ -203,14 +203,14 @@ class PgWorldSession implements WorldSession {
     }
 
     await this.client.query(
-      `UPDATE houses SET name_key = $2 || town_id || '-' || id WHERE town_id = $1 AND name_key = ''`,
+      `UPDATE dynasties SET name_key = $2 || town_id || '-' || id WHERE town_id = $1 AND name_key = ''`,
       [this.townId, LEGACY_KEY_PREFIX],
     );
   }
 
   async actionsBetween(from: number, to: number): Promise<StoredAction[]> {
     const { rows } = await this.client.query(
-      `SELECT id, house_id, plays_at, action, received_at, cancelled_at
+      `SELECT id, dynasty_id, plays_at, action, received_at, cancelled_at
        FROM actions
        WHERE town_id = $3 AND plays_at BETWEEN $1 AND $2 AND cancelled_at IS NULL
        ORDER BY plays_at, seq`,
@@ -220,16 +220,16 @@ class PgWorldSession implements WorldSession {
     return rows.map(rowToStoredAction);
   }
 
-  async eventsSince(afterId: number, limit: number, houseId: string): Promise<JournalPage> {
-    // House-visible in one place, so the page and its counts cannot disagree.
-    const visible = `(audience = 'town' OR (audience = 'house' AND house_id = $2))`;
+  async eventsSince(afterId: number, limit: number, dynastyId: string): Promise<JournalPage> {
+    // Dynasty-visible in one place, so the page and its counts cannot disagree.
+    const visible = `(audience = 'town' OR (audience = 'dynasty' AND dynasty_id = $2))`;
     const { rows } = await this.client.query(
-      `SELECT id, at, audience, house_id, type, payload
+      `SELECT id, at, audience, dynasty_id, type, payload
        FROM events
        WHERE town_id = $4 AND id > $1 AND ${visible}
        ORDER BY id DESC
        LIMIT $3`,
-      [afterId, houseId, limit, this.townId],
+      [afterId, dynastyId, limit, this.townId],
     );
     // The query walks back from the newest; the page reads forward in time.
     const newest = rows.slice().reverse();
@@ -244,7 +244,7 @@ class PgWorldSession implements WorldSession {
          FROM events
          WHERE town_id = $4 AND id > $1 AND id < $3 AND ${visible}
          GROUP BY type, payload->>'reason'`,
-        [afterId, houseId, oldest, this.townId],
+        [afterId, dynastyId, oldest, this.townId],
       );
       foldGrouped(tally, grouped.map(toGroupedCount));
     }
@@ -253,10 +253,10 @@ class PgWorldSession implements WorldSession {
   }
 
   async findAction(id: string): Promise<StoredAction | null> {
-    // Scoped to the town: another town's house may carry the same id, and its
+    // Scoped to the town: another town's dynasty may carry the same id, and its
     // action must be as unknown here as an id that was never issued.
     const { rows } = await this.client.query(
-      `SELECT id, house_id, plays_at, action, received_at, cancelled_at
+      `SELECT id, dynasty_id, plays_at, action, received_at, cancelled_at
        FROM actions
        WHERE id = $1 AND town_id = $2`,
       [id, this.townId],
@@ -269,9 +269,9 @@ class PgWorldSession implements WorldSession {
   async append(action: StoredAction): Promise<void> {
     try {
       await this.client.query(
-        `INSERT INTO actions (id, town_id, house_id, plays_at, action, received_at)
+        `INSERT INTO actions (id, town_id, dynasty_id, plays_at, action, received_at)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [action.id, this.townId, action.houseId, action.playsAt, json(action.action), action.receivedAt],
+        [action.id, this.townId, action.dynastyId, action.playsAt, json(action.action), action.receivedAt],
       );
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -290,17 +290,17 @@ class PgWorldSession implements WorldSession {
     );
   }
 
-  async cancelHouse(houseId: string, at: Date): Promise<void> {
+  async cancelDynasty(dynastyId: string, at: Date): Promise<void> {
     await this.client.query(
       `UPDATE actions
        SET cancelled_at = $3
-       WHERE town_id = $1 AND house_id = $2 AND cancelled_at IS NULL`,
-      [this.townId, houseId, at],
+       WHERE town_id = $1 AND dynasty_id = $2 AND cancelled_at IS NULL`,
+      [this.townId, dynastyId, at],
     );
   }
 
   async clear(): Promise<void> {
-    // The town goes whole — its state, houses, actions and journal — and the
+    // The town goes whole — its state, dynasties, actions and journal — and the
     // player rows and the sealed seasons, which live outside it, stay. Deleting
     // the town row cascades every town table.
     await this.client.query(`DELETE FROM towns WHERE id = $1`, [this.townId]);
@@ -344,35 +344,40 @@ async function readWorld(client: PoolClient, townId: number): Promise<{ snapshot
     throw new UnknownWorldError();
   }
 
-  const [houses, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all([
-    client.query(
-      `SELECT id, name, name_key, controller, treasury_cents, debt_cents, favour, prestige, title, residence_level, career, dormant FROM houses WHERE town_id = $1 ORDER BY id`,
-      [townId],
-    ),
-    client.query(
-      `SELECT id, house_id, name, age, artisanat, parole, intrigue, alive FROM people WHERE town_id = $1 ORDER BY id`,
-      [townId],
-    ),
-    client.query(`SELECT house_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY house_id, id`, [townId]),
-    client.query(`SELECT house_id, good, units FROM stock WHERE town_id = $1 ORDER BY house_id, good`, [townId]),
-    client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
-    client.query(
-      `SELECT id, position, title, sponsor_house_id, enacted_at FROM laws WHERE town_id = $1 ORDER BY position`,
-      [townId],
-    ),
-    client.query(
-      `SELECT id, kind, house_id, due_at, work, trade, workshop_id, position FROM engagements WHERE town_id = $1 ORDER BY position`,
-      [townId],
-    ),
-    client.query(
-      `SELECT seat_id, house_id, closed, votes FROM campaigns WHERE town_id = $1 ORDER BY seat_id, house_id`,
-      [townId],
-    ),
-    client.query(`SELECT good, price_cents, flow_units FROM market WHERE town_id = $1 ORDER BY good`, [townId]),
-    client.query(`SELECT good, position, price_cents FROM market_history WHERE town_id = $1 ORDER BY good, position`, [
-      townId,
-    ]),
-  ]);
+  const [dynasties, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all(
+    [
+      client.query(
+        `SELECT id, name, name_key, controller, treasury_cents, debt_cents, favour, prestige, title, residence_level, career, dormant FROM dynasties WHERE town_id = $1 ORDER BY id`,
+        [townId],
+      ),
+      client.query(
+        `SELECT id, dynasty_id, name, age, artisanat, parole, intrigue, alive FROM people WHERE town_id = $1 ORDER BY id`,
+        [townId],
+      ),
+      client.query(`SELECT dynasty_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY dynasty_id, id`, [
+        townId,
+      ]),
+      client.query(`SELECT dynasty_id, good, units FROM stock WHERE town_id = $1 ORDER BY dynasty_id, good`, [townId]),
+      client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
+      client.query(
+        `SELECT id, position, title, sponsor_dynasty_id, enacted_at FROM laws WHERE town_id = $1 ORDER BY position`,
+        [townId],
+      ),
+      client.query(
+        `SELECT id, kind, dynasty_id, due_at, work, trade, workshop_id, position FROM engagements WHERE town_id = $1 ORDER BY position`,
+        [townId],
+      ),
+      client.query(
+        `SELECT seat_id, dynasty_id, closed, votes FROM campaigns WHERE town_id = $1 ORDER BY seat_id, dynasty_id`,
+        [townId],
+      ),
+      client.query(`SELECT good, price_cents, flow_units FROM market WHERE town_id = $1 ORDER BY good`, [townId]),
+      client.query(
+        `SELECT good, position, price_cents FROM market_history WHERE town_id = $1 ORDER BY good, position`,
+        [townId],
+      ),
+    ],
+  );
 
   const world: World = {
     formatVersion: row.format_version,
@@ -381,7 +386,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<{ snapshot
     rng: row.rng,
     hour: row.hour,
     year: row.year,
-    houses: {},
+    dynasties: {},
     people: {},
     seats: {} as Record<SeatId, Seat>,
     laws: [],
@@ -397,31 +402,31 @@ async function readWorld(client: PoolClient, townId: number): Promise<{ snapshot
 
   let unkeyed = 0;
 
-  for (const house of houses.rows) {
-    world.houses[house.id] = {
-      id: house.id,
-      name: house.name,
-      controller: house.controller,
-      treasuryCents: house.treasury_cents,
-      debtCents: house.debt_cents,
-      favour: house.favour,
-      prestige: house.prestige,
-      title: house.title as TitleId,
-      residenceLevel: house.residence_level,
-      career: house.career,
-      dormant: house.dormant,
+  for (const dynasty of dynasties.rows) {
+    world.dynasties[dynasty.id] = {
+      id: dynasty.id,
+      name: dynasty.name,
+      controller: dynasty.controller,
+      treasuryCents: dynasty.treasury_cents,
+      debtCents: dynasty.debt_cents,
+      favour: dynasty.favour,
+      prestige: dynasty.prestige,
+      title: dynasty.title as TitleId,
+      residenceLevel: dynasty.residence_level,
+      career: dynasty.career,
+      dormant: dynasty.dormant,
       workshops: [],
       stock: {},
     };
     // A town read from a schema before the key: the migration reserved a key
     // no name can carry, and writing the town replaces it with the real one.
-    if (house.name_key === '' || house.name_key.startsWith(LEGACY_KEY_PREFIX)) {
+    if (dynasty.name_key === '' || dynasty.name_key.startsWith(LEGACY_KEY_PREFIX)) {
       unkeyed += 1;
     }
   }
 
   for (const workshop of workshops.rows) {
-    world.houses[workshop.house_id]?.workshops.push({
+    world.dynasties[workshop.dynasty_id]?.workshops.push({
       id: workshop.id,
       good: workshop.good,
       level: workshop.level,
@@ -429,16 +434,16 @@ async function readWorld(client: PoolClient, townId: number): Promise<{ snapshot
   }
 
   for (const unit of stock.rows) {
-    const house = world.houses[unit.house_id];
-    if (house !== undefined) {
-      house.stock[unit.good as GoodId] = unit.units;
+    const dynasty = world.dynasties[unit.dynasty_id];
+    if (dynasty !== undefined) {
+      dynasty.stock[unit.good as GoodId] = unit.units;
     }
   }
 
   for (const person of people.rows) {
     world.people[person.id] = {
       id: person.id,
-      houseId: person.house_id,
+      dynastyId: person.dynasty_id,
       name: person.name,
       age: person.age,
       attributes: {
@@ -458,28 +463,28 @@ async function readWorld(client: PoolClient, townId: number): Promise<{ snapshot
     world.laws.push({
       id: law.id,
       title: law.title,
-      sponsorHouseId: law.sponsor_house_id,
+      sponsorDynastyId: law.sponsor_dynasty_id,
       enactedAt: law.enacted_at,
     });
   }
 
   for (const engagement of engagements.rows) {
-    const base = { id: engagement.id, houseId: engagement.house_id, dueAt: engagement.due_at };
+    const base = { id: engagement.id, dynastyId: engagement.dynasty_id, dueAt: engagement.due_at };
 
     if (engagement.kind === 'hearing') {
       world.engagements.push({ ...base, kind: 'hearing' });
       continue;
     }
     // A site of the ladder says what it is for; a site stored before the ladder
-    // (ruleset 3 refuses the world anyway) has no work and is read as a house
+    // (ruleset 3 refuses the world anyway) has no work and is read as a dynasty
     // site, which is the one the old engine could hold.
     world.engagements.push(siteOf(base, engagement.work, engagement.trade, engagement.workshop_id));
   }
 
   for (const campaign of campaigns.rows) {
     const map = campaign.closed ? world.closedCampaigns : world.campaigns;
-    const byHouse = (map[campaign.seat_id as SeatId] ??= {});
-    byHouse[campaign.house_id] = campaign.votes;
+    const byDynasty = (map[campaign.seat_id as SeatId] ??= {});
+    byDynasty[campaign.dynasty_id] = campaign.votes;
   }
 
   for (const good of market.rows) {
@@ -515,7 +520,7 @@ const LEGACY_KEY_PREFIX = 'legacy:';
  * table, so the reader is the one that decides what a missing `work` means.
  */
 function siteOf(
-  base: { id: string; houseId: string; dueAt: number },
+  base: { id: string; dynastyId: string; dueAt: number },
   work: string | null,
   trade: string | null,
   workshopId: string | null,
@@ -534,7 +539,7 @@ function siteOf(
 
 /**
  * The town is small and written whole, so a save clears the tables and writes
- * them again: a house that disappeared, or a stock that fell to zero, cannot
+ * them again: a dynasty that disappeared, or a stock that fell to zero, cannot
  * leave a row behind the way an upsert would.
  */
 async function clearWorld(client: PoolClient, townId: number): Promise<void> {
@@ -549,15 +554,15 @@ async function clearWorld(client: PoolClient, townId: number): Promise<void> {
   await client.query('DELETE FROM people WHERE town_id = $1', [townId]);
   await client.query('DELETE FROM market_history WHERE town_id = $1', [townId]);
   await client.query('DELETE FROM market WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM houses WHERE town_id = $1', [townId]);
+  await client.query('DELETE FROM dynasties WHERE town_id = $1', [townId]);
 }
 
 async function writeWorld(client: PoolClient, townId: number, world: World): Promise<void> {
-  const houses = Object.values(world.houses).sort((left, right) => left.id.localeCompare(right.id));
+  const dynasties = Object.values(world.dynasties).sort((left, right) => left.id.localeCompare(right.id));
 
   await insertRows(
     client,
-    'houses',
+    'dynasties',
     [
       'town_id',
       'id',
@@ -573,20 +578,20 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       'dormant',
       'name_key',
     ],
-    houses.map((house) => [
+    dynasties.map((dynasty) => [
       townId,
-      house.id,
-      house.name,
-      house.controller,
-      house.treasuryCents,
-      house.debtCents,
-      house.favour,
-      house.prestige,
-      titleOf(house),
-      residenceOf(house),
-      house.career,
-      house.dormant,
-      nameKey(house.name),
+      dynasty.id,
+      dynasty.name,
+      dynasty.controller,
+      dynasty.treasuryCents,
+      dynasty.debtCents,
+      dynasty.favour,
+      dynasty.prestige,
+      titleOf(dynasty),
+      residenceOf(dynasty),
+      dynasty.career,
+      dynasty.dormant,
+      nameKey(dynasty.name),
     ]),
   );
 
@@ -594,11 +599,11 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'people',
-    ['town_id', 'id', 'house_id', 'name', 'age', 'artisanat', 'parole', 'intrigue', 'alive'],
+    ['town_id', 'id', 'dynasty_id', 'name', 'age', 'artisanat', 'parole', 'intrigue', 'alive'],
     people.map((person) => [
       townId,
       person.id,
-      person.houseId,
+      person.dynastyId,
       person.name,
       person.age,
       person.attributes.artisanat,
@@ -611,11 +616,11 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'workshops',
-    ['town_id', 'house_id', 'position', 'id', 'good', 'level'],
-    houses.flatMap((house) =>
-      house.workshops.map((workshop, position) => [
+    ['town_id', 'dynasty_id', 'position', 'id', 'good', 'level'],
+    dynasties.flatMap((dynasty) =>
+      dynasty.workshops.map((workshop, position) => [
         townId,
-        house.id,
+        dynasty.id,
         position,
         workshop.id,
         workshop.good,
@@ -627,8 +632,10 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'stock',
-    ['town_id', 'house_id', 'good', 'units'],
-    houses.flatMap((house) => Object.entries(house.stock).map(([good, units]) => [townId, house.id, good, units ?? 0])),
+    ['town_id', 'dynasty_id', 'good', 'units'],
+    dynasties.flatMap((dynasty) =>
+      Object.entries(dynasty.stock).map(([good, units]) => [townId, dynasty.id, good, units ?? 0]),
+    ),
   );
 
   await insertRows(
@@ -641,19 +648,19 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'laws',
-    ['town_id', 'id', 'position', 'title', 'sponsor_house_id', 'enacted_at'],
-    world.laws.map((law, position) => [townId, law.id, position, law.title, law.sponsorHouseId, law.enactedAt]),
+    ['town_id', 'id', 'position', 'title', 'sponsor_dynasty_id', 'enacted_at'],
+    world.laws.map((law, position) => [townId, law.id, position, law.title, law.sponsorDynastyId, law.enactedAt]),
   );
 
   await insertRows(
     client,
     'engagements',
-    ['town_id', 'id', 'kind', 'house_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
+    ['town_id', 'id', 'kind', 'dynasty_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
     world.engagements.map((engagement, position) => [
       townId,
       engagement.id,
       engagement.kind,
-      engagement.houseId,
+      engagement.dynastyId,
       engagement.dueAt,
       engagement.kind === 'site' ? engagement.work : null,
       engagement.kind === 'site' && engagement.work === 'build' ? engagement.trade : null,
@@ -665,7 +672,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'campaigns',
-    ['town_id', 'seat_id', 'house_id', 'closed', 'votes'],
+    ['town_id', 'seat_id', 'dynasty_id', 'closed', 'votes'],
     [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)].map((row) => [
       townId,
       ...row,
@@ -690,10 +697,10 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
 }
 
 function campaignRows(campaigns: World['campaigns'], closed: boolean): [string, string, boolean, number][] {
-  return Object.entries(campaigns).flatMap(([seatId, byHouse]) =>
-    Object.entries(byHouse ?? {}).map(([houseId, votes]): [string, string, boolean, number] => [
+  return Object.entries(campaigns).flatMap(([seatId, byDynasty]) =>
+    Object.entries(byDynasty ?? {}).map(([dynastyId, votes]): [string, string, boolean, number] => [
       seatId,
-      houseId,
+      dynastyId,
       closed,
       votes,
     ]),
@@ -708,15 +715,15 @@ async function appendEvents(client: PoolClient, townId: number, events: Event[])
   await insertRows(
     client,
     'events',
-    ['town_id', 'at', 'audience', 'house_id', 'type', 'payload'],
+    ['town_id', 'at', 'audience', 'dynasty_id', 'type', 'payload'],
     events.map((event) => {
       const { audience, at, type, ...body } = event;
 
       return [
         townId,
         at,
-        typeof audience === 'string' ? audience : 'house',
-        typeof audience === 'string' ? null : audience.houseId,
+        typeof audience === 'string' ? audience : 'dynasty',
+        typeof audience === 'string' ? null : audience.dynastyId,
         type,
         json(body),
       ];
@@ -755,11 +762,11 @@ function rowToEvent(row: {
   id: string | number;
   at: number;
   audience: string;
-  house_id: string | null;
+  dynasty_id: string | null;
   type: string;
   payload: Record<string, unknown>;
 }): Event {
-  const audience = row.audience === 'house' ? { houseId: row.house_id ?? '' } : row.audience;
+  const audience = row.audience === 'dynasty' ? { dynastyId: row.dynasty_id ?? '' } : row.audience;
 
   return { ...row.payload, type: row.type, audience, at: row.at } as Event;
 }
@@ -770,7 +777,7 @@ function toGroupedCount(row: { type: string; reason: string | null; count: numbe
 
 function rowToStoredAction(row: {
   id: string;
-  house_id: string;
+  dynasty_id: string;
   plays_at: number;
   action: Action;
   received_at: Date | string;
@@ -778,7 +785,7 @@ function rowToStoredAction(row: {
 }): StoredAction {
   return {
     id: row.id,
-    houseId: row.house_id,
+    dynastyId: row.dynasty_id,
     playsAt: row.plays_at,
     action: row.action,
     receivedAt: asDate(row.received_at),
@@ -790,13 +797,13 @@ function asDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-/** The partial index over the names of human houses, and nothing else. */
+/** The partial index over the names of human dynasties, and nothing else. */
 function isNameViolation(error: unknown): boolean {
   return (
     typeof error === 'object' &&
     error !== null &&
     (error as { code?: unknown }).code === '23505' &&
-    (error as { constraint?: unknown }).constraint === 'houses_human_name'
+    (error as { constraint?: unknown }).constraint === 'dynasties_human_name'
   );
 }
 

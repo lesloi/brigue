@@ -21,7 +21,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
 
   afterEach(async () => {
     // Scoped to this file's world: the other Postgres tests share the database
-    // and run in parallel. An account a reset left without a house belongs to
+    // and run in parallel. An account a reset left without a dynasty belongs to
     // no town, so it is cleaned by its own shape.
     await pool.query('DELETE FROM players WHERE town_id = $1 OR town_id IS NULL', [900_001]);
   });
@@ -30,7 +30,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     await pool.end();
   });
 
-  it('schedules, cancels and erases a house', async () => {
+  it('schedules, cancels and erases a dynasty', async () => {
     // Arrange
     const tokenHash = 'a'.repeat(64);
     const after = new Date('2026-12-01T00:00:00.000Z');
@@ -45,7 +45,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     expect((await store.findByTokenHash(tokenHash))?.deleteAfter).toEqual(after);
     await store.cancelDeletion(tokenHash);
     expect((await store.findByTokenHash(tokenHash))?.deleteAfter).toBeNull();
-    await store.deleteHouse(900_001, 'leclerc');
+    await store.deleteDynasty(900_001, 'leclerc');
     expect(await store.findByTokenHash(tokenHash)).toBeNull();
   });
 
@@ -63,43 +63,43 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     expect(found?.cursorEventId).toBe(12);
   });
 
-  it('binds an account a reset left without a house, and only once', async () => {
+  it('binds an account a reset left without a dynasty, and only once', async () => {
     // Arrange
     const tokenHash = 'a'.repeat(64);
     const at = new Date('2026-12-02T00:00:00.000Z');
-    await store.insert({ ...player(tokenHash), townId: null, houseId: null });
+    await store.insert({ ...player(tokenHash), townId: null, dynastyId: null });
 
     // Act
     const rebound = await store.rebind(tokenHash, 900_001, 'leclerc', at);
 
-    // Assert: the house is back and the visit is now, so the new house is not
+    // Assert: the dynasty is back and the visit is now, so the new dynasty is not
     // measured from the old silence.
-    expect(rebound).toMatchObject({ townId: 900_001, houseId: 'leclerc' });
+    expect(rebound).toMatchObject({ townId: 900_001, dynastyId: 'leclerc' });
     expect(rebound?.lastSeenAt).toEqual(at);
     expect(await store.rebind(tokenHash, 900_001, 'herse', at)).toBeNull();
-    expect((await store.findByTokenHash(tokenHash))?.houseId).toBe('leclerc');
+    expect((await store.findByTokenHash(tokenHash))?.dynastyId).toBe('leclerc');
   });
 
   it('never binds a revoked account', async () => {
     // Arrange
     const tokenHash = 'a'.repeat(64);
     const at = new Date('2026-12-02T00:00:00.000Z');
-    await store.insert({ ...player(tokenHash), townId: null, houseId: null });
+    await store.insert({ ...player(tokenHash), townId: null, dynastyId: null });
     await store.revoke(tokenHash, at);
 
     // Act / Assert
     expect(await store.rebind(tokenHash, 900_001, 'leclerc', at)).toBeNull();
   });
 
-  it('erases the house-less accounts whose deadline passed, and only those', async () => {
+  it('erases the dynasty-less accounts whose deadline passed, and only those', async () => {
     // Arrange: one due, one later, one bound and due (a town's sweep owns it).
     const at = new Date('2026-12-10T00:00:00.000Z');
     const due = 'a'.repeat(64);
     const later = 'b'.repeat(64);
     const bound = 'c'.repeat(64);
-    await store.insert({ ...player(due), townId: null, houseId: null });
+    await store.insert({ ...player(due), townId: null, dynastyId: null });
     await store.markDeletion(due, new Date('2026-12-09T00:00:00.000Z'));
-    await store.insert({ ...player(later), townId: null, houseId: null });
+    await store.insert({ ...player(later), townId: null, dynastyId: null });
     await store.markDeletion(later, new Date('2026-12-11T00:00:00.000Z'));
     await store.insert(player(bound));
     await store.markDeletion(bound, new Date('2026-12-09T00:00:00.000Z'));
@@ -121,7 +121,7 @@ function player(tokenHash: string): Omit<Player, 'playerId'> {
   return {
     tokenHash,
     townId: 900_001,
-    houseId: 'leclerc',
+    dynastyId: 'leclerc',
     createdAt: at,
     lastSeenAt: at,
     revokedAt: null,

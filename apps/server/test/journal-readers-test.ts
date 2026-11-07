@@ -16,7 +16,7 @@ const event = (at: number): Event => ({
 
 /**
  * The journal is read one reader at a time: the town's events are shared, but
- * each house holds its own cursor, so one player reading must never hide a
+ * each dynasty holds its own cursor, so one player reading must never hide a
  * line from another.
  */
 describe('the journal of a town with two readers', () => {
@@ -50,11 +50,17 @@ describe('the journal of a town with two readers', () => {
     expect(again.events).toEqual([]);
   });
 
-  it('keeps a house line from another house', async () => {
+  it('keeps a dynasty line from another dynasty', async () => {
     // Arrange: one line for the clerk, one for the town.
     const { session } = await stored();
     await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [
-      { type: 'house.upkeep_paid', audience: { houseId: 'leclerc' }, at: 1, houseId: 'leclerc', amountCents: 240 },
+      {
+        type: 'dynasty.upkeep_paid',
+        audience: { dynastyId: 'leclerc' },
+        at: 1,
+        dynastyId: 'leclerc',
+        amountCents: 240,
+      },
       event(2),
     ]);
 
@@ -64,7 +70,7 @@ describe('the journal of a town with two readers', () => {
 
     // Assert
     expect(other.events.map((entry) => entry.type)).toEqual(['market.price_changed']);
-    expect(own.events.map((entry) => entry.type)).toEqual(['house.upkeep_paid', 'market.price_changed']);
+    expect(own.events.map((entry) => entry.type)).toEqual(['dynasty.upkeep_paid', 'market.price_changed']);
   });
 });
 

@@ -138,9 +138,9 @@ export function pendingActionText(action: PendingActionView): string {
       return "Démolition d'un atelier";
     case 'workshop.upgrade':
       return "Agrandissement d'un atelier";
-    case 'house.buy_title':
+    case 'dynasty.buy_title':
       return action.title === undefined ? "Achat d'un titre" : `Achat du titre de ${titleName(action.title)}`;
-    case 'house.upgrade_residence':
+    case 'dynasty.upgrade_residence':
       return 'Élévation de la résidence';
   }
 }
@@ -178,10 +178,10 @@ export function refusalText(reason: RefusalReason): string {
   switch (reason) {
     case 'unknown_action':
       return 'action inconnue';
-    case 'unknown_house':
-      return 'maison inconnue';
-    case 'dormant_house':
-      return 'maison dormante';
+    case 'unknown_dynasty':
+      return 'dynastie inconnue';
+    case 'dormant_dynasty':
+      return 'dynastie dormante';
     case 'unknown_seat':
       return 'charge inconnue';
     case 'unknown_good':
@@ -240,14 +240,15 @@ export function actionErrorText(code: string | null): string {
       return 'Cette ville a disparu.';
     case 'world_version':
       return "Cette ville n'est plus compatible avec le serveur.";
-    case 'no_free_house':
-      return "Cette ville n'a plus de maison libre.";
+    case 'no_free_dynasty':
+      return "Cette ville n'a plus de dynastie libre.";
     case 'deletion_pending':
-      return 'Cette maison est en cours de suppression.';
-    case 'house_lost':
-      return "Ta maison n'existe plus : choisis un métier pour revenir.";
+      // The account is what the server has scheduled, and it outlives the dynasty.
+      return 'Ce compte est en cours de suppression.';
+    case 'dynasty_lost':
+      return "Ta dynastie n'existe plus : choisis un métier pour revenir.";
     case 'name_required':
-      return 'Écris le nom de ta maison pour revenir.';
+      return 'Écris le nom de ta dynastie pour revenir.';
     default:
       return "L'action n'a pas pu être envoyée.";
   }
@@ -266,10 +267,10 @@ export function readErrorText(code: string | null): string {
       return "Cette ville n'est plus compatible avec le serveur.";
     case 'not_found':
       return "Le serveur n'a pas trouvé cette ville.";
-    case 'house_lost':
-      return "Ta maison n'existe plus : choisis un métier pour revenir.";
+    case 'dynasty_lost':
+      return "Ta dynastie n'existe plus : choisis un métier pour revenir.";
     case 'name_required':
-      return 'Écris le nom de ta maison pour revenir.';
+      return 'Écris le nom de ta dynastie pour revenir.';
     case 'deletion_pending':
       return 'Ce compte est en cours de suppression.';
     default:

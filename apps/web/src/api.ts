@@ -32,8 +32,8 @@ export interface PendingActionView {
     | 'workshop.build'
     | 'workshop.destroy'
     | 'workshop.upgrade'
-    | 'house.buy_title'
-    | 'house.upgrade_residence';
+    | 'dynasty.buy_title'
+    | 'dynasty.upgrade_residence';
   good?: GoodId;
   units?: number;
   seatId?: SeatId;
@@ -85,7 +85,7 @@ export interface WorldProjection {
   hour: number;
   year: number;
   calendar: CalendarView;
-  house: {
+  dynasty: {
     id: string;
     name: string;
     treasuryCents: number;
@@ -108,8 +108,8 @@ export interface WorldProjection {
   town: {
     id: number;
     name: string;
-    houses: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
-    people: Array<{ id: string; houseId: string; name: string }>;
+    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
+    people: Array<{ id: string; dynastyId: string; name: string }>;
     seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
@@ -147,8 +147,8 @@ export type ActionIntent =
   | { type: 'workshop.build'; trade: Trade }
   | { type: 'workshop.destroy'; workshopId: string }
   | { type: 'workshop.upgrade'; workshopId: string }
-  | { type: 'house.buy_title' }
-  | { type: 'house.upgrade_residence' };
+  | { type: 'dynasty.buy_title' }
+  | { type: 'dynasty.upgrade_residence' };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -165,7 +165,7 @@ export class ApiError extends Error {
 export interface SessionInfo {
   /** Empty for an account a reset left between towns, until it chooses again. */
   townId: number | null;
-  houseId: string | null;
+  dynastyId: string | null;
   /** Set when a deletion is scheduled: the deadline, in ISO. */
   deletionAfter: string | null;
 }
@@ -185,28 +185,28 @@ export async function readSession(): Promise<SessionInfo | null> {
 
 export interface Joined {
   townId: number;
-  houseId: string;
+  dynastyId: string;
   /** Only a new account gets a token: a returning one keeps its own. */
   token?: string;
 }
 
 /** The identity a join is made with, drawn by the server: opaque id, suggested name. */
-export interface HouseCandidate {
+export interface DynastyCandidate {
   id: string;
-  houseName: string;
+  dynastyName: string;
   personName: string;
 }
 
 /**
- * The candidate the creation screen prefills. No house is founded by it: the
+ * The candidate the creation screen prefills. No dynasty is founded by it: the
  * player edits the name, keeps it, and only the join writes anything.
  */
-export function readCandidate(): Promise<HouseCandidate> {
-  return send('/api/house/name');
+export function readCandidate(): Promise<DynastyCandidate> {
+  return send('/api/dynasty/name');
 }
 
 /**
- * A trade either founds a house for a new account or gives one back to an
+ * A trade either founds a dynasty for a new account or gives one back to an
  * account a reset left without one; the session cookie says which. The name
  * sent is the one the player kept, with the id of the candidate it came from:
  * a suggestion that never arrived mints its own, the name being the player's.
@@ -246,7 +246,10 @@ export function advanceHour(): Promise<WorldResponse> {
   return send('/api/dev/advance', { method: 'POST' });
 }
 
-export function sendAction(hour: number, action: ActionIntent): Promise<{ id: string; hour: number; houseId: string }> {
+export function sendAction(
+  hour: number,
+  action: ActionIntent,
+): Promise<{ id: string; hour: number; dynastyId: string }> {
   return send('/api/actions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -254,16 +257,16 @@ export function sendAction(hour: number, action: ActionIntent): Promise<{ id: st
   });
 }
 
-/** The actions the server still holds for this house, current and next hour. */
+/** The actions the server still holds for this dynasty, current and next hour. */
 export async function readPending(): Promise<PendingActionView[]> {
   const body = await send<{ actions: PendingActionView[] }>('/api/actions');
 
   return body.actions;
 }
 
-/** The house's name, changed at once: an identity, not a trade of the hour. */
-export function renameHouse(name: string): Promise<{ name: string }> {
-  return send('/api/house/name', {
+/** The dynasty's name, changed at once: an identity, not a trade of the hour. */
+export function renameDynasty(name: string): Promise<{ name: string }> {
+  return send('/api/dynasty/name', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),

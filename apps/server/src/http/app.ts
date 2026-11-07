@@ -7,7 +7,7 @@ import { type AppContext, type AppDeps } from './context.ts';
 import { createRateLimiter } from './rate-limit.ts';
 import { methodNotAllowed, sendJson } from './respond.ts';
 import { appendAction, cancelAction, listActions } from './routes/actions.ts';
-import { renameHouseRoute } from './routes/house.ts';
+import { renameDynastyRoute } from './routes/dynasty.ts';
 import { readCandidate } from './routes/name-suggestion.ts';
 import { cancelDeletion, requestDeletion } from './routes/player.ts';
 import { openSession, readSession } from './routes/session.ts';
@@ -130,7 +130,7 @@ async function handle(context: AppContext, request: IncomingMessage, response: S
           return;
       }
 
-    case '/api/house/name':
+    case '/api/dynasty/name':
       switch (request.method) {
         case 'GET':
           // The creation screen asks for the identity it prefills, and the
@@ -139,7 +139,7 @@ async function handle(context: AppContext, request: IncomingMessage, response: S
           await readCandidate(context, request, response);
           return;
         case 'PUT':
-          await renameHouseRoute(context, request, response);
+          await renameDynastyRoute(context, request, response);
           return;
         default:
           methodNotAllowed(response, 'GET, PUT');

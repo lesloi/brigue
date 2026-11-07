@@ -7,7 +7,7 @@ import { formatCents, formatCount, goodQuantity, workshopName } from '../format.
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 import { DevBar } from './devbar.tsx';
-import { HouseBar } from './housebar.tsx';
+import { DynastyBar } from './dynastybar.tsx';
 
 const LEDGER_LIMIT = 8;
 
@@ -34,12 +34,12 @@ export function Ville({
   onAdvance,
   onDeleteAccount,
 }: VilleProps) {
-  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('house');
+  const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('dynasty');
   const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
-  const house = world.house;
-  const nameOf = houseName(world);
-  const ledger = ledgerEvents(events, house.id, ledgerFilter);
+  const dynasty = world.dynasty;
+  const nameOf = dynastyName(world);
+  const ledger = ledgerEvents(events, dynasty.id, ledgerFilter);
   const shownLedger = expanded ? ledger : ledger.slice(0, LEDGER_LIMIT);
 
   return (
@@ -50,7 +50,7 @@ export function Ville({
         <div class="id">
           <Seal />
           <div>
-            <div class="nm">Maison {house.name}</div>
+            <div class="nm">Dynastie {dynasty.name}</div>
             <div class="pl">
               {world.town.name} &middot; an {world.year}
             </div>
@@ -84,32 +84,32 @@ export function Ville({
         </div>
       </section>
 
-      <HouseBar data={data} mode="ville" pending={pending} />
+      <DynastyBar data={data} mode="ville" pending={pending} />
 
       {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
-        <section class="sec" aria-labelledby="house-title">
+        <section class="sec" aria-labelledby="dynasty-title">
           <div class="h">
-            <b id="house-title">Ta maison</b>
+            <b id="dynasty-title">Ta dynastie</b>
             <span>
-              {house.workshops.length} atelier{house.workshops.length > 1 ? 's' : ''}
+              {dynasty.workshops.length} atelier{dynasty.workshops.length > 1 ? 's' : ''}
             </span>
           </div>
           <div class="card">
-            {house.workshops.length === 0 ? (
+            {dynasty.workshops.length === 0 ? (
               <div class="row empty">
                 <div class="nm">
                   <b>Aucun atelier</b>
-                  <p>La maison n'a pas encore de quoi produire.</p>
+                  <p>La dynastie n'a pas encore de quoi produire.</p>
                 </div>
               </div>
             ) : (
-              house.workshops.map((workshop) => (
+              dynasty.workshops.map((workshop) => (
                 <WorkshopRow
                   workshop={workshop}
                   priceCents={world.town.market[workshop.good]}
-                  stock={house.stock}
+                  stock={dynasty.stock}
                   pendingInput={
                     workshop.input === null
                       ? 0
@@ -122,7 +122,7 @@ export function Ville({
                 />
               ))
             )}
-            {house.debtCents > 0 ? (
+            {dynasty.debtCents > 0 ? (
               <div class="row debt">
                 <div class="th">
                   <ResourceIcon kind="coins" />
@@ -133,7 +133,7 @@ export function Ville({
                 </div>
                 <div class="act">
                   <span class="price owed">
-                    <b>{formatCents(house.debtCents)}</b> écus
+                    <b>{formatCents(dynasty.debtCents)}</b> écus
                   </span>
                 </div>
               </div>
@@ -152,14 +152,14 @@ export function Ville({
             <div class="segmented" role="group" aria-label="Filtrer le registre">
               <button
                 type="button"
-                class={ledgerFilter === 'house' ? 'on' : ''}
-                aria-pressed={ledgerFilter === 'house'}
+                class={ledgerFilter === 'dynasty' ? 'on' : ''}
+                aria-pressed={ledgerFilter === 'dynasty'}
                 onClick={() => {
-                  setLedgerFilter('house');
+                  setLedgerFilter('dynasty');
                   setExpanded(false);
                 }}
               >
-                Ma maison
+                Ma dynastie
               </button>
               <button
                 type="button"
@@ -196,7 +196,7 @@ export function Ville({
               </div>
             ) : (
               shownLedger.map((event) => {
-                const line = eventLine(event, house.id, nameOf);
+                const line = eventLine(event, dynasty.id, nameOf);
 
                 return (
                   <div class="ev">
@@ -235,7 +235,7 @@ export function Ville({
                   <b>{law.title}</b>
                   <span class="pill">vigueur</span>
                   <p>
-                    portée par <span>{nameOf(law.sponsorHouseId)}</span> &middot;{' '}
+                    portée par <span>{nameOf(law.sponsorDynastyId)}</span> &middot;{' '}
                     {lawAgeText(law.enactedAt, world.hour)}
                   </p>
                 </div>
@@ -253,11 +253,11 @@ export function Ville({
   );
 }
 
-export function houseName(world: WorldResponse['world']): (houseId: string) => string {
-  const names = new Map(world.town.houses.map((house) => [house.id, house.name]));
-  names.set(world.house.id, world.house.name);
+export function dynastyName(world: WorldResponse['world']): (dynastyId: string) => string {
+  const names = new Map(world.town.dynasties.map((dynasty) => [dynasty.id, dynasty.name]));
+  names.set(world.dynasty.id, world.dynasty.name);
 
-  return (houseId) => names.get(houseId) ?? 'une maison inconnue';
+  return (dynastyId) => names.get(dynastyId) ?? 'une dynastie inconnue';
 }
 
 export function countdownText(nextBellAt: string, now: number): string {
@@ -301,9 +301,9 @@ function WorkshopRow({
   pendingInput,
   onGoMarket,
 }: {
-  workshop: WorldResponse['world']['house']['workshops'][number];
+  workshop: WorldResponse['world']['dynasty']['workshops'][number];
   priceCents: number;
-  stock: WorldResponse['world']['house']['stock'];
+  stock: WorldResponse['world']['dynasty']['stock'];
   pendingInput: number;
   onGoMarket(): void;
 }) {

@@ -10,21 +10,21 @@ export interface IssuedToken {
 export async function issueToken(
   store: PlayerStore,
   townId: number,
-  houseId: string,
+  dynastyId: string,
   now: Date = new Date(),
   mint: () => string = mintToken,
 ): Promise<IssuedToken> {
   // A wrong id here is a server bug, not a player's refusal: throw while the
-  // server is creating the house, not later when the player logs in.
-  if (townId <= 0 || houseId.length === 0) {
-    throw new Error('an account needs a town and a house');
+  // server is creating the dynasty, not later when the player logs in.
+  if (townId <= 0 || dynastyId.length === 0) {
+    throw new Error('an account needs a town and a dynasty');
   }
 
   const token = mint();
   const player: Omit<Player, 'playerId'> = {
     tokenHash: hashToken(token),
     townId,
-    houseId,
+    dynastyId,
     createdAt: now,
     lastSeenAt: now,
     revokedAt: null,
