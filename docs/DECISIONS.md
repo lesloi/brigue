@@ -30,8 +30,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   is a state of the town, not a punishment: a dynasty with no visit for a few days — three,
   calibrated in `PACING` — goes dormant. It keeps its money, its stock, its grudges and its heir,
   and nothing is taken from it; a rival gains nothing from the door being closed. What it loses is
-  standing: the workshop idles, it stands for nothing and votes for nothing, so its seat is
-  contested without it, and its prestige and favour decay while it is silent. The town is then
+  standing: the workshop idles, it stands for nothing and votes for nothing, so its seat is up
+  without it, and if nobody stands for it the seat falls vacant; its prestige and favour decay while
+  it is silent. The town is then
   governed by the dynasties that are there, which is the point of a shared council. After thirty days
   without a visit the dynasty is deleted and the token with it: no return, no vacation mode, and no
   AI ever plays it. When the last human dynasty goes, the town goes with it: the next player starts
@@ -80,6 +81,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   duty. A vacant seat blocks nothing — the power is simply unavailable, as in Europe 1400 — so a
   young town has no mayor for its first four elections. Revisit if twelve seats for twenty dynasties
   proves too generous.
+
+- **Only those who stand are candidates, and one seat at a time.** A dynasty stands by paying the
+  campaign favour cost; the active incumbent stands without paying. A second open candidacy is
+  refused, and a candidacy is never cumulative on the same seat. A person elected to one seat gives
+  up any other it held: that seat falls vacant and is announced as such, even when it was settled
+  earlier in the same scrutiny. The candidate learns the result whether the town changes hands or
+  not; the town's chronicle carries only a new winner or a vacancy. A dormant incumbent who does not
+  stand leaves the seat vacant. At the start of each year an AI dynasty without a seat tries a
+  random vacant one; a seated AI defends its seat and waits for #55 to climb.
 
 - **Three tiers above the loom: the town, the county, the kingdom.** Twelve seats in the town,
   seven in the county, seven in the kingdom; the mayor heads the town, the count the county, the
@@ -373,8 +383,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   of what the parent had gained. The choice is what keeps death from being a tax on time passing; the rise
   is what makes staying a gamble. Revisit if generations feel like a treadmill.
 
-- **The AI plays politics.** At each scrutiny an AI dynasty chooses a seat by its rank, spends favour to
-  campaign, and remembers who beat it. It votes according to its interests and its grudges. It also buys the input its workshops lack,
+- **The AI plays politics.** At the start of each year an AI dynasty without a seat tries a random
+  vacant one, paying the campaign cost if it has the favour; a seated AI defends its seat and does
+  not challenge another holder or climb until #55. It votes with the same roll and campaign bonus
+  as a human. It also buys the input its workshops lack,
   as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
   nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
   It sells its whole stock every hour, at the market price: it takes the price, it does not

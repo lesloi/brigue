@@ -201,6 +201,13 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
       };
 
     case 'council.election_held': {
+      if (event.winnerDynastyId === null) {
+        return {
+          tone: 'council',
+          text: `Élection : la ${seatName(event.seatId)} reste vacante, personne ne s'est présenté.`,
+        };
+      }
+
       const votes = Object.entries(event.votes)
         .map(([dynastyId, count]) => `${nameOf(dynastyId)} ${formatCount(count)}`)
         .join(', ');
@@ -209,6 +216,17 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
         text: `Élection : la ${seatName(event.seatId)} revient à ${nameOf(event.winnerDynastyId)}. Voix : ${votes}.`,
       };
     }
+
+    case 'council.election_result':
+      return event.won
+        ? {
+            tone: 'council',
+            text: `Vous êtes élu à la ${seatName(event.seatId)} avec ${formatCount(event.votes[event.dynastyId] ?? 0)} voix.`,
+          }
+        : {
+            tone: 'neutral',
+            text: `Vous avez perdu la ${seatName(event.seatId)} ; ${nameOf(event.winnerDynastyId)} l'emporte.`,
+          };
   }
 }
 

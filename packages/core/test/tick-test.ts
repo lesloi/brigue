@@ -7,7 +7,6 @@ import {
   canonicalJson,
   FORMAT_VERSION,
   RULES,
-  SEATS,
   START_YEAR,
   stateHash,
   takeSeat,
@@ -125,8 +124,8 @@ describe('the simulation core', () => {
     );
   });
 
-  it('holds one scrutiny per game year and puts every seat up', () => {
-    // Arrange: five dynasties, so five seats can actually be filled, and two years.
+  it('fills the vacant seats with the AI at each scrutiny, and leaves the rest to the humans', () => {
+    // Arrange: four AI dynasties for five seats; the human never stands.
     const base = town(SEED);
     const world: World = { ...base, dynasties: { ...base.dynasties }, people: { ...base.people } };
     world.dynasties.quint = {
@@ -146,29 +145,15 @@ describe('the simulation core', () => {
     // Act
     const { world: after, events } = play(world, HOURS_PER_YEAR * 2);
 
-    // Assert: one scrutiny each year, and every seat is contested in each.
-    const scrutinies = events.filter(
-      (event): event is Extract<Event, { type: 'council.scrutiny_held' }> => event.type === 'council.scrutiny_held',
-    );
-    expect(scrutinies.map((event) => event.year)).toEqual([START_YEAR, START_YEAR + 1]);
-    for (const scrutiny of scrutinies) {
-      expect(scrutiny.seats).toEqual([...SEATS]);
-    }
-
-    const elections = events.filter(
-      (event): event is Extract<Event, { type: 'council.election_held' }> => event.type === 'council.election_held',
-    );
-    for (const seatId of SEATS) {
-      expect(elections.filter((event) => event.seatId === seatId)).toHaveLength(2);
-    }
-    for (const seatId of SEATS) {
-      expect(after.seats[seatId].personId).not.toBeNull();
-    }
-
+    // Assert: no scrutiny announcement; the four AI hold four seats and the
+    // fifth waits for a human, and no person holds two seats.
+    expect(events.some((event) => event.type === 'council.scrutiny_held')).toBe(false);
     const holders = Object.values(after.seats)
       .map((seat) => seat.personId)
       .filter((personId): personId is string => personId !== null);
+    expect(holders).toHaveLength(4);
     expect(new Set(holders).size).toBe(holders.length);
+    expect(Object.values(after.seats).filter((seat) => seat.personId === null)).toHaveLength(1);
   });
 
   it('makes twenty-four ticks a year and derives the year from the hour', () => {
@@ -229,8 +214,8 @@ describe('the simulation core', () => {
     const queued = tick(town(SEED), [{ type: 'council.campaign', dynastyId: 'leclerc', seatId: 'maire' }]);
 
     // Assert: the bonus is in the open map at once, and the event says which
-    // scrutiny it counts for.
-    expect(queued.world.campaigns.maire).toEqual({ leclerc: RULES.campaignVoteBonus });
+    // scrutiny it counts for. The AI may have campaigned for the same seat.
+    expect(queued.world.campaigns.maire?.leclerc).toBe(RULES.campaignVoteBonus);
     expect(queued.world.engagements).toEqual([]);
     expect(queued.events).toContainEqual(
       expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', countsAt: HOURS_PER_YEAR }),
@@ -242,7 +227,7 @@ describe('the simulation core', () => {
 
     // Assert: the bell closes the open map into the one the scrutiny reads.
     expect(beforeNoon.closedCampaigns.maire).toBeUndefined();
-    expect(afterNoon.closedCampaigns.maire).toEqual({ leclerc: RULES.campaignVoteBonus });
+    expect(afterNoon.closedCampaigns.maire?.leclerc).toBe(RULES.campaignVoteBonus);
     expect(afterNoon.campaigns.maire).toBeUndefined();
   });
 
@@ -376,35 +361,33 @@ describe('the simulation core', () => {
     expect(after.dynasties.leclerc.stock.wool).toBe(8);
   });
 
-  it('keeps a dormant dynasty’s seat, stops its trade and keeps it out of the vote', () => {
-    // Arrange: one election fills the mayoralty, then its holder goes dormant.
-    const elected = play(town(SEED), HOURS_PER_YEAR).world;
-    const personId = elected.seats.maire.personId as string;
-    const holder = elected.people[personId];
-    const dynasty = elected.dynasties[holder.dynastyId];
-    dynasty.dormant = true;
+  it('vacates a dormant dynasty’s seat, stops its trade and keeps it out of the vote', () => {
+    // Arrange: the human holds the mayoralty, then goes dormant.
+    const world = town(SEED);
+    world.seats.maire = { personId: 'person-leclerc' };
+    world.dynasties.leclerc.dormant = true;
     // A workshop with no input, so any sale at all would be the dormant dynasty
     // running when it must not.
-    dynasty.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
-    dynasty.stock = {};
-    const treasuryCents = dynasty.treasuryCents;
+    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    world.dynasties.leclerc.stock = {};
+    const treasuryCents = world.dynasties.leclerc.treasuryCents;
 
-    // Act: one plain hour, then the five periods that bring the seat back.
-    const quiet = tick(elected);
+    // Act: one plain hour, then the five periods that bring the next scrutiny.
+    const quiet = tick(world);
     const later = play(quiet.world, HOURS_PER_YEAR * 5);
 
-    // Assert
+    // Assert: the dormant holder does not trade, leaves the seat vacant at the
+    // first scrutiny, and votes in none of them.
+    expect(quiet.events.filter((event) => event.type === 'market.sold' && event.dynastyId === 'leclerc')).toEqual([]);
+    expect(quiet.world.dynasties.leclerc.treasuryCents).toBe(treasuryCents);
     expect(
-      quiet.events.filter((event) => event.type === 'market.sold' && event.dynastyId === holder.dynastyId),
-    ).toEqual([]);
-    expect(quiet.world.dynasties[holder.dynastyId].treasuryCents).toBe(treasuryCents);
-    expect(later.world.seats.maire.personId).toBe(personId);
-    expect(later.events.filter((event) => event.type === 'council.election_held' && event.seatId === 'maire')).toEqual(
-      [],
-    );
+      later.events.some(
+        (event) => event.type === 'council.election_held' && event.seatId === 'maire' && event.winnerDynastyId === null,
+      ),
+    ).toBe(true);
     for (const event of later.events) {
       if (event.type === 'council.election_held') {
-        expect(event.votes[holder.dynastyId]).toBeUndefined();
+        expect(event.votes['leclerc']).toBeUndefined();
       }
     }
   });

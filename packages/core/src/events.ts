@@ -45,6 +45,7 @@ export type RefusalReason =
   | 'name_taken'
   | 'invalid_name'
   | 'site_in_progress'
+  | 'already_candidate'
   | 'no_next_title'
   | 'no_next_residence';
 
@@ -102,6 +103,16 @@ type EventBody =
   | {
       type: 'council.election_held';
       seatId: SeatId;
+      /** Null when the seat is left vacant: nobody stood. */
+      winnerDynastyId: string | null;
+      votes: Record<string, number>;
+    }
+  | {
+      type: 'council.election_result';
+      /** The candidate this result is addressed to. */
+      dynastyId: string;
+      seatId: SeatId;
+      won: boolean;
       winnerDynastyId: string;
       votes: Record<string, number>;
     };

@@ -364,7 +364,7 @@ export interface World {
 export const FORMAT_VERSION = 2;
 
 export const RULES = {
-  version: 3,
+  version: 4,
   /**
    * The starting kit: a dynasty must buy its input and pay a few hours of upkeep
    * before its first sale. Every dynasty gets it, the first as much as a later

@@ -148,6 +148,12 @@ function step(next: World, actions: readonly Action[], events: EventDraft[]): vo
   aiDynastiesSell(next, flow, town);
   payUpkeep(next, town);
 
+  // At the start of the year, before the noon bell closes the candidacies, an
+  // AI dynasty without a seat looks for a vacant one.
+  if (next.hour % HOURS_PER_YEAR === 1) {
+    aiDynastiesCampaign(next, town);
+  }
+
   const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
 
   // The flow accumulates over the half-day: the bell prices the town's whole
@@ -346,6 +352,12 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
         refuse(events, action, dynasty.id, 'unknown_seat', true);
         return;
       }
+      // One candidacy at a time: another open campaign, on this seat or another,
+      // is refused before it can spend any favour.
+      if (Object.values(world.campaigns).some((seat) => seat[dynasty.id] !== undefined)) {
+        refuse(events, action, dynasty.id, 'already_candidate', true);
+        return;
+      }
       if (dynasty.favour < RULES.campaignFavourCost) {
         refuse(events, action, dynasty.id, 'insufficient_favour', true);
         return;
@@ -356,16 +368,14 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       // A candidacy has no run behind it: it is lodged, and the noon bell
       // decides which scrutiny it counts for. The event says which, so the
       // screen can tell the player what they bought.
-      const localHour = ((world.hour - 1) % HOURS_PER_YEAR) + 1;
-      const scrutiny = Math.ceil(world.hour / HOURS_PER_YEAR) * HOURS_PER_YEAR;
-      const countsAt = localHour <= HOURS_PER_YEAR / 2 ? scrutiny : scrutiny + HOURS_PER_YEAR;
+      const countsAt = countsAtFor(world);
 
       const seat = (world.campaigns[action.seatId] ??= {});
       seat[dynasty.id] = (seat[dynasty.id] ?? 0) + RULES.campaignVoteBonus;
 
       events.push({
         type: 'council.campaigned',
-        audience: 'town',
+        audience: { dynastyId: dynasty.id },
         dynastyId: dynasty.id,
         seatId: action.seatId,
         favourSpent: RULES.campaignFavourCost,
@@ -1078,8 +1088,6 @@ function highestWorkshopSeq(world: World): number {
 }
 
 function holdScrutiny(world: World, events: EventDraft[]): void {
-  const year = world.year;
-
   // Age belongs to the calendar: every living person takes a year at the
   // scrutiny, whatever they did with it. The death roll is #7.
   for (const person of Object.values(world.people)) {
@@ -1088,7 +1096,7 @@ function holdScrutiny(world: World, events: EventDraft[]): void {
     }
   }
 
-  const elections: Event[] = [];
+  const elections: EventDraft[] = [];
   // One person, one office: a person already elected during this scrutiny is
   // not a candidate for another seat on the same day. A town too small to fill
   // every seat leaves one vacant rather than electing the same person twice.
@@ -1097,34 +1105,88 @@ function holdScrutiny(world: World, events: EventDraft[]): void {
     contestSeat(world, seatId, elections, electedPersonIds);
   }
 
-  events.push({ type: 'council.scrutiny_held', audience: 'town', year, seats: [...SEATS] });
   events.push(...elections);
+}
+
+/** The scrutiny a candidacy lodged now counts for: the coming one before noon, the next after. */
+function countsAtFor(world: World): number {
+  const localHour = ((world.hour - 1) % HOURS_PER_YEAR) + 1;
+  const scrutiny = Math.ceil(world.hour / HOURS_PER_YEAR) * HOURS_PER_YEAR;
+
+  return localHour <= HOURS_PER_YEAR / 2 ? scrutiny : scrutiny + HOURS_PER_YEAR;
+}
+
+/**
+ * At the first hour of a year, an AI dynasty that holds no seat and can pay
+ * tries a random vacant seat. A seated AI is the incumbent and defends it; the
+ * climb waits for #55.
+ */
+function aiDynastiesCampaign(world: World, events: EventDraft[]): void {
+  const seated = new Set<string>();
+  for (const seatId of SEATS) {
+    const person = seatHolder(world, seatId);
+    if (person !== undefined) {
+      seated.add(person.dynastyId);
+    }
+  }
+
+  const dynasties = Object.keys(world.dynasties)
+    .filter((dynastyId) => {
+      const dynasty = world.dynasties[dynastyId];
+
+      return dynasty.controller === 'ai' && dynasty.dormant !== true && !seated.has(dynastyId);
+    })
+    .sort();
+
+  for (const dynastyId of dynasties) {
+    const dynasty = world.dynasties[dynastyId];
+    const vacant = SEATS.filter((seatId) => world.seats[seatId].personId === null);
+    if (dynasty.favour < RULES.campaignFavourCost || vacant.length === 0) {
+      continue;
+    }
+
+    const [rng, roll] = drawBelow(world.rng, vacant.length);
+    world.rng = rng;
+    const seatId = vacant[roll] as SeatId;
+
+    dynasty.favour -= RULES.campaignFavourCost;
+    const seat = (world.campaigns[seatId] ??= {});
+    seat[dynastyId] = (seat[dynastyId] ?? 0) + RULES.campaignVoteBonus;
+
+    events.push({
+      type: 'council.campaigned',
+      audience: { dynastyId },
+      dynastyId,
+      seatId,
+      favourSpent: RULES.campaignFavourCost,
+      countsAt: countsAtFor(world),
+    });
+  }
 }
 
 function contestSeat(world: World, seatId: SeatId, events: EventDraft[], electedPersonIds: Set<string>): void {
   const campaigns = world.closedCampaigns[seatId] ?? {};
   const incumbent = seatHolder(world, seatId);
   const incumbentDynastyId = incumbent?.dynastyId;
-  const incumbentDormant = incumbentDynastyId !== undefined && world.dynasties[incumbentDynastyId]?.dormant === true;
-  const contested = Object.keys(campaigns).some((dynastyId) => {
-    const dynasty = world.dynasties[dynastyId];
 
-    return dynasty !== undefined && !dynasty.dormant && dynasty.id !== incumbentDynastyId;
-  });
+  // A candidate is a dynasty that stood (an open campaign, now closed at noon)
+  // and is still able to run, plus the active incumbent. A dormant dynasty
+  // neither stands nor is defended: with nobody to take its seat, the seat
+  // falls vacant.
+  const candidateIds = [
+    ...new Set([
+      ...Object.keys(campaigns).filter((dynastyId) => {
+        const dynasty = world.dynasties[dynastyId];
 
-  // A dormant dynasty keeps its seat while nobody contests it. The placeholder
-  // election has no separate candidacy; #55 gives the holder its default
-  // candidacy and turns a challenger into a normal contest. Its own campaign
-  // stays where it is: it was paid for, and a later contested election or #55
-  // consumes it.
-  if (incumbentDormant && !contested) {
-    return;
-  }
-
-  // A dormant dynasty neither votes nor stands. Its seat is only cleared by an
-  // election, never by dormancy itself.
-  const candidates = Object.keys(world.dynasties)
-    .filter((dynastyId) => world.dynasties[dynastyId].dormant !== true)
+        return dynasty !== undefined && dynasty.dormant !== true && livingPersonOf(world, dynastyId) !== undefined;
+      }),
+      ...(incumbentDynastyId !== undefined &&
+      world.dynasties[incumbentDynastyId]?.dormant !== true &&
+      livingPersonOf(world, incumbentDynastyId) !== undefined
+        ? [incumbentDynastyId]
+        : []),
+    ]),
+  ]
     .filter((dynastyId) => {
       const person = livingPersonOf(world, dynastyId);
 
@@ -1132,14 +1194,19 @@ function contestSeat(world: World, seatId: SeatId, events: EventDraft[], elected
     })
     .sort();
 
-  if (candidates.length === 0) {
+  if (candidateIds.length === 0) {
+    const wasHeld = world.seats[seatId].personId !== null;
     world.seats[seatId] = { personId: null };
     delete world.closedCampaigns[seatId];
+
+    if (wasHeld) {
+      events.push({ type: 'council.election_held', audience: 'town', seatId, winnerDynastyId: null, votes: {} });
+    }
     return;
   }
 
   const votes: Record<string, number> = {};
-  for (const dynastyId of candidates) {
+  for (const dynastyId of candidateIds) {
     const [rng, roll] = drawBelow(world.rng, 5);
     world.rng = rng;
     votes[dynastyId] = roll + 1 + (campaigns[dynastyId] ?? 0);
@@ -1147,26 +1214,54 @@ function contestSeat(world: World, seatId: SeatId, events: EventDraft[], elected
 
   // Highest vote wins; a tie goes to the dynasty that comes first by id, so the
   // result never depends on the order of the object.
-  const winnerDynastyId = candidates.reduce((best, dynastyId) => (votes[dynastyId] > votes[best] ? dynastyId : best));
+  const winnerDynastyId = candidateIds.reduce((best, dynastyId) => (votes[dynastyId] > votes[best] ? dynastyId : best));
   const winner = livingPersonOf(world, winnerDynastyId);
+  const changed = winnerDynastyId !== incumbentDynastyId;
 
   if (winner !== undefined) {
-    // One office per person: to climb, the winner gives up the seat held.
-    for (const seat of Object.values(world.seats)) {
-      if (seat.personId === winner.id) {
-        seat.personId = null;
-      }
-    }
-
+    // Take the new seat before giving up the old ones: a refused assignment
+    // must not leave the winner with nowhere to sit.
     const assignment = takeSeat(world, winnerDynastyId, winner.id);
+
     if (assignment.ok) {
+      // One office per person: the winner gives up every other seat, and each
+      // seat it leaves is a public vacancy, even when that seat was already
+      // settled earlier in this scrutiny.
+      for (const otherSeatId of SEATS) {
+        if (otherSeatId !== seatId && world.seats[otherSeatId].personId === winner.id) {
+          world.seats[otherSeatId] = { personId: null };
+          events.push({
+            type: 'council.election_held',
+            audience: 'town',
+            seatId: otherSeatId,
+            winnerDynastyId: null,
+            votes: {},
+          });
+        }
+      }
+
       world.seats[seatId] = assignment.seat;
       electedPersonIds.add(winner.id);
     }
   }
   delete world.closedCampaigns[seatId];
 
-  events.push({ type: 'council.election_held', audience: 'town', seatId, winnerDynastyId, votes });
+  if (changed) {
+    events.push({ type: 'council.election_held', audience: 'town', seatId, winnerDynastyId, votes });
+  }
+
+  // Every candidate learns the result, whether the town sees a change or not.
+  for (const dynastyId of candidateIds) {
+    events.push({
+      type: 'council.election_result',
+      audience: { dynastyId },
+      dynastyId,
+      seatId,
+      won: dynastyId === winnerDynastyId,
+      winnerDynastyId,
+      votes,
+    });
+  }
 }
 
 /** The first living person of a dynasty by id, so a choice never depends on object order. */

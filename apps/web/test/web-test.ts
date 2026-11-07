@@ -112,6 +112,40 @@ describe('eventLine', () => {
     expect(line.text).toContain('Caron a acheté 1 laine');
   });
 
+  it('announces a vacant seat and a private election result', () => {
+    // Arrange
+    const vacant: Event = {
+      type: 'council.election_held',
+      audience: 'town',
+      at: 0,
+      seatId: 'maire',
+      winnerDynastyId: null,
+      votes: {},
+    };
+    const won: Event = {
+      type: 'council.election_result',
+      audience: { dynastyId: 'leclerc' },
+      at: 0,
+      dynastyId: 'leclerc',
+      seatId: 'maire',
+      won: true,
+      winnerDynastyId: 'leclerc',
+      votes: { leclerc: 4, caron: 2 },
+    };
+    const lost: Event = { ...won, won: false, winnerDynastyId: 'caron' };
+
+    // Act
+    const vacantLine = eventLine(vacant, 'leclerc', nameOf);
+    const wonLine = eventLine(won, 'leclerc', nameOf);
+    const lostLine = eventLine(lost, 'leclerc', nameOf);
+
+    // Assert
+    expect(vacantLine.text).toContain('reste vacante');
+    expect(wonLine.text).toContain('Vous êtes élu à la mairie');
+    expect(lostLine.text).toContain('Vous avez perdu la mairie');
+    expect(lostLine.text).toContain('Caron');
+  });
+
   it('reads a refusal as a refusal, not as money moving', () => {
     // Arrange
     const event: Event = {
@@ -273,6 +307,7 @@ describe('format helpers', () => {
     expect(refusalText('unknown_good')).toBe('denrée inconnue');
     expect(refusalText('insufficient_stock')).toBe('stock insuffisant');
     expect(refusalText('stock_full')).toBe('entrepôt plein');
+    expect(refusalText('already_candidate')).toBe('vous avez déjà une candidature en cours');
     expect(readErrorText('invalid_trade')).toBe('Métier inconnu.');
   });
 
