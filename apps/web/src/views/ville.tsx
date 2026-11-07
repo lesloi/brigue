@@ -1,6 +1,6 @@
 import { useState } from 'preact/hooks';
 
-import type { CalendarView, PendingActionView, WorldResponse } from '../api.ts';
+import type { PendingActionView, WorldResponse } from '../api.ts';
 import { eventLine, journalCountsText, ledgerEvents, type LedgerFilter } from '../events.ts';
 import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
@@ -107,8 +107,6 @@ export function Ville({
           <span class="l">faveur</span>
         </div>
       </section>
-
-      <Calendar calendar={world.calendar} year={world.year} now={now} />
 
       {data.dev === true ? <DevBar busy={advancing} onAdvance={onAdvance} /> : null}
 
@@ -314,17 +312,6 @@ export function countdownText(nextBellAt: string, now: number): string {
   return `cloche dans ${durationText(remaining)}`;
 }
 
-/** The same countdown for the scrutiny the projection dates, never a computed one. */
-export function scrutinyText(nextScrutinyAt: string, now: number): string {
-  const remaining = new Date(nextScrutinyAt).getTime() - now;
-
-  if (!Number.isFinite(remaining) || remaining <= 0) {
-    return 'scrutin imminent';
-  }
-
-  return `scrutin dans ${durationText(remaining)}`;
-}
-
 /** How long ago the town enacted a law, said in hours from its own clock. */
 export function lawAgeText(enactedAt: number, currentHour: number): string {
   const age = currentHour - enactedAt;
@@ -347,44 +334,6 @@ function durationText(remaining: number): string {
   }
 
   return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
-
-function Calendar({ calendar, year, now }: { calendar: CalendarView; year: number; now: number }) {
-  const hours = Array.from({ length: calendar.hoursPerYear }, (_, index) => index + 1);
-  // The projection dates the next scrutiny by its absolute hour; the cell is
-  // that hour's place in the year, so a scrutiny moved earlier still lands on
-  // the right cell.
-  const scrutinyHourOfYear = ((calendar.nextScrutinyHour - 1) % calendar.hoursPerYear) + 1;
-
-  return (
-    <section class="cal" aria-labelledby="cal-title">
-      <div class="h">
-        <b id="cal-title">Le calendrier</b>
-        <span>
-          an {year} &middot; heure {calendar.hourOfYear} sur {calendar.hoursPerYear}
-        </span>
-      </div>
-      <div class="cal-card">
-        <ol class="hours" aria-label={`Heure ${calendar.hourOfYear} sur ${calendar.hoursPerYear}`}>
-          {hours.map((hour) => (
-            <li
-              key={hour}
-              class={[hour === calendar.hourOfYear ? 'now' : '', hour === scrutinyHourOfYear ? 'scrutiny' : '']
-                .filter(Boolean)
-                .join(' ')}
-              aria-current={hour === calendar.hourOfYear ? 'true' : undefined}
-              title={hour === scrutinyHourOfYear ? 'Scrutin' : `Heure ${hour}`}
-            >
-              <span>{hour}</span>
-            </li>
-          ))}
-        </ol>
-        <p class="cal-line">
-          {scrutinyText(calendar.nextScrutinyAt, now)} &middot; toutes les charges sont remises en jeu.
-        </p>
-      </div>
-    </section>
-  );
 }
 
 function WorkshopRow({

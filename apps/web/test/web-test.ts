@@ -27,7 +27,7 @@ import {
   tradeName,
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
-import { catchUpText, countdownText, lawAgeText, scrutinyText } from '../src/views/ville.tsx';
+import { catchUpText, countdownText, lawAgeText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
   leclerc: 'Leclerc',
@@ -267,18 +267,6 @@ describe('countdownText', () => {
 
   it('does not go negative', () => {
     expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('cloche imminente');
-  });
-});
-
-describe('scrutinyText', () => {
-  const start = Date.parse('2026-01-01T00:00:00.000Z');
-
-  it('counts down to the instant the projection dates', () => {
-    expect(scrutinyText(new Date(start + 2 * 3_600_000 + 5 * 60_000).toISOString(), start)).toBe('scrutin dans 2 h 05');
-  });
-
-  it('never goes negative', () => {
-    expect(scrutinyText(new Date(start - 1_000).toISOString(), start)).toBe('scrutin imminent');
   });
 });
 
