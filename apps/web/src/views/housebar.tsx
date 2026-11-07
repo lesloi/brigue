@@ -36,7 +36,7 @@ export function HouseBar({
   const treasuryCents = Math.max(0, house.treasuryCents - setAside);
 
   return (
-    <section class="res" aria-label="Ta maison">
+    <section class="res" aria-label="Ta dynastie">
       <div class="c">
         <ResourceIcon kind="coins" />
         <span class="v">{formatCents(treasuryCents)}</span>

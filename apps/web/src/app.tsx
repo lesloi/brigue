@@ -331,7 +331,7 @@ export function App() {
     try {
       await renameHouse(name);
       await load();
-      showToast(`La maison s'appelle désormais ${name}.`);
+      showToast(`La dynastie s'appelle désormais ${name}.`);
     } catch (error) {
       setRenameError(
         error instanceof ApiError && error.code === 'name_taken'

@@ -81,7 +81,7 @@ export function Maison({
         <div class="id">
           <Seal />
           <div>
-            <div class="nm">Maison {house.name}</div>
+            <div class="nm">Dynastie {house.name}</div>
             <div class="pl">
               {world.town.name} &middot; an {world.year}
             </div>
@@ -108,7 +108,7 @@ export function Maison({
       <div class="body">
         <section class="sec" aria-labelledby="maison-title">
           <div class="h">
-            <b id="maison-title">Maison {house.name}</b>
+            <b id="maison-title">Dynastie {house.name}</b>
           </div>
           <div class="card">
             <form
@@ -120,7 +120,7 @@ export function Maison({
                 }
               }}
             >
-              <label for="house-name">Nom de la maison</label>
+              <label for="house-name">Nom de la dynastie</label>
               <input
                 id="house-name"
                 name="name"

@@ -236,7 +236,8 @@ already passed the instant, and the event carries both instants: late rather tha
 
 - **Ville** — the home screen. The town scene, your house, the journal, the laws in force
   and who carried them, and the register of what falls due.
-- **Maison** — buildings, residence, family, heirs, titles.
+- **Dynastie** — buildings, residence, family, heirs, titles. The tab that opens it keeps the
+  label Maison.
 - **Marché** — prices against their reference, stock, buying and selling, and the queued actions
   with their cancel.
 - **Conseil** — the twelve seats as a pyramid, the offices and their domains, the next sitting.

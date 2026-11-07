@@ -53,7 +53,7 @@ const COUNT_NAMES: Record<Event['type'], [string, string]> = {
   'house.title_bought': ['titre acheté', 'titres achetés'],
   'house.title_received': ['titre obtenu', 'titres obtenus'],
   'house.residence_received': ['résidence élevée', 'résidences élevées'],
-  'house.renamed': ['maison renommée', 'maisons renommées'],
+  'house.renamed': ['dynastie renommée', 'dynasties renommées'],
   'house.upkeep_paid': ['entretien payé', 'entretiens payés'],
   'house.penniless': ['entretien impayé', 'entretiens impayés'],
   'house.debt_repaid': ['remboursement', 'remboursements'],
@@ -218,7 +218,7 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
     case 'house.renamed':
       return {
         tone: 'council',
-        text: `La maison ${event.before} prend le nom de ${event.after}.`,
+        text: `La dynastie ${event.before} prend le nom de ${event.after}.`,
       };
 
     case 'house.upkeep_paid':

@@ -5,8 +5,10 @@ French in the data and in the interface, and the English here is only how we tal
 
 ## The town
 
-- **Maison** — a house: one family, its money, its title, its workshops, its grudges. The unit a
-  player controls, and the unit the simulation knows as a place.
+- **Dynastie** — the unit a player controls, called a house in English and `house` in the code:
+  one family, its money, its title, its workshops, its grudges. The simulation knows it as a
+  place. Two names in the interface still say Maison, on purpose: the tab that opens its screen,
+  and the residence level of that name, which is a building and not the player.
 - **Fondateur** — the first house of the town. Not a political role: no seat, no vote, no special
   trade; it only differs in its starting kit.
 - **Fournisseur** — an AI house that produces a raw good: wool, grain or wood. Permanent, and

@@ -62,11 +62,11 @@ export function Create({
     <div class="gate">
       <div class="gate-card">
         <Seal size={38} />
-        <h1>{lost ? 'Ta maison est perdue' : 'Fonde ta maison'}</h1>
+        <h1>{lost ? 'Ta dynastie est perdue' : 'Fonde ta dynastie'}</h1>
         <p>
           {lost
-            ? 'La ville a été remise à zéro : ta maison, ses ateliers et sa bourse ont disparu. Ton compte joueur, lui, est conservé. Donne un nom à ta maison et choisis un métier pour revenir.'
-            : 'Le nom de ta maison est son identité dans la ville : lettres et chiffres, sans accent ni espace, et deux maisons ne portent jamais le même.'}
+            ? 'La ville a été remise à zéro : ta dynastie, ses ateliers et sa bourse ont disparu. Ton compte joueur, lui, est conservé. Donne un nom à ta dynastie et choisis un métier pour revenir.'
+            : 'Le nom de ta dynastie est son identité dans la ville : lettres et chiffres, sans accent ni espace, et deux dynasties ne portent jamais le même nom.'}
         </p>
         <form
           class="house-name"
@@ -76,7 +76,7 @@ export function Create({
             event.preventDefault();
           }}
         >
-          <label for="create-name">Nom de la maison</label>
+          <label for="create-name">Nom de la dynastie</label>
           <input
             id="create-name"
             name="name"
@@ -84,7 +84,7 @@ export function Create({
             spellcheck={false}
             maxLength={24}
             required
-            placeholder={candidateError ? 'Le nom est à toi' : 'Le nom de ta maison'}
+            placeholder={candidateError ? 'Le nom est à toi' : 'Le nom de ta dynastie'}
             value={name}
             onInput={(event) => {
               setTouched(true);

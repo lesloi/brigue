@@ -50,7 +50,7 @@ export function Ville({
         <div class="id">
           <Seal />
           <div>
-            <div class="nm">Maison {house.name}</div>
+            <div class="nm">Dynastie {house.name}</div>
             <div class="pl">
               {world.town.name} &middot; an {world.year}
             </div>
@@ -91,7 +91,7 @@ export function Ville({
       <div class="body">
         <section class="sec" aria-labelledby="house-title">
           <div class="h">
-            <b id="house-title">Ta maison</b>
+            <b id="house-title">Ta dynastie</b>
             <span>
               {house.workshops.length} atelier{house.workshops.length > 1 ? 's' : ''}
             </span>
@@ -101,7 +101,7 @@ export function Ville({
               <div class="row empty">
                 <div class="nm">
                   <b>Aucun atelier</b>
-                  <p>La maison n'a pas encore de quoi produire.</p>
+                  <p>La dynastie n'a pas encore de quoi produire.</p>
                 </div>
               </div>
             ) : (
@@ -159,7 +159,7 @@ export function Ville({
                   setExpanded(false);
                 }}
               >
-                Ma maison
+                Ma dynastie
               </button>
               <button
                 type="button"
@@ -257,7 +257,7 @@ export function houseName(world: WorldResponse['world']): (houseId: string) => s
   const names = new Map(world.town.houses.map((house) => [house.id, house.name]));
   names.set(world.house.id, world.house.name);
 
-  return (houseId) => names.get(houseId) ?? 'une maison inconnue';
+  return (houseId) => names.get(houseId) ?? 'une dynastie inconnue';
 }
 
 export function countdownText(nextBellAt: string, now: number): string {

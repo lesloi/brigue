@@ -34,7 +34,38 @@ const NAMES: Record<string, string> = {
   herse: 'de Herse',
 };
 
-const nameOf = (houseId: string): string => NAMES[houseId] ?? 'une maison inconnue';
+const nameOf = (houseId: string): string => NAMES[houseId] ?? 'une dynastie inconnue';
+
+describe('refusalText', () => {
+  it('speaks of dynasties, not of houses', () => {
+    // Arrange
+    const refusals = ['unknown_house', 'dormant_house'] as const;
+
+    // Act
+    const said = refusals.map((reason) => refusalText(reason));
+
+    // Assert
+    expect(said).toEqual(['dynastie inconnue', 'dynastie dormante']);
+  });
+
+  it('names the account when its deletion is due, and the dynasty when it is gone', () => {
+    // Arrange
+    const action = ['deletion_pending', 'house_lost', 'no_free_house'] as const;
+    const read = ['house_lost'] as const;
+
+    // Act
+    const said = action.map((code) => actionErrorText(code));
+    const readSaid = read.map((code) => readErrorText(code));
+
+    // Assert
+    expect(said).toEqual([
+      'Ce compte est en cours de suppression.',
+      "Ta dynastie n'existe plus : choisis un métier pour revenir.",
+      "Cette ville n'a plus de dynastie libre.",
+    ]);
+    expect(readSaid).toEqual(["Ta dynastie n'existe plus : choisis un métier pour revenir."]);
+  });
+});
 
 describe('eventLine', () => {
   it('says "Vous" for the player and pluralises the goods', () => {
