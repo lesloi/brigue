@@ -1,8 +1,8 @@
-import { advance, humanHouseOf, PACING, type Event, type World } from '@brigue/core';
+import { advance, humanDynastyOf, PACING, type Event, type World } from '@brigue/core';
 
 import type { Logger } from '../logger.ts';
 import type { Player, PlayerStore } from '../identity/players.ts';
-import { applyPresence, removeHouse } from './presence.ts';
+import { applyPresence, removeDynasty } from './presence.ts';
 import {
   HOUR_MS,
   UnknownWorldError,
@@ -130,25 +130,25 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         const players = await options.players.listByTown(town.id);
         const presence = applyPresence(world, players, at.getTime());
 
-        for (const houseId of presence.deletedHouseIds) {
-          await options.players.revokeHouse(town.id, houseId, at);
-          options.logger.warn('world.house_deleted', { townId: town.id, houseId });
+        for (const dynastyId of presence.deletedDynastyIds) {
+          await options.players.revokeDynasty(town.id, dynastyId, at);
+          options.logger.warn('world.dynasty_deleted', { townId: town.id, dynastyId });
         }
 
-        // The identities whose week is over go before the hour plays: a house
+        // The identities whose week is over go before the hour plays: a dynasty
         // being erased must not act again.
         const expired = players.filter(
-          (player): player is Player & { houseId: string } =>
-            player.houseId !== null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
+          (player): player is Player & { dynastyId: string } =>
+            player.dynastyId !== null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
         );
-        const houses = new Set(expired.map((player) => player.houseId));
+        const dynasties = new Set(expired.map((player) => player.dynastyId));
 
-        for (const houseId of houses) {
-          removeHouse(presence.world, houseId);
-          await session.cancelHouse(houseId, at);
+        for (const dynastyId of dynasties) {
+          removeDynasty(presence.world, dynastyId);
+          await session.cancelDynasty(dynastyId, at);
         }
 
-        if (humanHouseOf(presence.world) === undefined) {
+        if (humanDynastyOf(presence.world) === undefined) {
           await session.clear();
           options.logger.info('town.deleted', { townId: town.id });
           return { expired, hour: null };
@@ -160,7 +160,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           at,
         );
 
-        if (due.hours > 0 || presence.changed || houses.size > 0) {
+        if (due.hours > 0 || presence.changed || dynasties.size > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
         if (due.skipped > 0) {
@@ -175,9 +175,9 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
       // The rows go once the world has committed: a failed save leaves the
       // identity whole, and the next pass tries again.
-      for (const houseId of new Set(outcome.expired.map((player) => player.houseId))) {
-        await options.players.deleteHouse(town.id, houseId);
-        options.logger.info('player.deleted', { townId: town.id, houseId });
+      for (const dynastyId of new Set(outcome.expired.map((player) => player.dynastyId))) {
+        await options.players.deleteDynasty(town.id, dynastyId);
+        options.logger.info('player.deleted', { townId: town.id, dynastyId });
       }
 
       // The journal is a feed: what fell out of the window goes, even on a pass
@@ -222,8 +222,8 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 }
 
 /**
- * The accounts a reset left without a house: their deletion deadline is the
- * same promise as a house's, and the erasure is the row itself. A failure here
+ * The accounts a reset left without a dynasty: their deletion deadline is the
+ * same promise as a dynasty's, and the erasure is the row itself. A failure here
  * must not stop the towns, so it gets its own line and the next pass retries.
  */
 async function eraseUnboundAccounts(players: PlayerStore, at: Date, logger: Logger): Promise<void> {

@@ -30,13 +30,13 @@ export async function readWorld(
     return;
   }
 
-  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.houseId, bound.cursorEventId ?? 0, at);
+  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, bound.cursorEventId ?? 0, at);
 
   if (outcome.kind === 'gone') {
-    // The visit arrived after the house was silent for a month: the world has
+    // The visit arrived after the dynasty was silent for a month: the world has
     // already deleted it and revoked the token. Clear the dead cookie so the
     // client can take the freed place.
-    context.deps.logger.warn('world.session_expired', { townId: bound.townId, houseId: bound.houseId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
@@ -52,13 +52,13 @@ export async function readWorld(
   }
   context.deps.logger.info('world.read', {
     townId: bound.townId,
-    houseId: bound.houseId,
+    dynastyId: bound.dynastyId,
     hour: caught.world.hour,
     hoursPlayed: caught.hours,
     skipped: caught.skipped,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.houseId, caught.hourStartedAt);
+  const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
   await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
@@ -112,14 +112,14 @@ export async function advanceHour(
   const outcome = await advanceTown(
     townAccess(context),
     bound.townId,
-    bound.houseId,
+    bound.dynastyId,
     bound.cursorEventId ?? 0,
     at,
     context.now,
   );
 
   if (outcome.kind === 'gone') {
-    context.deps.logger.warn('world.session_expired', { townId: bound.townId, houseId: bound.houseId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
@@ -129,11 +129,11 @@ export async function advanceHour(
 
   context.deps.logger.info('world.advanced', {
     townId: bound.townId,
-    houseId: bound.houseId,
+    dynastyId: bound.dynastyId,
     hour: caught.world.hour,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.houseId, caught.hourStartedAt);
+  const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
   await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {

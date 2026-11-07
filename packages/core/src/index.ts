@@ -3,22 +3,22 @@ export { isVisibleTo, visibleTo } from './events.ts';
 export type { Action, Audience, Event, EventDraft, RefusalReason } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
 export {
-  HOUSE_NAMES,
+  DYNASTY_NAMES,
   isValidName,
   nameIsTaken,
   nameKey,
   NAME_MAX_LENGTH,
   sanitizeName,
-  type HouseRenameOutcome,
-  type HouseRenameRequest,
+  type DynastyRenameOutcome,
+  type DynastyRenameRequest,
   type NameRefusal,
 } from './names.ts';
 export { advanceRng, drawBelow, MINSTD_MODULUS } from './prng.ts';
 export {
   advance,
-  houseRenamed,
+  dynastyRenamed,
   nextPriceCents,
-  renameHouse,
+  renameDynasty,
   renamePerson,
   WorldVersionError,
   type PlacedAction,
@@ -26,12 +26,12 @@ export {
   type TickResult,
 } from './tick.ts';
 export {
-  AI_HOUSE_NAMES,
-  createFirstHouse,
+  AI_DYNASTY_NAMES,
+  createFirstDynasty,
   createWorld,
-  withFirstHouse,
+  withFirstDynasty,
   withNewcomer,
-  humanHouseOf,
+  humanDynastyOf,
   displayedPrestige,
   FORMAT_VERSION,
   GOODS,
@@ -65,10 +65,10 @@ export {
   type Controller,
   type Engagement,
   type EngagementKind,
-  type HouseArrival,
-  type HouseIdentity,
+  type DynastyArrival,
+  type DynastyIdentity,
   type GoodId,
-  type House,
+  type Dynasty,
   type Law,
   type Person,
   type ResidenceStep,

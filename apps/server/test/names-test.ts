@@ -1,9 +1,9 @@
-import { createWorld, HOUSE_NAMES, isValidName, nameKey, type World } from '@brigue/core';
+import { createWorld, DYNASTY_NAMES, isValidName, nameKey, type World } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { drawHouseIdentity, drawTownName, PERSON_NAMES, suggestHouseName, TOWN_NAMES } from '../src/town/names.ts';
+import { drawDynastyIdentity, drawTownName, PERSON_NAMES, suggestDynastyName, TOWN_NAMES } from '../src/town/names.ts';
 
-describe('the suggested house name', () => {
+describe('the suggested dynasty name', () => {
   it('draws a name from the pool, and an opaque id that carries nothing of it', () => {
     // Arrange
     const world = createWorld(1);
@@ -11,12 +11,12 @@ describe('the suggested house name', () => {
 
     // Act and assert: a hundred draws are free, and no two ids are the same.
     for (let draw = 0; draw < 100; draw += 1) {
-      const name = suggestHouseName(names);
-      const identity = drawHouseIdentity(name);
+      const name = suggestDynastyName(names);
+      const identity = drawDynastyIdentity(name);
 
-      expect(HOUSE_NAMES).toContain(name);
-      expect(identity.houseName).toBe(name);
-      expect(identity.id).toMatch(/^house-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(DYNASTY_NAMES).toContain(name);
+      expect(identity.dynastyName).toBe(name);
+      expect(identity.id).toMatch(/^dynasty-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
       expect(identity.id).not.toContain(nameKey(name));
       expect(isValidName(name)).toBe(true);
       expect(PERSON_NAMES.some((firstName) => identity.personName.startsWith(`${firstName} `))).toBe(true);
@@ -24,18 +24,18 @@ describe('the suggested house name', () => {
     }
   });
 
-  it('never draws a name the town or another human house already carries, and keeps trying past a taken draw', () => {
+  it('never draws a name the town or another human dynasty already carries, and keeps trying past a taken draw', () => {
     // Arrange: a town whose free names are few, and the pool as it is.
     const elsewhere = new Set([nameKey('Leclerc'), nameKey('Moreau')]);
     const drawn = new Map<string, number>();
     // A pool of two free names among thirty draws: a draw that lands on one of
     // the other twenty-eight must be replaced by another, not accepted.
-    const free = new Set(HOUSE_NAMES.filter((name) => !elsewhere.has(nameKey(name))).map((name) => nameKey(name)));
+    const free = new Set(DYNASTY_NAMES.filter((name) => !elsewhere.has(nameKey(name))).map((name) => nameKey(name)));
     expect(free.size).toBeGreaterThan(1);
 
     // Act
     for (let draw = 0; draw < 200; draw += 1) {
-      const name = suggestHouseName(['Caron', 'Cáron', 'Fournier'], elsewhere);
+      const name = suggestDynastyName(['Caron', 'Cáron', 'Fournier'], elsewhere);
       drawn.set(name, (drawn.get(name) ?? 0) + 1);
     }
 
@@ -47,14 +47,14 @@ describe('the suggested house name', () => {
   it('leaves the name empty when every draw is taken, so the player writes their own', () => {
     // Arrange: a town carrying the whole pool.
     const world = createWorld(1);
-    const taken = [...HOUSE_NAMES];
+    const taken = [...DYNASTY_NAMES];
 
     // Act
-    const name = suggestHouseName(taken);
+    const name = suggestDynastyName(taken);
 
     // Assert: the pool is a suggestion, never a limit.
     expect(name).toBe('');
-    expect(taken).toEqual([...HOUSE_NAMES]);
+    expect(taken).toEqual([...DYNASTY_NAMES]);
     expect(namesOf(world)).not.toContain('');
   });
 });
@@ -69,5 +69,5 @@ describe('the town name', () => {
 });
 
 function namesOf(world: World): string[] {
-  return Object.values(world.houses).map((house) => house.name);
+  return Object.values(world.dynasties).map((dynasty) => dynasty.name);
 }

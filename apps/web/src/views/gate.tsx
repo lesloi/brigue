@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { Seal } from '../icons.tsx';
 import { Modal } from './modal.tsx';
 
-interface LostHouseProps {
+interface LostDynastyProps {
   busy: boolean;
   error: string | null;
   onResume(token: string): void;
 }
 
-export function LostHouse({ busy, error, onResume }: LostHouseProps) {
+export function LostDynasty({ busy, error, onResume }: LostDynastyProps) {
   const [candidate, setCandidate] = useState('');
 
   return (

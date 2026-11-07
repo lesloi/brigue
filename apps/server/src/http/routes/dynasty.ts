@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { houseRenamed, NAME_PRICE, renameHouse } from '@brigue/core';
+import { dynastyRenamed, NAME_PRICE, renameDynasty } from '@brigue/core';
 
 import { NameInUseError, sessionWorld } from '../../town/worlds.ts';
 import type { BoundPlayer } from '../../identity/players.ts';
@@ -9,19 +9,19 @@ import { readBody, sendJson } from '../respond.ts';
 import { humanNamesElsewhere } from './name-suggestion.ts';
 
 /**
- * The house's name, changed at once rather than queued.
+ * The dynasty's name, changed at once rather than queued.
  *
  * A name is identity, not trade: the player who pays for it should not read the
  * old one until the next hour, and a queued rename would reserve a name for an
- * hour in front of every other house. The route runs under the world's own lock
+ * hour in front of every other dynasty. The route runs under the world's own lock
  * — the same one the scheduler takes — and writes the town in that session, so
  * no tick can land between the check and the write.
  *
  * The name's rules are the core's: two names that differ by case or by accent
- * are one name, and a name another house carries is refused with 409. The
- * database compares bytes, so the read of the houses is the check that counts.
+ * are one name, and a name another dynasty carries is refused with 409. The
+ * database compares bytes, so the read of the dynasties is the check that counts.
  */
-export async function renameHouseRoute(
+export async function renameDynastyRoute(
   context: AppContext,
   request: IncomingMessage,
   response: ServerResponse,
@@ -75,25 +75,25 @@ async function renameInTown(context: AppContext, bound: BoundPlayer, name: strin
     const { world, hourStartedAt } = session.snapshot;
     sessionWorld(session);
 
-    const house = world.houses[bound.houseId];
-    if (house === undefined) {
+    const dynasty = world.dynasties[bound.dynastyId];
+    if (dynasty === undefined) {
       return { kind: 'lost' as const };
     }
-    if (house.dormant) {
+    if (dynasty.dormant) {
       return { kind: 'dormant' as const };
     }
 
     const next = structuredClone(world);
-    const renamed = next.houses[house.id];
+    const renamed = next.dynasties[dynasty.id];
     if (renamed === undefined) {
       return { kind: 'lost' as const };
     }
 
-    // A human house is held to the server-wide rule; the town's own houses are
+    // A human dynasty is held to the server-wide rule; the town's own dynasties are
     // read from the world the route locked, and the keys of the humans
-    // elsewhere were read before the lock: a house founded between the two is
+    // elsewhere were read before the lock: a dynasty founded between the two is
     // caught by the index, and the save fails whole rather than half-write.
-    const outcome = renameHouse(next, renamed, {
+    const outcome = renameDynasty(next, renamed, {
       name,
       priceCents: NAME_PRICE.renameCents,
       takenElsewhere: await humanNamesElsewhere(context),
@@ -101,8 +101,8 @@ async function renameInTown(context: AppContext, bound: BoundPlayer, name: strin
 
     switch (outcome.ok ? 'renamed' : outcome.reason) {
       case 'renamed': {
-        const before = house.name;
-        await session.save(next, hourStartedAt, [{ ...houseRenamed(renamed, before), at: world.hour }]);
+        const before = dynasty.name;
+        await session.save(next, hourStartedAt, [{ ...dynastyRenamed(renamed, before), at: world.hour }]);
 
         return { kind: 'renamed' as const, name: renamed.name };
       }
@@ -126,14 +126,14 @@ function answer(
 ): void {
   switch (kind) {
     case 'renamed':
-      context.deps.logger.info('house.renamed', { townId: bound.townId, houseId: bound.houseId });
+      context.deps.logger.info('dynasty.renamed', { townId: bound.townId, dynastyId: bound.dynastyId });
       sendJson(response, 200, { name });
       return;
     case 'taken':
       sendJson(response, 409, { error: 'name_taken' });
       return;
     case 'dormant':
-      sendJson(response, 409, { error: 'dormant_house' });
+      sendJson(response, 409, { error: 'dormant_dynasty' });
       return;
     case 'poor':
       sendJson(response, 409, { error: 'insufficient_funds' });
@@ -142,7 +142,7 @@ function answer(
       sendJson(response, 400, { error: 'invalid_name' });
       return;
     case 'lost':
-      sendJson(response, 404, { error: 'unknown_house' });
+      sendJson(response, 404, { error: 'unknown_dynasty' });
   }
 }
 

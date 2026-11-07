@@ -34,8 +34,8 @@ export interface TownInfo {
 export interface StoredAction {
   /** Client-generated; the database primary key is what makes a retry a duplicate. */
   id: string;
-  /** Always the authenticated player's house, never whatever the request body said. */
-  houseId: string;
+  /** Always the authenticated player's dynasty, never whatever the request body said. */
+  dynastyId: string;
   /** The town hour the action plays on. */
   playsAt: number;
   action: Action;
@@ -76,24 +76,24 @@ export interface WorldSession {
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
   actionsBetween(from: number, to: number): Promise<StoredAction[]>;
   /** The journal after a reader's cursor, and how much is left beyond the page. */
-  eventsSince(afterId: number, limit: number, houseId: string): Promise<JournalPage>;
+  eventsSince(afterId: number, limit: number, dynastyId: string): Promise<JournalPage>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
   /** Marks an unplayed action cancelled; it is never handed to the advance. */
   cancel(id: string, at: Date): Promise<void>;
-  /** Cancels every unplayed action of a house, for an identity that goes. */
-  cancelHouse(houseId: string, at: Date): Promise<void>;
+  /** Cancels every unplayed action of a dynasty, for an identity that goes. */
+  cancelDynasty(dynastyId: string, at: Date): Promise<void>;
   /** Writes the whole town and appends the events of the span. */
   save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
   /**
-   * Deletes the town — its state, houses, people, actions and journal — and
+   * Deletes the town — its state, dynasties, people, actions and journal — and
    * leaves the players and the sealed seasons. The next join founds a new one.
    */
   clear(): Promise<void>;
 }
 
 /**
- * The loaded town must be the format and ruleset this code plays: wake no house
+ * The loaded town must be the format and ruleset this code plays: wake no dynasty
  * and revoke no token before the world is known readable.
  */
 export function sessionWorld(session: WorldSession): World {
@@ -133,9 +133,9 @@ export interface WorldStore {
    */
   pruneJournal(townId: number, oldestKeptHour: number): Promise<void>;
   /**
-   * The keys of every human house's name, the whole server over: the global
-   * ranking reads human houses by name, so no two of them may share one. An AI
-   * house is not here — it carries the same names in every town.
+   * The keys of every human dynasty's name, the whole server over: the global
+   * ranking reads human dynasties by name, so no two of them may share one. An AI
+   * dynasty is not here — it carries the same names in every town.
    */
   listHumanNames(): Promise<string[]>;
   close(): Promise<void>;
@@ -149,13 +149,13 @@ export class UnknownWorldError extends Error {
 }
 
 /**
- * A human house of the server already carries the name a write tried to give
+ * A human dynasty of the server already carries the name a write tried to give
  * one. The store refuses it whole, so no town is half written; the routes
- * answer the same 409 a rename answers, and a retry reads the houses again.
+ * answer the same 409 a rename answers, and a retry reads the dynasties again.
  */
 export class NameInUseError extends Error {
   constructor() {
-    super('a human house of the server already carries this name');
+    super('a human dynasty of the server already carries this name');
     this.name = 'NameInUseError';
   }
 }
@@ -208,16 +208,16 @@ export class MemoryWorldStore implements WorldStore {
     return [...this.towns.values()]
       .sort(
         (left, right) =>
-          Object.keys(left.snapshot.world.houses).length - Object.keys(right.snapshot.world.houses).length,
+          Object.keys(left.snapshot.world.dynasties).length - Object.keys(right.snapshot.world.dynasties).length,
       )
       .map((stored) => ({ ...stored.snapshot.town }));
   }
 
   async listHumanNames(): Promise<string[]> {
     return [...this.towns.values()].flatMap((stored) =>
-      Object.values(stored.snapshot.world.houses)
-        .filter((house) => house.controller === 'human')
-        .map((house) => house.name),
+      Object.values(stored.snapshot.world.dynasties)
+        .filter((dynasty) => dynasty.controller === 'human')
+        .map((dynasty) => dynasty.name),
     );
   }
 
@@ -284,8 +284,8 @@ export class MemoryWorldStore implements WorldStore {
           .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
           .sort((left, right) => left.playsAt - right.playsAt)
           .map((action) => structuredClone(action)),
-      eventsSince: async (afterId, limit, houseId) => {
-        const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, houseId));
+      eventsSince: async (afterId, limit, dynastyId) => {
+        const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, dynastyId));
         const page = visible.slice(-limit);
         const tally = emptyTally();
 
@@ -317,9 +317,9 @@ export class MemoryWorldStore implements WorldStore {
           found.cancelledAt = new Date(at);
         }
       },
-      cancelHouse: async (houseId, at) => {
+      cancelDynasty: async (dynastyId, at) => {
         for (const action of stored.actions) {
-          if (action.houseId === houseId && action.cancelledAt === null) {
+          if (action.dynastyId === dynastyId && action.cancelledAt === null) {
             action.cancelledAt = new Date(at);
           }
         }

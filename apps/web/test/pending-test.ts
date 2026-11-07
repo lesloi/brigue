@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { isCancellable, pendingHourText } from '../src/pending.ts';
 
-const action = (hour: number) => ({ id: 'a', hour, type: 'house.buy_title' as const });
+const action = (hour: number) => ({ id: 'a', hour, type: 'dynasty.buy_title' as const });
 
 describe('a queued action', () => {
   it('can be taken back only until its hour has played', () => {

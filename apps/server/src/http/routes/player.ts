@@ -11,7 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * The player asks to delete their identity. The request is scheduled, not
  * immediate: the token stays valid so they can come back, and the scheduler
- * erases the house, its queue and the row at the deadline. A second request
+ * erases the dynasty, its queue and the row at the deadline. A second request
  * keeps the first deadline.
  */
 export async function requestDeletion(
@@ -39,7 +39,7 @@ export async function requestDeletion(
     await context.deps.store.markDeletion(player.tokenHash, after);
     context.deps.logger.info('player.deletion_scheduled', {
       townId: player.townId,
-      houseId: player.houseId,
+      dynastyId: player.dynastyId,
       deleteAfter: after.toISOString(),
     });
   }
@@ -68,7 +68,7 @@ export async function cancelDeletion(
 
   if (closing.kind === 'pending') {
     await context.deps.store.cancelDeletion(player.tokenHash);
-    context.deps.logger.info('player.deletion_cancelled', { townId: player.townId, houseId: player.houseId });
+    context.deps.logger.info('player.deletion_cancelled', { townId: player.townId, dynastyId: player.dynastyId });
   }
 
   response.writeHead(204, { 'Cache-Control': 'no-store' });

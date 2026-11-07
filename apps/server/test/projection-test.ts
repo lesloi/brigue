@@ -101,7 +101,7 @@ describe('the projection calendar', () => {
     const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
-    expect(projection.house.workshops).toEqual([
+    expect(projection.dynasty.workshops).toEqual([
       {
         id: 'workshop-1',
         good: 'bread',
@@ -120,13 +120,13 @@ describe('the projection calendar', () => {
   it('carries zero input for a raw workshop', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
-    expect(projection.house.workshops[0]).toEqual({
+    expect(projection.dynasty.workshops[0]).toEqual({
       id: 'workshop-1',
       good: 'wool',
       level: 2,
@@ -143,13 +143,13 @@ describe('the projection calendar', () => {
   it('scales the hourly figures with the level', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 3 }];
+    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 3 }];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
-    expect(projection.house.workshops[0]).toEqual({
+    expect(projection.dynasty.workshops[0]).toEqual({
       id: 'workshop-1',
       good: 'cloth',
       level: 3,
@@ -172,27 +172,27 @@ describe('the projection calendar', () => {
 
     // Assert: the client sums nothing and derives no capacity.
     expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
-    expect(projection.house.stockUnits).toBe(stockUnits(world.houses.leclerc));
-    expect(projection.house.stockUnits).toBe(8);
-    expect(projection.house.stockCapacityUnits).toBe(stockCapacityUnits(world.houses.leclerc));
+    expect(projection.dynasty.stockUnits).toBe(stockUnits(world.dynasties.leclerc));
+    expect(projection.dynasty.stockUnits).toBe(8);
+    expect(projection.dynasty.stockCapacityUnits).toBe(stockCapacityUnits(world.dynasties.leclerc));
   });
 
   it('carries the ladder in its three shares, its names and the doors', () => {
     // Arrange: a fait, bourgeois, whose level 2 opens the residence 2.
     const world = town(SEED);
-    world.houses.leclerc.title = 'bourgeois';
-    world.houses.leclerc.prestige = 10_000;
+    world.dynasties.leclerc.title = 'bourgeois';
+    world.dynasties.leclerc.prestige = 10_000;
     world.engagements = [
-      { id: 'engagement-1', kind: 'site', houseId: 'leclerc', dueAt: world.hour + 6, work: 'title' },
+      { id: 'engagement-1', kind: 'site', dynastyId: 'leclerc', dueAt: world.hour + 6, work: 'title' },
     ];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
 
     // Assert
-    expect(projection.house.title).toBe('bourgeois');
-    expect(projection.house.residenceLevel).toBe(1);
-    expect(projection.house.ladder).toEqual({
+    expect(projection.dynasty.title).toBe('bourgeois');
+    expect(projection.dynasty.residenceLevel).toBe(1);
+    expect(projection.dynasty.ladder).toEqual({
       title: 'bourgeois',
       residence: 'Masure',
       titlePrestige: 80,
@@ -205,19 +205,19 @@ describe('the projection calendar', () => {
       nextTitle: { title: 'notable', priceCents: 120_000 },
       nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true, hours: 1 },
     });
-    expect(projection.house.prestige).toBe(80 + 0 + 200);
-    expect(projection.house.build).toEqual({
+    expect(projection.dynasty.prestige).toBe(80 + 0 + 200);
+    expect(projection.dynasty.build).toEqual({
       priceCents: RULES.buildCents,
       hours: RULES.siteHours,
       level: RULES.builtWorkshopLevel,
       room: 0,
       cap: 1,
     });
-    expect(projection.house.sites).toEqual([
+    expect(projection.dynasty.sites).toEqual([
       { id: 'engagement-1', dueAt: world.hour + 6, work: 'title', trade: null, workshopId: null },
     ]);
-    expect(projection.house.rename).toEqual({ priceCents: NAME_PRICE.renameCents });
-    expect(projection.town.houses.find((house) => house.id === 'leclerc')?.prestige).toBe(280);
+    expect(projection.dynasty.rename).toEqual({ priceCents: NAME_PRICE.renameCents });
+    expect(projection.town.dynasties.find((dynasty) => dynasty.id === 'leclerc')?.prestige).toBe(280);
   });
 
   it('carries the year of prices and their references', () => {

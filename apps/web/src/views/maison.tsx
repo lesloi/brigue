@@ -11,11 +11,11 @@ import {
   tradeName,
   workshopName,
 } from '../format.ts';
-import { HouseScene } from '../house-scene.tsx';
+import { DynastyScene } from '../dynasty-scene.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 import { pendingHourText } from '../pending.ts';
 import { DevBar } from './devbar.tsx';
-import { HouseBar } from './housebar.tsx';
+import { DynastyBar } from './dynastybar.tsx';
 
 interface MaisonProps {
   data: WorldResponse;
@@ -37,10 +37,10 @@ interface MaisonProps {
 const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCompare(tradeName(right), 'fr'));
 
 /**
- * The Maison screen: what the house is — its name, its title, its residence —
+ * The Maison screen: what the dynasty is — its name, its title, its residence —
  * and what it holds — its workshops. Every figure comes from the projection,
  * including the price of the next step and whether the door is open: the screen
- * shows the gate and asks; it never decides whether the house may pass.
+ * shows the gate and asks; it never decides whether the dynasty may pass.
  */
 export function Maison({
   data,
@@ -59,29 +59,29 @@ export function Maison({
   onAdvance,
 }: MaisonProps) {
   const { world } = data;
-  const house = world.house;
-  const ladder = house.ladder;
-  const [name, setName] = useState(house.name);
+  const dynasty = world.dynasty;
+  const ladder = dynasty.ladder;
+  const [name, setName] = useState(dynasty.name);
   const [choosing, setChoosing] = useState(false);
   // A workshop's works lock the builders; the remise of a title does not, it is
   // the town's own door. A second degree waits only on the first being
   // delivered, which is what `titleQueued` and the site of a title say.
-  const building = house.sites.some((site) => site.work !== 'title');
+  const building = dynasty.sites.some((site) => site.work !== 'title');
   // The queued purchases wait for their order to play: the next degree is
   // already bought as far as this hour is concerned.
-  const titleQueued = pending.some((action) => action.type === 'house.buy_title');
-  const residenceQueued = pending.some((action) => action.type === 'house.upgrade_residence');
-  const renameQueued = name.trim() !== house.name;
+  const titleQueued = pending.some((action) => action.type === 'dynasty.buy_title');
+  const residenceQueued = pending.some((action) => action.type === 'dynasty.upgrade_residence');
+  const renameQueued = name.trim() !== dynasty.name;
 
   return (
     <main class="screen">
-      <section class="hero hero-house" aria-label={house.name}>
-        <HouseScene residenceLevel={house.residenceLevel} />
+      <section class="hero hero-dynasty" aria-label={dynasty.name}>
+        <DynastyScene residenceLevel={dynasty.residenceLevel} />
         <div class="scrim"></div>
         <div class="id">
           <Seal />
           <div>
-            <div class="nm">Dynastie {house.name}</div>
+            <div class="nm">Dynastie {dynasty.name}</div>
             <div class="pl">
               {world.town.name} &middot; an {world.year}
             </div>
@@ -92,23 +92,23 @@ export function Maison({
         </div>
         <div class="cap">
           <div>
-            <div class="sub">{titleName(house.title)}</div>
+            <div class="sub">{titleName(dynasty.title)}</div>
             <h1>{ladder.residence}</h1>
           </div>
           <div class="cap-right">
-            {house.workshops.length} atelier{house.workshops.length > 1 ? 's' : ''}
+            {dynasty.workshops.length} atelier{dynasty.workshops.length > 1 ? 's' : ''}
           </div>
         </div>
       </section>
 
-      <HouseBar data={data} mode="house" pending={pending} />
+      <DynastyBar data={data} mode="dynasty" pending={pending} />
 
       {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
         <section class="sec" aria-labelledby="maison-title">
           <div class="h">
-            <b id="maison-title">Dynastie {house.name}</b>
+            <b id="maison-title">Dynastie {dynasty.name}</b>
           </div>
           <div class="card">
             <form
@@ -120,9 +120,9 @@ export function Maison({
                 }
               }}
             >
-              <label for="house-name">Nom de la dynastie</label>
+              <label for="dynasty-name">Nom de la dynastie</label>
               <input
-                id="house-name"
+                id="dynasty-name"
                 name="name"
                 autocomplete="off"
                 maxLength={24}
@@ -131,7 +131,7 @@ export function Maison({
               />
               <button class="btn outline" type="submit" disabled={!renameQueued || busy === 'rename'}>
                 <span class="btn-label">
-                  Renommer <Price cents={house.rename.priceCents} />
+                  Renommer <Price cents={dynasty.rename.priceCents} />
                 </span>
               </button>
             </form>
@@ -150,7 +150,7 @@ export function Maison({
                   <p>
                     {titleHint(
                       titleQueued || building,
-                      house.sites.some((site) => site.work === 'title'),
+                      dynasty.sites.some((site) => site.work === 'title'),
                     )}
                   </p>
                 </div>
@@ -163,7 +163,7 @@ export function Maison({
                     titleQueued ||
                     !ladder.nextTitle ||
                     busy === 'title' ||
-                    house.treasuryCents < ladder.nextTitle.priceCents
+                    dynasty.treasuryCents < ladder.nextTitle.priceCents
                   }
                   onClick={onBuyTitle}
                 >
@@ -194,7 +194,7 @@ export function Maison({
                     residenceQueued ||
                     !ladder.nextResidence.opened ||
                     busy === 'residence' ||
-                    house.treasuryCents < ladder.nextResidence.priceCents
+                    dynasty.treasuryCents < ladder.nextResidence.priceCents
                   }
                   onClick={onUpgradeResidence}
                 >
@@ -211,23 +211,23 @@ export function Maison({
           <div class="h">
             <b id="ateliers-title">Ateliers</b>
             <span>
-              {house.workshops.length} / {formatCount(ladder.workshops)}
+              {dynasty.workshops.length} / {formatCount(ladder.workshops)}
             </span>
           </div>
           <div class="card">
-            {house.workshops.map((workshop) => (
+            {dynasty.workshops.map((workshop) => (
               <WorkshopLine
                 key={workshop.id}
                 workshop={workshop}
                 busy={busy}
                 building={building}
-                last={house.workshops.length <= 1}
+                last={dynasty.workshops.length <= 1}
                 onUpgrade={onUpgrade}
                 onDestroy={onDestroy}
               />
             ))}
           </div>
-          {house.build.room > 0 && choosing ? (
+          {dynasty.build.room > 0 && choosing ? (
             <div class="card trade-list">
               {TRADE_CHOICES.map((trade) => (
                 <button
@@ -245,7 +245,7 @@ export function Maison({
                 </button>
               ))}
             </div>
-          ) : house.build.room > 0 ? (
+          ) : dynasty.build.room > 0 ? (
             <button
               class="btn outline wide"
               type="button"
@@ -253,7 +253,7 @@ export function Maison({
               onClick={() => setChoosing(true)}
             >
               <span class="btn-label">
-                Bâtir un atelier <Price cents={house.build.priceCents} /> · {formatCount(house.build.hours)} h
+                Bâtir un atelier <Price cents={dynasty.build.priceCents} /> · {formatCount(dynasty.build.hours)} h
               </span>
             </button>
           ) : null}
@@ -311,7 +311,10 @@ function titleHint(queued: boolean, delivering: boolean): string {
  * What holds the next residence level, or how long it takes: a door the title
  * has not opened yet, or the hours the upgrade costs.
  */
-function residenceHint(ladder: WorldResponse['world']['house']['ladder'], nameOf: (title: TitleId) => string): string {
+function residenceHint(
+  ladder: WorldResponse['world']['dynasty']['ladder'],
+  nameOf: (title: TitleId) => string,
+): string {
   const next = ladder.nextResidence;
 
   if (next === null) {

@@ -35,11 +35,11 @@ interface WorldBody {
   world: {
     hour: number;
     year: number;
-    house: { id: string; stock: Record<string, number>; favour: number };
-    town: { houses: Array<Record<string, unknown>> };
+    dynasty: { id: string; stock: Record<string, number>; favour: number };
+    town: { dynasties: Array<Record<string, unknown>> };
     nextBellAt: string;
   };
-  events: Array<Record<string, unknown> & { type: string; houseId?: string; units?: number }>;
+  events: Array<Record<string, unknown> & { type: string; dynastyId?: string; units?: number }>;
   summary: {
     hours: number;
     skipped: number;
@@ -57,7 +57,7 @@ afterEach(async () => {
 });
 
 async function start(
-  options: { world?: World; at?: number; devAdvance?: boolean; houses?: string[] } = {},
+  options: { world?: World; at?: number; devAdvance?: boolean; dynasties?: string[] } = {},
 ): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
@@ -85,11 +85,11 @@ async function start(
   const world = options.world ?? town(20261031);
   await worlds.createTown(TEST_TOWN.name, world, new Date(clock.now));
 
-  const houses = options.houses ?? ['leclerc'];
+  const dynasties = options.dynasties ?? ['leclerc'];
   const cookies: Record<string, string> = {};
-  for (const houseId of houses) {
-    const { token } = await issueToken(store, TEST_TOWN.id, houseId, new Date(clock.now));
-    cookies[houseId] = `${SESSION_COOKIE}=${token}`;
+  for (const dynastyId of dynasties) {
+    const { token } = await issueToken(store, TEST_TOWN.id, dynastyId, new Date(clock.now));
+    cookies[dynastyId] = `${SESSION_COOKIE}=${token}`;
   }
 
   // The scheduler's pass, minus the timer: what the loop would do on its own.
@@ -126,7 +126,7 @@ async function start(
     logs,
     clock,
     cookies,
-    cookie: cookies[houses[0] as string] as string,
+    cookie: cookies[dynasties[0] as string] as string,
   };
 }
 
@@ -134,8 +134,8 @@ function getWorld(harness: Harness): Promise<Response> {
   return fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookie } });
 }
 
-function getWorldAs(harness: Harness, houseId: string): Promise<Response> {
-  return fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookies[houseId] as string } });
+function getWorldAs(harness: Harness, dynastyId: string): Promise<Response> {
+  return fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookies[dynastyId] as string } });
 }
 
 async function worldBody(harness: Harness): Promise<WorldBody> {
@@ -146,8 +146,8 @@ async function worldBody(harness: Harness): Promise<WorldBody> {
   return (await response.json()) as WorldBody;
 }
 
-async function worldBodyAs(harness: Harness, houseId: string): Promise<WorldBody> {
-  const response = await getWorldAs(harness, houseId);
+async function worldBodyAs(harness: Harness, dynastyId: string): Promise<WorldBody> {
+  const response = await getWorldAs(harness, dynastyId);
 
   expect(response.status).toBe(200);
 
@@ -158,22 +158,22 @@ function postAction(harness: Harness, body: unknown): Promise<Response> {
   return postActionAs(harness, 'leclerc', body);
 }
 
-function postActionAs(harness: Harness, houseId: string, body: unknown): Promise<Response> {
+function postActionAs(harness: Harness, dynastyId: string, body: unknown): Promise<Response> {
   return fetch(`${harness.url}/api/actions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Cookie: harness.cookies[houseId] as string },
+    headers: { 'Content-Type': 'application/json', Cookie: harness.cookies[dynastyId] as string },
     body: JSON.stringify(body),
   });
 }
 
-function getPending(harness: Harness, houseId = 'leclerc'): Promise<Response> {
-  return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[houseId] as string } });
+function getPending(harness: Harness, dynastyId = 'leclerc'): Promise<Response> {
+  return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[dynastyId] as string } });
 }
 
-function cancelPending(harness: Harness, id: string, houseId = 'leclerc'): Promise<Response> {
+function cancelPending(harness: Harness, id: string, dynastyId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions/${id}`, {
     method: 'DELETE',
-    headers: { Cookie: harness.cookies[houseId] as string },
+    headers: { Cookie: harness.cookies[dynastyId] as string },
   });
 }
 
@@ -310,9 +310,9 @@ describe('GET /api/world', () => {
   });
 
   it('refuses a world of the previous format at the door', async () => {
-    // Arrange: format 2 is what this build replaced; it is refused before any
-    // replay, so the town is never read through the wrong shape.
-    const world = { ...town(7), formatVersion: 2 };
+    // Arrange: the format this build replaced is refused before any replay, so
+    // the town is never read through the wrong shape.
+    const world = { ...town(7), formatVersion: FORMAT_VERSION - 1 };
     const harness = await start({ world });
     const before = stateHash(world);
     await harness.advance(2 * HOUR);
@@ -324,7 +324,7 @@ describe('GET /api/world', () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       error: 'world_version',
-      formatVersion: 2,
+      formatVersion: FORMAT_VERSION - 1,
       rulesetVersion: RULES.version,
       expected: { formatVersion: FORMAT_VERSION, rulesetVersion: RULES.version },
     });
@@ -333,7 +333,7 @@ describe('GET /api/world', () => {
     expect(after.hour).toBe(1);
   });
 
-  it('shows its own house in full, the town without the seed or other purses', async () => {
+  it('shows its own dynasty in full, the town without the seed or other purses', async () => {
     // Arrange
     const harness = await start();
 
@@ -342,21 +342,21 @@ describe('GET /api/world', () => {
     const serialised = JSON.stringify(body);
 
     // Assert
-    expect(body.world.house.id).toBe('leclerc');
+    expect(body.world.dynasty.id).toBe('leclerc');
     expect(serialised).not.toContain('"seed"');
     expect(serialised).not.toContain('"rng"');
-    expect(body.world.town.houses.every((house) => !('treasuryCents' in house))).toBe(true);
+    expect(body.world.town.dynasties.every((dynasty) => !('treasuryCents' in dynasty))).toBe(true);
     expect(new Date(body.world.nextBellAt).getTime()).toBe(START + 12 * HOUR);
     // The hash covers the projection, not the seed-bearing world.
     expect(body.stateHash).toBe(hashJson(body.world));
   });
 
-  it('returns a house its own ledger and not another house’s', async () => {
-    // Arrange: both houses read the same last hour, so the second read is
+  it('returns a dynasty its own ledger and not another dynasty’s', async () => {
+    // Arrange: both dynasties read the same last hour, so the second read is
     // served from the stored events of the first.
     const world = town(20261031);
-    world.houses.caron.controller = 'human';
-    const harness = await start({ world, houses: ['leclerc', 'caron'] });
+    world.dynasties.caron.controller = 'human';
+    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
     await harness.advance(HOUR);
 
     // Act
@@ -364,8 +364,8 @@ describe('GET /api/world', () => {
     const caron = await worldBodyAs(harness, 'caron');
 
     // Assert
-    const wagesOf = (body: WorldBody, houseId: string) =>
-      body.events.filter((event) => event.type === 'house.upkeep_paid' && event.houseId === houseId);
+    const wagesOf = (body: WorldBody, dynastyId: string) =>
+      body.events.filter((event) => event.type === 'dynasty.upkeep_paid' && event.dynastyId === dynastyId);
 
     expect(wagesOf(leclerc, 'leclerc').length).toBeGreaterThan(0);
     expect(wagesOf(leclerc, 'caron')).toEqual([]);
@@ -373,15 +373,15 @@ describe('GET /api/world', () => {
     expect(wagesOf(caron, 'leclerc')).toEqual([]);
   });
 
-  it('projects and ticks a town of twenty houses', async () => {
+  it('projects and ticks a town of twenty dynasties', async () => {
     // Arrange
     const base = town(20261031);
-    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
-      const id = `house-${index}`;
+    const world: World = { ...base, dynasties: { ...base.dynasties }, people: { ...base.people } };
+    for (let index = Object.keys(world.dynasties).length + 1; index <= 20; index += 1) {
+      const id = `dynasty-${index}`;
       const personId = `person-${index}`;
-      world.houses[id] = {
-        ...base.houses.fournier,
+      world.dynasties[id] = {
+        ...base.dynasties.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
@@ -390,7 +390,7 @@ describe('GET /api/world', () => {
       world.people[personId] = {
         ...base.people['person-fournier'],
         id: personId,
-        houseId: id,
+        dynastyId: id,
         name: `Nom ${index}`,
       };
     }
@@ -402,7 +402,7 @@ describe('GET /api/world', () => {
     const next = await worldBody(harness);
 
     // Assert
-    expect(first.world.town.houses).toHaveLength(20);
+    expect(first.world.town.dynasties).toHaveLength(20);
     expect(next.world.hour).toBe(2);
   });
 });
@@ -431,16 +431,16 @@ describe('POST /api/actions', () => {
 
     // Assert
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ id: ID_A, hour: 1, houseId: 'leclerc' });
+    expect(await response.json()).toEqual({ id: ID_A, hour: 1, dynastyId: 'leclerc' });
     expect(body.events[0]).toMatchObject({
       type: 'market.bought',
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       good: 'wool',
       units: 2,
       priceCents: 380,
       totalCents: 760,
     });
-    expect(body.world.house.stock.wool).toBe(6);
+    expect(body.world.dynasty.stock.wool).toBe(6);
   });
 
   it("queues a sale at the hour's price", async () => {
@@ -455,9 +455,9 @@ describe('POST /api/actions', () => {
     // Assert: two of the eight wool are sold, four are woven, two remain.
     expect(response.status).toBe(201);
     expect(body.events).toContainEqual(
-      expect.objectContaining({ type: 'market.sold', houseId: 'leclerc', good: 'wool', units: 2, priceCents: 380 }),
+      expect.objectContaining({ type: 'market.sold', dynastyId: 'leclerc', good: 'wool', units: 2, priceCents: 380 }),
     );
-    expect(body.world.house.stock.wool).toBe(2);
+    expect(body.world.dynasty.stock.wool).toBe(2);
   });
 
   it('refuses a replayed request and applies it once', async () => {
@@ -551,23 +551,23 @@ describe('POST /api/actions', () => {
     // Assert
     expect(response.status).toBe(201);
     // The queued action plays on its own hour, not on the one before.
-    const buys = body.events.filter((event) => event.type === 'market.bought' && event.houseId === 'leclerc');
+    const buys = body.events.filter((event) => event.type === 'market.bought' && event.dynastyId === 'leclerc');
     expect(buys).toHaveLength(1);
     expect(buys[0]).toMatchObject({ units: 3, at: 2 });
   });
 
-  it('never takes the house from the body', async () => {
+  it('never takes the dynasty from the body', async () => {
     // Arrange
     const harness = await start();
 
     // Act
-    const response = await postAction(harness, buyWool(ID_A, 1, 1, { houseId: 'caron' }));
+    const response = await postAction(harness, buyWool(ID_A, 1, 1, { dynastyId: 'caron' }));
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert
     expect(response.status).toBe(201);
-    expect(body.events[0]).toMatchObject({ type: 'market.bought', houseId: 'leclerc' });
+    expect(body.events[0]).toMatchObject({ type: 'market.bought', dynastyId: 'leclerc' });
   });
 
   it('refuses an action on a world whose rules changed', async () => {
@@ -631,7 +631,7 @@ describe('the queued actions', () => {
     expect(cancelled.status).toBe(204);
     expect(await (await getPending(harness)).json()).toEqual({ actions: [] });
     // The cancelled buy was not applied: eight wool less the four woven.
-    expect(body.world.house.stock.wool).toBe(4);
+    expect(body.world.dynasty.stock.wool).toBe(4);
   });
 
   it('keeps the cancelled row as a duplicate', async () => {
@@ -685,14 +685,14 @@ describe('the queued actions', () => {
     const response = await cancelPending(harness, ID_A);
 
     // Assert: the buy was applied (eight plus two, less four woven).
-    expect(applied.world.house.stock.wool).toBe(6);
+    expect(applied.world.dynasty.stock.wool).toBe(6);
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
   });
 
-  it("does not cancel another house's action", async () => {
+  it("does not cancel another dynasty's action", async () => {
     // Arrange
-    const harness = await start({ houses: ['leclerc', 'caron'] });
+    const harness = await start({ dynasties: ['leclerc', 'caron'] });
     await postActionAs(harness, 'caron', buyWool(ID_A, 1, 2));
 
     // Act
@@ -720,7 +720,7 @@ describe('the queued actions', () => {
 
     // Assert: no favour was spent and no campaign was queued.
     expect(listed.actions).toContainEqual(expect.objectContaining({ type: 'council.campaign', seatId: 'maire' }));
-    expect(body.world.house.favour).toBe(50);
+    expect(body.world.dynasty.favour).toBe(50);
   });
 
   it('lists an action queued for the next hour', async () => {
@@ -850,7 +850,7 @@ describe('POST /api/dev/advance', () => {
 
     // Assert
     expect(advanced.events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', houseId: 'leclerc', units: 10 }),
+      expect.objectContaining({ type: 'market.bought', dynastyId: 'leclerc', units: 10 }),
     );
   });
 

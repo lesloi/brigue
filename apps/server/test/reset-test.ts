@@ -37,14 +37,14 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const townId = Number(townRows[0]?.id);
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, house_id, created_at, last_seen_at, delete_after, cursor_event_id)
+      `INSERT INTO players (token_hash, town_id, dynasty_id, created_at, last_seen_at, delete_after, cursor_event_id)
        VALUES ($1, $2, 'leclerc', $3, $4, $5, 7)
        RETURNING player_id`,
       [tokenHash, townId, CREATED_AT, LAST_SEEN_AT, DELETE_AFTER],
     );
     const playerId = Number(playerRows[0]?.player_id);
     await pool.query(
-      `INSERT INTO kings (player_id, house_name, person_name, crowned_at, elapsed_hours)
+      `INSERT INTO kings (player_id, dynasty_name, person_name, crowned_at, elapsed_hours)
        VALUES ($1, 'Leclerc', 'Aubin', $2, 12)`,
       [playerId, CROWNED_AT],
     );
@@ -57,7 +57,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     return { tokenHash, townId, playerId };
   }
 
-  it('keeps the book of kings and the account, and takes the house', async () => {
+  it('keeps the book of kings and the account, and takes the dynasty', async () => {
     // Arrange
     const { tokenHash, playerId } = await seed();
 
@@ -65,20 +65,20 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     const report = await resetDatabase(pool);
 
     // Assert: the town is gone, the account keeps its identity and its dates,
-    // and the house is the only thing it lost.
+    // and the dynasty is the only thing it lost.
     const state = await pool.query('SELECT count(*)::int AS count FROM state');
     const players = await pool.query<{
       token_hash: string;
       player_id: string;
       town_id: string | null;
-      house_id: string | null;
+      dynasty_id: string | null;
       created_at: Date;
       last_seen_at: Date;
       revoked_at: Date | null;
       delete_after: Date | null;
       cursor_event_id: string;
     }>(
-      `SELECT token_hash, player_id, town_id, house_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
+      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after, cursor_event_id
        FROM players`,
     );
     const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
@@ -88,7 +88,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(players.rows[0]).toMatchObject({
       token_hash: tokenHash,
       town_id: null,
-      house_id: null,
+      dynasty_id: null,
       revoked_at: null,
     });
     expect(Number(players.rows[0]?.player_id)).toBe(playerId);
@@ -102,7 +102,41 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(kings.rows[0]?.crowned_at.toISOString()).toBe(CROWNED_AT.toISOString());
     expect(report).toMatchObject({ kings: 1, accounts: 1, full: false });
     expect(report.applied).toContain('0001_initial.sql');
-    expect(report.applied).toContain('0002_accounts_without_house.sql');
+    expect(report.applied).toContain('0002_accounts_without_dynasty.sql');
+  });
+
+  it('carries a book of kings written before the rename', async () => {
+    // Arrange: the book as a database has it before the world's fields took the
+    // name dynasty, with one crowned king. The drop reads this column and the
+    // rebuilt table has the other, so the reset is the bridge between the two.
+    await pool.query('DROP TABLE kings');
+    await pool.query(
+      `CREATE TABLE kings (
+         player_id bigint NOT NULL,
+         house_name text NOT NULL,
+         person_name text NOT NULL,
+         crowned_at timestamp with time zone NOT NULL,
+         elapsed_hours integer NOT NULL
+       )`,
+    );
+    await pool.query(
+      `INSERT INTO kings (player_id, house_name, person_name, crowned_at, elapsed_hours)
+       VALUES (42, 'Leclerc', 'Aubin', $1, 12)`,
+      [CROWNED_AT],
+    );
+
+    // Act
+    const report = await resetDatabase(pool);
+
+    // Assert: the book crosses, under its new column.
+    const kings = await pool.query<{ player_id: string; dynasty_name: string }>(
+      'SELECT player_id, dynasty_name FROM kings',
+    );
+
+    expect(report.kings).toBe(1);
+    expect(kings.rows).toHaveLength(1);
+    expect(Number(kings.rows[0]?.player_id)).toBe(42);
+    expect(kings.rows[0]?.dynasty_name).toBe('Leclerc');
   });
 
   it('does not hand a carried id to a new account', async () => {
@@ -115,7 +149,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       `INSERT INTO towns (name) VALUES ('Saint-Aubin') RETURNING id`,
     );
     const { rows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, house_id) VALUES ($1, $2, 'herse') RETURNING player_id`,
+      `INSERT INTO players (token_hash, town_id, dynasty_id) VALUES ($1, $2, 'herse') RETURNING player_id`,
       ['b'.repeat(64), Number(townRows[0]?.id)],
     );
 
@@ -200,7 +234,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       `CREATE TABLE players (
          token_hash text PRIMARY KEY,
          world_id text NOT NULL,
-         house_id text,
+         dynasty_id text,
          created_at timestamptz NOT NULL DEFAULT now(),
          last_seen_at timestamptz NOT NULL DEFAULT now(),
          revoked_at timestamptz,

@@ -1,5 +1,5 @@
--- An account may outlive its house: an ordinary reset and the seal of a season
--- both keep the token and take the house, so a row carries no town and no house
+-- An account may outlive its dynasty: an ordinary reset and the seal of a season
+-- both keep the token and take the dynasty, so a row carries no town and no dynasty
 -- until the player chooses a trade again.
 --
 -- `town_id` cannot keep the dead town's id: the rebuilt `towns` identity starts
@@ -8,6 +8,6 @@
 -- accounts with the towns.
 ALTER TABLE players ALTER COLUMN town_id DROP NOT NULL;
 
--- The binding is all or nothing: an account is either in a town with a house,
+-- The binding is all or nothing: an account is either in a town with a dynasty,
 -- or between the two.
-ALTER TABLE players ADD CONSTRAINT players_binding CHECK ((town_id IS NULL) = (house_id IS NULL));
+ALTER TABLE players ADD CONSTRAINT players_binding CHECK ((town_id IS NULL) = (dynasty_id IS NULL));

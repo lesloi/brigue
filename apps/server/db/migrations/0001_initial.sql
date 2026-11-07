@@ -16,34 +16,34 @@ CREATE TABLE towns (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- An account bound to a house, outside the town: the town is versioned and
+-- An account bound to a dynasty, outside the town: the town is versioned and
 -- replayed, a login is not a game rule. `town_id` is the town the account
 -- belongs to; `player_id` is the stable identity the book of kings keeps. A
--- season's seal keeps the account and takes the house, which is why `house_id`
+-- season's seal keeps the account and takes the dynasty, which is why `dynasty_id`
 -- may be empty for exactly that moment; until the seal exists, a reset clears
 -- the accounts with the towns.
 CREATE TABLE players (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
   player_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
   town_id bigint NOT NULL,
-  house_id text CHECK (length(house_id) > 0),
+  dynasty_id text CHECK (length(dynasty_id) > 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
   last_seen_at timestamptz NOT NULL DEFAULT now(),
   revoked_at timestamptz,
   -- Set when the player asks to delete their identity. The binding stays live
   -- so they can come back before the deadline; when it passes, the scheduler
-  -- erases the house, its queue and every row of the house.
+  -- erases the dynasty, its queue and every row of the dynasty.
   delete_after timestamptz,
   -- The last journal entry this reader has seen. It only moves forward.
   cursor_event_id bigint NOT NULL DEFAULT 0
 );
 
--- One live account per house today. "Several accounts per house" is a later
+-- One live account per dynasty today. "Several accounts per dynasty" is a later
 -- release, with a revoke-all; it lifts this partial index in its own migration.
-CREATE UNIQUE INDEX players_live_house ON players (town_id, house_id) WHERE revoked_at IS NULL;
+CREATE UNIQUE INDEX players_live_dynasty ON players (town_id, dynasty_id) WHERE revoked_at IS NULL;
 
-CREATE INDEX players_house ON players (town_id, house_id);
+CREATE INDEX players_dynasty ON players (town_id, dynasty_id);
 
 CREATE TABLE state (
   -- One row per town. It is the row the writer locks, so the key is not
@@ -61,7 +61,7 @@ CREATE TABLE state (
   hour_started_at timestamptz NOT NULL
 );
 
-CREATE TABLE houses (
+CREATE TABLE dynasties (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
   name text NOT NULL CHECK (length(name) > 0),
@@ -79,7 +79,7 @@ CREATE TABLE houses (
 CREATE TABLE people (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
-  house_id text NOT NULL,
+  dynasty_id text NOT NULL,
   name text NOT NULL,
   age integer NOT NULL,
   artisanat integer NOT NULL,
@@ -87,32 +87,32 @@ CREATE TABLE people (
   intrigue integer NOT NULL,
   alive boolean NOT NULL,
   PRIMARY KEY (town_id, id),
-  FOREIGN KEY (town_id, house_id) REFERENCES houses (town_id, id) ON DELETE CASCADE
+  FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
-CREATE INDEX people_house ON people (town_id, house_id);
+CREATE INDEX people_dynasty ON people (town_id, dynasty_id);
 
 -- `position` holds the order the core writes and reads: the world has arrays,
 -- and an array is part of the state hash. Loading in a different order would
 -- give the same town two hashes.
 CREATE TABLE workshops (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  house_id text NOT NULL,
+  dynasty_id text NOT NULL,
   position integer NOT NULL,
   good text NOT NULL,
   level integer NOT NULL,
   workers integer NOT NULL,
-  PRIMARY KEY (town_id, house_id, position),
-  FOREIGN KEY (town_id, house_id) REFERENCES houses (town_id, id) ON DELETE CASCADE
+  PRIMARY KEY (town_id, dynasty_id, position),
+  FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE stock (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  house_id text NOT NULL,
+  dynasty_id text NOT NULL,
   good text NOT NULL,
   units integer NOT NULL CHECK (units >= 0),
-  PRIMARY KEY (town_id, house_id, good),
-  FOREIGN KEY (town_id, house_id) REFERENCES houses (town_id, id) ON DELETE CASCADE
+  PRIMARY KEY (town_id, dynasty_id, good),
+  FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE seats (
@@ -128,10 +128,10 @@ CREATE TABLE laws (
   id text NOT NULL CHECK (length(id) > 0),
   position integer NOT NULL,
   title text NOT NULL,
-  sponsor_house_id text NOT NULL,
+  sponsor_dynasty_id text NOT NULL,
   enacted_at integer NOT NULL,
   PRIMARY KEY (town_id, id),
-  FOREIGN KEY (town_id, sponsor_house_id) REFERENCES houses (town_id, id) ON DELETE CASCADE
+  FOREIGN KEY (town_id, sponsor_dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
 -- A hearing and a site still have a duration, so they carry the instant they
@@ -140,11 +140,11 @@ CREATE TABLE engagements (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
   kind text NOT NULL CHECK (kind IN ('hearing', 'site')),
-  house_id text NOT NULL,
+  dynasty_id text NOT NULL,
   due_at integer NOT NULL,
   position integer NOT NULL,
   PRIMARY KEY (town_id, id),
-  FOREIGN KEY (town_id, house_id) REFERENCES houses (town_id, id) ON DELETE CASCADE
+  FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX engagements_due ON engagements (town_id, due_at);
@@ -156,11 +156,11 @@ CREATE INDEX engagements_due ON engagements (town_id, due_at);
 CREATE TABLE campaigns (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   seat_id text NOT NULL,
-  house_id text NOT NULL,
+  dynasty_id text NOT NULL,
   closed boolean NOT NULL DEFAULT false,
   votes integer NOT NULL,
-  PRIMARY KEY (town_id, seat_id, house_id, closed),
-  FOREIGN KEY (town_id, house_id) REFERENCES houses (town_id, id) ON DELETE CASCADE
+  PRIMARY KEY (town_id, seat_id, dynasty_id, closed),
+  FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
 CREATE TABLE market (
@@ -188,11 +188,11 @@ CREATE TABLE events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   at integer NOT NULL,
-  audience text NOT NULL CHECK (audience IN ('town', 'court', 'house')),
-  house_id text,
+  audience text NOT NULL CHECK (audience IN ('town', 'court', 'dynasty')),
+  dynasty_id text,
   type text NOT NULL,
   payload jsonb NOT NULL,
-  CHECK ((audience = 'house') = (house_id IS NOT NULL))
+  CHECK ((audience = 'dynasty') = (dynasty_id IS NOT NULL))
 );
 
 -- The journal is read backwards from a cursor that is an event id, one town at
@@ -208,7 +208,7 @@ CREATE TABLE actions (
   seq bigserial UNIQUE,
   id text PRIMARY KEY CHECK (id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  house_id text NOT NULL CHECK (length(house_id) > 0),
+  dynasty_id text NOT NULL CHECK (length(dynasty_id) > 0),
   plays_at integer NOT NULL CHECK (plays_at >= 1),
   action jsonb NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now(),
@@ -226,7 +226,7 @@ CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, seq);
 -- key to `players`: the book outlives the account.
 CREATE TABLE kings (
   player_id bigint NOT NULL,
-  house_name text NOT NULL,
+  dynasty_name text NOT NULL,
   person_name text NOT NULL,
   crowned_at timestamptz NOT NULL,
   -- The town's age at the crowning, in hours from `createWorld`'s first hour.

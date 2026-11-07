@@ -15,7 +15,7 @@ import {
   sellMax,
 } from '../trade.ts';
 import { Seal, WorkshopThumb } from '../icons.tsx';
-import { HouseBar } from './housebar.tsx';
+import { DynastyBar } from './dynastybar.tsx';
 
 interface MarcheProps {
   data: WorldResponse;
@@ -33,7 +33,7 @@ interface MarcheProps {
  */
 export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }: MarcheProps) {
   const { world } = data;
-  const house = world.house;
+  const dynasty = world.dynasty;
   const [open, setOpen] = useState<GoodId | null>(null);
 
   // Only this hour's queued trades change what this hour's action can do.
@@ -43,15 +43,15 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
 
   const renderGood = (good: GoodId) => {
     const priceCents = world.town.market[good];
-    const stock = house.stock[good] ?? 0;
+    const stock = dynasty.stock[good] ?? 0;
     // The Max accounts for the queued trades: a sell can use what a pending
     // buy will bring, a buy cannot spend the same coin twice.
     const buyLimit = buyMax({
-      treasuryCents: house.treasuryCents,
+      treasuryCents: dynasty.treasuryCents,
       pendingCashCents: queuedCashCents,
-      stockUnits: house.stockUnits,
+      stockUnits: dynasty.stockUnits,
       pendingUnits: queuedUnits,
-      capacityUnits: house.stockCapacityUnits,
+      capacityUnits: dynasty.stockCapacityUnits,
       priceCents,
     });
     const sellLimit = sellMax(stock, netPendingFor(good, currentPending));
@@ -127,7 +127,7 @@ export function Marche({ data, trading, pending, cancelling, onTrade, onCancel }
         </div>
       </header>
 
-      <HouseBar data={data} mode="ville" pending={pending} />
+      <DynastyBar data={data} mode="ville" pending={pending} />
 
       <div class="body">
         {pending.length > 0 ? (

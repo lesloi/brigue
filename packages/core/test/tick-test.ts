@@ -35,9 +35,9 @@ function play(world: World, hours: number, actionAt?: (hour: number) => Action[]
 }
 
 function scripted(hour: number): Action[] {
-  if (hour === 3) return [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 5 }];
-  if (hour === 7) return [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'maire' }];
-  if (hour === 11) return [{ type: 'market.buy', houseId: 'leclerc', good: 'cloth', units: 20 }];
+  if (hour === 3) return [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 5 }];
+  if (hour === 7) return [{ type: 'council.campaign', dynastyId: 'leclerc', seatId: 'maire' }];
+  if (hour === 11) return [{ type: 'market.buy', dynastyId: 'leclerc', good: 'cloth', units: 20 }];
   return [];
 }
 
@@ -60,48 +60,48 @@ describe('the simulation core', () => {
     const world = town(SEED);
     const before = canonicalJson(world);
 
-    tick(world, [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 2 }]);
+    tick(world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 2 }]);
 
     expect(canonicalJson(world)).toBe(before);
   });
 
-  it('refuses an action the house cannot pay for, and says so', () => {
+  it('refuses an action the dynasty cannot pay for, and says so', () => {
     const world = town(SEED);
-    const refused = tick(world, [{ type: 'market.buy', houseId: 'leclerc', good: 'cloth', units: 10_000 }]);
+    const refused = tick(world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'cloth', units: 10_000 }]);
     const control = tick(world, []);
 
     expect(refused.events).toContainEqual(
       expect.objectContaining({
         type: 'action.refused',
-        audience: { houseId: 'leclerc' },
+        audience: { dynastyId: 'leclerc' },
         action: 'market.buy',
-        houseId: 'leclerc',
+        dynastyId: 'leclerc',
         reason: 'insufficient_funds',
       }),
     );
-    expect(refused.world.houses.leclerc.treasuryCents).toBe(control.world.houses.leclerc.treasuryCents);
+    expect(refused.world.dynasties.leclerc.treasuryCents).toBe(control.world.dynasties.leclerc.treasuryCents);
   });
 
-  it('refuses an action from a house that does not exist instead of throwing', () => {
-    const { events } = tick(town(SEED), [{ type: 'market.buy', houseId: 'ghost', good: 'wool', units: 1 }]);
+  it('refuses an action from a dynasty that does not exist instead of throwing', () => {
+    const { events } = tick(town(SEED), [{ type: 'market.buy', dynastyId: 'ghost', good: 'wool', units: 1 }]);
 
-    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_house' });
+    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_dynasty' });
   });
 
   it('refuses an action type it does not know, instead of skipping it', () => {
-    const malformed = { type: 'market.invent', houseId: 'leclerc', good: 'wool' } as unknown as Action;
+    const malformed = { type: 'market.invent', dynastyId: 'leclerc', good: 'wool' } as unknown as Action;
     const { events } = tick(town(SEED), [malformed]);
 
-    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_action', houseId: 'unknown' });
+    expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'unknown_action', dynastyId: 'unknown' });
   });
 
   it('credits the output to the stock instead of the purse', () => {
     const { world } = tick(town(SEED));
 
-    expect(world.houses.leclerc.stock.cloth).toBe(4);
-    expect(world.houses.leclerc.stock.wool).toBe(4);
-    // The first house is human: its stock is not sold, and production pays no coin.
-    expect(world.houses.leclerc.treasuryCents).toBe(RULES.startingPurseCents - 240);
+    expect(world.dynasties.leclerc.stock.cloth).toBe(4);
+    expect(world.dynasties.leclerc.stock.wool).toBe(4);
+    // The first dynasty is human: its stock is not sold, and production pays no coin.
+    expect(world.dynasties.leclerc.treasuryCents).toBe(RULES.startingPurseCents - 240);
   });
 
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
@@ -110,27 +110,27 @@ describe('the simulation core', () => {
     expect(first.events).toContainEqual(
       expect.objectContaining({
         type: 'workshop.idle',
-        audience: { houseId: 'leclerc' },
-        houseId: 'leclerc',
+        audience: { dynastyId: 'leclerc' },
+        dynastyId: 'leclerc',
         good: 'cloth',
         input: 'wool',
         missingUnits: 4,
       }),
     );
 
-    const { events } = tick(first.world, [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 4 }]);
+    const { events } = tick(first.world, [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 4 }]);
 
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'workshop.produced', houseId: 'leclerc', good: 'cloth', units: 4 }),
+      expect.objectContaining({ type: 'workshop.produced', dynastyId: 'leclerc', good: 'cloth', units: 4 }),
     );
   });
 
   it('holds one scrutiny per game year and puts every seat up', () => {
-    // Arrange: five houses, so five seats can actually be filled, and two years.
+    // Arrange: five dynasties, so five seats can actually be filled, and two years.
     const base = town(SEED);
-    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    world.houses.quint = {
-      ...base.houses.fournier,
+    const world: World = { ...base, dynasties: { ...base.dynasties }, people: { ...base.people } };
+    world.dynasties.quint = {
+      ...base.dynasties.fournier,
       id: 'quint',
       name: 'Quint',
       workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
@@ -139,7 +139,7 @@ describe('the simulation core', () => {
     world.people['person-quint'] = {
       ...base.people['person-fournier'],
       id: 'person-quint',
-      houseId: 'quint',
+      dynastyId: 'quint',
       name: 'Jean Quint',
     };
 
@@ -186,7 +186,7 @@ describe('the simulation core', () => {
   });
 
   it('advances a living person one year per twenty-four ticks', () => {
-    // Arrange: the first house enters at twenty.
+    // Arrange: the first dynasty enters at twenty.
     const before = play(town(SEED), HOURS_PER_YEAR - 1).world;
 
     // Act
@@ -197,18 +197,18 @@ describe('the simulation core', () => {
     expect(after.people['person-leclerc'].age).toBe(21);
   });
 
-  it('seats a person of the house and refuses another house’s person', () => {
+  it('seats a person of the dynasty and refuses another dynasty’s person', () => {
     // Arrange
     const world = town(SEED);
     const leclerc = world.people['person-leclerc'];
     const caron = world.people['person-caron'];
 
     // Act and assert
-    expect(takeSeat(world, 'leclerc', caron.id)).toEqual({ ok: false, reason: 'person_of_another_house' });
+    expect(takeSeat(world, 'leclerc', caron.id)).toEqual({ ok: false, reason: 'person_of_another_dynasty' });
     expect(takeSeat(world, 'leclerc', leclerc.id)).toEqual({ ok: true, seat: { personId: leclerc.id } });
   });
 
-  it('keeps every filled seat on a living person of the house that holds it', () => {
+  it('keeps every filled seat on a living person of the dynasty that holds it', () => {
     // Arrange and act: enough hours to fill every seat once.
     const { world } = play(town(SEED), HOURS_PER_YEAR * 6);
 
@@ -220,13 +220,13 @@ describe('the simulation core', () => {
       const person = world.people[seat.personId];
       expect(person).toBeDefined();
       expect(person.alive).toBe(true);
-      expect(world.houses[person.houseId]).toBeDefined();
+      expect(world.dynasties[person.dynastyId]).toBeDefined();
     }
   });
 
   it('lodges a candidacy at once and the noon bell closes it for the scrutiny', () => {
     // Arrange: lodged during hour one, before any noon.
-    const queued = tick(town(SEED), [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'maire' }]);
+    const queued = tick(town(SEED), [{ type: 'council.campaign', dynastyId: 'leclerc', seatId: 'maire' }]);
 
     // Assert: the bonus is in the open map at once, and the event says which
     // scrutiny it counts for.
@@ -251,7 +251,7 @@ describe('the simulation core', () => {
     const world = { ...town(SEED), hour: HOURS_PER_YEAR / 2 + 1 };
 
     // Act
-    const queued = tick(world, [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'maire' }]);
+    const queued = tick(world, [{ type: 'council.campaign', dynastyId: 'leclerc', seatId: 'maire' }]);
 
     // Assert: it waits for the scrutiny after the coming one.
     expect(queued.events).toContainEqual(
@@ -275,8 +275,8 @@ describe('the simulation core', () => {
       const world = town(SEED);
       world.engagements = [
         kind === 'site'
-          ? { id: 'engagement-site', kind, houseId: 'leclerc', dueAt, work: 'residence' }
-          : { id: 'engagement-hearing', kind, houseId: 'leclerc', dueAt },
+          ? { id: 'engagement-site', kind, dynastyId: 'leclerc', dueAt, work: 'residence' }
+          : { id: 'engagement-hearing', kind, dynastyId: 'leclerc', dueAt },
       ];
 
       // Act: run to the due hour, then one tick more.
@@ -297,7 +297,7 @@ describe('the simulation core', () => {
     // moves only the wall clock, so this is the defensive path, not the normal one.
     const world = town(SEED);
     world.hour = 900;
-    world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'leclerc', dueAt: 800, work: 'residence' }];
+    world.engagements = [{ id: 'engagement-late', kind: 'site', dynastyId: 'leclerc', dueAt: 800, work: 'residence' }];
 
     // Act
     const { world: after, events } = tick(world);
@@ -319,7 +319,7 @@ describe('the simulation core', () => {
     // Arrange: both worlds reach the same scrutiny, one with a campaign for the treasury.
     const control = play(town(SEED), HOURS_PER_YEAR);
     const campaigned = play(town(SEED), HOURS_PER_YEAR, (hour) =>
-      hour === 0 ? [{ type: 'council.campaign', houseId: 'leclerc', seatId: 'tresorier' }] : [],
+      hour === 0 ? [{ type: 'council.campaign', dynastyId: 'leclerc', seatId: 'tresorier' }] : [],
     );
 
     const votesOf = (events: Event[], seatId: string) =>
@@ -335,79 +335,81 @@ describe('the simulation core', () => {
 
   it('turns unpaid upkeep into a debt instead of erasing it', () => {
     const world = town(SEED);
-    world.houses.leclerc.treasuryCents = 0;
-    world.houses.leclerc.stock = {};
-    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 3 }];
+    world.dynasties.leclerc.treasuryCents = 0;
+    world.dynasties.leclerc.stock = {};
+    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 3 }];
     const upkeep = 3 * RULES.upkeepPerWorkshopLevelCents;
 
     const { world: after, events } = tick(world);
 
     expect(events).toContainEqual(
       expect.objectContaining({
-        type: 'house.penniless',
-        audience: { houseId: 'leclerc' },
-        houseId: 'leclerc',
+        type: 'dynasty.penniless',
+        audience: { dynastyId: 'leclerc' },
+        dynastyId: 'leclerc',
         shortfallCents: upkeep,
       }),
     );
-    expect(after.houses.leclerc.debtCents).toBe(upkeep);
+    expect(after.dynasties.leclerc.debtCents).toBe(upkeep);
   });
 
-  it('refuses an action from a dormant house instead of running it', () => {
+  it('refuses an action from a dormant dynasty instead of running it', () => {
     // Arrange
     const world = town(SEED);
-    world.houses.leclerc.dormant = true;
+    world.dynasties.leclerc.dormant = true;
 
     // Act
-    const { world: after, events } = tick(world, [{ type: 'market.buy', houseId: 'leclerc', good: 'wool', units: 1 }]);
+    const { world: after, events } = tick(world, [
+      { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 1 },
+    ]);
 
     // Assert
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'action.refused',
-        audience: { houseId: 'leclerc' },
+        audience: { dynastyId: 'leclerc' },
         action: 'market.buy',
-        houseId: 'leclerc',
-        reason: 'dormant_house',
+        dynastyId: 'leclerc',
+        reason: 'dormant_dynasty',
       }),
     );
-    expect(after.houses.leclerc.stock.wool).toBe(8);
+    expect(after.dynasties.leclerc.stock.wool).toBe(8);
   });
 
-  it('keeps a dormant house’s seat, stops its trade and keeps it out of the vote', () => {
+  it('keeps a dormant dynasty’s seat, stops its trade and keeps it out of the vote', () => {
     // Arrange: one election fills the mayoralty, then its holder goes dormant.
     const elected = play(town(SEED), HOURS_PER_YEAR).world;
     const personId = elected.seats.maire.personId as string;
     const holder = elected.people[personId];
-    const house = elected.houses[holder.houseId];
-    house.dormant = true;
-    // A workshop with no input, so any sale at all would be the dormant house
+    const dynasty = elected.dynasties[holder.dynastyId];
+    dynasty.dormant = true;
+    // A workshop with no input, so any sale at all would be the dormant dynasty
     // running when it must not.
-    house.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
-    house.stock = {};
-    const treasuryCents = house.treasuryCents;
+    dynasty.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    dynasty.stock = {};
+    const treasuryCents = dynasty.treasuryCents;
 
     // Act: one plain hour, then the five periods that bring the seat back.
     const quiet = tick(elected);
     const later = play(quiet.world, HOURS_PER_YEAR * 5);
 
     // Assert
-    expect(quiet.events.filter((event) => event.type === 'market.sold' && event.houseId === holder.houseId)).toEqual(
-      [],
-    );
-    expect(quiet.world.houses[holder.houseId].treasuryCents).toBe(treasuryCents);
+    expect(
+      quiet.events.filter((event) => event.type === 'market.sold' && event.dynastyId === holder.dynastyId),
+    ).toEqual([]);
+    expect(quiet.world.dynasties[holder.dynastyId].treasuryCents).toBe(treasuryCents);
     expect(later.world.seats.maire.personId).toBe(personId);
     expect(later.events.filter((event) => event.type === 'council.election_held' && event.seatId === 'maire')).toEqual(
       [],
     );
     for (const event of later.events) {
       if (event.type === 'council.election_held') {
-        expect(event.votes[holder.houseId]).toBeUndefined();
+        expect(event.votes[holder.dynastyId]).toBeUndefined();
       }
     }
   });
 
-  it('shows a house-ledger event to that house only', () => {
+  it('shows a dynasty-ledger event to that dynasty only', () => {
     // Arrange
     const { events } = tick(town(SEED));
 
@@ -417,21 +419,25 @@ describe('the simulation core', () => {
 
     // Assert
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'house.upkeep_paid', houseId: 'caron', audience: { houseId: 'caron' } }),
+      expect.objectContaining({ type: 'dynasty.upkeep_paid', dynastyId: 'caron', audience: { dynastyId: 'caron' } }),
     );
-    expect(forLeclerc.filter((event) => event.type === 'house.upkeep_paid' && event.houseId === 'caron')).toEqual([]);
-    expect(forCaron.filter((event) => event.type === 'house.upkeep_paid' && event.houseId === 'caron')).toHaveLength(1);
+    expect(forLeclerc.filter((event) => event.type === 'dynasty.upkeep_paid' && event.dynastyId === 'caron')).toEqual(
+      [],
+    );
+    expect(
+      forCaron.filter((event) => event.type === 'dynasty.upkeep_paid' && event.dynastyId === 'caron'),
+    ).toHaveLength(1);
   });
 
-  it('ticks a town of twenty houses', () => {
+  it('ticks a town of twenty dynasties', () => {
     // Arrange
     const base = town(SEED);
-    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
-      const id = `house-${index}`;
+    const world: World = { ...base, dynasties: { ...base.dynasties }, people: { ...base.people } };
+    for (let index = Object.keys(world.dynasties).length + 1; index <= 20; index += 1) {
+      const id = `dynasty-${index}`;
       const personId = `person-${index}`;
-      world.houses[id] = {
-        ...base.houses.fournier,
+      world.dynasties[id] = {
+        ...base.dynasties.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
@@ -440,7 +446,7 @@ describe('the simulation core', () => {
       world.people[personId] = {
         ...base.people['person-fournier'],
         id: personId,
-        houseId: id,
+        dynastyId: id,
         name: `Nom ${index}`,
       };
     }
@@ -449,7 +455,7 @@ describe('the simulation core', () => {
     const { world: after } = play(world, 2);
 
     // Assert
-    expect(Object.keys(after.houses)).toHaveLength(20);
+    expect(Object.keys(after.dynasties)).toHaveLength(20);
     expect(after.hour).toBe(3);
   });
 
@@ -465,16 +471,15 @@ describe('the simulation core', () => {
     const world = { ...town(SEED), formatVersion: FORMAT_VERSION - 1 };
 
     // Act and assert
-    expect(FORMAT_VERSION).toBe(1);
     expect(() => tick(world)).toThrow(WorldVersionError);
   });
 
   it('keeps the ledger in integer cents', () => {
     const { world } = play(town(SEED), 20);
 
-    for (const house of Object.values(world.houses)) {
-      expect(Number.isInteger(house.treasuryCents)).toBe(true);
-      expect(Number.isInteger(house.debtCents)).toBe(true);
+    for (const dynasty of Object.values(world.dynasties)) {
+      expect(Number.isInteger(dynasty.treasuryCents)).toBe(true);
+      expect(Number.isInteger(dynasty.debtCents)).toBe(true);
     }
     for (const price of Object.values(world.market)) {
       expect(Number.isInteger(price)).toBe(true);

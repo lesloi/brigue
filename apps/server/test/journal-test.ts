@@ -10,9 +10,9 @@ describe('the journal tally', () => {
     // Act
     countEvent(tally, {
       type: 'action.refused',
-      audience: { houseId: 'leclerc' },
+      audience: { dynastyId: 'leclerc' },
       at: 1,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       action: 'market.buy',
       reason: 'insufficient_funds',
     });

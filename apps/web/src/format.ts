@@ -138,9 +138,9 @@ export function pendingActionText(action: PendingActionView): string {
       return "Démolition d'un atelier";
     case 'workshop.upgrade':
       return "Agrandissement d'un atelier";
-    case 'house.buy_title':
+    case 'dynasty.buy_title':
       return action.title === undefined ? "Achat d'un titre" : `Achat du titre de ${titleName(action.title)}`;
-    case 'house.upgrade_residence':
+    case 'dynasty.upgrade_residence':
       return 'Élévation de la résidence';
   }
 }
@@ -178,9 +178,9 @@ export function refusalText(reason: RefusalReason): string {
   switch (reason) {
     case 'unknown_action':
       return 'action inconnue';
-    case 'unknown_house':
+    case 'unknown_dynasty':
       return 'dynastie inconnue';
-    case 'dormant_house':
+    case 'dormant_dynasty':
       return 'dynastie dormante';
     case 'unknown_seat':
       return 'charge inconnue';
@@ -240,12 +240,12 @@ export function actionErrorText(code: string | null): string {
       return 'Cette ville a disparu.';
     case 'world_version':
       return "Cette ville n'est plus compatible avec le serveur.";
-    case 'no_free_house':
+    case 'no_free_dynasty':
       return "Cette ville n'a plus de dynastie libre.";
     case 'deletion_pending':
       // The account is what the server has scheduled, and it outlives the dynasty.
       return 'Ce compte est en cours de suppression.';
-    case 'house_lost':
+    case 'dynasty_lost':
       return "Ta dynastie n'existe plus : choisis un métier pour revenir.";
     case 'name_required':
       return 'Écris le nom de ta dynastie pour revenir.';
@@ -267,7 +267,7 @@ export function readErrorText(code: string | null): string {
       return "Cette ville n'est plus compatible avec le serveur.";
     case 'not_found':
       return "Le serveur n'a pas trouvé cette ville.";
-    case 'house_lost':
+    case 'dynasty_lost':
       return "Ta dynastie n'existe plus : choisis un métier pour revenir.";
     case 'name_required':
       return 'Écris le nom de ta dynastie pour revenir.';

@@ -1,5 +1,5 @@
-import { advance, createWorld, withFirstHouse } from '../src/index.ts';
-import type { Action, Event, HouseIdentity, Trade, World } from '../src/index.ts';
+import { advance, createWorld, withFirstDynasty } from '../src/index.ts';
+import type { Action, Event, DynastyIdentity, Trade, World } from '../src/index.ts';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -33,13 +33,13 @@ export function playHalfDay(world: World, actions: readonly Action[] = []): { wo
 }
 
 /** The fixture identity the tests play; production draws its own. */
-export const TEST_FIRST_HOUSE: HouseIdentity = {
+export const TEST_FIRST_DYNASTY: DynastyIdentity = {
   id: 'leclerc',
-  houseName: 'Leclerc',
+  dynastyName: 'Leclerc',
   personName: 'Colin Leclerc',
 };
 
-/** The playable town: the AI houses plus the first player's house. */
+/** The playable town: the AI dynasties plus the first player's dynasty. */
 export function town(seed: number, trade: Trade = 'weaver'): World {
-  return withFirstHouse(createWorld(seed), trade, TEST_FIRST_HOUSE);
+  return withFirstDynasty(createWorld(seed), trade, TEST_FIRST_DYNASTY);
 }

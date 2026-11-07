@@ -34,12 +34,12 @@ const NAMES: Record<string, string> = {
   herse: 'de Herse',
 };
 
-const nameOf = (houseId: string): string => NAMES[houseId] ?? 'une dynastie inconnue';
+const nameOf = (dynastyId: string): string => NAMES[dynastyId] ?? 'une dynastie inconnue';
 
 describe('refusalText', () => {
-  it('speaks of dynasties, not of houses', () => {
+  it('speaks of dynasties, not of dynasties', () => {
     // Arrange
-    const refusals = ['unknown_house', 'dormant_house'] as const;
+    const refusals = ['unknown_dynasty', 'dormant_dynasty'] as const;
 
     // Act
     const said = refusals.map((reason) => refusalText(reason));
@@ -50,8 +50,8 @@ describe('refusalText', () => {
 
   it('names the account when its deletion is due, and the dynasty when it is gone', () => {
     // Arrange
-    const action = ['deletion_pending', 'house_lost', 'no_free_house'] as const;
-    const read = ['house_lost'] as const;
+    const action = ['deletion_pending', 'dynasty_lost', 'no_free_dynasty'] as const;
+    const read = ['dynasty_lost'] as const;
 
     // Act
     const said = action.map((code) => actionErrorText(code));
@@ -75,7 +75,7 @@ describe('eventLine', () => {
       audience: 'town',
 
       at: 0,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       good: 'wool',
       units: 10,
       priceCents: 380,
@@ -91,14 +91,14 @@ describe('eventLine', () => {
     expect(line.text).toContain('soit 38 écus');
   });
 
-  it('names another house and keeps the singular for one unit', () => {
+  it('names another dynasty and keeps the singular for one unit', () => {
     // Arrange
     const event: Event = {
       type: 'market.bought',
       audience: 'town',
 
       at: 0,
-      houseId: 'caron',
+      dynastyId: 'caron',
       good: 'wool',
       units: 1,
       priceCents: 380,
@@ -116,11 +116,11 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'action.refused',
-      audience: { houseId: 'leclerc' },
+      audience: { dynastyId: 'leclerc' },
 
       at: 0,
       action: 'market.buy',
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       reason: 'insufficient_funds',
     };
 
@@ -132,22 +132,22 @@ describe('eventLine', () => {
     expect(line.text).toBe('Vous : achat refusé — fonds insuffisants.');
   });
 
-  it('keeps the house grammar for a missed upkeep payment', () => {
+  it('keeps the dynasty grammar for a missed upkeep payment', () => {
     // Arrange
     const own: Event = {
-      type: 'house.penniless',
-      audience: { houseId: 'leclerc' },
+      type: 'dynasty.penniless',
+      audience: { dynastyId: 'leclerc' },
 
       at: 0,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       shortfallCents: 240,
     };
     const other: Event = {
-      type: 'house.penniless',
-      audience: { houseId: 'caron' },
+      type: 'dynasty.penniless',
+      audience: { dynastyId: 'caron' },
 
       at: 0,
-      houseId: 'caron',
+      dynastyId: 'caron',
       shortfallCents: 240,
     };
 
@@ -164,10 +164,10 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.produced',
-      audience: { houseId: 'leclerc' },
+      audience: { dynastyId: 'leclerc' },
 
       at: 0,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       good: 'cloth',
       units: 4,
     };
@@ -184,10 +184,10 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.overflow',
-      audience: { houseId: 'leclerc' },
+      audience: { dynastyId: 'leclerc' },
 
       at: 0,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       good: 'wool',
       refusedUnits: 3,
     };
@@ -203,9 +203,9 @@ describe('eventLine', () => {
     // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
     const event: Event = {
       type: 'council.campaigned',
-      audience: { houseId: 'leclerc' },
+      audience: { dynastyId: 'leclerc' },
       at: 12,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       seatId: 'maire',
       favourSpent: 3,
       countsAt: 48,
@@ -225,11 +225,11 @@ describe('eventLine', () => {
     // Arrange: heard three hours after it fell due.
     const event: Event = {
       type: 'engagement.resolved',
-      audience: { houseId: 'leclerc' },
+      audience: { dynastyId: 'leclerc' },
       at: 8,
       engagementId: 'e1',
       kind: 'hearing',
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       dueAt: 5,
       resolvedAt: 8,
     };
@@ -377,7 +377,7 @@ describe('the ledger filter', () => {
       audience: 'town',
 
       at: 0,
-      houseId: 'leclerc',
+      dynastyId: 'leclerc',
       good: 'cloth',
       units: 2,
       priceCents: 1240,
@@ -388,23 +388,27 @@ describe('the ledger filter', () => {
       audience: 'town',
 
       at: 0,
-      houseId: 'caron',
+      dynastyId: 'caron',
       good: 'wool',
       units: 6,
       priceCents: 380,
       totalCents: 2280,
     },
-    { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerHouseId: 'caron', votes: {} },
+    { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerDynastyId: 'caron', votes: {} },
     { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
-    { type: 'house.upkeep_paid', audience: { houseId: 'leclerc' }, at: 0, houseId: 'leclerc', amountCents: 240 },
+    { type: 'dynasty.upkeep_paid', audience: { dynastyId: 'leclerc' }, at: 0, dynastyId: 'leclerc', amountCents: 240 },
   ];
 
-  it('keeps the house and the town politics by default', () => {
+  it('keeps the dynasty and the town politics by default', () => {
     // Act
-    const filtered = ledgerEvents(events, 'leclerc', 'house');
+    const filtered = ledgerEvents(events, 'leclerc', 'dynasty');
 
     // Assert
-    expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.upkeep_paid']);
+    expect(filtered.map((event) => event.type)).toEqual([
+      'market.sold',
+      'council.election_held',
+      'dynasty.upkeep_paid',
+    ]);
   });
 
   it('keeps only the prices in the prices cut', () => {

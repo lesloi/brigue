@@ -1,4 +1,4 @@
-import { humanHouseOf, type World } from '@brigue/core';
+import { humanDynastyOf, type World } from '@brigue/core';
 
 import type { PlayerStore } from '../identity/players.ts';
 import type { Logger } from '../logger.ts';
@@ -22,7 +22,7 @@ export type TownOutcome = { kind: 'caught'; town: TownInfo; result: Due; journal
 export function catchUpTown(
   access: TownAccess,
   townId: number,
-  houseId: string,
+  dynastyId: string,
   cursor: number,
   at: Date,
 ): Promise<TownOutcome> {
@@ -30,15 +30,15 @@ export function catchUpTown(
     const world = sessionWorld(session);
     const presence = await synchronisePresence(access, townId, world, at);
 
-    // The last human house went with the silence: the town goes too, and the
+    // The last human dynasty went with the silence: the town goes too, and the
     // next join starts a new one. The players and the sealed seasons stay.
-    if (humanHouseOf(presence.world) === undefined) {
+    if (humanDynastyOf(presence.world) === undefined) {
       await session.clear();
       return { kind: 'gone' as const };
     }
 
-    if (presence.deletedHouseIds.includes(houseId)) {
-      // Another human house is gone, but the town remains: the deletion is a
+    if (presence.deletedDynastyIds.includes(dynastyId)) {
+      // Another human dynasty is gone, but the town remains: the deletion is a
       // real change and must be kept even though nothing is caught up for
       // this reader.
       await session.save(presence.world, session.snapshot.hourStartedAt, []);
@@ -48,15 +48,15 @@ export function catchUpTown(
     // The reader is the backstop, not the clock: it only wakes a town the
     // scheduler has left more than an hour behind.
     const due = await playDue(session, { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt }, at, 2);
-    // The absence was simulated dormant; the visit itself wakes the house for
+    // The absence was simulated dormant; the visit itself wakes the dynasty for
     // the hour that follows.
-    const woke = wake(due.world, houseId);
+    const woke = wake(due.world, dynastyId);
 
     if (due.hours > 0 || presence.changed || woke) {
       await session.save(due.world, due.hourStartedAt, due.events);
     }
 
-    const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
+    const journal = await session.eventsSince(cursor, JOURNAL_PAGE, dynastyId);
 
     return { kind: 'caught' as const, town: session.snapshot.town, result: due, journal };
   }, townId);
@@ -69,7 +69,7 @@ export function catchUpTown(
 export function advanceTown(
   access: TownAccess,
   townId: number,
-  houseId: string,
+  dynastyId: string,
   cursor: number,
   at: Date,
   now: () => number,
@@ -78,12 +78,12 @@ export function advanceTown(
     const world = sessionWorld(session);
     const presence = await synchronisePresence(access, townId, world, at);
 
-    if (humanHouseOf(presence.world) === undefined) {
+    if (humanDynastyOf(presence.world) === undefined) {
       await session.clear();
       return { kind: 'gone' as const };
     }
 
-    if (presence.deletedHouseIds.includes(houseId)) {
+    if (presence.deletedDynastyIds.includes(dynastyId)) {
       await session.save(presence.world, session.snapshot.hourStartedAt, []);
       return { kind: 'gone' as const };
     }
@@ -97,13 +97,13 @@ export function advanceTown(
       forced,
       1,
     );
-    wake(due.world, houseId);
+    wake(due.world, dynastyId);
     // The hour was simulated, not lived. Put the next natural hour an hour
     // from the real now, instead of stacking a backlog.
     const savedAt = new Date(now());
     await session.save(due.world, savedAt, due.events);
 
-    const journal = await session.eventsSince(cursor, JOURNAL_PAGE, houseId);
+    const journal = await session.eventsSince(cursor, JOURNAL_PAGE, dynastyId);
 
     return {
       kind: 'caught' as const,
@@ -118,23 +118,23 @@ async function synchronisePresence(access: TownAccess, townId: number, world: Wo
   const players = await access.players.listByTown(townId);
   const presence = applyPresence(world, players, at.getTime());
 
-  for (const houseId of presence.deletedHouseIds) {
-    await access.players.revokeHouse(townId, houseId, at);
-    access.logger.warn('world.house_deleted', { townId, houseId });
+  for (const dynastyId of presence.deletedDynastyIds) {
+    await access.players.revokeDynasty(townId, dynastyId, at);
+    access.logger.warn('world.dynasty_deleted', { townId, dynastyId });
   }
 
   return presence;
 }
 
-/** The visit wakes a house the absence had made dormant, for the hour to come. */
-function wake(world: World, houseId: string): boolean {
-  const house = world.houses[houseId];
+/** The visit wakes a dynasty the absence had made dormant, for the hour to come. */
+function wake(world: World, dynastyId: string): boolean {
+  const dynasty = world.dynasties[dynastyId];
 
-  if (house === undefined || !house.dormant) {
+  if (dynasty === undefined || !dynasty.dormant) {
     return false;
   }
 
-  house.dormant = false;
+  dynasty.dormant = false;
 
   return true;
 }

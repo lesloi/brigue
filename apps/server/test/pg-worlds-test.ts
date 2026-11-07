@@ -165,8 +165,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(found?.cancelledAt).toBeInstanceOf(Date);
   });
 
-  it('appends the events of a pass to the journal and reads them back for a house', async () => {
-    // Arrange: three shapes, one of them private to a house.
+  it('appends the events of a pass to the journal and reads them back for a dynasty', async () => {
+    // Arrange: three shapes, one of them private to a dynasty.
     const world: World = {
       ...createWorld(2_147_483_646),
       hour: 7,
@@ -178,7 +178,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         type: 'market.bought',
         audience: 'town',
         at: 7,
-        houseId: 'leclerc',
+        dynastyId: 'leclerc',
         good: 'wool',
         units: 2,
         priceCents: 380,
@@ -189,14 +189,14 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         audience: 'town',
         at: 7,
         seatId: 'maire',
-        winnerHouseId: 'caron',
+        winnerDynastyId: 'caron',
         votes: { leclerc: 1, caron: 2 },
       },
       {
         type: 'workshop.idle',
-        audience: { houseId: 'leclerc' },
+        audience: { dynastyId: 'leclerc' },
         at: 7,
-        houseId: 'leclerc',
+        dynastyId: 'leclerc',
         good: 'cloth',
         input: 'wool',
         missingUnits: 0,
@@ -224,8 +224,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   it('reads the newest page and counts the entries it leaves behind', async () => {
-    // Arrange: four town events, one private to another house, read two at a
-    // time for this house.
+    // Arrange: four town events, one private to another dynasty, read two at a
+    // time for this dynasty.
     const world = createWorld(3);
     await store.createTown(TEST_TOWN.name, world, START);
     const events: Event[] = [
@@ -233,7 +233,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         type: 'market.bought',
         audience: 'town',
         at: 1,
-        houseId: 'leclerc',
+        dynastyId: 'leclerc',
         good: 'wool',
         units: 1,
         priceCents: 380,
@@ -241,9 +241,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       },
       {
         type: 'action.refused',
-        audience: { houseId: 'leclerc' },
+        audience: { dynastyId: 'leclerc' },
         at: 2,
-        houseId: 'leclerc',
+        dynastyId: 'leclerc',
         action: 'market.buy',
         reason: 'insufficient_funds',
       },
@@ -251,7 +251,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         type: 'market.sold',
         audience: 'town',
         at: 3,
-        houseId: 'caron',
+        dynastyId: 'caron',
         good: 'cloth',
         units: 2,
         priceCents: 1240,
@@ -259,9 +259,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       },
       {
         type: 'workshop.produced',
-        audience: { houseId: 'leclerc' },
+        audience: { dynastyId: 'leclerc' },
         at: 4,
-        houseId: 'leclerc',
+        dynastyId: 'leclerc',
         good: 'cloth',
         units: 3,
       },
@@ -291,7 +291,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
           type: 'market.bought',
           audience: 'town',
           at: 5,
-          houseId: 'leclerc',
+          dynastyId: 'leclerc',
           good: 'wool',
           units: 1,
           priceCents: 380,
@@ -301,11 +301,11 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     });
     const tokenHash = 'b'.repeat(64);
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, house_id) VALUES ($1, $2, 'leclerc') RETURNING player_id`,
+      `INSERT INTO players (token_hash, town_id, dynasty_id) VALUES ($1, $2, 'leclerc') RETURNING player_id`,
       [tokenHash, TEST_TOWN.id],
     );
     await pool.query(
-      `INSERT INTO kings (player_id, house_name, person_name, crowned_at, elapsed_hours)
+      `INSERT INTO kings (player_id, dynasty_name, person_name, crowned_at, elapsed_hours)
        VALUES ($1, 'Leclerc', 'Aubin', now(), 12)`,
       [Number(playerRows[0]?.player_id)],
     );
@@ -315,14 +315,14 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert: the town is gone whole, the accounts and the book stay.
     const state = await pool.query('SELECT count(*)::int AS count FROM state');
-    const houses = await pool.query('SELECT count(*)::int AS count FROM houses');
+    const dynasties = await pool.query('SELECT count(*)::int AS count FROM dynasties');
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
     const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
     const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE town_id = $1', [TEST_TOWN.id]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
     expect(state.rows[0]?.count).toBe(0);
-    expect(houses.rows[0]?.count).toBe(0);
+    expect(dynasties.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
     expect(actions.rows[0]?.count).toBe(0);
     expect(players.rows[0]?.count).toBe(1);
@@ -390,7 +390,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   it('lists the least-filled town first, the oldest on a tie', async () => {
-    // Arrange: an older town of four houses and a younger one of three.
+    // Arrange: an older town of four dynasties and a younger one of three.
     const old = await store.createTown('Old', town(9), START);
     const young = await store.createTown('New', createWorld(8), START);
 
@@ -480,7 +480,7 @@ function oneHourLater(world: World): World {
 }
 
 function buy(units: number): Action {
-  return { type: 'market.buy', houseId: 'leclerc', good: 'wool', units };
+  return { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units };
 }
 
 /** One town event per hour, so a cut has a visible order to work on. */
@@ -497,7 +497,7 @@ function range(from: number, to: number): number[] {
 }
 
 function storedAction(id: string, hour: number, action: Action): StoredAction {
-  return { id, houseId: 'leclerc', playsAt: hour, action, receivedAt: new Date(START), cancelledAt: null };
+  return { id, dynastyId: 'leclerc', playsAt: hour, action, receivedAt: new Date(START), cancelledAt: null };
 }
 
 function delay(ms: number): Promise<void> {

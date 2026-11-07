@@ -23,7 +23,7 @@ import { readBody, sendJson } from '../respond.ts';
  */
 const QUEUE_AHEAD_HOURS = 1;
 
-/** An action as the client may send it: the house always comes from the session. */
+/** An action as the client may send it: the dynasty always comes from the session. */
 type ActionIntent =
   | { type: 'market.buy'; good: GoodId; units: number }
   | { type: 'market.sell'; good: GoodId; units: number }
@@ -31,8 +31,8 @@ type ActionIntent =
   | { type: 'workshop.build'; trade: Trade }
   | { type: 'workshop.destroy'; workshopId: string }
   | { type: 'workshop.upgrade'; workshopId: string }
-  | { type: 'house.buy_title' }
-  | { type: 'house.upgrade_residence' };
+  | { type: 'dynasty.buy_title' }
+  | { type: 'dynasty.upgrade_residence' };
 
 type ActionSubmission =
   { ok: true; id: string; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
@@ -72,7 +72,7 @@ export async function listActions(
 
     queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
 
-    return queued.filter((action) => action.houseId === bound.houseId);
+    return queued.filter((action) => action.dynastyId === bound.dynastyId);
   }, bound.townId);
 
   sendJson(response, 200, { actions: actions.map(pendingView) });
@@ -112,8 +112,8 @@ export async function cancelAction(
     sessionWorld(session);
 
     const stored = await session.findAction(actionId);
-    // Another house's action is indistinguishable from an unknown one.
-    if (stored === null || stored.houseId !== bound.houseId) {
+    // Another dynasty's action is indistinguishable from an unknown one.
+    if (stored === null || stored.dynastyId !== bound.dynastyId) {
       return { kind: 'unknown' as const };
     }
     // Idempotent: a cancellation already won is 204, even if the hour has
@@ -191,7 +191,7 @@ export async function appendAction(
       sessionWorld(session);
       const { world, hourStartedAt } = session.snapshot;
 
-      // The action names a hour, not a house: the house is the session's.
+      // The action names a hour, not a dynasty: the dynasty is the session's.
       // A hour that already ticked can never be replayed, and the town clock
       // is the upper bound for a hour that has not begun yet.
       const currentHour = currentHourOf(world, hourStartedAt, at);
@@ -208,15 +208,15 @@ export async function appendAction(
 
       const stored: StoredAction = {
         id: submission.id,
-        houseId: bound.houseId,
+        dynastyId: bound.dynastyId,
         playsAt: submission.hour,
-        action: withHouse(submission.intent, bound.houseId),
+        action: withDynasty(submission.intent, bound.dynastyId),
         receivedAt: at,
         cancelledAt: null,
-        // The degree is named when the order is taken, from the house as it is
+        // The degree is named when the order is taken, from the dynasty as it is
         // then, so no later purchase changes what this line says.
-        ...(submission.intent.type === 'house.buy_title'
-          ? { title: nextTitle(titleOf(world.houses[bound.houseId]!)) }
+        ...(submission.intent.type === 'dynasty.buy_title'
+          ? { title: nextTitle(titleOf(world.dynasties[bound.dynastyId]!)) }
           : {}),
       };
       await session.append(stored);
@@ -246,14 +246,14 @@ export async function appendAction(
     case 'appended':
       context.deps.logger.info('action.appended', {
         townId: bound.townId,
-        houseId: bound.houseId,
+        dynastyId: bound.dynastyId,
         hour: outcome.stored.playsAt,
         action: outcome.stored.action.type,
       });
       sendJson(response, 201, {
         id: outcome.stored.id,
         hour: outcome.stored.playsAt,
-        houseId: outcome.stored.houseId,
+        dynastyId: outcome.stored.dynastyId,
       });
   }
 }
@@ -270,7 +270,7 @@ function pendingView(stored: StoredAction): Record<string, unknown> {
       : {}),
     ...(action.type === 'council.campaign' ? { seatId: action.seatId } : {}),
     ...(action.type === 'workshop.build' ? { trade: action.trade } : {}),
-    ...(action.type === 'house.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
+    ...(action.type === 'dynasty.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
     ...(action.type === 'workshop.destroy' || action.type === 'workshop.upgrade'
       ? { workshopId: action.workshopId }
       : {}),
@@ -371,8 +371,8 @@ function parseActionSubmission(body: unknown): ActionSubmission {
       };
     }
 
-    case 'house.buy_title':
-    case 'house.upgrade_residence':
+    case 'dynasty.buy_title':
+    case 'dynasty.upgrade_residence':
       return { ok: true, id: id.toLowerCase(), hour: hour as number, intent: { type: action.type } };
 
     default:
@@ -381,11 +381,11 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 }
 
 /**
- * The only place a client-supplied action meets a house: the house is written
- * last, so a `houseId` smuggled into the body never survives into the world.
+ * The only place a client-supplied action meets a dynasty: the dynasty is written
+ * last, so a `dynastyId` smuggled into the body never survives into the world.
  */
-function withHouse(intent: ActionIntent, houseId: string): Action {
-  return { ...intent, houseId };
+function withDynasty(intent: ActionIntent, dynastyId: string): Action {
+  return { ...intent, dynastyId };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -16,12 +16,12 @@ const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
 const START = Date.parse('2026-11-05T12:00:00.000Z');
 
-function player(houseId: string, lastSeenAt: Date, revokedAt: Date | null = null): Player {
+function player(dynastyId: string, lastSeenAt: Date, revokedAt: Date | null = null): Player {
   return {
-    tokenHash: houseId.padEnd(64, '0'),
+    tokenHash: dynastyId.padEnd(64, '0'),
     playerId: 1,
     townId: TEST_TOWN.id,
-    houseId,
+    dynastyId,
     createdAt: lastSeenAt,
     lastSeenAt,
     revokedAt,
@@ -31,36 +31,36 @@ function player(houseId: string, lastSeenAt: Date, revokedAt: Date | null = null
 
 function aHumanWorld(): World {
   const world = town(20261105);
-  world.houses.caron.controller = 'human';
+  world.dynasties.caron.controller = 'human';
 
   return world;
 }
 
 describe('dormancy', () => {
-  it('marks a silent house dormant and keeps its money and its seat', () => {
+  it('marks a silent dynasty dormant and keeps its money and its seat', () => {
     // Arrange
     const world = aHumanWorld();
     world.seats.maire = { personId: 'person-caron' };
-    const treasuryCents = world.houses.caron.treasuryCents;
+    const treasuryCents = world.dynasties.caron.treasuryCents;
     const seen = new Date(START - (PACING.dormancyDays * DAY + HOUR));
 
     // Act
     const presence = applyPresence(world, [player('caron', seen)], START);
 
     // Assert
-    expect(presence.world.houses.caron.dormant).toBe(true);
-    expect(presence.world.houses.caron.treasuryCents).toBe(treasuryCents);
+    expect(presence.world.dynasties.caron.dormant).toBe(true);
+    expect(presence.world.dynasties.caron.treasuryCents).toBe(treasuryCents);
     expect(presence.world.seats.maire.personId).toBe('person-caron');
   });
 
-  it('deletes a house silent for more than thirty days with its people and its seat', () => {
+  it('deletes a dynasty silent for more than thirty days with its people and its seat', () => {
     // Arrange
     const world = aHumanWorld();
     world.seats.maire = { personId: 'person-caron' };
     world.campaigns.maire = { caron: 2 };
     world.engagements = [
-      { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueAt: world.hour + 4, work: 'residence' },
-      { id: 'engagement-leclerc', kind: 'hearing', houseId: 'leclerc', dueAt: world.hour + 4 },
+      { id: 'engagement-caron', kind: 'site', dynastyId: 'caron', dueAt: world.hour + 4, work: 'residence' },
+      { id: 'engagement-leclerc', kind: 'hearing', dynastyId: 'leclerc', dueAt: world.hour + 4 },
     ];
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
 
@@ -68,15 +68,15 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [player('caron', seen)], START);
 
     // Assert
-    expect(presence.deletedHouseIds).toEqual(['caron']);
-    expect(presence.world.houses.caron).toBeUndefined();
+    expect(presence.deletedDynastyIds).toEqual(['caron']);
+    expect(presence.world.dynasties.caron).toBeUndefined();
     expect(presence.world.people['person-caron']).toBeUndefined();
     expect(presence.world.seats.maire.personId).toBeNull();
     expect(presence.world.campaigns.maire).toEqual({});
     expect(presence.world.engagements.map((engagement) => engagement.id)).toEqual(['engagement-leclerc']);
   });
 
-  it('still reads a house at exactly the thirty-day boundary', () => {
+  it('still reads a dynasty at exactly the thirty-day boundary', () => {
     // Arrange: the existing month-long catch-up lands exactly here.
     const world = aHumanWorld();
     const seen = new Date(START - PACING.deletionDays * DAY);
@@ -85,8 +85,8 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [player('caron', seen)], START);
 
     // Assert
-    expect(presence.deletedHouseIds).toEqual([]);
-    expect(presence.world.houses.caron.dormant).toBe(true);
+    expect(presence.deletedDynastyIds).toEqual([]);
+    expect(presence.world.dynasties.caron.dormant).toBe(true);
   });
 
   it('goes dormant exactly at the dormancy boundary', () => {
@@ -98,18 +98,18 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [player('caron', seen)], START);
 
     // Assert
-    expect(presence.world.houses.caron.dormant).toBe(true);
+    expect(presence.world.dynasties.caron.dormant).toBe(true);
   });
 
-  it('walks a twenty-house town without changing it', () => {
+  it('walks a twenty-dynasty town without changing it', () => {
     // Arrange
     const base = town(20261105);
-    const world: World = { ...base, houses: { ...base.houses }, people: { ...base.people } };
-    for (let index = Object.keys(world.houses).length + 1; index <= 20; index += 1) {
-      const id = `house-${index}`;
+    const world: World = { ...base, dynasties: { ...base.dynasties }, people: { ...base.people } };
+    for (let index = Object.keys(world.dynasties).length + 1; index <= 20; index += 1) {
+      const id = `dynasty-${index}`;
       const personId = `person-${index}`;
-      world.houses[id] = {
-        ...base.houses.fournier,
+      world.dynasties[id] = {
+        ...base.dynasties.fournier,
         id,
         name: `Maison ${index}`,
         workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
@@ -118,7 +118,7 @@ describe('dormancy', () => {
       world.people[personId] = {
         ...base.people['person-fournier'],
         id: personId,
-        houseId: id,
+        dynastyId: id,
         name: `Nom ${index}`,
       };
     }
@@ -127,40 +127,40 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [player('leclerc', new Date(START))], START);
 
     // Assert
-    expect(Object.keys(presence.world.houses)).toHaveLength(20);
-    expect(presence.deletedHouseIds).toEqual([]);
+    expect(Object.keys(presence.world.dynasties)).toHaveLength(20);
+    expect(presence.deletedDynastyIds).toEqual([]);
     expect(presence.changed).toBe(false);
   });
 
-  it('treats a house with no live token as dormant, and an AI house as never dormant', () => {
+  it('treats a dynasty with no live token as dormant, and an AI dynasty as never dormant', () => {
     // Arrange
     const world = aHumanWorld();
-    world.houses.fournier.dormant = true;
+    world.dynasties.fournier.dormant = true;
     const seen = new Date(START - HOUR);
 
     // Act
     const presence = applyPresence(world, [player('leclerc', seen, seen)], START);
 
-    // Assert: a closed session leaves the house dormant even after a visit...
-    expect(presence.world.houses.leclerc.dormant).toBe(true);
-    // ...and an AI house is always played.
-    expect(presence.world.houses.fournier.dormant).toBe(false);
+    // Assert: a closed session leaves the dynasty dormant even after a visit...
+    expect(presence.world.dynasties.leclerc.dormant).toBe(true);
+    // ...and an AI dynasty is always played.
+    expect(presence.world.dynasties.fournier.dormant).toBe(false);
   });
 
-  it('revokes a player row whose house the world no longer holds', () => {
-    // Arrange: a token outlived a house whose deletion was saved but whose
+  it('revokes a player row whose dynasty the world no longer holds', () => {
+    // Arrange: a token outlived a dynasty whose deletion was saved but whose
     // revocation failed.
     const world = town(20261105);
-    delete world.houses.caron;
+    delete world.dynasties.caron;
 
     // Act
     const presence = applyPresence(world, [player('caron', new Date(START))], START);
 
     // Assert
-    expect(presence.deletedHouseIds).toContain('caron');
+    expect(presence.deletedDynastyIds).toContain('caron');
   });
 
-  it('dormants a human house that has no player row, without deleting it', () => {
+  it('dormants a human dynasty that has no player row, without deleting it', () => {
     // Arrange
     const world = aHumanWorld();
 
@@ -168,8 +168,8 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [], START);
 
     // Assert
-    expect(presence.world.houses.leclerc.dormant).toBe(true);
-    expect(presence.deletedHouseIds).toEqual([]);
+    expect(presence.world.dynasties.leclerc.dormant).toBe(true);
+    expect(presence.deletedDynastyIds).toEqual([]);
   });
 });
 
@@ -189,7 +189,7 @@ afterEach(async () => {
 
 async function start(
   world: World,
-  players: Array<{ houseId: string; lastSeenAt: Date }>,
+  players: Array<{ dynastyId: string; lastSeenAt: Date }>,
   now: number,
 ): Promise<Harness> {
   const store = new MemoryPlayerStore();
@@ -215,8 +215,8 @@ async function start(
 
   const cookies: Record<string, string> = {};
   for (const entry of players) {
-    const { token } = await issueToken(store, TEST_TOWN.id, entry.houseId, entry.lastSeenAt);
-    cookies[entry.houseId] = `${SESSION_COOKIE}=${token}`;
+    const { token } = await issueToken(store, TEST_TOWN.id, entry.dynastyId, entry.lastSeenAt);
+    cookies[entry.dynastyId] = `${SESSION_COOKIE}=${token}`;
   }
 
   return { url: `http://127.0.0.1:${address.port}`, store, worlds, close, cookies };
@@ -227,7 +227,7 @@ function tokenOf(cookie: string): string {
 }
 
 describe('the thirty-day deletion', () => {
-  it('removes the house, revokes its token and frees its slot', async () => {
+  it('removes the dynasty, revokes its token and frees its slot', async () => {
     // Arrange
     const world = aHumanWorld();
     world.seats.maire = { personId: 'person-caron' };
@@ -235,52 +235,52 @@ describe('the thirty-day deletion', () => {
     const harness = await start(
       world,
       [
-        { houseId: 'leclerc', lastSeenAt: new Date(START) },
-        { houseId: 'caron', lastSeenAt: silentSince },
+        { dynastyId: 'leclerc', lastSeenAt: new Date(START) },
+        { dynastyId: 'caron', lastSeenAt: silentSince },
       ],
       START,
     );
     const leclercCookie = harness.cookies.leclerc as string;
     const caronToken = tokenOf(harness.cookies.caron as string);
 
-    // Act: a living house reads the town, and the silent one is noticed.
+    // Act: a living dynasty reads the town, and the silent one is noticed.
     const response = await fetch(`${harness.url}/api/world`, { headers: { Cookie: leclercCookie } });
     const body = (await response.json()) as {
-      world: { town: { houses: Array<{ id: string }>; seats: { maire: { personId: string | null } } } };
+      world: { town: { dynasties: Array<{ id: string }>; seats: { maire: { personId: string | null } } } };
     };
 
     // Assert
     expect(response.status).toBe(200);
-    expect(body.world.town.houses.map((house) => house.id)).not.toContain('caron');
+    expect(body.world.town.dynasties.map((dynasty) => dynasty.id)).not.toContain('caron');
     expect(body.world.town.seats.maire.personId).toBeNull();
     expect(await authenticate(harness.store, caronToken)).toBeNull();
 
-    const rows = (await harness.store.listByTown(TEST_TOWN.id)).filter((row) => row.houseId === 'caron');
+    const rows = (await harness.store.listByTown(TEST_TOWN.id)).filter((row) => row.dynastyId === 'caron');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.revokedAt).not.toBeNull();
 
-    // The live-house index no longer blocks the freed place.
+    // The live-dynasty index no longer blocks the freed place.
     await expect(issueToken(harness.store, TEST_TOWN.id, 'caron', new Date(START))).resolves.toBeDefined();
   });
 
-  it('makes a returning player start a fresh first house after more than thirty days', async () => {
-    // Arrange: the old house has money and a seat, so a failed respawn would
+  it('makes a returning player start a fresh first dynasty after more than thirty days', async () => {
+    // Arrange: the old dynasty has money and a seat, so a failed respawn would
     // keep them.
     const world = town(20261105);
-    world.houses.leclerc.treasuryCents = 999_999;
+    world.dynasties.leclerc.treasuryCents = 999_999;
     world.seats.maire = { personId: 'person-leclerc' };
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
-    const harness = await start(world, [{ houseId: 'leclerc', lastSeenAt: seen }], START);
+    const harness = await start(world, [{ dynastyId: 'leclerc', lastSeenAt: seen }], START);
     const oldCookie = harness.cookies.leclerc as string;
 
     // Act: the visit arrives after the silence.
     const expired = await fetch(`${harness.url}/api/world`, { headers: { Cookie: oldCookie } });
 
-    // Assert: the house is gone and the dead cookie is cleared.
+    // Assert: the dynasty is gone and the dead cookie is cleared.
     expect(expired.status).toBe(401);
     expect(expired.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=;`))).toBe(true);
     expect(await authenticate(harness.store, tokenOf(oldCookie))).toBeNull();
-    // The last human house went with the silence, and the town with it.
+    // The last human dynasty went with the silence, and the town with it.
     await expect(
       harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id),
     ).rejects.toBeInstanceOf(UnknownWorldError);
@@ -291,11 +291,11 @@ describe('the thirty-day deletion', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trade: 'baker' }),
     });
-    const { token, houseId } = (await joined.json()) as { token: string; houseId: string };
+    const { token, dynastyId } = (await joined.json()) as { token: string; dynastyId: string };
     const read = await fetch(`${harness.url}/api/world`, { headers: { Cookie: `${SESSION_COOKIE}=${token}` } });
     const body = (await read.json()) as {
       world: {
-        house: {
+        dynasty: {
           id: string;
           treasuryCents: number;
           workshops: Array<{ good: string; input: string | null }>;
@@ -305,14 +305,14 @@ describe('the thirty-day deletion', () => {
       };
     };
 
-    // Assert: a starter house, not the old money, and no inherited seat.
+    // Assert: a starter dynasty, not the old money, and no inherited seat.
     expect(joined.status).toBe(201);
     expect(read.status).toBe(200);
     // A new town, so the drawn name may be any place: what matters is that the
     // old money and the old seat did not cross.
-    expect(body.world.house.id).toBe(houseId);
-    expect(body.world.house.treasuryCents).toBe(RULES.startingPurseCents);
-    expect(body.world.house.workshops).toEqual([
+    expect(body.world.dynasty.id).toBe(dynastyId);
+    expect(body.world.dynasty.treasuryCents).toBe(RULES.startingPurseCents);
+    expect(body.world.dynasty.workshops).toEqual([
       {
         id: 'workshop-1',
         good: 'bread',
@@ -326,7 +326,7 @@ describe('the thirty-day deletion', () => {
         upgradeHours: 3,
       },
     ]);
-    expect(body.world.house.stock.grain).toBe(8);
+    expect(body.world.dynasty.stock.grain).toBe(8);
     expect(body.world.town.seats.maire.personId).toBeNull();
   });
 });

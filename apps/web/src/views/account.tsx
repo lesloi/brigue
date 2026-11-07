@@ -52,7 +52,7 @@ export function DeleteAccountDialog({ graceDays, busy, error, onCancel, onConfir
   );
 }
 
-interface ClosingHouseProps {
+interface ClosingDynastyProps {
   after: string;
   busy: boolean;
   error: string | null;
@@ -60,7 +60,7 @@ interface ClosingHouseProps {
 }
 
 /** The identity is scheduled for erasure: the only move left is coming back. */
-export function ClosingHouse({ after, busy, error, onRestore }: ClosingHouseProps) {
+export function ClosingDynasty({ after, busy, error, onRestore }: ClosingDynastyProps) {
   const deadline = new Date(after).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
 
   return (

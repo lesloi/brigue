@@ -13,7 +13,7 @@ export interface ResetOptions {
 export interface ResetReport {
   /** Kings carried across; zero on a full reset. */
   kings: number;
-  /** Accounts carried across without a house; zero on a full reset. */
+  /** Accounts carried across without a dynasty; zero on a full reset. */
   accounts: number;
   /** Whether the book of kings was deleted too. */
   full: boolean;
@@ -23,13 +23,13 @@ export interface ResetReport {
 
 interface SurvivingKing {
   player_id: number;
-  house_name: string;
+  dynasty_name: string;
   person_name: string;
   crowned_at: Date;
   elapsed_hours: number;
 }
 
-/** The identity a reset keeps: everything but the town and the house it lost. */
+/** The identity a reset keeps: everything but the town and the dynasty it lost. */
 interface SurvivingAccount {
   token_hash: string;
   player_id: number;
@@ -43,8 +43,8 @@ interface SurvivingAccount {
  * Drops the whole schema and builds it again from the migrations.
  *
  * The book of kings and the accounts are copied across, because no ordinary
- * reset touches them: the token is the identity, and a reset takes the house,
- * not the player. A carried account comes back with no town and no house, and
+ * reset touches them: the token is the identity, and a reset takes the dynasty,
+ * not the player. A carried account comes back with no town and no dynasty, and
  * its player chooses a trade on the next visit. A full reset deletes both.
  *
  * Destructive by design: the caller asks the operator first.
@@ -69,11 +69,11 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'kings',
-        ['player_id', 'house_name', 'person_name', 'crowned_at', 'elapsed_hours'],
-        kings.map((king) => [king.player_id, king.house_name, king.person_name, king.crowned_at, king.elapsed_hours]),
+        ['player_id', 'dynasty_name', 'person_name', 'crowned_at', 'elapsed_hours'],
+        kings.map((king) => [king.player_id, king.dynasty_name, king.person_name, king.crowned_at, king.elapsed_hours]),
       );
 
-      // The account keeps its id and its dates; the house and the journal
+      // The account keeps its id and its dates; the dynasty and the journal
       // cursor do not cross. `cursor_event_id` restarts at zero because the
       // rebuilt journal restarts at one.
       await insertRows(
@@ -83,7 +83,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
           'token_hash',
           'player_id',
           'town_id',
-          'house_id',
+          'dynasty_id',
           'created_at',
           'last_seen_at',
           'revoked_at',
@@ -150,7 +150,13 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
      WHERE table_schema = 'public' AND table_name = 'kings'`,
   );
   const types = new Map(columns.map((column) => [column.column_name, column.data_type]));
+  // This function reads the schema it is about to drop and writes the one the
+  // migrations rebuild, so it is the one place that still knows the old name:
+  // a database reset before the rename carries `house_name`, one reset after it
+  // carries `dynasty_name`.
+  const nameColumn = types.has('dynasty_name') ? 'dynasty_name' : types.has('house_name') ? 'house_name' : null;
   const shape =
+    nameColumn !== null &&
     types.get('player_id') === 'bigint' &&
     types.get('elapsed_hours') === 'integer' &&
     types.get('crowned_at') === 'timestamp with time zone';
@@ -169,15 +175,15 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
 
   const { rows } = await client.query<{
     player_id: string;
-    house_name: string;
+    dynasty_name: string;
     person_name: string;
     crowned_at: Date;
     elapsed_hours: number;
-  }>(`SELECT player_id, house_name, person_name, crowned_at, elapsed_hours FROM kings`);
+  }>(`SELECT player_id, ${nameColumn} AS dynasty_name, person_name, crowned_at, elapsed_hours FROM kings`);
 
   return rows.map((row) => ({
     player_id: Number(row.player_id),
-    house_name: row.house_name,
+    dynasty_name: row.dynasty_name,
     person_name: row.person_name,
     crowned_at: row.crowned_at,
     elapsed_hours: row.elapsed_hours,
@@ -186,7 +192,7 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
 
 /**
  * The accounts an ordinary reset keeps. The token, the player id, the dates and
- * a pending deletion cross; the town and the house do not, so the player
+ * a pending deletion cross; the town and the dynasty do not, so the player
  * chooses a trade on the next visit. An accounts table of the older shape (a
  * world id, no stable player id) cannot be carried, so a non-empty one stops
  * the reset with a named reason instead of a silent cast.
@@ -284,7 +290,7 @@ export interface ResetPreview {
   full: boolean;
   /** Kings that would survive; zero on a full reset. */
   kings: number;
-  /** Accounts that would survive without a house; zero on a full reset. */
+  /** Accounts that would survive without a dynasty; zero on a full reset. */
   accounts: number;
 }
 

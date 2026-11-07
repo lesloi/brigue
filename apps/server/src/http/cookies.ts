@@ -2,7 +2,7 @@ export const SESSION_COOKIE = 'brigue_token';
 
 /**
  * 400 days is the longest a browser keeps a cookie, and it matches the decision:
- * lose the token, lose the house. A shorter cookie would lock a player out
+ * lose the token, lose the dynasty. A shorter cookie would lock a player out
  * without telling them why.
  */
 export const SESSION_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;

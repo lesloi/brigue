@@ -10,7 +10,7 @@ const logger = createLogger((line) => process.stdout.write(`${line}\n`));
 
 if (!config.secureCookies) {
   logger.warn('config.insecure_cookie', {
-    // The token cookie is worth a house: only opt out on localhost.
+    // The token cookie is worth a dynasty: only opt out on localhost.
     detail: 'COOKIE_SECURE=false sends the session cookie without Secure',
   });
 }

@@ -1,8 +1,8 @@
 /**
- * A house's name, and the rule that keeps two houses of one town apart.
+ * A dynasty's name, and the rule that keeps two dynasties of one town apart.
  *
  * The name is identity, not data: it is shown on every screen, read by the
- * town's register and by the global ranking, so two houses a reader could
+ * town's register and by the global ranking, so two dynasties a reader could
  * confuse must not exist. A name is letters and digits only — no accent, no
  * space, no apostrophe, no mark — which leaves nothing to fold but the case.
  * The comparison goes further than the rule on purpose: names written before
@@ -15,11 +15,11 @@
 export const NAME_MAX_LENGTH = 24;
 
 /**
- * What a suggested name may be drawn from. None of them is an AI house's: no
- * human house of the server may take one, see `AI_HOUSE_NAMES`. The list is a
+ * What a suggested name may be drawn from. None of them is an AI dynasty's: no
+ * human dynasty of the server may take one, see `AI_DYNASTY_NAMES`. The list is a
  * suggestion, never a limit: a player who is not drawn one writes their own.
  */
-export const HOUSE_NAMES = [
+export const DYNASTY_NAMES = [
   'Leclerc',
   'Moreau',
   'Hebert',
@@ -110,22 +110,22 @@ export function nameKey(name: string): string {
   return folded.normalize('NFD').replace(DIACRITICS, '');
 }
 
-/** A name is unique in its town: another house, however it writes it, holds it. */
-export function nameIsTaken(houses: Iterable<string>, name: string): boolean {
+/** A name is unique in its town: another dynasty, however it writes it, holds it. */
+export function nameIsTaken(dynasties: Iterable<string>, name: string): boolean {
   const key = nameKey(name);
 
-  return Array.from(houses).some((carried) => nameKey(carried) === key);
+  return Array.from(dynasties).some((carried) => nameKey(carried) === key);
 }
 
 /** What a rename asks: shared by the route, the core and the tests. */
-export interface HouseRenameRequest {
+export interface DynastyRenameRequest {
   /** The name as the player wrote it; it is trimmed and cleaned here, not by the caller. */
   name: string;
   /** Unpaid when zero: the name kept at creation costs nothing. */
   priceCents: number;
   /**
-   * The keys of the human houses of the whole server, this one aside. Only the
-   * server knows them: the town sees its own houses, and an AI name elsewhere
+   * The keys of the human dynasties of the whole server, this one aside. Only the
+   * server knows them: the town sees its own dynasties, and an AI name elsewhere
    * is no conflict.
    */
   takenElsewhere?: ReadonlySet<string>;
@@ -133,4 +133,4 @@ export interface HouseRenameRequest {
 
 export type NameRefusal = 'invalid_name' | 'name_taken' | 'insufficient_funds';
 
-export type HouseRenameOutcome = { ok: true; name: string } | { ok: false; reason: NameRefusal };
+export type DynastyRenameOutcome = { ok: true; name: string } | { ok: false; reason: NameRefusal };

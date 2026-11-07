@@ -1,37 +1,37 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { AI_HOUSE_NAMES, isValidName, nameKey, sanitizeName } from '@brigue/core';
+import { AI_DYNASTY_NAMES, isValidName, nameKey, sanitizeName } from '@brigue/core';
 
 import { closingOf } from '../../identity/players.ts';
 import { authenticate } from '../../identity/session.ts';
-import { drawHouseIdentity, suggestHouseName } from '../../town/names.ts';
+import { drawDynastyIdentity, suggestDynastyName } from '../../town/names.ts';
 import type { AppContext } from '../context.ts';
 import { readSessionCookie } from '../cookies.ts';
 import { sendJson } from '../respond.ts';
 
-/** What a join is made of: an opaque id, and the names the house is written with. */
+/** What a join is made of: an opaque id, and the names the dynasty is written with. */
 export interface Candidate {
-  /** Opaque, never derived from the name: a retried join keeps the same house. */
+  /** Opaque, never derived from the name: a retried join keeps the same dynasty. */
   id: string;
-  houseName: string;
+  dynastyName: string;
   personName: string;
 }
 
 /**
- * The names no human house of the server may take: the human houses already
- * there, and the three AI houses, which carry the same names in every town.
- * Only a human house is ranked by name across towns, which is why the AI ones
+ * The names no human dynasty of the server may take: the human dynasties already
+ * there, and the three AI dynasties, which carry the same names in every town.
+ * Only a human dynasty is ranked by name across towns, which is why the AI ones
  * are absent from the store's list and present here.
  */
 export async function humanNamesElsewhere(context: AppContext): Promise<Set<string>> {
   const humans = await context.deps.worlds.listHumanNames();
 
-  return new Set([...humans, ...AI_HOUSE_NAMES].map((name) => nameKey(name)));
+  return new Set([...humans, ...AI_DYNASTY_NAMES].map((name) => nameKey(name)));
 }
 
 /**
  * The names the towns of the server carry: a suggestion the creation screen
- * prefills must be free in the town the join reaches, its AI houses included.
+ * prefills must be free in the town the join reaches, its AI dynasties included.
  * The pool already avoids the composition's three, so this matters for a town
  * whose AI names are not the ones the pool expects.
  */
@@ -41,7 +41,7 @@ export async function namesInSettledTowns(context: AppContext): Promise<string[]
   for (const town of await context.deps.worlds.listTowns()) {
     try {
       const carried = await context.deps.worlds.withWorld(
-        async (session) => Object.values(session.snapshot.world.houses).map((house) => house.name),
+        async (session) => Object.values(session.snapshot.world.dynasties).map((dynasty) => dynasty.name),
         town.id,
       );
       names.push(...carried);
@@ -62,10 +62,10 @@ export async function namesInSettledTowns(context: AppContext): Promise<string[]
  * drawn: the player's name is theirs.
  */
 export function candidateFor(kept: string | undefined, taken: readonly string[]): Candidate {
-  const elsewhere = new Set(AI_HOUSE_NAMES.map((carried) => nameKey(carried)));
-  const identity = drawHouseIdentity(kept ?? suggestHouseName(taken, elsewhere));
+  const elsewhere = new Set(AI_DYNASTY_NAMES.map((carried) => nameKey(carried)));
+  const identity = drawDynastyIdentity(kept ?? suggestDynastyName(taken, elsewhere));
 
-  return { id: identity.id, houseName: identity.houseName, personName: identity.personName };
+  return { id: identity.id, dynastyName: identity.dynastyName, personName: identity.personName };
 }
 
 /**
@@ -83,7 +83,7 @@ export function readClaim(
   const rawId = typeof claim?.candidate === 'object' && claim.candidate !== null ? claim.candidate.id : undefined;
   const rawName = claim?.name;
 
-  if (rawId !== undefined && (typeof rawId !== 'string' || !/^house-[0-9a-f-]{36}$/.test(rawId))) {
+  if (rawId !== undefined && (typeof rawId !== 'string' || !/^dynasty-[0-9a-f-]{36}$/.test(rawId))) {
     return { kind: 'poisoned' };
   }
   if (rawName !== undefined && typeof rawName !== 'string') {
@@ -116,7 +116,7 @@ export function settledCandidate(
 }
 
 /**
- * `GET /api/house/name`: the candidate the creation screen prefills, and a free
+ * `GET /api/dynasty/name`: the candidate the creation screen prefills, and a free
  * name for the Maison screen. Drawn on the server — the screen computes no rule
  * — and written nowhere. The read is rate-limited like a join, because it is
  * the first half of one, and an account between towns asks with its cookie: a
@@ -131,7 +131,7 @@ export async function readCandidate(
   const decision = context.limiter.take(ip, context.now());
 
   if (!decision.allowed) {
-    context.deps.logger.warn('house.name_rate_limited', { ip });
+    context.deps.logger.warn('dynasty.name_rate_limited', { ip });
     response.writeHead(429, { 'Cache-Control': 'no-store', 'Retry-After': String(decision.retryAfterSeconds) });
     response.end();
     return;

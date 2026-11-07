@@ -72,7 +72,7 @@ function post(harness: Harness, intent: unknown, hour = 1, index = 0): Promise<R
 }
 
 function rename(harness: Harness, name: unknown): Promise<Response> {
-  return fetch(`${harness.url}/api/house/name`, {
+  return fetch(`${harness.url}/api/dynasty/name`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Cookie: harness.cookie },
     body: JSON.stringify({ name }),
@@ -87,13 +87,13 @@ describe('the ladder on the action queue', () => {
     // Act
     const build = await post(harness, { type: 'workshop.build', trade: 'baker' }, 1, 0);
     const upgrade = await post(harness, { type: 'workshop.upgrade', workshopId: 'workshop-1' }, 1, 1);
-    const title = await post(harness, { type: 'house.buy_title' }, 1, 2);
-    const residence = await post(harness, { type: 'house.upgrade_residence' }, 1, 3);
+    const title = await post(harness, { type: 'dynasty.buy_title' }, 1, 2);
+    const residence = await post(harness, { type: 'dynasty.upgrade_residence' }, 1, 3);
 
     // Assert
     expect([build.status, upgrade.status, title.status, residence.status]).toEqual([201, 201, 201, 201]);
-    const body = (await build.json()) as { id: string; hour: number; houseId: string };
-    expect(body).toMatchObject({ hour: 1, houseId: 'leclerc' });
+    const body = (await build.json()) as { id: string; hour: number; dynastyId: string };
+    expect(body).toMatchObject({ hour: 1, dynastyId: 'leclerc' });
   });
 
   it('refuses a build of a trade nobody practises', async () => {
@@ -113,18 +113,18 @@ describe('the ladder on the action queue', () => {
     const harness = await start();
 
     // Act
-    const response = await post(harness, { type: 'house.rename', name: 'Moreau' });
+    const response = await post(harness, { type: 'dynasty.rename', name: 'Moreau' });
 
     // Assert
     expect(response.status).toBe(400);
   });
 });
 
-describe('the house name', () => {
-  it('renames the house at once, and its living person with it', async () => {
+describe('the dynasty name', () => {
+  it('renames the dynasty at once, and its living person with it', async () => {
     // Arrange: a purse that pays the rename.
     const world = town(7);
-    world.houses.leclerc.treasuryCents = 100_000;
+    world.dynasties.leclerc.treasuryCents = 100_000;
     const harness = await start(world);
 
     // Act
@@ -134,16 +134,16 @@ describe('the house name', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ name: 'Moreau' });
     const after = await harness.read();
-    expect(after.houses.leclerc?.id).toBe('leclerc');
-    expect(after.houses.leclerc?.name).toBe('Moreau');
+    expect(after.dynasties.leclerc?.id).toBe('leclerc');
+    expect(after.dynasties.leclerc?.name).toBe('Moreau');
     expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
-    expect(after.houses.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
+    expect(after.dynasties.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
   });
 
   it('writes the rename in the journal as the town’s business', async () => {
     // Arrange
     const world = town(7);
-    world.houses.leclerc.treasuryCents = 100_000;
+    world.dynasties.leclerc.treasuryCents = 100_000;
     const harness = await start(world);
 
     // Act
@@ -152,13 +152,13 @@ describe('the house name', () => {
 
     // Assert
     const body = (await response.json()) as { events: Array<{ type: string; after?: string }> };
-    expect(body.events).toContainEqual(expect.objectContaining({ type: 'house.renamed', after: 'Moreau' }));
+    expect(body.events).toContainEqual(expect.objectContaining({ type: 'dynasty.renamed', after: 'Moreau' }));
   });
 
-  it('refuses a name another house carries, whatever its case', async () => {
+  it('refuses a name another dynasty carries, whatever its case', async () => {
     // Arrange
     const world = town(7);
-    world.houses.leclerc.treasuryCents = 100_000;
+    world.dynasties.leclerc.treasuryCents = 100_000;
     const harness = await start(world);
 
     // Act
@@ -167,13 +167,13 @@ describe('the house name', () => {
     // Assert
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'name_taken' });
-    expect((await harness.read()).houses.leclerc?.name).toBe('Leclerc');
+    expect((await harness.read()).dynasties.leclerc?.name).toBe('Leclerc');
   });
 
-  it('refuses a name that is not one, and a house that cannot pay', async () => {
+  it('refuses a name that is not one, and a dynasty that cannot pay', async () => {
     // Arrange
     const world = town(7);
-    world.houses.leclerc.treasuryCents = 10;
+    world.dynasties.leclerc.treasuryCents = 10;
     const harness = await start(world);
 
     // Act
@@ -186,24 +186,24 @@ describe('the house name', () => {
     expect(empty.status).toBe(400);
     expect(poor.status).toBe(409);
     expect(await poor.json()).toEqual({ error: 'insufficient_funds' });
-    expect((await harness.read()).houses.leclerc?.name).toBe('Leclerc');
+    expect((await harness.read()).dynasties.leclerc?.name).toBe('Leclerc');
   });
 });
 
 describe('the action view of the ladder', () => {
   it('names the degree a queued title buys', async () => {
-    // Arrange: a house that can pay for its next degree.
+    // Arrange: a dynasty that can pay for its next degree.
     const world = town(7);
-    world.houses.leclerc.treasuryCents = 1_000_000;
+    world.dynasties.leclerc.treasuryCents = 1_000_000;
     const harness = await start(world);
 
     // Act
-    await post(harness, { type: 'house.buy_title' });
+    await post(harness, { type: 'dynasty.buy_title' });
     const response = await fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookie } });
 
     // Assert
     const body = (await response.json()) as { actions: Array<Record<string, unknown>> };
-    expect(body.actions).toContainEqual(expect.objectContaining({ type: 'house.buy_title', title: 'bourgeois' }));
+    expect(body.actions).toContainEqual(expect.objectContaining({ type: 'dynasty.buy_title', title: 'bourgeois' }));
   });
 
   it('lists a build with its trade, and a purchase with no field', async () => {
@@ -219,12 +219,12 @@ describe('the action view of the ladder', () => {
     expect(body.actions).toContainEqual(expect.objectContaining({ type: 'workshop.build', trade: 'baker' }));
   });
 
-  it('keeps the house from the session, never from the body', async () => {
+  it('keeps the dynasty from the session, never from the body', async () => {
     // Arrange
     const harness = await start();
-    const intent: Action & { houseId?: string } = {
+    const intent: Action & { dynastyId?: string } = {
       type: 'workshop.build',
-      houseId: 'caron',
+      dynastyId: 'caron',
       trade: 'weaver',
     };
 

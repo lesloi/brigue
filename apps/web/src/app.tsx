@@ -11,21 +11,21 @@ import {
   readPending,
   readSession,
   readWorld,
-  renameHouse,
+  renameDynasty,
   requestDeletion,
   resumeTown,
   sendAction,
   type ActionIntent,
-  type HouseCandidate,
+  type DynastyCandidate,
   type PendingActionView,
   type TradeIntent,
   type WorldResponse,
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
-import { ClosingHouse, DeleteAccountDialog } from './views/account.tsx';
+import { ClosingDynasty, DeleteAccountDialog } from './views/account.tsx';
 import { Create } from './views/create.tsx';
-import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
+import { Failure, LostDynasty, TokenDialog } from './views/gate.tsx';
 import { Maison } from './views/maison.tsx';
 import { Marche } from './views/marche.tsx';
 import { Nav } from './views/nav.tsx';
@@ -58,13 +58,13 @@ export function App() {
   const [joinTaken, setJoinTaken] = useState(false);
   // The identity the creation screen prefills: drawn by the server, written
   // nowhere until the join.
-  const [candidate, setCandidate] = useState<HouseCandidate | null>(null);
+  const [candidate, setCandidate] = useState<DynastyCandidate | null>(null);
   const [candidateError, setCandidateError] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
-  const [houseBusy, setHouseBusy] = useState<string | null>(null);
+  const [dynastyBusy, setDynastyBusy] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -132,15 +132,15 @@ export function App() {
         void readSuggestedCandidate();
         return;
       }
-      // The deletion check comes first: a house-less account can be closing
+      // The deletion check comes first: a dynasty-less account can be closing
       // too, and the closing screen is the only move left.
       if (session.deletionAfter !== null) {
         setView({ kind: 'closing', after: session.deletionAfter });
         return;
       }
-      // The token survived the reset, the house did not: the trade gives it
+      // The token survived the reset, the dynasty did not: the trade gives it
       // one back.
-      if (session.houseId === null) {
+      if (session.dynastyId === null) {
         setView({ kind: 'create', lost: true });
         void readSuggestedCandidate();
         return;
@@ -156,14 +156,14 @@ export function App() {
     }
   }
 
-  async function createHouse(trade: Trade, name: string): Promise<void> {
+  async function createDynasty(trade: Trade, name: string): Promise<void> {
     setJoining(true);
     setJoinError(null);
     setJoinTaken(false);
 
     try {
       // The id is the candidate's when one was drawn; without it the server
-      // mints a house of its own, under the name the player kept.
+      // mints a dynasty of its own, under the name the player kept.
       const joined = await joinTown(trade, name, candidate?.id);
       // A returning account keeps its token: there is nothing new to show.
       if (joined.token !== undefined) {
@@ -171,7 +171,7 @@ export function App() {
       }
       await load();
     } catch (error) {
-      if (error instanceof ApiError && (error.code === 'deletion_pending' || error.code === 'house_lost')) {
+      if (error instanceof ApiError && (error.code === 'deletion_pending' || error.code === 'dynasty_lost')) {
         // The account moved while the screen was open: the session knows
         // which screen it belongs to now.
         await boot();
@@ -183,7 +183,7 @@ export function App() {
         setJoinError(null);
         return;
       }
-      if (error instanceof ApiError && error.code === 'no_free_house') {
+      if (error instanceof ApiError && error.code === 'no_free_dynasty') {
         // A half-completed join already set the cookie, or a fast second tap
         // raced the first: recover the session before asking for a token.
         try {
@@ -192,7 +192,7 @@ export function App() {
           if (session !== null) {
             if (session.deletionAfter !== null) {
               setView({ kind: 'closing', after: session.deletionAfter });
-            } else if (session.houseId === null) {
+            } else if (session.dynastyId === null) {
               setView({ kind: 'create', lost: true });
               void readSuggestedCandidate();
             } else {
@@ -261,7 +261,7 @@ export function App() {
     try {
       await load();
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.code === 'house_lost')) {
+      if (error instanceof ApiError && (error.status === 401 || error.code === 'dynasty_lost')) {
         void boot();
         return;
       }
@@ -301,12 +301,12 @@ export function App() {
   }
 
   /** The ladder's actions share one queue with the market: same hour, same read. */
-  async function houseAction(busy: string, intent: ActionIntent, said: string): Promise<void> {
+  async function dynastyAction(busy: string, intent: ActionIntent, said: string): Promise<void> {
     if (view.kind !== 'world') {
       return;
     }
 
-    setHouseBusy(busy);
+    setDynastyBusy(busy);
     try {
       await sendAction(view.data.world.hour, intent);
       await readPending().then(setPending, () => setPending([]));
@@ -319,17 +319,17 @@ export function App() {
         showToast(actionMessageFor(error), true);
       }
     } finally {
-      setHouseBusy(null);
+      setDynastyBusy(null);
     }
   }
 
   /** The name is identity, not a trade: it applies at once, and re-reads the town. */
   async function rename(name: string): Promise<void> {
-    setHouseBusy('rename');
+    setDynastyBusy('rename');
     setRenameError(null);
 
     try {
-      await renameHouse(name);
+      await renameDynasty(name);
       await load();
       showToast(`La dynastie s'appelle désormais ${name}.`);
     } catch (error) {
@@ -339,7 +339,7 @@ export function App() {
           : readMessageFor(error),
       );
     } finally {
-      setHouseBusy(null);
+      setDynastyBusy(null);
     }
   }
 
@@ -402,7 +402,7 @@ export function App() {
       await readPending().then(setPending, () => setPending([]));
       showToast(`Heure ${data.world.hour}, comme si une heure était passée.`);
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.code === 'house_lost')) {
+      if (error instanceof ApiError && (error.status === 401 || error.code === 'dynasty_lost')) {
         void boot();
         return;
       }
@@ -423,8 +423,8 @@ export function App() {
         setView({ kind: 'closing', after: session.deletionAfter });
         return;
       }
-      // A token a reset left without a house: the trade gives it one back.
-      if (session.houseId === null) {
+      // A token a reset left without a dynasty: the trade gives it one back.
+      if (session.dynastyId === null) {
         setView({ kind: 'create', lost: true });
         void readSuggestedCandidate();
         return;
@@ -512,7 +512,7 @@ export function App() {
           candidateError={candidateError}
           resuming={resuming}
           resumeError={lostError}
-          onChoose={(trade, name) => void createHouse(trade, name)}
+          onChoose={(trade, name) => void createDynasty(trade, name)}
           onResume={(token) => void resume(token)}
           onReread={() => void readSuggestedCandidate()}
         />
@@ -535,28 +535,28 @@ export function App() {
               advancing={advancing}
               pending={pending}
               cancelling={cancelling}
-              busy={houseBusy}
+              busy={dynastyBusy}
               renameError={renameError}
               onBuild={(trade) =>
-                void houseAction('build', { type: 'workshop.build', trade }, `Construction d'un atelier de ${trade}`)
+                void dynastyAction('build', { type: 'workshop.build', trade }, `Construction d'un atelier de ${trade}`)
               }
               onDestroy={(workshopId) =>
-                void houseAction(
+                void dynastyAction(
                   `destroy-${workshopId}`,
                   { type: 'workshop.destroy', workshopId },
                   "Démolition d'un atelier",
                 )
               }
               onUpgrade={(workshopId) =>
-                void houseAction(
+                void dynastyAction(
                   `upgrade-${workshopId}`,
                   { type: 'workshop.upgrade', workshopId },
                   "Agrandissement d'un atelier",
                 )
               }
-              onBuyTitle={() => void houseAction('title', { type: 'house.buy_title' }, "Achat d'un titre")}
+              onBuyTitle={() => void dynastyAction('title', { type: 'dynasty.buy_title' }, "Achat d'un titre")}
               onUpgradeResidence={() =>
-                void houseAction('residence', { type: 'house.upgrade_residence' }, 'Élévation de la résidence')
+                void dynastyAction('residence', { type: 'dynasty.upgrade_residence' }, 'Élévation de la résidence')
               }
               onRename={(name) => void rename(name)}
               onCancel={(id) => void cancel(id)}
@@ -576,9 +576,9 @@ export function App() {
           <Nav tab={tab} onSelect={selectTab} />
         </div>
       ) : view.kind === 'closing' ? (
-        <ClosingHouse after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />
+        <ClosingDynasty after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />
       ) : view.kind === 'lost' ? (
-        <LostHouse busy={resuming} error={lostError} onResume={(candidate) => void resume(candidate)} />
+        <LostDynasty busy={resuming} error={lostError} onResume={(candidate) => void resume(candidate)} />
       ) : (
         <Failure title={view.title} message={view.message} onRetry={() => void boot()} />
       )}

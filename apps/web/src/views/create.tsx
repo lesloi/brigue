@@ -1,19 +1,19 @@
 import { TRADES, type Trade } from '@brigue/core/world';
 import { useEffect, useState } from 'preact/hooks';
 
-import type { HouseCandidate } from '../api.ts';
+import type { DynastyCandidate } from '../api.ts';
 import { tradeChainText, tradeName } from '../format.ts';
 import { Seal } from '../icons.tsx';
 
 interface CreateProps {
-  /** The account kept its token but lost its house to a reset. */
+  /** The account kept its token but lost its dynasty to a reset. */
   lost: boolean;
   joining: boolean;
   error: string | null;
   /** The name the route refused as taken: the field says so where it is. */
   taken: boolean;
   /** The identity the server prefills: the name the join will keep. */
-  candidate: HouseCandidate | null;
+  candidate: DynastyCandidate | null;
   candidateError: boolean;
   resuming: boolean;
   resumeError: string | null;
@@ -26,12 +26,12 @@ interface CreateProps {
 const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCompare(tradeName(right), 'fr'));
 
 /**
- * The first screen of a new player: the name of the house and the trade, before
+ * The first screen of a new player: the name of the dynasty and the trade, before
  * the town is read. The name is suggested and prefilled — it is an identity the
  * player is allowed to keep — and the trade is the town's lesson, not a rule.
  *
  * A returning account sees the same choice with the loss named: the reset took
- * the house, the token stayed, and the trade is what gives a house back.
+ * the dynasty, the token stayed, and the trade is what gives a dynasty back.
  */
 export function Create({
   lost,
@@ -54,7 +54,7 @@ export function Create({
 
   useEffect(() => {
     if (candidate !== null && !touched) {
-      setName(candidate.houseName);
+      setName(candidate.dynastyName);
     }
   }, [candidate, touched]);
 
@@ -69,7 +69,7 @@ export function Create({
             : 'Le nom de ta dynastie est son identité dans la ville : lettres et chiffres, sans accent ni espace, et deux dynasties ne portent jamais le même nom.'}
         </p>
         <form
-          class="house-name"
+          class="dynasty-name"
           onSubmit={(event) => {
             // The trade buttons are the only way to join: this form holds the
             // name, and Enter must not weave for a player who has not chosen.
