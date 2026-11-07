@@ -13,7 +13,8 @@ import {
   tradeName,
   workshopName,
 } from '../format.ts';
-import { WorkshopThumb } from '../icons.tsx';
+import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { HouseBar } from './housebar.tsx';
 
 interface MaisonProps {
   data: WorldResponse;
@@ -67,6 +68,21 @@ export function Maison({
 
   return (
     <main class="screen">
+      <header class="mhead">
+        <Seal />
+        <div>
+          <div class="eyebrow">
+            {world.town.name} &middot; an {world.year}
+          </div>
+          <h1>La maison</h1>
+        </div>
+        <div class="wk">
+          h. {world.calendar.hourOfYear}/{world.calendar.hoursPerYear}
+        </div>
+      </header>
+
+      <HouseBar data={data} mode="house" />
+
       <div class="body">
         <section class="sec" aria-labelledby="maison-title">
           <div class="h">
@@ -111,7 +127,7 @@ export function Maison({
                 onInput={(event) => setName(event.currentTarget.value)}
               />
               <button class="btn outline" type="submit" disabled={!renameQueued || busy === 'rename'}>
-                Renommer ({formatCents(house.rename.priceCents)})
+                Renommer <Price cents={house.rename.priceCents} />
               </button>
             </form>
             {renameError !== null ? <p class="warn">{renameError}</p> : null}
@@ -138,14 +154,7 @@ export function Maison({
               />
             ))}
           </div>
-          <p class="ladder-detail">
-            Entrepôt : {formatCount(house.stockUnits)} / {formatCount(house.stockCapacityUnits)} unités.
-          </p>
-          {house.build.room <= 0 ? (
-            <p class="ladder-detail">
-              La résidence ne tient pas un atelier de plus : un titre plus haut ouvre un niveau.
-            </p>
-          ) : choosing ? (
+          {house.build.room > 0 && choosing ? (
             <div class="card trade-list">
               {TRADE_CHOICES.map((trade) => (
                 <button
@@ -163,16 +172,16 @@ export function Maison({
                 </button>
               ))}
             </div>
-          ) : (
+          ) : house.build.room > 0 ? (
             <button
               class="btn outline wide"
               type="button"
               disabled={building || busy === 'build'}
               onClick={() => setChoosing(true)}
             >
-              Bâtir un atelier ({formatCents(house.build.priceCents)}, {formatCount(house.build.hours)} h)
+              Bâtir un atelier <Price cents={house.build.priceCents} /> · {formatCount(house.build.hours)} h
             </button>
-          )}
+          ) : null}
         </section>
 
         {house.sites.length > 0 ? (
@@ -214,7 +223,7 @@ export function Maison({
                   disabled={building || busy === 'title' || house.treasuryCents < ladder.nextTitle.priceCents}
                   onClick={onBuyTitle}
                 >
-                  {formatCents(ladder.nextTitle.priceCents)}
+                  <Price cents={ladder.nextTitle.priceCents} />
                 </button>
               </div>
             )}
@@ -232,7 +241,7 @@ export function Maison({
                   <p>
                     {ladder.nextResidence.opened
                       ? `${formatCount(ladder.nextResidence.hours)} h de travaux.`
-                      : `Le titre de ${titleName(ladder.nextTitle?.title ?? ladder.title)} l'ouvrira.`}
+                      : `Prérequis : titre de ${titleName(ladder.nextTitle?.title ?? ladder.title)}`}
                   </p>
                 </div>
                 <button
@@ -246,7 +255,7 @@ export function Maison({
                   }
                   onClick={onUpgradeResidence}
                 >
-                  {formatCents(ladder.nextResidence.priceCents)}
+                  <Price cents={ladder.nextResidence.priceCents} />
                 </button>
               </div>
             )}
@@ -288,6 +297,16 @@ export function Maison({
         </section>
       </div>
     </main>
+  );
+}
+
+/** A price with the coin that says it is one, shared by every button that costs. */
+function Price({ cents }: { cents: number }) {
+  return (
+    <span class="price">
+      <ResourceIcon kind="coins" />
+      {formatCents(cents)}
+    </span>
   );
 }
 
@@ -336,7 +355,7 @@ function WorkshopLine({
           disabled={building || last || busy === `destroy-${workshop.id}`}
           onClick={() => onDestroy(workshop.id)}
         >
-          Abattre
+          Rétrograder
         </button>
       </div>
     </div>

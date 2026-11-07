@@ -1276,3 +1276,15 @@ button:disabled {
   margin: 0 8px 8px;
   width: calc(100% - 16px);
 }
+
+/* A price inside a button: the coin first, so a cost never reads as a count. */
+.price {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.price svg {
+  flex: none;
+}

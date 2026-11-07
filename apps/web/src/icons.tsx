@@ -10,13 +10,20 @@ export function Seal({ size = 30 }: { size?: number }) {
   );
 }
 
-export function ResourceIcon({ kind }: { kind: GoodId | 'coins' | 'favour' | 'warehouse' }) {
+export function ResourceIcon({ kind }: { kind: GoodId | 'coins' | 'favour' | 'warehouse' | 'prestige' }) {
   switch (kind) {
     case 'coins':
       return (
         <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="12" cy="12" r="9.5" fill="#c79338" />
           <circle cx="12" cy="12" r="6" fill="none" stroke="#8a5c14" stroke-width="1.4" />
+        </svg>
+      );
+    case 'prestige':
+      // A star, the same mark the Ville bar uses for standing.
+      return (
+        <svg width="17" height="17" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9z" fill="#b03a3a" />
         </svg>
       );
     case 'warehouse':

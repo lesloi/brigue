@@ -3,9 +3,10 @@ import { useState } from 'preact/hooks';
 import type { PendingActionView, WorldResponse } from '../api.ts';
 import { eventLine, journalCountsText, ledgerEvents, type LedgerFilter } from '../events.ts';
 import { netPendingFor } from '../trade.ts';
-import { formatCents, formatCount, goodName, goodQuantity, workshopName } from '../format.ts';
+import { formatCents, formatCount, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
+import { HouseBar } from './housebar.tsx';
 
 const LEDGER_LIMIT = 8;
 
@@ -36,9 +37,6 @@ export function Ville({
   const [expanded, setExpanded] = useState(false);
   const { world, events, summary } = data;
   const house = world.house;
-  const workshop = house.workshops[0];
-  const output = workshop?.good ?? null;
-  const input = workshop?.input ?? null;
   const nameOf = houseName(world);
   const ledger = ledgerEvents(events, house.id, ledgerFilter);
   const shownLedger = expanded ? ledger : ledger.slice(0, LEDGER_LIMIT);
@@ -85,28 +83,7 @@ export function Ville({
         </div>
       </section>
 
-      <section class="res" aria-label="Ressources">
-        <div class="c">
-          <ResourceIcon kind="coins" />
-          <span class="v">{formatCents(house.treasuryCents)}</span>
-          <span class="l">écus</span>
-        </div>
-        <div class="c">
-          {output !== null ? <ResourceIcon kind={output} /> : null}
-          <span class="v">{output !== null ? formatCount(house.stock[output] ?? 0) : '—'}</span>
-          <span class="l">{output !== null ? goodName(output) : 'stock'}</span>
-        </div>
-        <div class="c">
-          {input !== null ? <ResourceIcon kind={input} /> : null}
-          <span class="v">{input !== null ? formatCount(house.stock[input] ?? 0) : '—'}</span>
-          <span class="l">{input !== null ? goodName(input) : 'matière'}</span>
-        </div>
-        <div class="c">
-          <ResourceIcon kind="favour" />
-          <span class="v">{formatCount(house.favour)}</span>
-          <span class="l">faveur</span>
-        </div>
-      </section>
+      <HouseBar data={data} mode="ville" />
 
       {data.dev === true ? <DevBar busy={advancing} onAdvance={onAdvance} /> : null}
 
