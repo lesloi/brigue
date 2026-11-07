@@ -227,7 +227,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   longer loses the days before the stop. A read returns the newest fifty of each in time order;
   there is no per-reader filter, so one reader's visit can never hide a line from another. A message
   is unread until the player opens the Courrier, which marks the box read; the `read` flag is the
-  whole unread state, there is no cursor on the account, and it hides no line. The badge counts at
+  whole unread state, there is no cursor on the account, and it hides no line. A dynasty deletes a
+  message one by one, and there is no trash or tombstone: the row goes. The badge counts at
   most the page it can open, and opening marks the whole box: mail older than the newest fifty is
   pruned unseen rather than shown twice. The Courrier and the Greffe are the
   only screens that render the journal: a trade lives on the Marché, production and works on the

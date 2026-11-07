@@ -4,7 +4,7 @@ import type { PlayerStore } from '../identity/players.ts';
 import type { Logger } from '../logger.ts';
 import { applyPresence, type Presence } from './presence.ts';
 import { playDue, type Due } from './scheduler.ts';
-import { HOUR_MS, JOURNAL_PAGE, type TownInfo, type WorldStore, sessionWorld } from './worlds.ts';
+import { HOUR_MS, JOURNAL_PAGE, type MessageView, type TownInfo, type WorldStore, sessionWorld } from './worlds.ts';
 
 export interface TownAccess {
   /** Accounts, for presence and deletion. */
@@ -19,7 +19,7 @@ export type TownOutcome =
       town: TownInfo;
       result: Due;
       /** The newest page of the dynasty's mail, in the order it happened. */
-      messages: Event[];
+      messages: MessageView[];
       /** The newest page of the town's public chronicle, in time order. */
       chronicle: Event[];
       /** What the badge counts: the unread messages of the box, at most a page. */

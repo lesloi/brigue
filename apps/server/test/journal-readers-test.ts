@@ -55,7 +55,7 @@ describe('the journal of a town with two readers', () => {
 
     // Assert: the private line is in its own box only.
     expect(chronicle.map((event) => event.type)).toEqual(['council.election_held']);
-    expect(leclerc.messages.map((event) => event.type)).toEqual(['dynasty.debt_repaid']);
+    expect(leclerc.messages.map((message) => message.event.type)).toEqual(['dynasty.debt_repaid']);
     expect(caron.messages).toEqual([]);
   });
 
@@ -97,7 +97,7 @@ describe('the journal of a town with two readers', () => {
     // Assert: the page reads in time, the five oldest fall out of it, and the
     // badge counts the page it can open.
     expect(page.messages).toHaveLength(JOURNAL_PAGE);
-    expect(page.messages.at(0)).toMatchObject({ amountCents: 6 });
+    expect(page.messages.at(0)).toMatchObject({ event: { amountCents: 6 } });
     expect(page.unread).toBe(JOURNAL_PAGE);
   });
 });

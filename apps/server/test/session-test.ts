@@ -298,6 +298,7 @@ describe('joining the town', () => {
       },
       withJoinLock: (run) => real.withJoinLock(run),
       markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),
       close: () => real.close(),

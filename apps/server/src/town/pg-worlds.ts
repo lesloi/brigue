@@ -4,6 +4,7 @@ import { nameKey, residenceOf, titleOf } from '@brigue/core';
 import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
   DuplicateActionError,
+  JOURNAL_PAGE,
   NameInUseError,
   UnknownWorldError,
   type StoredAction,
@@ -124,6 +125,24 @@ export class PgWorldStore implements WorldStore {
     await this.pool.query(`UPDATE messages SET read = true WHERE dynasty_id = $1 AND read = false`, [dynastyId]);
   }
 
+  async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
+    // Scoped to the dynasty: an id from another box deletes nothing and says
+    // nothing, so a bad guess is not an oracle.
+    const { rowCount } = await this.pool.query(`DELETE FROM messages WHERE id = $1 AND dynasty_id = $2`, [
+      id,
+      dynastyId,
+    ]);
+    const counts = await this.pool.query<{ unread: number }>(
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE dynasty_id = $1`,
+      [dynastyId],
+    );
+
+    return {
+      deleted: (rowCount ?? 0) > 0,
+      unread: Math.min(counts.rows[0]?.unread ?? 0, JOURNAL_PAGE),
+    };
+  }
+
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
     const client = await this.pool.connect();
 
@@ -228,7 +247,10 @@ class PgWorldSession implements WorldSession {
 
     return {
       // The query walks back from the newest; the page reads forward in time.
-      messages: rows.slice().reverse().map(rowToMessage),
+      messages: rows
+        .slice()
+        .reverse()
+        .map((row) => ({ id: Number(row.id), event: rowToMessage(row) })),
       // The badge names what the page can open, never a backlog below it.
       unread: Math.min(counts.rows[0]?.unread ?? 0, limit),
     };

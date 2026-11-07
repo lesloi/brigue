@@ -125,10 +125,16 @@ export interface CatchUpSummary {
   skipped: number;
 }
 
+/** One stored message: its row id, for a delete, and the line. */
+export interface MessageView {
+  id: number;
+  event: Event;
+}
+
 export interface WorldResponse {
   world: WorldProjection;
   /** The dynasty's private mail, newest page, in the order it happened. */
-  messages: Event[];
+  messages: MessageView[];
   /** The town's public chronicle, newest page, in the order it happened. */
   chronicle: Event[];
   /** How many messages came after the reader's watermark, at most a page. */
@@ -245,6 +251,11 @@ export function readWorld(): Promise<WorldResponse> {
 /** The player opened the Courrier: the unread badge goes back to zero. */
 export function markMessagesRead(): Promise<{ unreadMessages: number }> {
   return send('/api/messages/read', { method: 'POST' });
+}
+
+/** Deletes one message. No trash: the row goes, and the badge count comes back. */
+export function deleteMessage(id: number): Promise<{ deleted: boolean; unreadMessages: number }> {
+  return send(`/api/messages/${id}`, { method: 'DELETE' });
 }
 
 /** Local development only: plays the next hour now. The server refuses in production. */

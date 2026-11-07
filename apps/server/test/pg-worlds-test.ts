@@ -210,7 +210,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
     expect(read.chronicle).toEqual([chronicle]);
     // A message keeps no town hour: it comes back with `at` at zero.
-    expect(read.mail.messages).toEqual([{ ...mail, at: 0 }]);
+    expect(read.mail.messages).toEqual([{ id: 1, event: { ...mail, at: 0 } }]);
     expect(read.mail.unread).toBe(1);
   });
 
@@ -233,9 +233,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const page = await withWorld(async (session) => session.recentMessages(2, 'leclerc'));
 
     // Assert: the last two entries, in time order, and the badge counts the page.
-    expect(page.messages.map((message) => (message.type === 'dynasty.debt_repaid' ? message.amountCents : -1))).toEqual(
-      [360, 480],
-    );
+    expect(
+      page.messages.map((message) => (message.event.type === 'dynasty.debt_repaid' ? message.event.amountCents : -1)),
+    ).toEqual([360, 480]);
     expect(page.unread).toBe(2);
   });
 
@@ -447,9 +447,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert: the mail keeps the 71 recent lines, whatever the chronicle cut says.
     const page = await withWorld(async (session) => session.recentMessages(120, 'leclerc'));
-    expect(page.messages.map((message) => (message.type === 'dynasty.debt_repaid' ? message.amountCents : -1))).toEqual(
-      range(50, 120),
-    );
+    expect(
+      page.messages.map((message) => (message.event.type === 'dynasty.debt_repaid' ? message.event.amountCents : -1)),
+    ).toEqual(range(50, 120));
     const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
     expect(rows.rows[0]?.count).toBe(71);
   });
@@ -484,6 +484,41 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(after.messages).toHaveLength(3);
     expect(caron.unread).toBe(0);
     expect(rows.rows[0]?.count).toBe(3);
+  });
+
+  it('deletes one message and only its own', async () => {
+    // Arrange: two messages for the weaver.
+    await store.createTown(TEST_TOWN.name, town(5), START);
+    await withWorld(async (session) => {
+      await session.save(
+        session.snapshot.world,
+        START,
+        [1, 2].map((at): Event => ({
+          type: 'dynasty.debt_repaid',
+          audience: { dynastyId: 'leclerc' },
+          at,
+          dynastyId: 'leclerc',
+          amountCents: at * 120,
+        })),
+      );
+    });
+    const page = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const target = page.messages[0];
+    expect(target).toBeDefined();
+
+    // Act: another dynasty names the id, then the owner does.
+    const foreign = await store.deleteMessage(target?.id ?? 0, 'caron');
+    const own = await store.deleteMessage(target?.id ?? 0, 'leclerc');
+
+    // Assert: the foreign call is a no-op (and answers the foreigner's own
+    // badge, which is empty); the owner's removes the row.
+    expect(foreign).toEqual({ deleted: false, unread: 0 });
+    expect(own).toEqual({ deleted: true, unread: 1 });
+    const after = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
+    expect(after.messages).toHaveLength(1);
+    expect(after.unread).toBe(1);
+    expect(rows.rows[0]?.count).toBe(1);
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {

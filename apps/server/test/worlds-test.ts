@@ -1,7 +1,7 @@
 import { createWorld, type Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { MemoryWorldStore, UnknownWorldError } from '../src/town/worlds.ts';
+import { MemoryWorldStore, UnknownWorldError, type MessageView } from '../src/town/worlds.ts';
 import { town } from './helpers.ts';
 
 /** One chronicle line per hour, so a cut has a visible order to work on. */
@@ -41,8 +41,8 @@ function range(from: number, to: number): number[] {
 }
 
 /** The payload of each message, which carries the hour it stands for. */
-function amountsOf(messages: Event[]): number[] {
-  return messages.map((message) => (message.type === 'dynasty.debt_repaid' ? message.amountCents : -1));
+function amountsOf(messages: MessageView[]): number[] {
+  return messages.map((message) => (message.event.type === 'dynasty.debt_repaid' ? message.event.amountCents : -1));
 }
 
 describe('the town store', () => {
@@ -188,7 +188,7 @@ describe('the town store', () => {
     // Assert: the page reads in order, the badge counts the box, and a stored
     // message carries no town hour.
     expect(amountsOf(before.messages)).toEqual(range(1, 5));
-    expect(before.messages.every((message) => message.at === 0)).toBe(true);
+    expect(before.messages.every((message) => message.event.at === 0)).toBe(true);
     expect(before.unread).toBe(5);
 
     // Act: the player opens the Courrier.
@@ -216,6 +216,29 @@ describe('the town store', () => {
     // Assert: messages 4 and 5, and the badge names what the page holds.
     expect(amountsOf(page.messages)).toEqual([4, 5]);
     expect(page.unread).toBe(2);
+  });
+
+  it('deletes one message of the dynasty, and only its own', async () => {
+    // Arrange: five messages for the weaver.
+    const store = new MemoryWorldStore();
+    const created = await store.createTown('A', town(1), new Date());
+    await store.withWorld(async (session) => {
+      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5));
+    }, created.id);
+    const page = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const target = page.messages[2];
+    expect(target).toBeDefined();
+
+    // Act: another dynasty names the id, then the owner does.
+    const foreign = await store.deleteMessage(target?.id ?? 0, 'caron');
+    const own = await store.deleteMessage(target?.id ?? 0, 'leclerc');
+
+    // Assert: the foreign delete is a no-op (and answers the foreigner's own
+    // badge, which is empty); the owner's removes the line.
+    expect(foreign).toEqual({ deleted: false, unread: 0 });
+    expect(own).toEqual({ deleted: true, unread: 4 });
+    const after = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    expect(amountsOf(after.messages)).toEqual([1, 2, 4, 5]);
   });
 
   it('writes a refusal with no reader nowhere', async () => {

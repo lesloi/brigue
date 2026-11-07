@@ -31,6 +31,11 @@ interface Harness {
   cookies: Record<string, string>;
 }
 
+interface MessageBody {
+  id: number;
+  event: Record<string, unknown> & { type: string; dynastyId?: string; units?: number };
+}
+
 interface WorldBody {
   world: {
     hour: number;
@@ -39,7 +44,7 @@ interface WorldBody {
     town: { dynasties: Array<Record<string, unknown>> };
     nextBellAt: string;
   };
-  messages: Array<Record<string, unknown> & { type: string; dynastyId?: string; units?: number }>;
+  messages: MessageBody[];
   chronicle: Array<Record<string, unknown> & { type: string; dynastyId?: string; units?: number }>;
   unreadMessages: number;
   summary: {
@@ -376,12 +381,12 @@ describe('GET /api/world', () => {
     const caron = await worldBodyAs(harness, 'caron');
 
     // Assert
-    const refusalsOf = (body: WorldBody) => body.messages.filter((event) => event.type === 'action.refused');
+    const refusalsOf = (body: WorldBody) => body.messages.filter((message) => message.event.type === 'action.refused');
 
     expect(refusalsOf(leclerc)).toHaveLength(1);
-    expect(refusalsOf(leclerc)[0]).toMatchObject({ dynastyId: 'leclerc' });
+    expect(refusalsOf(leclerc)[0]?.event).toMatchObject({ dynastyId: 'leclerc' });
     expect(refusalsOf(caron)).toHaveLength(1);
-    expect(refusalsOf(caron)[0]).toMatchObject({ dynastyId: 'caron' });
+    expect(refusalsOf(caron)[0]?.event).toMatchObject({ dynastyId: 'caron' });
   });
 
   it('keeps the chronicle to the town and the mail to the dynasty', async () => {
@@ -454,7 +459,7 @@ describe('POST /api/messages/read', () => {
     // Act
     const response = await markRead(harness);
 
-    // Assert: the badge is at zero, the line stays, and the newest id is kept.
+    // Assert: the badge is at zero and the line stays.
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ unreadMessages: 0 });
     const after = await worldBody(harness);
@@ -672,6 +677,75 @@ describe('POST /api/actions', () => {
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'invalid_action' });
     }
+  });
+});
+
+describe('DELETE /api/messages/:id', () => {
+  function deleteMail(harness: Harness, id: number, dynastyId = 'leclerc'): Promise<Response> {
+    return fetch(`${harness.url}/api/messages/${id}`, {
+      method: 'DELETE',
+      headers: { Cookie: harness.cookies[dynastyId] as string },
+    });
+  }
+
+  it('deletes one message and answers the badge', async () => {
+    // Arrange: a refusal of the weaver's.
+    const harness = await start();
+    await postAction(harness, sellGrain(ID_A, 1, 1));
+    await harness.advance(HOUR);
+    const before = await worldBody(harness);
+    const target = before.messages[0];
+    expect(target).toBeDefined();
+
+    // Act
+    const response = await deleteMail(harness, target?.id ?? 0);
+
+    // Assert: the row goes, the answer says so, and the page loses the line.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: true, unreadMessages: 0 });
+    const after = await worldBody(harness);
+    expect(after.messages).toEqual([]);
+  });
+
+  it('does not delete another dynasty’s message', async () => {
+    // Arrange: two humans, each with a refusal.
+    const world = town(20261031);
+    world.dynasties.caron.controller = 'human';
+    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
+    await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
+    await harness.advance(HOUR);
+    const caron = await worldBodyAs(harness, 'caron');
+    const target = caron.messages[0];
+    expect(target).toBeDefined();
+
+    // Act: the weaver names the other's id.
+    const response = await deleteMail(harness, target?.id ?? 0);
+
+    // Assert: nothing is deleted, and the owner still holds the line.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ deleted: false });
+    expect((await worldBodyAs(harness, 'caron')).messages).toHaveLength(1);
+  });
+
+  it('refuses an id that is not one, without a session, and anything but DELETE', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const malformed = await fetch(`${harness.url}/api/messages/0`, {
+      method: 'DELETE',
+      headers: { Cookie: harness.cookie },
+    });
+    const anonymous = await fetch(`${harness.url}/api/messages/1`, { method: 'DELETE' });
+    const wrongMethod = await fetch(`${harness.url}/api/messages/1`, { headers: { Cookie: harness.cookie } });
+
+    // Assert
+    expect(malformed.status).toBe(404);
+    expect(await malformed.json()).toEqual({ error: 'unknown_message' });
+    expect(anonymous.status).toBe(401);
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get('allow')).toBe('DELETE');
   });
 });
 

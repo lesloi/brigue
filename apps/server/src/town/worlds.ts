@@ -44,13 +44,19 @@ export interface WorldSnapshot {
   hourStartedAt: Date;
 }
 
+/** One stored message: the row's id, so it can be deleted, and the line. */
+export interface MessageView {
+  id: number;
+  event: Event;
+}
+
 /** One page of a dynasty's private mail, and what the badge counts. */
 export interface MessagePage {
   /**
    * In the order they happened. Their `at` is 0: a message carries no town
    * hour, only the instant it was written.
    */
-  messages: Event[];
+  messages: MessageView[];
   /** How many messages of the box are still unread, at most the page. */
   unread: number;
 }
@@ -125,6 +131,11 @@ export interface WorldStore {
    * flag feeds the badge and no rule.
    */
   markMessagesRead(dynastyId: string): Promise<void>;
+  /**
+   * Deletes one message of a dynasty. No trash: the row goes, and the badge's
+   * new count comes back with the answer.
+   */
+  deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }>;
   /**
    * The keys of every human dynasty's name, the whole server over: the global
    * ranking reads human dynasties by name, so no two of them may share one. An AI
@@ -234,6 +245,24 @@ export class MemoryWorldStore implements WorldStore {
     stored.messages = stored.messages.filter((entry) => entry.recordedAt >= messagesBefore);
   }
 
+  async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
+    let deleted = false;
+    let unread = 0;
+
+    for (const stored of this.towns.values()) {
+      const index = stored.messages.findIndex((entry) => entry.id === id && entry.dynastyId === dynastyId);
+
+      if (index >= 0) {
+        stored.messages.splice(index, 1);
+        deleted = true;
+      }
+
+      unread += stored.messages.filter((entry) => entry.dynastyId === dynastyId && !entry.read).length;
+    }
+
+    return { deleted, unread: Math.min(unread, JOURNAL_PAGE) };
+  }
+
   async markMessagesRead(dynastyId: string): Promise<void> {
     // The box is addressed by its dynasty alone, so every town is a candidate
     // for where it lives.
@@ -300,7 +329,9 @@ export class MemoryWorldStore implements WorldStore {
         const own = stored.messages.filter((entry) => entry.dynastyId === dynastyId);
 
         return {
-          messages: own.slice(Math.max(0, own.length - limit)).map((entry) => structuredClone(entry.event)),
+          messages: own
+            .slice(Math.max(0, own.length - limit))
+            .map((entry) => ({ id: entry.id, event: structuredClone(entry.event) })),
           // The badge names what the page can open, never a backlog below it.
           unread: Math.min(own.filter((entry) => !entry.read).length, limit),
         };

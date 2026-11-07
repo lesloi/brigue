@@ -11,7 +11,7 @@ import { renameDynastyRoute } from './routes/dynasty.ts';
 import { readCandidate } from './routes/name-suggestion.ts';
 import { cancelDeletion, requestDeletion } from './routes/player.ts';
 import { openSession, readSession } from './routes/session.ts';
-import { advanceHour, markMessagesRead, readWorld } from './routes/world.ts';
+import { advanceHour, deleteMessage, markMessagesRead, readWorld } from './routes/world.ts';
 import { assertWebRoot, serveStatic } from './static.ts';
 
 const SESSION_ATTEMPTS_PER_MINUTE = 10;
@@ -76,6 +76,16 @@ export function createApp(deps: AppDeps): Server {
 
 async function handle(context: AppContext, request: IncomingMessage, response: ServerResponse): Promise<void> {
   const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+
+  const messageMatch = /^\/api\/messages\/(\d+)$/.exec(path);
+  if (messageMatch !== null) {
+    if (request.method !== 'DELETE') {
+      methodNotAllowed(response, 'DELETE');
+      return;
+    }
+    await deleteMessage(context, request, response, messageMatch[1] as string);
+    return;
+  }
 
   const cancelMatch = /^\/api\/actions\/([^/]+)$/.exec(path);
   if (cancelMatch !== null) {

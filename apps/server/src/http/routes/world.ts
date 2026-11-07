@@ -143,6 +143,45 @@ export async function advanceHour(
 }
 
 /**
+ * The player deletes one of its messages. No trash and no tombstone: the row
+ * goes, and an id from another box deletes nothing.
+ */
+export async function deleteMessage(
+  context: AppContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+  rawId: string,
+): Promise<void> {
+  const player = await identifiedBy(context, request, response);
+
+  if (player === null) {
+    return;
+  }
+
+  const at = new Date(context.now());
+
+  if (refuseClosing(context, player, response, at)) {
+    return;
+  }
+
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
+  const id = Number(rawId);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    sendJson(response, 404, { error: 'unknown_message' });
+    return;
+  }
+
+  const result = await context.deps.worlds.deleteMessage(id, bound.dynastyId);
+
+  sendJson(response, 200, { deleted: result.deleted, unreadMessages: result.unread });
+}
+
+/**
  * The player opened the Courrier: every message of the box is marked read. The
  * flag is the whole unread state, and it hides no line.
  */

@@ -10,7 +10,15 @@ import { dynastyName } from './ville.tsx';
  * The Courrier is the dynasty's own mailbox: refusals, works done or lost, its
  * debts, its candidacies. It is private, and opening it clears the badge.
  */
-export function Courrier({ data, onSeen }: { data: WorldResponse; onSeen(): void }) {
+export function Courrier({
+  data,
+  onSeen,
+  onDelete,
+}: {
+  data: WorldResponse;
+  onSeen(): void;
+  onDelete(id: number): void;
+}) {
   const { messages, world } = data;
   const nameOf = dynastyName(world);
   // The badge follows the mailbox, not the page: one visit clears it once.
@@ -60,13 +68,23 @@ export function Courrier({ data, onSeen }: { data: WorldResponse; onSeen(): void
                 </div>
               </div>
             ) : (
-              newestFirst.map((event, index) => {
-                const line = eventLine(event, world.dynasty.id, nameOf);
+              newestFirst.map((message) => {
+                const line = eventLine(message.event, world.dynasty.id, nameOf);
 
                 return (
-                  <div class="ev" key={`${event.type}-${event.at}-${index}`}>
+                  <div class="ev" key={message.id}>
                     <span class={`dot ${line.tone}`} aria-hidden="true"></span>
                     <p>{line.text}</p>
+                    {/* No trash: the message goes for good, and its line with it. */}
+                    <button
+                      class="msg-del"
+                      type="button"
+                      aria-label="Supprimer ce message"
+                      title="Supprimer"
+                      onClick={() => onDelete(message.id)}
+                    >
+                      Supprimer
+                    </button>
                   </div>
                 );
               })

@@ -6,6 +6,7 @@ import {
   advanceHour,
   cancelAction,
   cancelDeletion,
+  deleteMessage,
   joinTown,
   markMessagesRead,
   readCandidate,
@@ -251,6 +252,26 @@ export function App() {
       const fresh = pendingToken.current;
       pendingToken.current = null;
       setToken(fresh);
+    }
+  }
+
+  async function removeMessage(id: number): Promise<void> {
+    try {
+      const { unreadMessages } = await deleteMessage(id);
+      setView((current) =>
+        current.kind === 'world'
+          ? {
+              kind: 'world',
+              data: {
+                ...current.data,
+                messages: current.data.messages.filter((message) => message.id !== id),
+                unreadMessages,
+              },
+            }
+          : current,
+      );
+    } catch {
+      showToast("Le message n'a pas pu être supprimé.", true);
     }
   }
 
@@ -550,7 +571,7 @@ export function App() {
               onDeleteAccount={askDelete}
             />
           ) : tab === 'courrier' ? (
-            <Courrier data={view.data} onSeen={() => void markRead()} />
+            <Courrier data={view.data} onSeen={() => void markRead()} onDelete={(id) => void removeMessage(id)} />
           ) : tab === 'greffe' ? (
             <Greffe data={view.data} />
           ) : tab === 'maison' ? (

@@ -386,6 +386,7 @@ describe('startScheduler', () => {
         townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),
       close: () => real.close(),
@@ -538,6 +539,7 @@ describe('startScheduler', () => {
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) => {
         pruned.push(townId);
 
@@ -576,6 +578,7 @@ describe('startScheduler', () => {
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: () => Promise.reject(new Error('the journal is stuck')),
       close: () => real.close(),
     };
@@ -616,6 +619,7 @@ describe('startScheduler', () => {
       },
       withJoinLock: (run) => real.withJoinLock(run),
       markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),
       close: () => real.close(),
