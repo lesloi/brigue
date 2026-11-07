@@ -246,6 +246,8 @@ export function actionErrorText(code: string | null): string {
       return 'Cette maison est en cours de suppression.';
     case 'house_lost':
       return "Ta maison n'existe plus : choisis un métier pour revenir.";
+    case 'name_required':
+      return 'Écris le nom de ta maison pour revenir.';
     default:
       return "L'action n'a pas pu être envoyée.";
   }
@@ -266,6 +268,8 @@ export function readErrorText(code: string | null): string {
       return "Le serveur n'a pas trouvé cette ville.";
     case 'house_lost':
       return "Ta maison n'existe plus : choisis un métier pour revenir.";
+    case 'name_required':
+      return 'Écris le nom de ta maison pour revenir.';
     case 'deletion_pending':
       return 'Ce compte est en cours de suppression.';
     default:

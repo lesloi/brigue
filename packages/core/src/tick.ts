@@ -1,4 +1,12 @@
 import { drawBelow } from './prng.ts';
+import {
+  isValidName,
+  nameIsTaken,
+  nameKey,
+  sanitizeName,
+  type HouseRenameOutcome,
+  type HouseRenameRequest,
+} from './names.ts';
 import type { Action, Event, EventDraft, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
@@ -188,8 +196,7 @@ function isKnownAction(value: unknown): value is Action {
     type === 'workshop.destroy' ||
     type === 'workshop.upgrade' ||
     type === 'house.buy_title' ||
-    type === 'house.upgrade_residence' ||
-    type === 'house.rename'
+    type === 'house.upgrade_residence'
   );
 }
 
@@ -475,30 +482,6 @@ function applyAction(world: World, action: Action, events: EventDraft[], flow: R
       openSite(world, house.id, { work: 'residence' }, improvementHours(target), events);
       return;
     }
-
-    case 'house.rename': {
-      if (typeof action.name !== 'string') {
-        refuse(events, action, house.id, 'invalid_name', true);
-        return;
-      }
-      const name = action.name.trim();
-      if (!isValidName(name)) {
-        refuse(events, action, house.id, 'invalid_name', true);
-        return;
-      }
-      if (nameIsTaken(world, name, house.id)) {
-        refuse(events, action, house.id, 'name_taken', true);
-        return;
-      }
-      if (house.treasuryCents < RULES.renameCents) {
-        refuse(events, action, house.id, 'insufficient_funds', true);
-        return;
-      }
-
-      house.treasuryCents -= RULES.renameCents;
-      renameHouse(world, house, name, events);
-      return;
-    }
   }
 }
 
@@ -565,33 +548,37 @@ function nextBellAfter(hour: number, minHours: number): number {
 
 export const NAME_MAX_LENGTH = 24;
 
-export function isValidName(name: string): boolean {
-  return name.length > 0 && name.length <= NAME_MAX_LENGTH && /^[\p{L}][\p{L} '’-]*$/u.test(name);
-}
-
-/** Names compare without case, accent or repeated space: two Carons are one. */
-export function nameKey(name: string): string {
-  return name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** A name is unique in its town; the server also refuses one across towns. */
-export function nameIsTaken(world: World, name: string, exceptHouseId?: string): boolean {
-  const key = nameKey(name);
-
-  return Object.values(world.houses).some((house) => house.id !== exceptHouseId && nameKey(house.name) === key);
-}
-
 /**
  * The house takes the name, and its living people take it with it: a dynasty's
  * people carry its name, and the dead keep the one they died with.
+ *
+ * The one way a name is given, at creation as on a rename: the checks come
+ * first and a refusal changes nothing, so a caller never has to undo a charge.
+ * A refusal is an answer, never a throw — the route turns it into a 409 and the
+ * screen into a sentence.
  */
-export function renameHouse(world: World, house: House, name: string, events: EventDraft[]): void {
+export function renameHouse(world: World, house: House, request: HouseRenameRequest): HouseRenameOutcome {
+  const name = sanitizeName(request.name);
+
+  if (!isValidName(name)) {
+    return { ok: false, reason: 'invalid_name' };
+  }
+  // The town's own houses, the AI ones included: two Carons would make its
+  // register unreadable, and the suggestion never draws an AI name for that.
+  if (nameIsTaken(housesOf(world, house.id), name)) {
+    return { ok: false, reason: 'name_taken' };
+  }
+  // Only a human house is held to the server-wide rule: the AI ones carry the
+  // same names in every town, and only a human house is ranked by name.
+  if (request.takenElsewhere?.has(nameKey(name)) === true) {
+    return { ok: false, reason: 'name_taken' };
+  }
+  if (house.treasuryCents < request.priceCents) {
+    return { ok: false, reason: 'insufficient_funds' };
+  }
+
   const before = house.name;
+  house.treasuryCents -= request.priceCents;
   house.name = name;
 
   for (const person of Object.values(world.people)) {
@@ -600,7 +587,19 @@ export function renameHouse(world: World, house: House, name: string, events: Ev
     }
   }
 
-  events.push({ type: 'house.renamed', audience: 'town', houseId: house.id, before, after: name });
+  return { ok: true, name };
+}
+
+/** A journal line for a name given after the creation; the creation writes none. */
+export function houseRenamed(house: House, before: string): EventDraft {
+  return { type: 'house.renamed', audience: 'town', houseId: house.id, before, after: house.name };
+}
+
+/** The names of the town's houses, the renamed one aside. */
+function housesOf(world: World, exceptHouseId: string): string[] {
+  return Object.values(world.houses)
+    .filter((house) => house.id !== exceptHouseId)
+    .map((house) => house.name);
 }
 
 /** `Colin Leclerc` becomes `Colin Moreau`: the given name stays, the dynasty moves. */

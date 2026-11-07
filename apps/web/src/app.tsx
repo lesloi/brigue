@@ -7,6 +7,7 @@ import {
   cancelAction,
   cancelDeletion,
   joinTown,
+  readCandidate,
   readPending,
   readSession,
   readWorld,
@@ -15,6 +16,7 @@ import {
   resumeTown,
   sendAction,
   type ActionIntent,
+  type HouseCandidate,
   type PendingActionView,
   type TradeIntent,
   type WorldResponse,
@@ -53,6 +55,11 @@ export function App() {
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [joinTaken, setJoinTaken] = useState(false);
+  // The identity the creation screen prefills: drawn by the server, written
+  // nowhere until the join.
+  const [candidate, setCandidate] = useState<HouseCandidate | null>(null);
+  const [candidateError, setCandidateError] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -122,6 +129,7 @@ export function App() {
 
       if (session === null) {
         setView({ kind: 'create', lost: false });
+        void readSuggestedCandidate();
         return;
       }
       // The deletion check comes first: a house-less account can be closing
@@ -134,6 +142,7 @@ export function App() {
       // one back.
       if (session.houseId === null) {
         setView({ kind: 'create', lost: true });
+        void readSuggestedCandidate();
         return;
       }
 
@@ -147,12 +156,15 @@ export function App() {
     }
   }
 
-  async function createHouse(trade: Trade): Promise<void> {
+  async function createHouse(trade: Trade, name: string): Promise<void> {
     setJoining(true);
     setJoinError(null);
+    setJoinTaken(false);
 
     try {
-      const joined = await joinTown(trade);
+      // The id is the candidate's when one was drawn; without it the server
+      // mints a house of its own, under the name the player kept.
+      const joined = await joinTown(trade, name, candidate?.id);
       // A returning account keeps its token: there is nothing new to show.
       if (joined.token !== undefined) {
         pendingToken.current = joined.token;
@@ -163,6 +175,12 @@ export function App() {
         // The account moved while the screen was open: the session knows
         // which screen it belongs to now.
         await boot();
+        return;
+      }
+      if (error instanceof ApiError && error.code === 'name_taken') {
+        // The name is what the field is for: the screen keeps it and says so.
+        setJoinTaken(true);
+        setJoinError(null);
         return;
       }
       if (error instanceof ApiError && error.code === 'no_free_house') {
@@ -176,6 +194,7 @@ export function App() {
               setView({ kind: 'closing', after: session.deletionAfter });
             } else if (session.houseId === null) {
               setView({ kind: 'create', lost: true });
+              void readSuggestedCandidate();
             } else {
               await load();
             }
@@ -196,6 +215,19 @@ export function App() {
       );
     } finally {
       setJoining(false);
+    }
+  }
+
+  /** The prefill of the creation screen: a free name, and the id the join will keep. */
+  async function readSuggestedCandidate(): Promise<void> {
+    setCandidateError(false);
+    setJoinTaken(false);
+    try {
+      setCandidate(await readCandidate());
+    } catch {
+      // The player may write their own name, which is what the rule allows.
+      setCandidate(null);
+      setCandidateError(true);
     }
   }
 
@@ -394,6 +426,7 @@ export function App() {
       // A token a reset left without a house: the trade gives it one back.
       if (session.houseId === null) {
         setView({ kind: 'create', lost: true });
+        void readSuggestedCandidate();
         return;
       }
 
@@ -474,10 +507,14 @@ export function App() {
           lost={view.lost}
           joining={joining}
           error={joinError}
+          taken={joinTaken}
+          candidate={candidate}
+          candidateError={candidateError}
           resuming={resuming}
           resumeError={lostError}
-          onChoose={(trade) => void createHouse(trade)}
-          onResume={(candidate) => void resume(candidate)}
+          onChoose={(trade, name) => void createHouse(trade, name)}
+          onResume={(token) => void resume(token)}
+          onReread={() => void readSuggestedCandidate()}
         />
       ) : view.kind === 'world' ? (
         <div class="app">

@@ -433,8 +433,6 @@ export const RULES = {
   improvementHours: [0, 0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66],
   /** What building a workshop of the starting level costs. */
   buildCents: 50_000,
-  /** What renaming a house costs, once the name is chosen at the creation. */
-  renameCents: 20_000,
   campaignFavourCost: 5,
   campaignVoteBonus: 2,
   /**
@@ -451,6 +449,23 @@ export const RULES = {
     planks: { input: 'wood', perUnit: 1 },
   } satisfies Record<GoodId, { input: GoodId; perUnit: number } | null>,
 } as const;
+
+/**
+ * Calibration of the name, outside `RULES`: what a rename costs once the name is
+ * chosen at the creation, where it costs nothing. It sits apart because a price
+ * is not a rule of the simulation — no world reads it to tick — and moving it
+ * must never make an existing world unreadable the way a `RULES` change would.
+ */
+export const NAME_PRICE = {
+  renameCents: 20_000,
+} as const;
+
+/**
+ * What the three AI houses are made of: they are the opening composition, and
+ * they carry the same names in every town, so no human house of the server may
+ * take one of them (only a human house is ranked by name across towns).
+ */
+export const AI_HOUSE_NAMES: readonly string[] = ['Caron', 'Fournier', 'Charpentier'];
 
 /**
  * Wall-clock policy, not a simulation rule: how far a returning player is caught

@@ -1,6 +1,7 @@
 import { TRADES, type Trade } from '@brigue/core/world';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 
+import type { HouseCandidate } from '../api.ts';
 import { tradeChainText, tradeName } from '../format.ts';
 import { Seal } from '../icons.tsx';
 
@@ -9,38 +10,120 @@ interface CreateProps {
   lost: boolean;
   joining: boolean;
   error: string | null;
+  /** The name the route refused as taken: the field says so where it is. */
+  taken: boolean;
+  /** The identity the server prefills: the name the join will keep. */
+  candidate: HouseCandidate | null;
+  candidateError: boolean;
   resuming: boolean;
   resumeError: string | null;
-  onChoose(trade: Trade): void;
+  onChoose(trade: Trade, name: string): void;
   onResume(token: string): void;
+  onReread(): void;
 }
 
 /** The choices in the order a player reads them, not the order of the chains. */
 const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCompare(tradeName(right), 'fr'));
 
 /**
- * The first screen of a new player: the trade is the first decision, before
- * the town is read. The prices are the town's lesson, not the choice's.
+ * The first screen of a new player: the name of the house and the trade, before
+ * the town is read. The name is suggested and prefilled — it is an identity the
+ * player is allowed to keep — and the trade is the town's lesson, not a rule.
  *
  * A returning account sees the same choice with the loss named: the reset took
  * the house, the token stayed, and the trade is what gives a house back.
  */
-export function Create({ lost, joining, error, resuming, resumeError, onChoose, onResume }: CreateProps) {
-  const [candidate, setCandidate] = useState('');
+export function Create({
+  lost,
+  joining,
+  error,
+  taken,
+  candidate,
+  candidateError,
+  resuming,
+  resumeError,
+  onChoose,
+  onResume,
+  onReread,
+}: CreateProps) {
+  const [name, setName] = useState('');
+  const [resume, setResume] = useState('');
+  // The prefill arrives after the screen: a name the player has already typed
+  // is theirs, and the suggestion never overwrites it.
+  const [touched, setTouched] = useState(false);
+
+  useEffect(() => {
+    if (candidate !== null && !touched) {
+      setName(candidate.houseName);
+    }
+  }, [candidate, touched]);
 
   return (
     <div class="gate">
       <div class="gate-card">
         <Seal size={38} />
-        <h1>{lost ? 'Ta maison est perdue' : 'Choisis ton métier'}</h1>
+        <h1>{lost ? 'Ta maison est perdue' : 'Fonde ta maison'}</h1>
         <p>
           {lost
-            ? 'La ville a été remise à zéro : ta maison, ses ateliers et sa bourse ont disparu. Ton compte joueur, lui, est conservé. Choisis un métier pour revenir.'
-            : 'Ton premier atelier est celui de ton métier.'}
+            ? 'La ville a été remise à zéro : ta maison, ses ateliers et sa bourse ont disparu. Ton compte joueur, lui, est conservé. Donne un nom à ta maison et choisis un métier pour revenir.'
+            : 'Le nom de ta maison est son identité dans la ville : lettres et chiffres, sans accent ni espace, et deux maisons ne portent jamais le même.'}
         </p>
+        <form
+          class="house-name"
+          onSubmit={(event) => {
+            // The trade buttons are the only way to join: this form holds the
+            // name, and Enter must not weave for a player who has not chosen.
+            event.preventDefault();
+          }}
+        >
+          <label for="create-name">Nom de la maison</label>
+          <input
+            id="create-name"
+            name="name"
+            autocomplete="off"
+            spellcheck={false}
+            maxLength={24}
+            required
+            placeholder={candidateError ? 'Le nom est à toi' : 'Le nom de ta maison'}
+            value={name}
+            onInput={(event) => {
+              setTouched(true);
+              setName(event.currentTarget.value);
+            }}
+          />
+          {taken ? (
+            <p class="gate-error">
+              Ce nom est déjà porté dans le royaume, ou dans cette ville.{' '}
+              <button
+                class="link"
+                type="button"
+                onClick={() => {
+                  setTouched(false);
+                  onReread();
+                }}
+              >
+                En choisir un autre
+              </button>
+            </p>
+          ) : candidateError ? (
+            <p class="gate-error">
+              Le nom n'a pas pu être suggéré.{' '}
+              <button class="link" type="button" onClick={onReread}>
+                Réessayer
+              </button>
+            </p>
+          ) : null}
+        </form>
+        <p class="gate-note">Puis ton métier, qui ouvre ton premier atelier.</p>
         <div class="trade-list">
           {TRADE_CHOICES.map((trade) => (
-            <button class="trade-choice" type="button" key={trade} disabled={joining} onClick={() => onChoose(trade)}>
+            <button
+              class="trade-choice"
+              type="button"
+              key={trade}
+              disabled={joining || name.trim() === ''}
+              onClick={() => onChoose(trade, name.trim())}
+            >
               <span class="trade-name">{tradeName(trade)}</span>
               <span class="trade-chain">{tradeChainText(trade)}</span>
             </button>
@@ -53,7 +136,7 @@ export function Create({ lost, joining, error, resuming, resumeError, onChoose, 
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                const trimmed = candidate.trim();
+                const trimmed = resume.trim();
                 if (trimmed !== '') {
                   onResume(trimmed);
                 }
@@ -66,8 +149,8 @@ export function Create({ lost, joining, error, resuming, resumeError, onChoose, 
                 autocomplete="off"
                 spellcheck={false}
                 required
-                value={candidate}
-                onInput={(event) => setCandidate(event.currentTarget.value)}
+                value={resume}
+                onInput={(event) => setResume(event.currentTarget.value)}
               />
               <button class="btn outline wide" type="submit" disabled={resuming}>
                 Reprendre

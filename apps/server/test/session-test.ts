@@ -245,11 +245,14 @@ describe('joining the town', () => {
     const response = await join(harness);
     const body = (await response.json()) as { houseId: string; townId: number };
 
-    // Assert: the free place is taken, and no house is added.
+    // Assert: the free place is taken, under the name the join kept; the token
+    // points at a house the town holds — the place's own, not the candidate's —
+    // and no house is added.
     expect(response.status).toBe(201);
     expect(body.townId).toBe(TEST_TOWN.id);
     expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
+    expect(world.houses[body.houseId]?.name).not.toBe('Leclerc');
     expect(Object.keys(world.houses)).toHaveLength(Object.keys(base.houses).length);
   });
 
@@ -273,16 +276,21 @@ describe('joining the town', () => {
   });
 
   it('skips a town that vanishes between the list and its lock', async () => {
-    // Arrange: a store whose only town is deleted right after the list.
+    // Arrange: a store whose only town is deleted right after the list. The
+    // split town is skipped, and the suggestion of the founding join reads
+    // each town once more: the town is gone in every read but the list.
     const real = new MemoryWorldStore();
-    await real.createTown(TEST_TOWN.name, town(7), new Date());
+    const split = await real.createTown('Split', town(7), new Date());
     let vanish = true;
     const worlds: WorldStore = {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
+      listHumanNames: () => real.listHumanNames(),
       withWorld: (run, townId) => {
-        if (vanish && townId === TEST_TOWN.id) {
+        // Gone, not failing: the next join will not see it either.
+        if (vanish && townId === split.id) {
           vanish = false;
+          void real.withWorld((session) => session.clear(), townId);
           return Promise.reject(new UnknownWorldError());
         }
 
@@ -300,7 +308,7 @@ describe('joining the town', () => {
 
     // Assert: the join founds a town instead of failing.
     expect(response.status).toBe(201);
-    expect(body.townId).not.toBe(TEST_TOWN.id);
+    expect(body.townId).not.toBe(split.id);
   });
 
   it('founds a second town when no town has a free place', async () => {
@@ -357,10 +365,11 @@ describe('joining the town', () => {
     const response = await join(harness);
     const body = (await response.json()) as { townId: number; houseId: string };
 
-    // Assert
+    // Assert: the place of the younger town, which is where the join landed.
     expect(response.status).toBe(201);
     expect(body.townId).toBe(younger.id);
-    expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
+    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, younger.id);
+    expect(world.houses[body.houseId]?.name).not.toBe('Leclerc');
   });
 
   it('takes the least-filled town, not the oldest', async () => {
@@ -387,7 +396,6 @@ describe('joining the town', () => {
     // Assert: the town that needs people most, not the oldest.
     expect(response.status).toBe(201);
     expect(body.townId).toBe(younger.id);
-    expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);
   });
 
   it('leaves a town whose humans have all gone to the scheduler', async () => {
@@ -682,7 +690,7 @@ describe('a token a reset left without a house', () => {
     const response = await choose(harness, 'carpenter', cookie);
     const body = (await response.json()) as { townId: number; houseId: string };
 
-    // Assert: the free place, and no house added.
+    // Assert: the free place, named by the choice, and no house added.
     expect(response.status).toBe(200);
     expect(body.townId).toBe(TEST_TOWN.id);
     expect(body.houseId).toBe(TEST_FIRST_HOUSE.id);

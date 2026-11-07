@@ -190,15 +190,32 @@ export interface Joined {
   token?: string;
 }
 
+/** The identity a join is made with, drawn by the server: opaque id, suggested name. */
+export interface HouseCandidate {
+  id: string;
+  houseName: string;
+  personName: string;
+}
+
+/**
+ * The candidate the creation screen prefills. No house is founded by it: the
+ * player edits the name, keeps it, and only the join writes anything.
+ */
+export function readCandidate(): Promise<HouseCandidate> {
+  return send('/api/house/name');
+}
+
 /**
  * A trade either founds a house for a new account or gives one back to an
- * account a reset left without one; the session cookie says which.
+ * account a reset left without one; the session cookie says which. The name
+ * sent is the one the player kept, with the id of the candidate it came from:
+ * a suggestion that never arrived mints its own, the name being the player's.
  */
-export function joinTown(trade: Trade): Promise<Joined> {
+export function joinTown(trade: Trade, name: string, candidateId?: string): Promise<Joined> {
   return send<Joined>('/api/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trade }),
+    body: JSON.stringify({ trade, name, ...(candidateId ? { candidate: { id: candidateId } } : {}) }),
   });
 }
 

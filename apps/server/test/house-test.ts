@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { RULES, type Action, type World } from '@brigue/core';
+import { NAME_PRICE, type Action, type World } from '@brigue/core';
 
 import { createApp } from '../src/http/app.ts';
 import { SESSION_COOKIE } from '../src/http/cookies.ts';
@@ -137,7 +137,7 @@ describe('the house name', () => {
     expect(after.houses.leclerc?.id).toBe('leclerc');
     expect(after.houses.leclerc?.name).toBe('Moreau');
     expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
-    expect(after.houses.leclerc?.treasuryCents).toBe(100_000 - RULES.renameCents);
+    expect(after.houses.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
   });
 
   it('writes the rename in the journal as the town’s business', async () => {

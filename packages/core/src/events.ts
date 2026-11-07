@@ -23,8 +23,7 @@ export type Action =
   | { type: 'workshop.destroy'; houseId: string; workshopId: string }
   | { type: 'workshop.upgrade'; houseId: string; workshopId: string }
   | { type: 'house.buy_title'; houseId: string }
-  | { type: 'house.upgrade_residence'; houseId: string }
-  | { type: 'house.rename'; houseId: string; name: string };
+  | { type: 'house.upgrade_residence'; houseId: string };
 
 export type RefusalReason =
   | 'unknown_action'

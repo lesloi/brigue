@@ -1,63 +1,73 @@
-import { createWorld, type House } from '@brigue/core';
+import { createWorld, HOUSE_NAMES, isValidName, nameKey, type World } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { drawHouseIdentity, drawTownName, HOUSE_NAMES, PERSON_NAMES, TOWN_NAMES } from '../src/town/names.ts';
+import { drawHouseIdentity, drawTownName, PERSON_NAMES, suggestHouseName, TOWN_NAMES } from '../src/town/names.ts';
 
-describe('the first house name', () => {
-  it('draws a name the town does not use, and an id from it', () => {
+describe('the suggested house name', () => {
+  it('draws a name from the pool, and an opaque id that carries nothing of it', () => {
     // Arrange
     const world = createWorld(1);
+    const names = namesOf(world);
 
-    // Act and assert: a hundred draws stay inside the pool, free, and shaped
-    // like an id, with a person named after the house.
+    // Act and assert: a hundred draws are free, and no two ids are the same.
     for (let draw = 0; draw < 100; draw += 1) {
-      const identity = drawHouseIdentity(world);
+      const name = suggestHouseName(names);
+      const identity = drawHouseIdentity(name);
 
-      expect(HOUSE_NAMES).toContain(identity.houseName);
-      expect(world.houses[identity.id]).toBeUndefined();
-      expect(identity.id).toMatch(/^[a-z0-9-]+$/);
-      expect(identity.personName.endsWith(identity.houseName)).toBe(true);
+      expect(HOUSE_NAMES).toContain(name);
+      expect(identity.houseName).toBe(name);
+      expect(identity.id).toMatch(/^house-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(identity.id).not.toContain(nameKey(name));
+      expect(isValidName(name)).toBe(true);
       expect(PERSON_NAMES.some((firstName) => identity.personName.startsWith(`${firstName} `))).toBe(true);
+      expect(identity.personName.endsWith(name)).toBe(true);
     }
   });
 
-  it('falls back to a made-up name when every pool name is taken', () => {
-    // Arrange: a town carrying every name of the pool.
-    const world = createWorld(1);
-    for (const [index, name] of HOUSE_NAMES.entries()) {
-      world.houses[`taken-${index}`] = {
-        ...(world.houses.caron as House),
-        id: `taken-${index}`,
-        name,
-      };
-    }
+  it('never draws a name the town or another human house already carries, and keeps trying past a taken draw', () => {
+    // Arrange: a town whose free names are few, and the pool as it is.
+    const elsewhere = new Set([nameKey('Leclerc'), nameKey('Moreau')]);
+    const drawn = new Map<string, number>();
+    // A pool of two free names among thirty draws: a draw that lands on one of
+    // the other twenty-eight must be replaced by another, not accepted.
+    const free = new Set(HOUSE_NAMES.filter((name) => !elsewhere.has(nameKey(name))).map((name) => nameKey(name)));
+    expect(free.size).toBeGreaterThan(1);
 
     // Act
-    const identity = drawHouseIdentity(world);
+    for (let draw = 0; draw < 200; draw += 1) {
+      const name = suggestHouseName(['Caron', 'Cáron', 'Fournier'], elsewhere);
+      drawn.set(name, (drawn.get(name) ?? 0) + 1);
+    }
 
-    // Assert: a name outside the pool, and an id nothing else holds.
-    expect(identity.houseName).toMatch(/^Maison \d+$/);
-    expect(world.houses[identity.id]).toBeUndefined();
+    // Assert: every draw is free, and both free names came out.
+    expect([...drawn.keys()].every((name) => free.has(nameKey(name)))).toBe(true);
+    expect(drawn.size).toBeGreaterThan(1);
   });
 
-  it('never picks a name an AI house already carries', () => {
-    // Arrange: an AI house takes one of the pool's names.
+  it('leaves the name empty when every draw is taken, so the player writes their own', () => {
+    // Arrange: a town carrying the whole pool.
     const world = createWorld(1);
-    const taken = HOUSE_NAMES[0];
-    world.houses.caron.name = taken;
+    const taken = [...HOUSE_NAMES];
 
-    // Act and assert
-    for (let draw = 0; draw < 100; draw += 1) {
-      expect(drawHouseIdentity(world).houseName).not.toBe(taken);
-    }
+    // Act
+    const name = suggestHouseName(taken);
+
+    // Assert: the pool is a suggestion, never a limit.
+    expect(name).toBe('');
+    expect(taken).toEqual([...HOUSE_NAMES]);
+    expect(namesOf(world)).not.toContain('');
   });
 });
 
 describe('the town name', () => {
   it('draws a name from the pool, and nothing else', () => {
-    // Act and assert: every draw is a pool name; the id belongs to the store.
+    // Act and assert
     for (let draw = 0; draw < 100; draw += 1) {
       expect(TOWN_NAMES).toContain(drawTownName());
     }
   });
 });
+
+function namesOf(world: World): string[] {
+  return Object.values(world.houses).map((house) => house.name);
+}
