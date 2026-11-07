@@ -1,6 +1,6 @@
-import type { GoodId, RefusalReason, SeatId, Trade } from '@brigue/core';
+import type { GoodId, RefusalReason, SeatId, TitleId, Trade } from '@brigue/core';
 
-import type { PendingActionView } from './api.ts';
+import type { PendingActionView, ProjectedSite } from './api.ts';
 
 const MONEY = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const COUNT = new Intl.NumberFormat('fr-FR');
@@ -81,6 +81,36 @@ export function tradeName(trade: Trade): string {
   }
 }
 
+/** The twelve degrees, said as the Maison screen says them. */
+export function titleName(title: TitleId): string {
+  switch (title) {
+    case 'roturier':
+      return 'roturier';
+    case 'bourgeois':
+      return 'bourgeois';
+    case 'notable':
+      return 'notable';
+    case 'patricien':
+      return 'patricien';
+    case 'ecuyer':
+      return 'écuyer';
+    case 'chevalier':
+      return 'chevalier';
+    case 'baron':
+      return 'baron';
+    case 'vicomte':
+      return 'vicomte';
+    case 'comte':
+      return 'comte';
+    case 'marquis':
+      return 'marquis';
+    case 'duc':
+      return 'duc';
+    case 'prince':
+      return 'prince';
+  }
+}
+
 /** What the trade buys and makes, said as the creation screen says it. */
 export function tradeChainText(trade: Trade): string {
   switch (trade) {
@@ -102,6 +132,30 @@ export function pendingActionText(action: PendingActionView): string {
       return action.good === undefined ? 'Vente au marché' : `Vente de ${goodQuantity(action.units ?? 0, action.good)}`;
     case 'council.campaign':
       return action.seatId === undefined ? 'Candidature' : `Candidature à la ${seatName(action.seatId)}`;
+    case 'workshop.build':
+      return action.trade === undefined ? 'Construction' : `Construction d'un atelier de ${tradeName(action.trade)}`;
+    case 'workshop.destroy':
+      return "Démolition d'un atelier";
+    case 'workshop.upgrade':
+      return "Agrandissement d'un atelier";
+    case 'house.buy_title':
+      return "Achat d'un titre";
+    case 'house.upgrade_residence':
+      return 'Élévation de la résidence';
+  }
+}
+
+/** A site under way, said in the same voice as the queue. */
+export function siteWorkText(site: ProjectedSite, workshopNameOf: (id: string) => string): string {
+  switch (site.work) {
+    case 'build':
+      return site.trade === null ? 'Construction' : `Construction d'un atelier de ${tradeName(site.trade)}`;
+    case 'upgrade':
+      return `Agrandissement de ${site.workshopId === null ? 'l’atelier' : workshopNameOf(site.workshopId)}`;
+    case 'residence':
+      return 'Élévation de la résidence';
+    case 'title':
+      return 'Remise du titre';
   }
 }
 
@@ -147,6 +201,28 @@ export function refusalText(reason: RefusalReason): string {
       return 'entrepôt plein';
     case 'insufficient_favour':
       return 'faveur insuffisante';
+    case 'unknown_workshop':
+      return 'atelier inconnu';
+    case 'unknown_trade':
+      return 'métier inconnu';
+    case 'workshop_cap':
+      return 'la résidence ne tient pas un atelier de plus';
+    case 'last_workshop':
+      return "c'est votre dernier atelier";
+    case 'level_cap':
+      return 'le titre ne permet pas ce niveau';
+    case 'title_open':
+      return 'le titre ne permet pas ce niveau de résidence';
+    case 'no_next_title':
+      return 'aucun titre au-dessus';
+    case 'no_next_residence':
+      return 'la résidence est au plus haut';
+    case 'site_in_progress':
+      return 'un chantier est déjà en cours';
+    case 'name_taken':
+      return 'ce nom est déjà porté';
+    case 'invalid_name':
+      return 'nom invalide';
   }
 }
 

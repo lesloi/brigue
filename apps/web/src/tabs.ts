@@ -1,5 +1,5 @@
 /**
- * The two screens that exist today, and the history rule that joins them.
+ * The screens that exist today, and the history rule that joins them.
  *
  * A tab is a history entry: opening another tab pushes it, so the browser's
  * back button returns to the tab you came from; from the home tab it leaves the
@@ -7,7 +7,7 @@
  * tested without a browser.
  */
 
-export type Tab = 'ville' | 'marche';
+export type Tab = 'ville' | 'marche' | 'maison';
 
 export interface TabHistory {
   tab: Tab;
@@ -15,8 +15,12 @@ export interface TabHistory {
   pushed: boolean;
 }
 
+const TABS: readonly Tab[] = ['ville', 'marche', 'maison'];
+
 export function tabFromHash(hash: string): Tab {
-  return hash === '#marche' ? 'marche' : 'ville';
+  const candidate = hash.replace(/^#/, '');
+
+  return (TABS as readonly string[]).includes(candidate) ? (candidate as Tab) : 'ville';
 }
 
 export function stateOf(state: unknown): TabHistory | null {
@@ -25,11 +29,11 @@ export function stateOf(state: unknown): TabHistory | null {
   }
 
   const { tab, pushed } = state as { tab?: unknown; pushed?: unknown };
-  if ((tab !== 'ville' && tab !== 'marche') || typeof pushed !== 'boolean') {
+  if (typeof tab !== 'string' || !(TABS as readonly string[]).includes(tab) || typeof pushed !== 'boolean') {
     return null;
   }
 
-  return { tab, pushed };
+  return { tab: tab as Tab, pushed };
 }
 
 export type Navigation = 'none' | 'back' | 'push' | 'replace';

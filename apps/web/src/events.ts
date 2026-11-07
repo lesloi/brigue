@@ -1,6 +1,15 @@
 import type { Action, Event, RefusalReason } from '@brigue/core';
 
-import { formatCents, formatCount, goodName, goodQuantity, refusalText, seatName } from './format.ts';
+import {
+  formatCents,
+  formatCount,
+  goodName,
+  goodQuantity,
+  refusalText,
+  seatName,
+  titleName,
+  tradeName,
+} from './format.ts';
 
 /** The three cuts of the journal: the house's own story, everything, the prices. */
 export type LedgerFilter = 'house' | 'all' | 'prices';
@@ -37,10 +46,19 @@ const COUNT_NAMES: Record<Event['type'], [string, string]> = {
   'workshop.produced': ['production', 'productions'],
   'workshop.overflow': ['débordement', 'débordements'],
   'workshop.idle': ['atelier à l’arrêt', 'ateliers à l’arrêt'],
-  'house.wages_paid': ['paie de gages', 'paies de gages'],
-  'house.penniless': ['gages impayés', 'gages impayés'],
+  'workshop.built': ['atelier construit', 'ateliers construits'],
+  'workshop.destroyed': ['atelier détruit', 'ateliers détruits'],
+  'workshop.upgraded': ['atelier agrandi', 'ateliers agrandis'],
+  'workshop.build_lost': ['chantier perdu', 'chantiers perdus'],
+  'house.title_bought': ['titre acheté', 'titres achetés'],
+  'house.title_received': ['titre obtenu', 'titres obtenus'],
+  'house.residence_received': ['résidence élevée', 'résidences élevées'],
+  'house.renamed': ['maison renommée', 'maisons renommées'],
+  'house.upkeep_paid': ['entretien payé', 'entretiens payés'],
+  'house.penniless': ['entretien impayé', 'entretiens impayés'],
   'house.debt_repaid': ['remboursement', 'remboursements'],
   'council.campaigned': ['candidature', 'candidatures'],
+  'engagement.opened': ['chantier ouvert', 'chantiers ouverts'],
   'engagement.resolved': ['engagement résolu', 'engagements résolus'],
   'council.scrutiny_held': ['scrutin', 'scrutins'],
   'council.election_held': ['élection', 'élections'],
@@ -155,16 +173,64 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
         text: `${subject(event.houseId)} : atelier de ${goodName(event.good)} à l'arrêt, il manque ${goodQuantity(event.missingUnits, event.input)}.`,
       };
 
-    case 'house.wages_paid':
+    case 'workshop.built':
+      return {
+        tone: 'gain',
+        text: `L'atelier de ${tradeName(event.trade)} de ${subject(event.houseId)} est bâti.`,
+      };
+
+    case 'workshop.destroyed':
       return {
         tone: 'loss',
-        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez payé', 'a payé')} ${formatCents(event.amountCents)} écus de gages.`,
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez fait abattre', 'a fait abattre')} un atelier de ${goodName(event.good)}.`,
+      };
+
+    case 'workshop.upgraded':
+      return {
+        tone: 'gain',
+        text: `${subject(event.houseId)} : un atelier passe au niveau ${formatCount(event.level)}.`,
+      };
+
+    case 'workshop.build_lost':
+      return {
+        tone: 'refusal',
+        text: `Le chantier de ${tradeName(event.trade)} de ${subject(event.houseId)} échoue : ${formatCents(event.paidCents)} écus perdus.`,
+      };
+
+    case 'house.title_bought':
+      return {
+        tone: 'council',
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez acheté', 'a acheté')} le titre de ${titleName(event.title)} ; il ${verb(event.houseId, 'vous sera remis', 'sera remis')} au prochain midi ou minuit.`,
+      };
+
+    case 'house.title_received':
+      return {
+        tone: 'council',
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'êtes', 'est')} désormais ${titleName(event.title)}.`,
+      };
+
+    case 'house.residence_received':
+      return {
+        tone: 'gain',
+        text: `${subject(event.houseId)} : la résidence atteint le niveau ${formatCount(event.level)}.`,
+      };
+
+    case 'house.renamed':
+      return {
+        tone: 'council',
+        text: `La maison ${event.before} prend le nom de ${event.after}.`,
+      };
+
+    case 'house.upkeep_paid':
+      return {
+        tone: 'loss',
+        text: `${subject(event.houseId)} ${verb(event.houseId, 'avez payé', 'a payé')} ${formatCents(event.amountCents)} écus d'entretien.`,
       };
 
     case 'house.penniless':
       return {
         tone: 'refusal',
-        text: `${subject(event.houseId)} n'${verb(event.houseId, 'avez', 'a')} pas pu payer ${formatCents(event.shortfallCents)} écus de gages.`,
+        text: `${subject(event.houseId)} n'${verb(event.houseId, 'avez', 'a')} pas pu payer ${formatCents(event.shortfallCents)} écus d'entretien.`,
       };
 
     case 'house.debt_repaid':
@@ -198,6 +264,15 @@ export function eventLine(event: Event, ownHouseId: string, nameOf: (houseId: st
       };
     }
 
+    case 'engagement.opened':
+      return {
+        tone: 'neutral',
+        text:
+          event.kind === 'hearing'
+            ? `L'audience de ${subject(event.houseId)} est fixée à l'heure ${formatCount(event.dueAt)}.`
+            : `${subject(event.houseId)} : un chantier est ouvert, il sera clos à l'heure ${formatCount(event.dueAt)}.`,
+      };
+
     case 'council.scrutiny_held':
       return {
         tone: 'council',
@@ -224,6 +299,18 @@ function actionName(action: Action['type'] | 'unknown'): string {
       return 'vente';
     case 'council.campaign':
       return 'candidature';
+    case 'workshop.build':
+      return 'construction';
+    case 'workshop.destroy':
+      return 'démolition';
+    case 'workshop.upgrade':
+      return 'agrandissement';
+    case 'house.buy_title':
+      return 'achat de titre';
+    case 'house.upgrade_residence':
+      return 'élévation de la résidence';
+    case 'house.rename':
+      return 'renommage';
     case 'unknown':
       return 'action';
     default:

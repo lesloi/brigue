@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { GOODS, SEATS, type Action, type GoodId, type SeatId } from '@brigue/core';
+import { GOODS, SEATS, TRADES, type Action, type GoodId, type SeatId, type Trade } from '@brigue/core';
 
 import { currentHourOf, DuplicateActionError, sessionWorld, type StoredAction } from '../../town/worlds.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
@@ -17,7 +17,12 @@ const QUEUE_AHEAD_HOURS = 1;
 type ActionIntent =
   | { type: 'market.buy'; good: GoodId; units: number }
   | { type: 'market.sell'; good: GoodId; units: number }
-  | { type: 'council.campaign'; seatId: SeatId };
+  | { type: 'council.campaign'; seatId: SeatId }
+  | { type: 'workshop.build'; trade: Trade }
+  | { type: 'workshop.destroy'; workshopId: string }
+  | { type: 'workshop.upgrade'; workshopId: string }
+  | { type: 'house.buy_title' }
+  | { type: 'house.upgrade_residence' };
 
 type ActionSubmission =
   { ok: true; id: string; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
@@ -249,6 +254,10 @@ function pendingView(stored: StoredAction): Record<string, unknown> {
       ? { good: action.good, units: action.units }
       : {}),
     ...(action.type === 'council.campaign' ? { seatId: action.seatId } : {}),
+    ...(action.type === 'workshop.build' ? { trade: action.trade } : {}),
+    ...(action.type === 'workshop.destroy' || action.type === 'workshop.upgrade'
+      ? { workshopId: action.workshopId }
+      : {}),
   };
 }
 
@@ -316,6 +325,39 @@ function parseActionSubmission(body: unknown): ActionSubmission {
         intent: { type: 'council.campaign', seatId: seatId as SeatId },
       };
     }
+
+    case 'workshop.build': {
+      const { trade } = action;
+      if (typeof trade !== 'string' || !TRADES.includes(trade as Trade)) {
+        return invalid();
+      }
+
+      return {
+        ok: true,
+        id: id.toLowerCase(),
+        hour: hour as number,
+        intent: { type: 'workshop.build', trade: trade as Trade },
+      };
+    }
+
+    case 'workshop.destroy':
+    case 'workshop.upgrade': {
+      const { workshopId } = action;
+      if (typeof workshopId !== 'string' || workshopId.length === 0) {
+        return invalid();
+      }
+
+      return {
+        ok: true,
+        id: id.toLowerCase(),
+        hour: hour as number,
+        intent: { type: action.type, workshopId },
+      };
+    }
+
+    case 'house.buy_title':
+    case 'house.upgrade_residence':
+      return { ok: true, id: id.toLowerCase(), hour: hour as number, intent: { type: action.type } };
 
     default:
       return invalid();

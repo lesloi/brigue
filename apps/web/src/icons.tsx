@@ -170,7 +170,7 @@ export function WorkshopThumb({ good }: { good: GoodId }) {
   }
 }
 
-export function NavIcon({ kind }: { kind: 'ville' | 'marche' | 'conseil' | 'greffe' | 'courrier' }) {
+export function NavIcon({ kind }: { kind: 'ville' | 'marche' | 'maison' | 'conseil' | 'greffe' | 'courrier' }) {
   const open = (
     <svg
       width="21"
@@ -192,6 +192,12 @@ export function NavIcon({ kind }: { kind: 'ville' | 'marche' | 'conseil' | 'gref
         <>
           <path d="M4 8h16l-2 12H6z" />
           <path d="M9 8a3 3 0 0 1 6 0" />
+        </>
+      ) : kind === 'maison' ? (
+        <>
+          <path d="M3 11 12 4l9 7" />
+          <path d="M5 10v10h14V10" />
+          <path d="M9 20v-6h6v6" />
         </>
       ) : kind === 'conseil' ? (
         <>

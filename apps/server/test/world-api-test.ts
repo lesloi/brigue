@@ -365,7 +365,7 @@ describe('GET /api/world', () => {
 
     // Assert
     const wagesOf = (body: WorldBody, houseId: string) =>
-      body.events.filter((event) => event.type === 'house.wages_paid' && event.houseId === houseId);
+      body.events.filter((event) => event.type === 'house.upkeep_paid' && event.houseId === houseId);
 
     expect(wagesOf(leclerc, 'leclerc').length).toBeGreaterThan(0);
     expect(wagesOf(leclerc, 'caron')).toEqual([]);
@@ -384,7 +384,7 @@ describe('GET /api/world', () => {
         ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
-        workshops: [{ good: 'grain', level: 1, workers: 1 }],
+        workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
         stock: {},
       };
       world.people[personId] = {

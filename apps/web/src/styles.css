@@ -1281,3 +1281,65 @@ button:disabled {
     font-size: 13.5px;
   }
 }
+
+/* The Maison screen: the ladder's figures, its doors, and the buildings. */
+.ladder-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 14px 2px;
+}
+
+.ladder-row span {
+  font-variant-numeric: tabular-nums;
+  color: var(--mut);
+  font-size: 12px;
+}
+
+.ladder-detail {
+  margin: 0 0 10px;
+  padding: 0 14px;
+  font-size: 11.5px;
+  color: var(--mut);
+  line-height: 1.35;
+}
+
+.rename {
+  display: grid;
+  gap: 6px;
+  padding: 4px 14px 14px;
+}
+
+.rename label {
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--mut);
+  font-weight: 700;
+}
+
+.rename input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfaf6;
+  padding: 10px 11px;
+  font-size: 15px;
+}
+
+.row .actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.sec .trade-list {
+  margin: 0 8px 8px;
+}
+
+.sec > .btn.wide {
+  margin: 0 8px 8px;
+  width: calc(100% - 16px);
+}

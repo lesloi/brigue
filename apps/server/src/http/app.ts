@@ -7,6 +7,7 @@ import { type AppContext, type AppDeps } from './context.ts';
 import { createRateLimiter } from './rate-limit.ts';
 import { methodNotAllowed, sendJson } from './respond.ts';
 import { appendAction, cancelAction, listActions } from './routes/actions.ts';
+import { renameHouseRoute } from './routes/house.ts';
 import { cancelDeletion, requestDeletion } from './routes/player.ts';
 import { openSession, readSession } from './routes/session.ts';
 import { advanceHour, readWorld } from './routes/world.ts';
@@ -127,6 +128,14 @@ async function handle(context: AppContext, request: IncomingMessage, response: S
           methodNotAllowed(response, 'POST, DELETE');
           return;
       }
+
+    case '/api/house/name':
+      if (request.method !== 'PUT') {
+        methodNotAllowed(response, 'PUT');
+        return;
+      }
+      await renameHouseRoute(context, request, response);
+      return;
 
     case '/api/world':
       if (request.method !== 'GET') {

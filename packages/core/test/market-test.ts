@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockUnits } from '../src/index.ts';
+import { GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockCapacityUnits, stockUnits } from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
 import { playHalfDay, playUntil, tick, town } from './helpers.ts';
 
@@ -298,11 +298,11 @@ describe('the prices of a month', () => {
 
 describe('the warehouse', () => {
   it('credits production to the stock, not to the purse', () => {
-    // Arrange: a workshop with no wages, so only production could move money.
+    // Arrange: the upkeep of the loom is the only thing that may move money.
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ good: 'cloth', level: 2, workers: 0 }];
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
     world.houses.leclerc.stock = { wool: 8 };
-    const treasuryCents = world.houses.leclerc.treasuryCents;
+    const treasuryCents = world.houses.leclerc.treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
 
     // Act
     const { world: after, events } = playWeek(world);
@@ -378,11 +378,13 @@ describe('the warehouse', () => {
   });
 
   it('refuses a purchase that would overflow the warehouse', () => {
-    // Arrange: a full warehouse and a purse that could pay.
+    // Arrange: a full warehouse and a purse that could pay. The loom runs on
+    // nothing, so its upkeep is the only charge between here and the refusal.
     const world = town(SEED);
-    world.houses.leclerc.workshops = [];
-    world.houses.leclerc.stock = { cloth: RULES.stockCapacityUnits };
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    world.houses.leclerc.stock = { wool: stockCapacityUnits(world.houses.leclerc) };
     world.houses.leclerc.treasuryCents = 1_000_000;
+    const upkeep = 2 * RULES.upkeepPerWorkshopLevelCents;
 
     // Act
     const { world: after, events } = playWeek(world, [
@@ -399,15 +401,15 @@ describe('the warehouse', () => {
         reason: 'stock_full',
       }),
     );
-    expect(stockUnits(after.houses.leclerc)).toBe(RULES.stockCapacityUnits);
-    expect(after.houses.leclerc.treasuryCents).toBe(1_000_000);
+    expect(stockUnits(after.houses.leclerc)).toBe(stockCapacityUnits(after.houses.leclerc));
+    expect(after.houses.leclerc.treasuryCents).toBe(1_000_000 - upkeep);
   });
 
   it('refuses production that does not fit in the warehouse', () => {
     // Arrange: a raw workshop with one unit of room left.
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ good: 'wool', level: 2, workers: 0 }];
-    world.houses.leclerc.stock = { cloth: RULES.stockCapacityUnits - 1 };
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    world.houses.leclerc.stock = { cloth: stockCapacityUnits(world.houses.leclerc) - 1 };
 
     // Act
     const { world: after, events } = playWeek(world);
@@ -422,15 +424,15 @@ describe('the warehouse', () => {
         refusedUnits: 3,
       }),
     );
-    expect(stockUnits(after.houses.leclerc)).toBe(RULES.stockCapacityUnits);
+    expect(stockUnits(after.houses.leclerc)).toBe(stockCapacityUnits(after.houses.leclerc));
     expect(after.houses.leclerc.stock.wool).toBe(1);
   });
 
   it('lets a full house make room by selling, then produce again', () => {
     // Arrange: a warehouse full of cloth and a loom that cannot start.
     const world = town(SEED);
-    world.houses.leclerc.workshops = [{ good: 'cloth', level: 2, workers: 0 }];
-    world.houses.leclerc.stock = { cloth: RULES.stockCapacityUnits };
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
+    world.houses.leclerc.stock = { cloth: stockCapacityUnits(world.houses.leclerc) };
     world.houses.leclerc.treasuryCents = 1_000_000;
 
     // Act: a purchase is refused while the warehouse is full; selling makes
@@ -447,16 +449,17 @@ describe('the warehouse', () => {
     expect(bought.events).toContainEqual(
       expect.objectContaining({ type: 'workshop.produced', houseId: 'leclerc', good: 'cloth', units: 4 }),
     );
-    expect(stockUnits(bought.world.houses.leclerc)).toBe(RULES.stockCapacityUnits);
+    expect(stockUnits(bought.world.houses.leclerc)).toBe(stockCapacityUnits(bought.world.houses.leclerc));
   });
 
   it('refuses an unknown good before it can touch the purse', () => {
     for (const type of ['market.buy', 'market.sell'] as const) {
       // Arrange: a poisoned stored action, which a database and a JSON parser
-      // can still hand to the tick. No wages, so only the action could move money.
+      // can still hand to the tick. The upkeep is the only charge, so the action
+      // is the only thing that could otherwise move money.
       const world = town(SEED);
-      world.houses.leclerc.workshops = [{ good: 'cloth', level: 2, workers: 0 }];
-      const treasuryCents = world.houses.leclerc.treasuryCents;
+      world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
+      const treasuryCents = world.houses.leclerc.treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
       const malformed = { type, houseId: 'leclerc', good: 'gold', units: 1 } as unknown as Action;
 
       // Act

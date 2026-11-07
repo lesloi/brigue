@@ -10,9 +10,11 @@ import {
   readPending,
   readSession,
   readWorld,
+  renameHouse,
   requestDeletion,
   resumeTown,
   sendAction,
+  type ActionIntent,
   type PendingActionView,
   type TradeIntent,
   type WorldResponse,
@@ -22,6 +24,7 @@ import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
 import { ClosingHouse, DeleteAccountDialog } from './views/account.tsx';
 import { Create } from './views/create.tsx';
 import { Failure, LostHouse, TokenDialog } from './views/gate.tsx';
+import { Maison } from './views/maison.tsx';
 import { Marche } from './views/marche.tsx';
 import { Nav } from './views/nav.tsx';
 import { Ville } from './views/ville.tsx';
@@ -54,6 +57,8 @@ export function App() {
   const [resuming, setResuming] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [houseBusy, setHouseBusy] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -263,6 +268,49 @@ export function App() {
     }
   }
 
+  /** The ladder's actions share one queue with the market: same hour, same read. */
+  async function houseAction(busy: string, intent: ActionIntent, said: string): Promise<void> {
+    if (view.kind !== 'world') {
+      return;
+    }
+
+    setHouseBusy(busy);
+    try {
+      await sendAction(view.data.world.hour, intent);
+      await readPending().then(setPending, () => setPending([]));
+      showToast(`${said}. Il apparaîtra à la prochaine lecture.`);
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'stale_hour') {
+        showToast(actionErrorText(error.code), true);
+        await refresh();
+      } else {
+        showToast(actionMessageFor(error), true);
+      }
+    } finally {
+      setHouseBusy(null);
+    }
+  }
+
+  /** The name is identity, not a trade: it applies at once, and re-reads the town. */
+  async function rename(name: string): Promise<void> {
+    setHouseBusy('rename');
+    setRenameError(null);
+
+    try {
+      await renameHouse(name);
+      await load();
+      showToast(`La maison s'appelle désormais ${name}.`);
+    } catch (error) {
+      setRenameError(
+        error instanceof ApiError && error.code === 'name_taken'
+          ? 'Ce nom est déjà porté dans la ville.'
+          : readMessageFor(error),
+      );
+    } finally {
+      setHouseBusy(null);
+    }
+  }
+
   async function cancel(id: string): Promise<void> {
     setCancelling(id);
     try {
@@ -444,6 +492,37 @@ export function App() {
               onAdvance={() => void advanceOneHour()}
               onDeleteAccount={askDelete}
             />
+          ) : tab === 'maison' ? (
+            <Maison
+              data={view.data}
+              pending={pending}
+              cancelling={cancelling}
+              busy={houseBusy}
+              renameError={renameError}
+              onBuild={(trade) =>
+                void houseAction('build', { type: 'workshop.build', trade }, `Construction d'un atelier de ${trade}`)
+              }
+              onDestroy={(workshopId) =>
+                void houseAction(
+                  `destroy-${workshopId}`,
+                  { type: 'workshop.destroy', workshopId },
+                  "Démolition d'un atelier",
+                )
+              }
+              onUpgrade={(workshopId) =>
+                void houseAction(
+                  `upgrade-${workshopId}`,
+                  { type: 'workshop.upgrade', workshopId },
+                  "Agrandissement d'un atelier",
+                )
+              }
+              onBuyTitle={() => void houseAction('title', { type: 'house.buy_title' }, "Achat d'un titre")}
+              onUpgradeResidence={() =>
+                void houseAction('residence', { type: 'house.upgrade_residence' }, 'Élévation de la résidence')
+              }
+              onRename={(name) => void rename(name)}
+              onCancel={(id) => void cancel(id)}
+            />
           ) : (
             <Marche
               data={view.data}
@@ -497,9 +576,9 @@ export function App() {
   );
 }
 
-/** The URL of a tab. Ville keeps the path; Marché marks itself in the hash. */
+/** The URL of a tab. Ville keeps the path; the others mark themselves in the hash. */
 function urlFor(tab: Tab): string {
-  return tab === 'marche' ? '#marche' : window.location.pathname;
+  return tab === 'ville' ? window.location.pathname : `#${tab}`;
 }
 
 function actionMessageFor(error: unknown): string {

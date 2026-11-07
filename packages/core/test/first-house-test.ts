@@ -20,7 +20,7 @@ describe('the first house', () => {
   it('starts a weaver with its chain and input', () => {
     const firstHouse = createFirstHouse('weaver', IDENTITY);
 
-    expect(firstHouse.house.workshops).toEqual([{ good: 'cloth', level: 2, workers: 2 }]);
+    expect(firstHouse.house.workshops).toEqual([{ id: 'workshop-1', good: 'cloth', level: 2 }]);
     expect(firstHouse.house.stock).toEqual({ wool: RULES.startingInputUnits });
     expect(firstHouse.house.name).toBe(IDENTITY.houseName);
   });
@@ -30,7 +30,7 @@ describe('the first house', () => {
       const chain = TRADE_CHAINS[trade];
       const firstHouse = createFirstHouse(trade, IDENTITY);
 
-      expect(firstHouse.house.workshops).toEqual([{ good: chain.output, level: 2, workers: 2 }]);
+      expect(firstHouse.house.workshops).toEqual([{ id: 'workshop-1', good: chain.output, level: 2 }]);
       expect(firstHouse.house.stock).toEqual({ [chain.input]: RULES.startingInputUnits });
       // The trade is a name for a real recipe, not a second table to drift.
       expect(RULES.recipes[chain.output]).toEqual({ input: chain.input, perUnit: 1 });
@@ -53,7 +53,7 @@ describe('the first house', () => {
 
     // Assert
     expect(world.houses[IDENTITY.id]?.name).toBe(IDENTITY.houseName);
-    expect(world.houses[IDENTITY.id]?.workshops).toEqual([{ good: 'bread', level: 2, workers: 2 }]);
+    expect(world.houses[IDENTITY.id]?.workshops).toEqual([{ id: 'workshop-1', good: 'bread', level: 2 }]);
     expect(world.houses[IDENTITY.id]?.stock).toEqual({ grain: RULES.startingInputUnits });
     expect(world.people[`person-${IDENTITY.id}`]?.houseId).toBe(IDENTITY.id);
     expect(humanHouseOf(world)?.id).toBe(IDENTITY.id);
@@ -68,7 +68,7 @@ describe('the first house', () => {
 
     // Assert: a human house is already there, and the second identity is ignored.
     expect(twice).toBe(once);
-    expect(twice.houses[IDENTITY.id]?.workshops).toEqual([{ good: 'cloth', level: 2, workers: 2 }]);
+    expect(twice.houses[IDENTITY.id]?.workshops).toEqual([{ id: 'workshop-1', good: 'cloth', level: 2 }]);
     expect(twice.houses.other).toBeUndefined();
   });
 

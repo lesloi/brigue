@@ -102,7 +102,7 @@ describe('eventLine', () => {
     expect(line.text).toBe('Vous : achat refusé — fonds insuffisants.');
   });
 
-  it('keeps the house grammar for a missed wage payment', () => {
+  it('keeps the house grammar for a missed upkeep payment', () => {
     // Arrange
     const own: Event = {
       type: 'house.penniless',
@@ -126,8 +126,8 @@ describe('eventLine', () => {
     const otherLine = eventLine(other, 'leclerc', nameOf);
 
     // Assert
-    expect(ownLine.text).toBe("Vous n'avez pas pu payer 2,4 écus de gages.");
-    expect(otherLine.text).toBe("Caron n'a pas pu payer 2,4 écus de gages.");
+    expect(ownLine.text).toBe("Vous n'avez pas pu payer 2,4 écus d'entretien.");
+    expect(otherLine.text).toBe("Caron n'a pas pu payer 2,4 écus d'entretien.");
   });
 
   it('reads production as goods entering the warehouse', () => {
@@ -344,6 +344,8 @@ describe('tab history', () => {
 
   it('seeds the tab from the hash and validates history state', () => {
     expect(tabFromHash('#marche')).toBe('marche');
+    expect(tabFromHash('#maison')).toBe('maison');
+    expect(tabFromHash('#conseil')).toBe('ville');
     expect(tabFromHash('')).toBe('ville');
     expect(stateOf(null)).toBeNull();
     expect(stateOf({ tab: 'marche', pushed: true })).toEqual({ tab: 'marche', pushed: true });
@@ -376,7 +378,7 @@ describe('the ledger filter', () => {
     },
     { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerHouseId: 'caron', votes: {} },
     { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
-    { type: 'house.wages_paid', audience: { houseId: 'leclerc' }, at: 0, houseId: 'leclerc', amountCents: 240 },
+    { type: 'house.upkeep_paid', audience: { houseId: 'leclerc' }, at: 0, houseId: 'leclerc', amountCents: 240 },
   ];
 
   it('keeps the house and the town politics by default', () => {
@@ -384,7 +386,7 @@ describe('the ledger filter', () => {
     const filtered = ledgerEvents(events, 'leclerc', 'house');
 
     // Assert
-    expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.wages_paid']);
+    expect(filtered.map((event) => event.type)).toEqual(['market.sold', 'council.election_held', 'house.upkeep_paid']);
   });
 
   it('keeps only the prices in the prices cut', () => {

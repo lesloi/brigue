@@ -60,15 +60,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   role: none holds a seat or a vote at the start. Every house begins with the same kit — a
   workshop of its trade, eight units of its input and a purse, because its first sale is hours
   away. The town is built without the first house: it is added when the first player joins, so no
-  town waits empty for someone. Its name is drawn from the town's names at that moment — nothing
-  about it is fixed — and the player may rename it later (not built yet). A human who arrives
+  town waits empty for someone. Its name is suggested, prefilled at the creation and free to
+  edit; the id is opaque and never derived from it. A human who arrives
   later joins with the same kit, in a free place; the first house's place, re-founded after a
   deletion, keeps it too. Wool, grain and wood are bought at the market at the current price; no
   house produces them, so every chain is fed whatever the town's trades. The three AI houses are
   the finished trades, one per trade.
-  The price signal and the trade conversion of the residence work let a player move into a missing
-  finished good; a town of weavers will have cheap cloth and dear bread, which is the market
-  working, not a bug.
+  The price signal and a third workshop of the good the town lacks let a player move into a
+  missing finished good: a house of weavers can build a bakery once its residence holds it. A town
+  of weavers will have cheap cloth and dear bread, which is the market working, not a bug.
 
 - **The town's council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and
   each floor holds a different right rather than a stronger version of the one below. One office per
@@ -128,9 +128,19 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   if the day goes unwatched.
 
 - **The residence is one ladder.** The title opens a level, money pays for it, and the level sets
-  the prestige cap, the defence of the stock, the warehouse capacity and the number of workshops.
+  the prestige cap, the defence of the stock and the number of workshops (1,1,2,2,2,3,3,3,3,4,4,4).
   Three separate ladders would be three things to read on a phone; one says what the house can
-  hold, which is what chapter II must teach. Revisit if a level stops meaning anything.
+  hold, which is what chapter II must teach. The title and the level are two purchases, the degree
+  first: one purchase would make the title and the residence the same object and leave "standing"
+  with nothing of its own. A title is obtained at the next noon or midnight, never at once: it is
+  paid for the hour it is bought and delivered at the town's rendezvous, like a candidacy. Revisit
+  if a level stops meaning anything.
+
+- **The warehouse is what the workshops hold.** Every workshop gives capacity by its level — 100,
+  200, 350 and on — and the house's warehouse is their sum. A second building is a second store,
+  and storage grows with the workshop, which is what gives the level a use. The residence no longer
+  fixes it: a ladder that decides how many buildings and how big each can be says capacity twice.
+  The table is calibration and moves with the economy.
 
 ## Identity
 
@@ -261,8 +271,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   a hundredth per advance is invisible until it is catastrophic.
 
 - **A workshop produces into a stock, and selling is an action.** Production credits goods, the
-  sale credits coin, never both. The stock has a capacity fixed by the house's residence — a
-  constant until the residence ladder lands — and it does not spoil; what reduces it is theft.
+  sale credits coin, never both. The stock has a capacity fixed by the house's workshops, and it
+  does not spoil; what reduces it is theft.
   Holding is a bet on the next price, and dumping a large stock moves the price down for
   everyone. This replaces the earlier rule that output was
   sold on production: that rule was chosen to count the output once, and the stock keeps that
@@ -281,10 +291,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   impossible.
 
 - **Six goods, three chains.** Wool into cloth, grain into bread, wood into planks. Three trades —
-  weaver, baker, carpenter — one chain each, and a person keeps one trade at a time but may learn
-  another, converting the workshop. The town eats bread, builds with planks and wears cloth, so
-  each chain has a buyer. Europe 1400 had sixty-nine goods; six is what a phone screen and twenty
-  houses can carry. Revisit when a seventh good arrives with a new trade.
+  weaver, baker, carpenter — one chain each. A workshop is bound to a trade, and a house may hold
+  several, even two of the same; there is no conversion. To change what the house makes, it builds
+  a workshop of the other trade and destroys the old one, and it can never destroy its last: the
+  trade of the last workshop is the house's livelihood. Building is the price of changing, which
+  keeps the market's signal a decision and not a tap. The town eats bread, builds with planks and
+  wears cloth, so each chain has a buyer. Europe 1400 had sixty-nine goods; six is what a phone
+  screen and twenty houses can carry. Revisit when a seventh good arrives with a new trade, or if
+  the cost of changing proves to freeze every house in its opening trade.
 
 - **The price is settled at the bells.** A half-day's net flow (sold minus bought) pushes the next
   price away from its reference, and the gap back closes a quarter at each bell, so a shock fades

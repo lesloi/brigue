@@ -59,7 +59,7 @@ describe('dormancy', () => {
     world.seats.maire = { personId: 'person-caron' };
     world.campaigns.maire = { caron: 2 };
     world.engagements = [
-      { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueAt: world.hour + 4 },
+      { id: 'engagement-caron', kind: 'site', houseId: 'caron', dueAt: world.hour + 4, work: 'residence' },
       { id: 'engagement-leclerc', kind: 'hearing', houseId: 'leclerc', dueAt: world.hour + 4 },
     ];
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
@@ -112,7 +112,7 @@ describe('dormancy', () => {
         ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
-        workshops: [{ good: 'grain', level: 1, workers: 1 }],
+        workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
         stock: {},
       };
       world.people[personId] = {
@@ -314,13 +314,16 @@ describe('the thirty-day deletion', () => {
     expect(body.world.house.treasuryCents).toBe(RULES.startingPurseCents);
     expect(body.world.house.workshops).toEqual([
       {
+        id: 'workshop-1',
         good: 'bread',
         level: 2,
-        workers: 2,
         input: 'grain',
         outputUnitsPerHour: 4,
         inputUnitsPerHour: 4,
-        wagesCentsPerHour: 240,
+        upkeepCentsPerHour: 240,
+        capacityUnits: 200,
+        canUpgrade: false,
+        upgradeHours: 3,
       },
     ]);
     expect(body.world.house.stock.grain).toBe(8);

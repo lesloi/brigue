@@ -1,6 +1,7 @@
 import type { ClientConfig, Pool, PoolClient } from 'pg';
 
-import type { Action, Event, GoodId, Seat, SeatId, World } from '@brigue/core';
+import { residenceOf, titleOf } from '@brigue/core';
+import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
   DuplicateActionError,
@@ -22,6 +23,7 @@ interface StateRow {
   hour: number;
   year: number;
   engagement_seq: number;
+  workshop_seq: number;
   hour_started_at: Date | string;
 }
 
@@ -60,8 +62,8 @@ export class PgWorldStore implements WorldStore {
       const { rows } = await client.query<{ id: string }>(`INSERT INTO towns (name) VALUES ($1) RETURNING id`, [name]);
       const id = Number(rows[0]?.id);
       await client.query(
-        `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, engagement_seq, hour_started_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, engagement_seq, workshop_seq, hour_started_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           id,
           world.formatVersion,
@@ -71,6 +73,7 @@ export class PgWorldStore implements WorldStore {
           world.hour,
           world.year,
           world.engagementSeq,
+          world.workshopSeq ?? 0,
           hourStartedAt,
         ],
       );
@@ -272,9 +275,9 @@ class PgWorldSession implements WorldSession {
     await clearWorld(this.client, this.townId);
     await writeWorld(this.client, this.townId, world);
     await this.client.query(
-      `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, hour_started_at = $6
+      `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, workshop_seq = $6, hour_started_at = $7
        WHERE town_id = $1`,
-      [this.townId, world.hour, world.year, world.rng, world.engagementSeq, hourStartedAt],
+      [this.townId, world.hour, world.year, world.rng, world.engagementSeq, world.workshopSeq ?? 0, hourStartedAt],
     );
     await appendEvents(this.client, this.townId, events);
   }
@@ -294,7 +297,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   }
 
   const state = await client.query<StateRow>(
-    `SELECT format_version, ruleset_version, seed, rng, hour, year, engagement_seq, hour_started_at
+    `SELECT format_version, ruleset_version, seed, rng, hour, year, engagement_seq, workshop_seq, hour_started_at
      FROM state
      WHERE town_id = $1
      FOR UPDATE`,
@@ -307,26 +310,24 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
 
   const [houses, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all([
     client.query(
-      `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, career, dormant FROM houses WHERE town_id = $1 ORDER BY id`,
+      `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, title, residence_level, career, dormant FROM houses WHERE town_id = $1 ORDER BY id`,
       [townId],
     ),
     client.query(
       `SELECT id, house_id, name, age, artisanat, parole, intrigue, alive FROM people WHERE town_id = $1 ORDER BY id`,
       [townId],
     ),
-    client.query(
-      `SELECT house_id, position, good, level, workers FROM workshops WHERE town_id = $1 ORDER BY house_id, position`,
-      [townId],
-    ),
+    client.query(`SELECT house_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY house_id, id`, [townId]),
     client.query(`SELECT house_id, good, units FROM stock WHERE town_id = $1 ORDER BY house_id, good`, [townId]),
     client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
     client.query(
       `SELECT id, position, title, sponsor_house_id, enacted_at FROM laws WHERE town_id = $1 ORDER BY position`,
       [townId],
     ),
-    client.query(`SELECT id, kind, house_id, due_at, position FROM engagements WHERE town_id = $1 ORDER BY position`, [
-      townId,
-    ]),
+    client.query(
+      `SELECT id, kind, house_id, due_at, work, trade, workshop_id, position FROM engagements WHERE town_id = $1 ORDER BY position`,
+      [townId],
+    ),
     client.query(
       `SELECT seat_id, house_id, closed, votes FROM campaigns WHERE town_id = $1 ORDER BY seat_id, house_id`,
       [townId],
@@ -355,6 +356,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     closedCampaigns: {},
     engagements: [],
     engagementSeq: row.engagement_seq,
+    workshopSeq: row.workshop_seq,
   };
 
   for (const house of houses.rows) {
@@ -366,6 +368,8 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       debtCents: house.debt_cents,
       favour: house.favour,
       prestige: house.prestige,
+      title: house.title as TitleId,
+      residenceLevel: house.residence_level,
       career: house.career,
       dormant: house.dormant,
       workshops: [],
@@ -375,9 +379,9 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
 
   for (const workshop of workshops.rows) {
     world.houses[workshop.house_id]?.workshops.push({
+      id: workshop.id,
       good: workshop.good,
       level: workshop.level,
-      workers: workshop.workers,
     });
   }
 
@@ -417,12 +421,16 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   }
 
   for (const engagement of engagements.rows) {
-    world.engagements.push({
-      id: engagement.id,
-      kind: engagement.kind,
-      houseId: engagement.house_id,
-      dueAt: engagement.due_at,
-    });
+    const base = { id: engagement.id, houseId: engagement.house_id, dueAt: engagement.due_at };
+
+    if (engagement.kind === 'hearing') {
+      world.engagements.push({ ...base, kind: 'hearing' });
+      continue;
+    }
+    // A site of the ladder says what it is for; a site stored before the ladder
+    // (ruleset 3 refuses the world anyway) has no work and is read as a house
+    // site, which is the one the old engine could hold.
+    world.engagements.push(siteOf(base, engagement.work, engagement.trade, engagement.workshop_id));
   }
 
   for (const campaign of campaigns.rows) {
@@ -454,6 +462,28 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
 }
 
 /**
+ * A site row back into the world's union. The columns are nullable in the
+ * table, so the reader is the one that decides what a missing `work` means.
+ */
+function siteOf(
+  base: { id: string; houseId: string; dueAt: number },
+  work: string | null,
+  trade: string | null,
+  workshopId: string | null,
+): Engagement {
+  switch (work) {
+    case 'build':
+      return { ...base, kind: 'site', work: 'build', trade: (trade ?? 'weaver') as Trade };
+    case 'upgrade':
+      return { ...base, kind: 'site', work: 'upgrade', workshopId: workshopId ?? '' };
+    case 'title':
+      return { ...base, kind: 'site', work: 'title' };
+    default:
+      return { ...base, kind: 'site', work: 'residence' };
+  }
+}
+
+/**
  * The town is small and written whole, so a save clears the tables and writes
  * them again: a house that disappeared, or a stock that fell to zero, cannot
  * leave a row behind the way an upsert would.
@@ -479,7 +509,20 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'houses',
-    ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige', 'career', 'dormant'],
+    [
+      'town_id',
+      'id',
+      'name',
+      'controller',
+      'treasury_cents',
+      'debt_cents',
+      'favour',
+      'prestige',
+      'title',
+      'residence_level',
+      'career',
+      'dormant',
+    ],
     houses.map((house) => [
       townId,
       house.id,
@@ -489,6 +532,8 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       house.debtCents,
       house.favour,
       house.prestige,
+      titleOf(house),
+      residenceOf(house),
       house.career,
       house.dormant,
     ]),
@@ -515,15 +560,15 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'workshops',
-    ['town_id', 'house_id', 'position', 'good', 'level', 'workers'],
+    ['town_id', 'house_id', 'position', 'id', 'good', 'level'],
     houses.flatMap((house) =>
       house.workshops.map((workshop, position) => [
         townId,
         house.id,
         position,
+        workshop.id,
         workshop.good,
         workshop.level,
-        workshop.workers,
       ]),
     ),
   );
@@ -552,13 +597,16 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'engagements',
-    ['town_id', 'id', 'kind', 'house_id', 'due_at', 'position'],
+    ['town_id', 'id', 'kind', 'house_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
     world.engagements.map((engagement, position) => [
       townId,
       engagement.id,
       engagement.kind,
       engagement.houseId,
       engagement.dueAt,
+      engagement.kind === 'site' ? engagement.work : null,
+      engagement.kind === 'site' && engagement.work === 'build' ? engagement.trade : null,
+      engagement.kind === 'site' && engagement.work === 'upgrade' ? engagement.workshopId : null,
       position,
     ]),
   );

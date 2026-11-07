@@ -133,7 +133,7 @@ describe('the simulation core', () => {
       ...base.houses.fournier,
       id: 'quint',
       name: 'Quint',
-      workshops: [{ good: 'grain', level: 1, workers: 1 }],
+      workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
       stock: {},
     };
     world.people['person-quint'] = {
@@ -273,7 +273,11 @@ describe('the simulation core', () => {
     ] as const) {
       // Arrange: an engagement due at that hour.
       const world = town(SEED);
-      world.engagements = [{ id: `engagement-${kind}`, kind, houseId: 'leclerc', dueAt }];
+      world.engagements = [
+        kind === 'site'
+          ? { id: 'engagement-site', kind, houseId: 'leclerc', dueAt, work: 'residence' }
+          : { id: 'engagement-hearing', kind, houseId: 'leclerc', dueAt },
+      ];
 
       // Act: run to the due hour, then one tick more.
       const early = play(world, dueAt - world.hour);
@@ -293,7 +297,7 @@ describe('the simulation core', () => {
     // moves only the wall clock, so this is the defensive path, not the normal one.
     const world = town(SEED);
     world.hour = 900;
-    world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'leclerc', dueAt: 800 }];
+    world.engagements = [{ id: 'engagement-late', kind: 'site', houseId: 'leclerc', dueAt: 800, work: 'residence' }];
 
     // Act
     const { world: after, events } = tick(world);
@@ -329,11 +333,12 @@ describe('the simulation core', () => {
     expect(campaigned.world.campaigns).toEqual({});
   });
 
-  it('turns unpaid wages into a debt instead of erasing them', () => {
+  it('turns unpaid upkeep into a debt instead of erasing it', () => {
     const world = town(SEED);
     world.houses.leclerc.treasuryCents = 0;
     world.houses.leclerc.stock = {};
-    world.houses.leclerc.workshops = [{ good: 'wool', level: 0, workers: 3 }];
+    world.houses.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 3 }];
+    const upkeep = 3 * RULES.upkeepPerWorkshopLevelCents;
 
     const { world: after, events } = tick(world);
 
@@ -342,10 +347,10 @@ describe('the simulation core', () => {
         type: 'house.penniless',
         audience: { houseId: 'leclerc' },
         houseId: 'leclerc',
-        shortfallCents: 360,
+        shortfallCents: upkeep,
       }),
     );
-    expect(after.houses.leclerc.debtCents).toBe(360);
+    expect(after.houses.leclerc.debtCents).toBe(upkeep);
   });
 
   it('refuses an action from a dormant house instead of running it', () => {
@@ -378,7 +383,7 @@ describe('the simulation core', () => {
     house.dormant = true;
     // A workshop with no input, so any sale at all would be the dormant house
     // running when it must not.
-    house.workshops = [{ good: 'wool', level: 2, workers: 2 }];
+    house.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
     house.stock = {};
     const treasuryCents = house.treasuryCents;
 
@@ -412,10 +417,10 @@ describe('the simulation core', () => {
 
     // Assert
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'house.wages_paid', houseId: 'caron', audience: { houseId: 'caron' } }),
+      expect.objectContaining({ type: 'house.upkeep_paid', houseId: 'caron', audience: { houseId: 'caron' } }),
     );
-    expect(forLeclerc.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toEqual([]);
-    expect(forCaron.filter((event) => event.type === 'house.wages_paid' && event.houseId === 'caron')).toHaveLength(1);
+    expect(forLeclerc.filter((event) => event.type === 'house.upkeep_paid' && event.houseId === 'caron')).toEqual([]);
+    expect(forCaron.filter((event) => event.type === 'house.upkeep_paid' && event.houseId === 'caron')).toHaveLength(1);
   });
 
   it('ticks a town of twenty houses', () => {
@@ -429,7 +434,7 @@ describe('the simulation core', () => {
         ...base.houses.fournier,
         id,
         name: `Maison ${index}`,
-        workshops: [{ good: 'grain', level: 1, workers: 1 }],
+        workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
         stock: {},
       };
       world.people[personId] = {
