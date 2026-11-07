@@ -8,7 +8,7 @@
 
 ## What it is
 
-- **Three chapters.** You learn a trade, you settle a house, then the town opens: twelve council
+- **Three chapters.** You learn a trade, you settle a dynasty, then the town opens: twelve council
   seats, an election every day, lawsuits, titles, heirs.
 - **The council is the game.** Twelve seats in a pyramid. Each one grants a concrete right, not a
   bonus: the mayor sets the taxes and the agenda, the provost defines crimes and seizes goods, the
@@ -16,7 +16,7 @@
   exceptional measures, and they judge.
 - **The law is split.** Each office fixes its own domain alone; the council votes only the big
   things: a work, a loan, a recoinage, an amnesty, a requisition, the gates, an ennoblement.
-- **The court is a jury.** Five houses drawn at random, a secret vote, a judge who presides. A
+- **The court is a jury.** Five dynasties drawn at random, a secret vote, a judge who presides. A
   forged proof is a crime, and the clerk is the one who examines it.
 - **The market bites back.** A workshop produces into a warehouse; selling is a decision; the
   price you see is the town you were; and a full store is a target.
@@ -27,13 +27,13 @@
 Early, and in two layers.
 
 - **The design** is in [docs/DESIGN.md](./docs/DESIGN.md) and [docs/DECISIONS.md](./docs/DECISIONS.md).
-  It describes the target game: twelve seats, a person who holds an office, a house that holds a
+  It describes the target game: twelve seats, a person who holds an office, a dynasty that holds a
   career, a stock, a court, titles, and a day-long mandate.
 - **The code** implements the clock and the economy: one real hour is one town hour, twenty-four
   hours a year, and a scrutiny at the end of each year with every seat up; the town advances on a
   scheduler, and the two bells settle the prices. Five seats today, six goods in three chains, a
   warehouse with a cap, a sale made by an action, and a trade chosen at creation. The three
-  finished trades are AI houses; the raw goods are bought at the market. The town lives in
+  finished trades are AI dynasties; the raw goods are bought at the market. The town lives in
   Postgres tables and its events in a journal. It is covered by tests, and it is the
   format that replaces the week-based one — it deletes the test towns and starts the version at
   one; no world is in production.
@@ -73,7 +73,7 @@ When a format change cannot migrate the old schema, the database is reset instea
 --filter @brigue/server reset` drops the town and rebuilds the schema from the migrations,
 carrying the book of kings and the accounts across. Run it with the application stopped: it
 drops the schema under any writer. A carried account keeps its token and its player id and
-loses its house; the next visit asks for a trade and gives it one. It shows what it would
+loses its dynasty; the next visit asks for a trade and gives it one. It shows what it would
 destroy and asks for `yes` on a terminal; `--force` skips the question, and without a terminal
 it refuses rather than guess. `--check` shows the same and changes nothing. `--full` deletes
 the book of kings and the accounts as well, and is the only reset that touches them. Its test

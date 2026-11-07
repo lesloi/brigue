@@ -17,7 +17,7 @@ sell the finished good at the hall, and you discover that the price you see is t
 were: what everyone sells this hour moves what you will get after the next bell. The goal is a workshop
 that produces without you watching it, and a sense of when to sell. About an hour.
 
-**II — The house.** You settle. A better residence, a title, a first file at the clerk's office.
+**II — The dynasty.** You settle. A better residence, a title, a first file at the clerk's office.
 The town hall is visible and locked: you are told the office needs a standing you do not have.
 About two hours.
 
@@ -34,39 +34,39 @@ Two rules keep the chapters honest:
 ## The town
 
 One world holds several towns. A newcomer takes a free place in the least-filled town that has
-one — a human house no player has taken, or a new human house while the town is below twenty
-houses — the oldest breaking a tie, and a town is founded only when every town is full. A house a
+one — a human dynasty no player has taken, or a new human dynasty while the town is below twenty
+dynasties — the oldest breaking a tie, and a town is founded only when every town is full. A dynasty a
 player has taken stays theirs while it is silent, and a revoked token does not give it away. A
 town is named when it is founded: a place name is drawn from a list; a name may come back, but
 the id is assigned by the database and never does. A town whose humans have all gone is never
 offered to a newcomer; it is on its way out.
 
-Twenty houses at most, three of them AI at the opening. The town is founded when its first player
-joins: three AI houses and the first player's house are created together, so no town waits empty
-for someone. That house is offered a name, which its player may keep or replace at once, and may
+Twenty dynasties at most, three of them AI at the opening. The town is founded when its first player
+joins: three AI dynasties and the first player's dynasty are created together, so no town waits empty
+for someone. That dynasty is offered a name, which its player may keep or replace at once, and may
 buy again later. Its offices do not exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
 A human who arrives later chooses a trade and takes a free place with the same kit as the first
-house — the workshop, eight units of its input and a purse — and no seat or career.
-The three AI houses are the finished trades, one per trade. Wool, grain and wood are bought at
-the market at the current price: no house produces them, so every chain is fed whatever the
+dynasty — the workshop, eight units of its input and a purse — and no seat or career.
+The three AI dynasties are the finished trades, one per trade. Wool, grain and wood are bought at
+the market at the current price: no dynasty produces them, so every chain is fed whatever the
 town's trades. No AI is created or removed after the opening: the three are the composition.
 
-A player who stops playing leaves a **dormant** house. It keeps its money, its seat and its
+A player who stops playing leaves a **dormant** dynasty. It keeps its money, its seat and its
 grudges, but nothing runs: the workshop is idle, the stock is still a target, and the holder
 votes no more. The holder stays a candidate by default, so a challenger turns the next election
-into a normal contest. After thirty days without a visit, the house is deleted and the token with
-it — no return, no vacation mode — and, when no human house is left, the town goes too. A player
+into a normal contest. After thirty days without a visit, the dynasty is deleted and the token with
+it — no return, no vacation mode — and, when no human dynasty is left, the town goes too. A player
 who wants to leave for good asks for the deletion: it is scheduled a week out, the player can do
 nothing until then, and the token stays valid so that reconnecting offers to come back. When the
-week is over the house and its queued actions go, and the town with its last human. The server
+week is over the dynasty and its queued actions go, and the town with its last human. The server
 checks on its own rhythm; no visit is needed.
 
-The cap is the point. Twenty houses for twelve seats is scarcity; twelve seats for twenty houses
+The cap is the point. Twenty dynasties for twelve seats is scarcity; twelve seats for twenty dynasties
 is a queue.
 
-The book of kings, kept at the clerk's office, lists the crowned: the player, the house, the
+The book of kings, kept at the clerk's office, lists the crowned: the player, the dynasty, the
 person, the instant and the time it took. It is the long game, and the only record that crosses a
 reset.
 
@@ -85,9 +85,9 @@ Twelve seats in a pyramid: one mayor, two great offices, four small ones, five w
   exceptional measures, and jury duty.
 
 Every office is elected, all of them on the same day, every day. A person holds one office; to
-climb, they give up the one they have. **The career is the gate**: to stand for a floor, the house
+climb, they give up the one they have. **The career is the gate**: to stand for a floor, the dynasty
 must have held an office of a lower floor, and one mandate is enough. The career belongs to the
-house, not the person: the heir keeps it one floor lower. A mayor's son may stand for the great
+dynasty, not the person: the heir keeps it one floor lower. A mayor's son may stand for the great
 offices, not the mayoralty.
 
 A vacant seat blocks nothing. Its power is simply unavailable, as it was in Europe 1400: no
@@ -105,22 +105,22 @@ treasurer sets the succession duty; the clerk decides which complaints are recei
 publishes and defines libel; the master of the hall sets the places and the seal.
 
 **By vote, for exceptional measures**: a public work, a public loan, a recoinage, an amnesty, a
-requisition, closing the gates, ennobling a house. Seven seats must be present; the majority is
+requisition, closing the gates, ennobling a dynasty. Seven seats must be present; the majority is
 of the votes cast, abstentions excluded, with at least four yes. The vote is public: the town
 knows who voted for whom. The mayor convenes; four of the seven offices with a domain can force
 a sitting.
 
-**Absence.** A dormant house keeps its seat but casts no vote; a sitting counts only the seats
-that answer, so a town that sleeps loses its quorum before it loses its houses. A deliberate
+**Absence.** A dormant dynasty keeps its seat but casts no vote; a sitting counts only the seats
+that answer, so a town that sleeps loses its quorum before it loses its dynasties. A deliberate
 boycott of six seats blocks the sitting the same way.
 
-Every measure is carried by a house, and its name stays on the law.
+Every measure is carried by a dynasty, and its name stays on the law.
 
 ## The court
 
 A complaint is filed at the clerk's office with evidence. A visible crime — blows, a threat, an
 insult — leaves a proof to its victim; a secret one leaves a proof only when it fails; the
-provost's investigation can find the rest. **Five houses drawn at random**,
+provost's investigation can find the rest. **Five dynasties drawn at random**,
 excluding the parties, sit as a jury and vote in secret. **The judge is the office that did not
 investigate** — the provost judges what the clerk built, and the other way round — so no one
 defines a crime, gathers the proofs and sets the price. The judge does not vote; he fixes the
@@ -130,7 +130,7 @@ The sentence sits between a floor and a ceiling set by the law that defines the 
 evidence sets where in that range it starts, and the judge moves it. The degree fixes the scale:
 minor is five per cent and one day, medium ten and two, serious twenty and three. Three penalties
 exist: a fine, the loss of a degree of title, and prison. A medium sentence is two days and a
-tenth of the estate. Prison is a political death, not a pause: the prisoner keeps his house and his trade, but
+tenth of the estate. Prison is a political death, not a pause: the prisoner keeps his dynasty and his trade, but
 cannot stand, vote, judge or buy a title, and the office he held is suspended until the next
 election. There is no exile.
 
@@ -141,7 +141,7 @@ is money and intrigue, for a few hours, against one category of acts; discovered
 for both. A juror who is dormant when the vote comes is replaced by another draw; one does not
 refuse to serve.
 
-The jury is where the eight houses without a seat have power. It is also the only secret vote in
+The jury is where the eight dynasties without a seat have power. It is also the only secret vote in
 the game: one may bribe a juror, never know whether the money worked.
 
 ## The economy
@@ -153,12 +153,12 @@ planks and wears cloth. Holding a good for a better bell is a bet: the price is 
 town sold and bought since the last bell, pulled a quarter of the way back to its reference at
 each bell, and jittered by chance. The raw goods are the exception: they are bought at the market, and their price drifts by
 chance and pulls home, never from the town's flow. Dumping a large stock moves the price down for everyone, including the
-dumper's neighbour. The AI houses sell their whole stock every hour at the market price: they
+dumper's neighbour. The AI dynasties sell their whole stock every hour at the market price: they
 take the price, they do not time it, so the flow stays regular and the price readable. The
 Marché marks the prices that have left their band around the reference, so the flow is visible,
 not only described.
 
-The warehouse's capacity is what the house's workshops hold: every workshop gives 100 units at
+The warehouse's capacity is what the dynasty's workshops hold: every workshop gives 100 units at
 its first level, 200 at its second, 350 at its third, and more as it grows, so a second building
 is a second store. There is no spoilage. What reduces a stock is theft: a secret coup resolved
 two hours later, the thief's intrigue against the target's defence. A failure leaves a proof at the clerk's office; a success leaves no automatic proof,
@@ -171,11 +171,11 @@ act and fades with the hours.
 Three attributes, raised by use: **artisanat, parole, intrigue**. Returns diminish, and the
 ceiling is set by the trade and the title. They belong to the person and die with them.
 
-A workshop is bound to one trade — weaver, baker, carpenter — and a house may hold several,
-even two of the same trade. There is no conversion: to change what the house makes, it builds
+A workshop is bound to one trade — weaver, baker, carpenter — and a dynasty may hold several,
+even two of the same trade. There is no conversion: to change what the dynasty makes, it builds
 another workshop and destroys the old one, and it can never destroy its last. A workshop is
 built at the first level; each further level takes longer, and it produces nothing while it
-grows. A house pays an upkeep for every workshop that runs, one level's share an hour, and
+grows. A dynasty pays an upkeep for every workshop that runs, one level's share an hour, and
 nothing for a workshop under works.
 
 The **residence** is one ladder: the title opens a level, money pays for it, and the level sets
@@ -189,7 +189,7 @@ work, a banquet. Crimes take it away.
 
 Twelve titles: roturier, bourgeois, notable, patricien, écuyer, chevalier, baron, vicomte, comte,
 marquis, duc, prince. Each gives prestige, opens a level of residence and a ceiling on a
-workshop's level, and some offices. The title and the residence belong to the house; the title
+workshop's level, and some offices. The title and the residence belong to the dynasty; the title
 **falls one degree at death**. Prestige as the screen shows it is the title's, plus the
 residence's, plus what service earned — and only the service is capped by the residence.
 
@@ -199,7 +199,7 @@ hundred and ten. The median death is around sixty-two; one in two hundred reache
 hundred is a legend. The roll happens at the midnight bell, whether or not the player is
 connected.
 
-The heir keeps the house — money, workshops, stock, grudges — keeps the career one floor lower,
+The heir keeps the dynasty — money, workshops, stock, grudges — keeps the career one floor lower,
 loses the seats,
 drops one title, one residence level and one level from every workshop, pays about fifteen per
 cent of the estate in duty and funerals, and starts with
@@ -208,17 +208,17 @@ the player choose the heir; death takes the choice away.
 
 ## The world model
 
-A house is a place, a person holds an office, and every house has a controller:
+A dynasty is a place, a person holds an office, and every dynasty has a controller:
 
 ```
-House    = { id, name, controller, treasury, title, residence, prestige, favour, career, workshops, stock, grudges }
+Dynasty    = { id, name, controller, treasury, title, residence, prestige, favour, career, workshops, stock, grudges }
 Workshop = { id, trade, level }
-Person = { id, houseId, name, age, attributes, alive }
+Person = { id, dynastyId, name, age, attributes, alive }
 Seat   = { personId | null }
 ```
 
-The simulation never asks who controls a house. Solo, multiplayer, and a dormant house are the
-same code: the server assigns seats, and a dormant house keeps its history without being played.
+The simulation never asks who controls a dynasty. Solo, multiplayer, and a dormant dynasty are the
+same code: the server assigns seats, and a dormant dynasty keeps its history without being played.
 
 ## The clock
 
@@ -234,7 +234,7 @@ already passed the instant, and the event carries both instants: late rather tha
 
 ## Screens
 
-- **Ville** — the home screen. The town scene, your house, the journal, the laws in force
+- **Ville** — the home screen. The town scene, your dynasty, the journal, the laws in force
   and who carried them, and the register of what falls due.
 - **Dynastie** — buildings, residence, family, heirs, titles. The tab that opens it keeps the
   label Maison.
@@ -251,7 +251,7 @@ a map of places, drawn in seals, serves as navigation.
 ## The floors above the town (next format)
 
 Not built. The town's council is the first floor; the two above it are written here so their
-offices have names before they have code. Both are elected by every house, at the same midnight
+offices have names before they have code. Both are elected by every dynasty, at the same midnight
 scrutiny, with the same roll and the same campaign bonus; only the title required, the career
 required and the price of a campaign change.
 
@@ -286,4 +286,4 @@ lesser offices need a marquis's title; the chancelier and the argentier, a duke'
 ## Not decided yet
 
 - The range each crime's law gives the judge.
-- Whether twelve seats for twenty houses, with an election every day, keep the council contested.
+- Whether twelve seats for twenty dynasties, with an election every day, keep the council contested.

@@ -12,73 +12,73 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   the installed feel is not enough in daily use.
 
 - **One shared world of several towns, not one world per player.** The world holds several towns;
-  a town is a shared object: twelve seats, held by people, each house controlled by an AI or a
+  a town is a shared object: twelve seats, held by people, each dynasty controlled by an AI or a
   human. Solo is the same code with every seat but yours on AI. A town — or a world — per player
   would make multiplayer a rewrite instead of an assignment. The seat is held by a **person**, not
-  a house; that is what makes a career and a succession possible. Revisit only if the town proves
+  a dynasty; that is what makes a career and a succession possible. Revisit only if the town proves
   too small to hold a solo player's pace.
 
 - **A join takes the first free place; a full world gets a new town.** The towns are visited
-  least filled first — the one that needs people most — and the oldest breaks a tie. A human house
-  no player has ever taken is a free place, and a town below twenty houses takes a new human
-  house; a town whose humans have all gone is left to its deletion, never given to a newcomer.
-  When no town has a place, the join founds one — three AI houses and the newcomer's house — and
+  least filled first — the one that needs people most — and the oldest breaks a tie. A human dynasty
+  no player has ever taken is a free place, and a town below twenty dynasties takes a new human
+  dynasty; a town whose humans have all gone is left to its deletion, never given to a newcomer.
+  When no town has a place, the join founds one — three AI dynasties and the newcomer's dynasty — and
   names it by drawing from a list of places. A name may come back; its id, assigned by the
   database, never does.
 
-- **A silent house is forgotten, not robbed; a human who arrives takes an AI's place.** Silence
-  is a state of the town, not a punishment: a house with no visit for a few days — three,
+- **A silent dynasty is forgotten, not robbed; a human who arrives takes an AI's place.** Silence
+  is a state of the town, not a punishment: a dynasty with no visit for a few days — three,
   calibrated in `PACING` — goes dormant. It keeps its money, its stock, its grudges and its heir,
   and nothing is taken from it; a rival gains nothing from the door being closed. What it loses is
   standing: the workshop idles, it stands for nothing and votes for nothing, so its seat is
   contested without it, and its prestige and favour decay while it is silent. The town is then
-  governed by the houses that are there, which is the point of a shared council. After thirty days
-  without a visit the house is deleted and the token with it: no return, no vacation mode, and no
-  AI ever plays it. When the last human house goes, the town goes with it: the next player starts
+  governed by the dynasties that are there, which is the point of a shared council. After thirty days
+  without a visit the dynasty is deleted and the token with it: no return, no vacation mode, and no
+  AI ever plays it. When the last human dynasty goes, the town goes with it: the next player starts
   a new town, and only the book of kings crosses. The scheduler applies the
   same silence rule on every pass, so a town with no player expires without waiting for a visit.
-  The deletion stays an edge rule. A revoked token does not free the house: it waits for its
+  The deletion stays an edge rule. A revoked token does not free the dynasty: it waits for its
   owner until the deletion, like a silent one, and no arrival inherits its purse, its stock or
   its seat. The reverse is asymmetric: a human arriving later chooses a trade, starts with the
-  same kit as the first house, and holds no seat or career. No AI is created after the opening:
-  the three AI houses are the opening composition. An absence must not be a betrayal, and an
+  same kit as the first dynasty, and holds no seat or career. No AI is created after the opening:
+  the three AI dynasties are the opening composition. An absence must not be a betrayal, and an
   arrival must not inherit a mayoralty.
 
-- **The town is capped at twenty houses, three of them AI.** The cap is what makes a seat scarce:
-  twenty houses for twelve seats is a contest, and the council only becomes political once the
-  town outgrows its seats. Above the town, the same houses compete for seven seats of county and
+- **The town is capped at twenty dynasties, three of them AI.** The cap is what makes a seat scarce:
+  twenty dynasties for twelve seats is a contest, and the council only becomes political once the
+  town outgrows its seats. Above the town, the same dynasties compete for seven seats of county and
   seven of kingdom, shared across their towns: the higher the tier, the scarcer the seat. The AI
   cap keeps the town human: a shared world is mostly people, and a solo world is three AI and one
-  human house. The town opens with three AI houses, one per finished trade; the raw goods come
-  at the market, not from a house. The three are the composition: no AI is created or removed
-  after the opening. Revisit if a whole kingdom proves too small at twenty houses a town.
+  human dynasty. The town opens with three AI dynasties, one per finished trade; the raw goods come
+  at the market, not from a dynasty. The three are the composition: no AI is created or removed
+  after the opening. Revisit if a whole kingdom proves too small at twenty dynasties a town.
 
 - **The player chooses a trade at creation; the raw goods are bought at the market.** At the first launch,
   every player chooses one of three trades: weaver (wool into cloth),
-  baker (grain into bread), carpenter (wood into planks). The house starts with a workshop of
-  that trade; no assignment balances the town's mix. No house is a political
-  role: none holds a seat or a vote at the start. Every house begins with the same kit — a
+  baker (grain into bread), carpenter (wood into planks). The dynasty starts with a workshop of
+  that trade; no assignment balances the town's mix. No dynasty is a political
+  role: none holds a seat or a vote at the start. Every dynasty begins with the same kit — a
   workshop of its trade, eight units of its input and a purse, because its first sale is hours
-  away. The town is built without the first house: it is added when the first player joins, so no
+  away. The town is built without the first dynasty: it is added when the first player joins, so no
   town waits empty for someone. Its name is suggested, prefilled at the creation and free to
   edit; the id is opaque and never derived from it. A human who arrives
-  later joins with the same kit, in a free place; the first house's place, re-founded after a
+  later joins with the same kit, in a free place; the first dynasty's place, re-founded after a
   deletion, keeps it too. Wool, grain and wood are bought at the market at the current price; no
-  house produces them, so every chain is fed whatever the town's trades. The three AI houses are
+  dynasty produces them, so every chain is fed whatever the town's trades. The three AI dynasties are
   the finished trades, one per trade.
   The price signal and a third workshop of the good the town lacks let a player move into a
-  missing finished good: a house of weavers can build a bakery once its residence holds it. A town
+  missing finished good: a dynasty of weavers can build a bakery once its residence holds it. A town
   of weavers will have cheap cloth and dear bread, which is the market working, not a bug.
 
 - **The town's council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and
   each floor holds a different right rather than a stronger version of the one below. One office per
   person, all elected on the same day, every day; to climb, a person gives up the office they
-  hold. **The career is the gate**: standing for a floor requires the house to have held an
-  office of a lower floor, and one mandate is enough. The career belongs to the house, and the
+  hold. **The career is the gate**: standing for a floor requires the dynasty to have held an
+  office of a lower floor, and one mandate is enough. The career belongs to the dynasty, and the
   heir keeps it one floor lower. The five
   seats at the base hold no lever: salary, prestige, a vote on exceptional measures, and jury
   duty. A vacant seat blocks nothing — the power is simply unavailable, as in Europe 1400 — so a
-  young town has no mayor for its first four elections. Revisit if twelve seats for twenty houses
+  young town has no mayor for its first four elections. Revisit if twelve seats for twenty dynasties
   proves too generous.
 
 - **Three tiers above the loom: the town, the county, the kingdom.** Twelve seats in the town,
@@ -86,21 +86,21 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   king the kingdom. Each tier holds a right the tier below cannot exercise, never a stronger
   version of it: the town fixes prices, taxes, crimes, the market and the court; the county holds
   the tolls, the roads, the granary and the appeal against a town; the kingdom holds the coin.
-  The pyramid of twelve is the lowest tier, not the whole house. None of it above the town is in
+  The pyramid of twelve is the lowest tier, not the whole dynasty. None of it above the town is in
   the code, and the town comes first: the county and the kingdom wait until the town has a council
   that votes and a court. Revisit if the tiers end up voting the same thing three times.
 
-- **One franchise everywhere.** Every house votes at every tier, at the same scrutiny, with the
+- **One franchise everywhere.** Every dynasty votes at every tier, at the same scrutiny, with the
   same roll and the same campaign bonus; what changes with the tier is the title required, the
   career required and the price of a campaign. A narrower college — mayors electing the county,
-  counts electing the king — would disenfranchise the house that has just lost, and the career
+  counts electing the king — would disenfranchise the dynasty that has just lost, and the career
   gate already forces the ladder. The price of a campaign rises with the tier and the favour
-  spent on one is never refunded: buying a crown must ruin a house.
+  spent on one is never refunded: buying a crown must ruin a dynasty.
 
 - **Titles are bought, and lost by a court, not by a vote.** Twelve degrees, from roturier to
   prince, bought at the town hall: they cost gold, give prestige, open a level of residence and
   some offices. Money buys the ladder; the court can strip a degree as a sentence; death drops the
-  house one degree. A majority that could strip a title would be a weapon, and a judge is a
+  dynasty one degree. A majority that could strip a title would be a weapon, and a judge is a
   defence. Revisit if titles become a pure money sink.
 
 - **Favour is earned by service and by visible spending.** A mandate held, a jury served, a vote
@@ -110,26 +110,26 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   Revisit if one speed swallows the other.
 
 - **The book of kings is the only record that crosses a reset.** One line per reign at the
-  clerk's office: the player, the house, the person, the instant of the crowning and the time it
-  took to crown a king. No register of houses crosses; the town's own houses are the register
+  clerk's office: the player, the dynasty, the person, the instant of the crowning and the time it
+  took to crown a king. No register of dynasties crosses; the town's own dynasties are the register
   while it lives, and they go with it. The crown follows the player, not the name: a name taken
-  again inherits nothing. Revisit if the long game needs the houses' columns.
+  again inherits nothing. Revisit if the long game needs the dynasties' columns.
 
 - **The only ending is a won crown, and the crown reigns a day.** No season ends on a clock and no
-  wipe takes the book: a house is reset by death, one at a time, so the town turns over without
+  wipe takes the book: a dynasty is reset by death, one at a time, so the town turns over without
   being erased. The town ends when a king is crowned: the kingdom election is the last election,
   and its winner reigns one real day — a town year — before the world closes. The day is a
   formality: he grants nothing, and the town lives as it did. Nobody can depose him: there is no
   plot and no counter-power, because the season is already over.
   Neither bell of that last day renews anything — the seal takes their place — and it opens a new
-  town with the same names. What crosses is the book of kings: the player, the house, the person,
+  town with the same names. What crosses is the book of kings: the player, the dynasty, the person,
   the instant of the crowning and the time it took. The crown follows the player, not the name: a
   name taken again inherits nothing. Revisit if the last election is decided before it starts, or
   if the day goes unwatched.
 
 - **The residence is one ladder.** The title opens a level, money pays for it, and the level sets
   the prestige cap, the defence of the stock and the number of workshops (1,1,2,2,2,3,3,3,3,4,4,4).
-  Three separate ladders would be three things to read on a phone; one says what the house can
+  Three separate ladders would be three things to read on a phone; one says what the dynasty can
   hold, which is what chapter II must teach. The title and the level are two purchases, the degree
   first: one purchase would make the title and the residence the same object and leave "standing"
   with nothing of its own. A title is obtained at the next noon or midnight, never at once: it is
@@ -137,7 +137,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   if a level stops meaning anything.
 
 - **The warehouse is what the workshops hold.** Every workshop gives capacity by its level — 100,
-  200, 350 and on — and the house's warehouse is their sum. A second building is a second store,
+  200, 350 and on — and the dynasty's warehouse is their sum. A second building is a second store,
   and storage grows with the workshop, which is what gives the level a use. The residence no longer
   fixes it: a ladder that decides how many buildings and how big each can be says capacity twice.
   The table is calibration and moves with the economy.
@@ -149,26 +149,26 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   One opaque 256-bit secret,
   stored hashed, shown once, with no email, no password and no recovery. What an account with
   credentials would promise — a way back — is exactly what this withholds, and the interface
-  states the consequence without softening it: without the account, the house cannot be found
+  states the consequence without softening it: without the account, the dynasty cannot be found
   again. The account is the whole identity,
   which is a fair price for zero sign-up. A player who wants to
   leave for good asks for the deletion: it is scheduled a week out, the player can do nothing
   until the deadline, the account stays valid so that reconnecting offers to come back, and when
-  the week is over the scheduler erases the account, the house and its queued actions — with the
+  the week is over the scheduler erases the account, the dynasty and its queued actions — with the
   town when it was the last human. Silence is the other exit, and it
   waits thirty days.
   Revisit if the game is ever opened to strangers.
 
-- **The token is bound to a house, and that binding lives outside the world.** A `players` table
-  holds the token hash, the world, the house, a revocation date and the last visit. The binding
+- **The token is bound to a dynasty, and that binding lives outside the world.** A `players` table
+  holds the token hash, the world, the dynasty, a revocation date and the last visit. The binding
   is not part of the world because the world is versioned, replayed and hashed; a login is not a
   game rule, and a format change must never be able to lock a player out. The last visit lives
   there for the same reason: the thirty-day deletion is an edge rule, not a simulation rule, and
-  it must happen whether or not the town is being played. A reset takes the house and keeps the
+  it must happen whether or not the town is being played. A reset takes the dynasty and keeps the
   account, so the binding may be empty between the two: the token is the identity, and only an
   explicit revoke ends it. Authorisation is checked once, at the edge, before the world is
-  loaded. One live token per house for now, enforced by a partial unique index; the release that
-  allows several tokens per house lifts it and adds a revoke-all.
+  loaded. One live token per dynasty for now, enforced by a partial unique index; the release that
+  allows several tokens per dynasty lifts it and adds a revoke-all.
 
 ## State
 
@@ -218,19 +218,25 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new
   `formatVersion`; a world of another format is refused, never guessed. A world with a registered
   migration is converted; one without is not deleted in silence: the reset names what it will
-  destroy and refuses until an operator confirms it. The format that ships next is
-  the first: it deletes the test towns, the earlier formats and their migrations, and starts
-  `formatVersion` and `rulesetVersion` at one. Nothing in them is worth carrying, and a version
+  destroy and refuses until an operator confirms it. The format in the code is the second: it
+  renames the world's `house` fields to `dynasty`, with no migration, because the towns are test
+  towns and the reset below is how a database crosses; `rulesetVersion` stays where it was, since
+  the rules did not move, only the names. Two names keep Maison and a later pass must not "fix"
+  them: the tab that opens the dynasty's screen, and the residence level of that name, which is a
+  building. A database crosses with that reset, run before the
+  rollout is approved; `migrate` is not the path, since the migration files were renamed in place
+  and the gate would report them missing on a database that has them under their old names.
+  Nothing in a test town is worth carrying, and a version
   number that records a history nobody can read is a cost, not a safeguard. Once a town has
   players whose history matters, a breaking change ships a migration by default.
 
-  This first format resets with `pnpm --filter @brigue/server reset`: the schema is dropped and
-  rebuilt from the migrations, and the book of kings and the accounts stay. `--check` shows what
+  A reset (`pnpm --filter @brigue/server reset`) drops the schema and rebuilds it from the
+  migrations, and the book of kings and the accounts stay. `--check` shows what
   would go, `--force` skips the question, and otherwise an operator reads the same report and
   answers `yes` on a terminal; without one, it refuses. A full reset, with `--full`, deletes the
   book and the accounts too and is the only one that touches them. A carried account keeps its
-  token, its player id and its dates, and loses its town and its house: the next visit asks for a
-  trade, which gives it a house again — the first player to come back founds the town, the others
+  token, its player id and its dates, and loses its town and its dynasty: the next visit asks for a
+  trade, which gives it a dynasty again — the first player to come back founds the town, the others
   take a place. A scheduled deletion keeps its deadline, and the scheduler erases the account
   when it passes.
 
@@ -242,7 +248,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 ## Simulation
 
 - **The core is pure, deterministic and clock-free.** One seed in, one world out: the town is
-  built from the seed, and the first house is added when its player joins with the trade that
+  built from the seed, and the first dynasty is added when its player joins with the trade that
   player chose. Two towns from the same seed can therefore start in different chains, and a seed
   alone does not rebuild a playable town. A stored world carries the trade in its workshops. A test replays two hundred advances and asserts the same state hash,
   and another fails if `Math.random` or `Date.now` ever enters `packages/core`. Everything else
@@ -271,7 +277,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   a hundredth per advance is invisible until it is catastrophic.
 
 - **A workshop produces into a stock, and selling is an action.** Production credits goods, the
-  sale credits coin, never both. The stock has a capacity fixed by the house's workshops, and it
+  sale credits coin, never both. The stock has a capacity fixed by the dynasty's workshops, and it
   does not spoil; what reduces it is theft.
   Holding is a bet on the next price, and dumping a large stock moves the price down for
   everyone. This replaces the earlier rule that output was
@@ -285,20 +291,20 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   the mayor and commanded by the provost, sets the chance that even a clean theft leaves a trace,
   and a bought provost can look the other way. The guard defends no stock: it makes theft visible,
   which threatens the thief with the court instead of adding a second ladder of defence. Each
-  hostile act a house absorbs raises its shield, which fades with the hours, so the first blow is
+  hostile act a dynasty absorbs raises its shield, which fades with the hours, so the first blow is
   easy and the fifth is almost impossible. Spoilage would have been a clock; theft is a decision
   by someone, and it makes a full warehouse a target. Revisit if the shield makes a vendetta
   impossible.
 
 - **Six goods, three chains.** Wool into cloth, grain into bread, wood into planks. Three trades —
-  weaver, baker, carpenter — one chain each. A workshop is bound to a trade, and a house may hold
-  several, even two of the same; there is no conversion. To change what the house makes, it builds
+  weaver, baker, carpenter — one chain each. A workshop is bound to a trade, and a dynasty may hold
+  several, even two of the same; there is no conversion. To change what the dynasty makes, it builds
   a workshop of the other trade and destroys the old one, and it can never destroy its last: the
-  trade of the last workshop is the house's livelihood. Building is the price of changing, which
+  trade of the last workshop is the dynasty's livelihood. Building is the price of changing, which
   keeps the market's signal a decision and not a tap. The town eats bread, builds with planks and
   wears cloth, so each chain has a buyer. Europe 1400 had sixty-nine goods; six is what a phone
-  screen and twenty houses can carry. Revisit when a seventh good arrives with a new trade, or if
-  the cost of changing proves to freeze every house in its opening trade.
+  screen and twenty dynasties can carry. Revisit when a seventh good arrives with a new trade, or if
+  the cost of changing proves to freeze every dynasty in its opening trade.
 
 - **The price is settled at the bells.** A half-day's net flow (sold minus bought) pushes the next
   price away from its reference, and the gap back closes a quarter at each bell, so a shock fades
@@ -306,7 +312,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   were, and what you do now moves the price you will sell at after the next bell. The town also
   has a standing demand per good, so a good nobody makes climbs and a good it takes nothing of
   sits on its reference. That demand is calibrated to the middle of the town's two states — the
-  three AI houses alone, and the same town with one player working the chain — so an unworked
+  three AI dynasties alone, and the same town with one player working the chain — so an unworked
   chain sits a little above its reference and a worked chain at it or below: the reference is the
   centre of the band, not a price a short-handed town rests on. The raw goods are the exception:
   they are bought at the market, and their price carries no town flow — only chance and the pull
@@ -332,15 +338,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   exceptional measures — a public work, a loan, an amnesty, a requisition, the gates — with a
   quorum of seven, a majority of the votes cast (abstentions excluded) and at least four yes. A
   recoinage is not the town's to vote: the tier above holds the coin. The vote is public; the mayor convenes, and four of the seven offices can force a
-  sitting outside the bells. A dormant house keeps its seat but casts no vote, so a sitting counts
+  sitting outside the bells. A dormant dynasty keeps its seat but casts no vote, so a sitting counts
   only the seats that answer, and a boycott of six blocks it just the same. This is Europe 1400's
   model, with a parliament kept for the big things: the five seats without a lever become the
   swing vote. Revisit if the council never meets.
 
-- **The court is a jury of five random houses, voting in secret, and a judge who does not vote.**
+- **The court is a jury of five random dynasties, voting in secret, and a judge who does not vote.**
   A complaint is filed at the clerk's office with evidence — a visible crime leaves a proof to its
   victim, a secret one leaves a proof only when it fails, and the provost's investigation finds
-  the rest; five houses drawn at random, excluding the parties, judge, and a dormant juror is
+  the rest; five dynasties drawn at random, excluding the parties, judge, and a dormant juror is
   replaced. The judge is the office that did
   not investigate — the provost judges what the clerk built, and the reverse — so no one defines
   a crime, gathers the proofs and sets the price. He does not vote: he fixes the sentence and
@@ -348,26 +354,26 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   judge moves it (minor five per cent and one day, medium ten and two, serious twenty and three).
   Three penalties: a fine (a tenth of the estate for a medium sentence), the loss
   of a title degree, and prison — two days for a medium sentence, and a political death rather
-  than a pause, since the prisoner keeps his house and his trade but cannot stand, vote, judge or
+  than a pause, since the prisoner keeps his dynasty and his trade but cannot stand, vote, judge or
   buy a title, and his office is suspended until the next election. There is no exile. Evidence
   can be destroyed, hidden or fabricated; a forged proof is a crime, and **the clerk in office
   exposes it automatically** — while he sits and is awake, no forgery passes, so a forger must
   first bribe, defeat, or wait for a vacancy. A bribe is money and intrigue, for a few hours,
-  against one category of acts; discovered, it is a crime for both. The jury is where the houses without
+  against one category of acts; discovered, it is a crime for both. The jury is where the dynasties without
   a seat hold power, and the secret ballot is the only vote one can buy without knowing whether
   the money worked. Revisit if juries are captured or trials are too slow.
 
-- **Death is a window, retirement is a choice, and the heir inherits the house and the career one
+- **Death is a window, retirement is a choice, and the heir inherits the dynasty and the career one
   floor lower.**
   At fifty, retirement is offered; refusing opens a window in which death may come at any
   scrutiny, with a chance that rises to certainty around a hundred and ten. The roll happens at
-  the midnight bell, whether the player is connected or not. The heir keeps the house's money, workshops, stock and
+  the midnight bell, whether the player is connected or not. The heir keeps the dynasty's money, workshops, stock and
   grudges, keeps the career one floor lower, loses the seats, drops one title, pays about fifteen
   per cent of the estate in duty and funerals, and starts with ten in each attribute plus a tenth
   of what the parent had gained. The choice is what keeps death from being a tax on time passing; the rise
   is what makes staying a gamble. Revisit if generations feel like a treadmill.
 
-- **The AI plays politics.** At each scrutiny an AI house chooses a seat by its rank, spends favour to
+- **The AI plays politics.** At each scrutiny an AI dynasty chooses a seat by its rank, spends favour to
   campaign, and remembers who beat it. It votes according to its interests and its grudges. It also buys the input its workshops lack,
   as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
   nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
@@ -377,7 +383,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   produce.
 
 - **A refusal is an event, never a throw.** The server replays stored actions days later; one
-  poisoned action must not be able to stop the town. An unknown house, an unaffordable purchase
+  poisoned action must not be able to stop the town. An unknown dynasty, an unaffordable purchase
   and a missing material all come back as `action.refused` or `workshop.idle`. Only a wrong
   version of the world throws, and only before any replay starts.
 
@@ -421,18 +427,18 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   restart every pod and turn one problem into two.
 
 - **The towns are the database: tables, not a document.** One database holds several towns, and
-  every town table carries its `town_id` — houses, people, seats, workshops, stock, laws,
+  every town table carries its `town_id` — dynasties, people, seats, workshops, stock, laws,
   engagements, campaigns and the market are a town itself. One row per town in `state` carries
-  what belongs to no house: the seed, the generator's cursor, the hour and the year; it is what
+  what belongs to no dynasty: the seed, the generator's cursor, the hour and the year; it is what
   the writer locks. The simulation still reads and writes a town whole, but the storage keeps it
   in rows, so a screen can read the market alone and the book of kings is a query. A format change
   is a migration across those tables; a reset is a wipe of them. Deleting a town cascades its
   tables; the accounts and the book of kings outlive it. What a sealed season keeps is the book:
-  the seal writes the crowned player, the house, the person, the instant and the time it took; the
+  the seal writes the crowned player, the dynasty, the person, the instant and the time it took; the
   town itself is dropped, and only a full reset deletes the book.
-  The accounts outlive a season's seal, which takes the house and keeps the account; an ordinary
+  The accounts outlive a season's seal, which takes the dynasty and keeps the account; an ordinary
   reset does the same, and the first visit after it asks for a trade. Revisit if the book must
-  hold the houses' columns, or if several towns in one database prove too rigid for tests.
+  hold the dynasties' columns, or if several towns in one database prove too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
   seed and the generator; published, it would let a client brute-force a young town's seed and
