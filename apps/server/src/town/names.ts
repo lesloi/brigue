@@ -1,6 +1,6 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 
-import type { HouseIdentity, World } from '@brigue/core';
+import { HOUSE_NAMES, nameKey, type HouseIdentity } from '@brigue/core';
 
 /**
  * The places a town can take. A name may come back; the id is assigned by the
@@ -39,44 +39,6 @@ export const TOWN_NAMES = [
   'Ypres',
 ] as const;
 
-/**
- * The names the first house can take. None of them is an AI house's: a town
- * with two Carons would make the register unreadable.
- */
-export const HOUSE_NAMES = [
-  'Leclerc',
-  'Moreau',
-  'Hébert',
-  'Delaunay',
-  'Garnier',
-  'Perrin',
-  'Aubry',
-  'Boucher',
-  'Dufour',
-  'Lemoine',
-  'Marchand',
-  'Renard',
-  'Roux',
-  'Simon',
-  'Thibault',
-  'Vaillant',
-  'de Gambais',
-  'de Sacy',
-  'Le Noir',
-  'Bourdon',
-  'Favre',
-  'Guérin',
-  'Hamon',
-  'Joubert',
-  'Leroy',
-  'Massé',
-  'Olivier',
-  'Poulain',
-  'Regnier',
-  'Tessier',
-  'Vidal',
-] as const;
-
 /** The first names a person of the town can carry. */
 export const PERSON_NAMES = [
   'Colin',
@@ -97,35 +59,47 @@ export const PERSON_NAMES = [
   'Clémence',
 ] as const;
 
+/** How many draws a suggestion may make before the pool is called exhausted. */
+const SUGGESTION_DRAWS = 4;
+
 /**
- * The identity of the first house, drawn when its player joins: a name the
- * town does not already use, a first name for the person, and an id derived
- * from the name. Nothing about the first house is fixed.
+ * The name the creation screen offers, drawn from the pool and from nothing
+ * else. It is a suggestion, not a rule: the player rewrites it or keeps it, and
+ * the check of what is kept happens when the house is made.
+ *
+ * The pool moves no generator: the world's own stream is what a tick draws
+ * from, and a suggestion is the screen's business, so several draws are made
+ * until one is free, then the caller writes its own.
  */
-export function drawHouseIdentity(world: World): HouseIdentity {
-  const taken = new Set(Object.values(world.houses).map((house) => house.name.toLowerCase()));
-  const free = HOUSE_NAMES.filter((name) => !taken.has(name.toLowerCase()));
-  const houseName = free.length > 0 ? free[randomInt(free.length)] : `Maison ${Object.keys(world.houses).length + 1}`;
+export function suggestHouseName(worldNames: Iterable<string>, elsewhere: ReadonlySet<string> = new Set()): string {
+  const taken = new Set(Array.from(worldNames, (name) => nameKey(name)));
+  let drawn: string | undefined;
+
+  for (let draw = 0; draw < SUGGESTION_DRAWS && drawn === undefined; draw += 1) {
+    const candidate = HOUSE_NAMES[randomInt(HOUSE_NAMES.length)]!;
+    if (!taken.has(nameKey(candidate)) && !elsewhere.has(nameKey(candidate))) {
+      drawn = candidate;
+    }
+  }
+
+  // Every draw was taken: the player writes their own name, which is what the
+  // rule always allowed. The pool is a suggestion, never a limit.
+  return drawn ?? '';
+}
+
+/**
+ * The identity a house is made with: an opaque id — a token, an action and an
+ * event keep pointing at it, and nothing derives it from the name — the name
+ * suggested to the player, and a first name for the person of the house.
+ */
+export function drawHouseIdentity(suggestedName: string): HouseIdentity {
   const firstName = PERSON_NAMES[randomInt(PERSON_NAMES.length)];
 
   return {
-    id: uniqueHouseId(world, slug(houseName)),
-    houseName,
-    personName: `${firstName} ${houseName}`,
+    id: `house-${randomUUID()}`,
+    houseName: suggestedName,
+    personName: `${firstName} ${suggestedName}`.trim(),
   };
-}
-
-/** The id is the name's slug, made unique against the houses already there. */
-function uniqueHouseId(world: World, base: string): string {
-  let id = base;
-  let suffix = 2;
-
-  while (world.houses[id] !== undefined) {
-    id = `${base}-${suffix}`;
-    suffix += 1;
-  }
-
-  return id;
 }
 
 /**
@@ -135,15 +109,4 @@ function uniqueHouseId(world: World, base: string): string {
  */
 export function drawTownName(): string {
   return TOWN_NAMES[randomInt(TOWN_NAMES.length)];
-}
-
-function slug(name: string): string {
-  const plain = name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-
-  return plain === '' ? 'maison' : plain;
 }

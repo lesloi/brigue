@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOODS, HOURS_PER_YEAR, RULES, START_YEAR, stockCapacityUnits, stockUnits, type World } from '@brigue/core';
+import {
+  GOODS,
+  HOURS_PER_YEAR,
+  NAME_PRICE,
+  RULES,
+  START_YEAR,
+  stockCapacityUnits,
+  stockUnits,
+  type World,
+} from '@brigue/core';
 
 import { projectWorld } from '../src/town/projection.ts';
 import { TEST_TOWN, tick, town } from './helpers.ts';
@@ -207,7 +216,7 @@ describe('the projection calendar', () => {
     expect(projection.house.sites).toEqual([
       { id: 'engagement-1', dueAt: world.hour + 6, work: 'title', trade: null, workshopId: null },
     ]);
-    expect(projection.house.rename).toEqual({ priceCents: RULES.renameCents });
+    expect(projection.house.rename).toEqual({ priceCents: NAME_PRICE.renameCents });
     expect(projection.town.houses.find((house) => house.id === 'leclerc')?.prestige).toBe(280);
   });
 

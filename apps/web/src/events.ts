@@ -309,8 +309,6 @@ function actionName(action: Action['type'] | 'unknown'): string {
       return 'achat de titre';
     case 'house.upgrade_residence':
       return 'élévation de la résidence';
-    case 'house.rename':
-      return 'renommage';
     case 'unknown':
       return 'action';
     default:

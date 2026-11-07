@@ -8,6 +8,7 @@ import { createRateLimiter } from './rate-limit.ts';
 import { methodNotAllowed, sendJson } from './respond.ts';
 import { appendAction, cancelAction, listActions } from './routes/actions.ts';
 import { renameHouseRoute } from './routes/house.ts';
+import { readCandidate } from './routes/name-suggestion.ts';
 import { cancelDeletion, requestDeletion } from './routes/player.ts';
 import { openSession, readSession } from './routes/session.ts';
 import { advanceHour, readWorld } from './routes/world.ts';
@@ -130,12 +131,20 @@ async function handle(context: AppContext, request: IncomingMessage, response: S
       }
 
     case '/api/house/name':
-      if (request.method !== 'PUT') {
-        methodNotAllowed(response, 'PUT');
-        return;
+      switch (request.method) {
+        case 'GET':
+          // The creation screen asks for the identity it prefills, and the
+          // Maison screen for a free name: one read, one answer, and nothing
+          // written.
+          await readCandidate(context, request, response);
+          return;
+        case 'PUT':
+          await renameHouseRoute(context, request, response);
+          return;
+        default:
+          methodNotAllowed(response, 'GET, PUT');
+          return;
       }
-      await renameHouseRoute(context, request, response);
-      return;
 
     case '/api/world':
       if (request.method !== 'GET') {

@@ -132,6 +132,12 @@ export interface WorldStore {
    * town already lived.
    */
   pruneJournal(townId: number, oldestKeptHour: number): Promise<void>;
+  /**
+   * The keys of every human house's name, the whole server over: the global
+   * ranking reads human houses by name, so no two of them may share one. An AI
+   * house is not here — it carries the same names in every town.
+   */
+  listHumanNames(): Promise<string[]>;
   close(): Promise<void>;
 }
 
@@ -139,6 +145,18 @@ export class UnknownWorldError extends Error {
   constructor() {
     super('the town does not exist yet');
     this.name = 'UnknownWorldError';
+  }
+}
+
+/**
+ * A human house of the server already carries the name a write tried to give
+ * one. The store refuses it whole, so no town is half written; the routes
+ * answer the same 409 a rename answers, and a retry reads the houses again.
+ */
+export class NameInUseError extends Error {
+  constructor() {
+    super('a human house of the server already carries this name');
+    this.name = 'NameInUseError';
   }
 }
 
@@ -195,13 +213,20 @@ export class MemoryWorldStore implements WorldStore {
       .map((stored) => ({ ...stored.snapshot.town }));
   }
 
+  async listHumanNames(): Promise<string[]> {
+    return [...this.towns.values()].flatMap((stored) =>
+      Object.values(stored.snapshot.world.houses)
+        .filter((house) => house.controller === 'human')
+        .map((house) => house.name),
+    );
+  }
+
   async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
     const stored = this.towns.get(townId);
 
     if (stored === undefined) {
       return;
     }
-
     // The page floor is by id, like the SQL boundary: the newest entries stay
     // even when every one of them predates the cut.
     const pageStart = Math.max(0, stored.events.length - JOURNAL_PAGE);

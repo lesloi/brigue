@@ -1,10 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { isValidName, nameIsTaken, RULES, renameHouse, type EventDraft } from '@brigue/core';
+import { houseRenamed, NAME_PRICE, renameHouse } from '@brigue/core';
 
-import { sessionWorld } from '../../town/worlds.ts';
+import { NameInUseError, sessionWorld } from '../../town/worlds.ts';
+import type { BoundPlayer } from '../../identity/players.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
+import { humanNamesElsewhere } from './name-suggestion.ts';
 
 /**
  * The house's name, changed at once rather than queued.
@@ -48,12 +50,28 @@ export async function renameHouseRoute(
   }
 
   const name = readName(read.body);
-  if (name === null) {
+  if (name === undefined) {
     sendJson(response, 400, { error: 'invalid_name' });
     return;
   }
 
-  const outcome = await context.deps.worlds.withWorld(async (session) => {
+  try {
+    const outcome = await renameInTown(context, bound, name);
+
+    answer(response, context, bound, outcome.kind, outcome.kind === 'renamed' ? outcome.name : undefined);
+  } catch (error) {
+    if (error instanceof NameInUseError) {
+      sendJson(response, 409, { error: 'name_taken' });
+      return;
+    }
+    throw error;
+  }
+}
+
+type RenameOutcome = { kind: 'renamed'; name: string } | { kind: 'taken' | 'dormant' | 'poor' | 'invalid' | 'lost' };
+
+async function renameInTown(context: AppContext, bound: BoundPlayer, name: string): Promise<RenameOutcome> {
+  return context.deps.worlds.withWorld(async (session) => {
     const { world, hourStartedAt } = session.snapshot;
     sessionWorld(session);
 
@@ -64,12 +82,6 @@ export async function renameHouseRoute(
     if (house.dormant) {
       return { kind: 'dormant' as const };
     }
-    if (nameIsTaken(world, name, house.id)) {
-      return { kind: 'taken' as const };
-    }
-    if (house.treasuryCents < RULES.renameCents) {
-      return { kind: 'poor' as const };
-    }
 
     const next = structuredClone(world);
     const renamed = next.houses[house.id];
@@ -77,23 +89,45 @@ export async function renameHouseRoute(
       return { kind: 'lost' as const };
     }
 
-    renamed.treasuryCents -= RULES.renameCents;
-    const events: EventDraft[] = [];
-    renameHouse(next, renamed, name, events);
+    // A human house is held to the server-wide rule; the town's own houses are
+    // read from the world the route locked, and the keys of the humans
+    // elsewhere were read before the lock: a house founded between the two is
+    // caught by the index, and the save fails whole rather than half-write.
+    const outcome = renameHouse(next, renamed, {
+      name,
+      priceCents: NAME_PRICE.renameCents,
+      takenElsewhere: await humanNamesElsewhere(context),
+    });
 
-    await session.save(
-      next,
-      hourStartedAt,
-      events.map((event) => ({ ...event, at: world.hour })),
-    );
+    switch (outcome.ok ? 'renamed' : outcome.reason) {
+      case 'renamed': {
+        const before = house.name;
+        await session.save(next, hourStartedAt, [{ ...houseRenamed(renamed, before), at: world.hour }]);
 
-    return { kind: 'renamed' as const, name };
+        return { kind: 'renamed' as const, name: renamed.name };
+      }
+      case 'name_taken':
+        return { kind: 'taken' as const };
+      case 'insufficient_funds':
+        return { kind: 'poor' as const };
+      default:
+        return { kind: 'invalid' as const };
+    }
   }, bound.townId);
+}
 
-  switch (outcome.kind) {
+/** What the route answers for what the town did with the name. */
+function answer(
+  response: ServerResponse,
+  context: AppContext,
+  bound: BoundPlayer,
+  kind: RenameOutcome['kind'],
+  name?: string,
+): void {
+  switch (kind) {
     case 'renamed':
       context.deps.logger.info('house.renamed', { townId: bound.townId, houseId: bound.houseId });
-      sendJson(response, 200, { name: outcome.name });
+      sendJson(response, 200, { name });
       return;
     case 'taken':
       sendJson(response, 409, { error: 'name_taken' });
@@ -104,23 +138,25 @@ export async function renameHouseRoute(
     case 'poor':
       sendJson(response, 409, { error: 'insufficient_funds' });
       return;
+    case 'invalid':
+      sendJson(response, 400, { error: 'invalid_name' });
+      return;
     case 'lost':
       sendJson(response, 404, { error: 'unknown_house' });
   }
 }
 
-/** The only field a rename carries: a string, or nothing to rename. */
-function readName(body: unknown): string | null {
+/**
+ * The only field a rename carries: a string, or nothing to rename. The rule on
+ * it is the core's, and it is asked where the name would land, so the refusal
+ * is the same as an event's.
+ */
+function readName(body: unknown): string | undefined {
   if (typeof body !== 'object' || body === null) {
-    return null;
+    return undefined;
   }
 
   const name = (body as { name?: unknown }).name;
-  if (typeof name !== 'string') {
-    return null;
-  }
 
-  const trimmed = name.trim();
-
-  return isValidName(trimmed) ? trimmed : null;
+  return typeof name === 'string' ? name : undefined;
 }

@@ -2,6 +2,7 @@ import {
   displayedPrestige,
   GOODS,
   HOURS_PER_YEAR,
+  NAME_PRICE,
   nextTitle,
   RESIDENCE_LADDER,
   residenceOf,
@@ -290,7 +291,7 @@ function ownHouse(world: World, house: House): OwnHouseView {
         ? [{ id: engagement.id, dueAt: engagement.dueAt, ...siteWorkOf(engagement) }]
         : [],
     ),
-    rename: { priceCents: RULES.renameCents },
+    rename: { priceCents: NAME_PRICE.renameCents },
   };
 }
 

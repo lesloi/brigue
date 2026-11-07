@@ -5,7 +5,6 @@ import {
   createWorld,
   displayedPrestige,
   HOURS_PER_YEAR,
-  nameIsTaken,
   nextTitle,
   RULES,
   stockCapacityUnits,
@@ -194,19 +193,6 @@ describe('workshops, trades and the ladder', () => {
     expect(after.houses.leclerc?.workshops).toHaveLength(1);
   });
 
-  it('refuses a rename whose stored name is not a string, instead of throwing', () => {
-    // Arrange: a poisoned action the parser can still hand over.
-    const world = town(SEED);
-    const poisoned = { type: 'house.rename', houseId: 'leclerc' } as unknown as Action;
-
-    // Act
-    const { world: after, events } = tick(world, [poisoned]);
-
-    // Assert
-    expect(refusal(events, 'invalid_name')).toBeDefined();
-    expect(after.houses.leclerc?.name).toBe('Leclerc');
-  });
-
   it("holds a dormant house's site until it comes back", () => {
     // Arrange: a house that went silent while its works were open.
     const world = town(SEED);
@@ -361,61 +347,6 @@ describe('workshops, trades and the ladder', () => {
       expect(nextTitle(TITLES[index]!)).toBe(TITLES[index + 1]);
     }
     expect(nextTitle('prince')).toBeUndefined();
-  });
-
-  it('renames the house and its living people, keeping the id and the dead', () => {
-    // Arrange: a house with the founder alive and an ancestor dead.
-    const world = town(SEED);
-    world.people['person-leclerc-old'] = {
-      id: 'person-leclerc-old',
-      houseId: 'leclerc',
-      name: 'Hugues Leclerc',
-      age: 80,
-      attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-      alive: false,
-    };
-    const treasury = world.houses.leclerc.treasuryCents;
-
-    // Act
-    const { world: after, events } = tick(world, [{ type: 'house.rename', houseId: 'leclerc', name: 'Moreau' }]);
-
-    // Assert
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'house.renamed', audience: 'town', before: 'Leclerc', after: 'Moreau' }),
-    );
-    expect(after.houses.leclerc?.id).toBe('leclerc');
-    expect(after.houses.leclerc?.name).toBe('Moreau');
-    expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
-    expect(after.people['person-leclerc-old']?.name).toBe('Hugues Leclerc');
-    expect(treasury - (after.houses.leclerc?.treasuryCents ?? 0)).toBeGreaterThanOrEqual(RULES.renameCents);
-  });
-
-  it('refuses a name another house carries, whatever its case or its accents', () => {
-    // Arrange
-    const world = town(SEED);
-    expect(nameIsTaken(world, 'caron')).toBe(true);
-    expect(nameIsTaken(world, 'Cáron')).toBe(true);
-    expect(nameIsTaken(world, 'moreau')).toBe(false);
-
-    // Act: the town already holds Caron.
-    const { world: after, events } = tick(world, [{ type: 'house.rename', houseId: 'leclerc', name: 'Caron' }]);
-
-    // Assert
-    expect(refusal(events, 'name_taken')).toBeDefined();
-    expect(after.houses.leclerc?.name).toBe('Leclerc');
-  });
-
-  it('refuses an empty or poisoned name', () => {
-    for (const name of ['', '   ', 'A'.repeat(40), 'Caron;']) {
-      // Arrange
-      const world = town(SEED);
-
-      // Act
-      const { events } = tick(world, [{ type: 'house.rename', houseId: 'leclerc', name }]);
-
-      // Assert
-      expect(refusal(events, 'invalid_name')).toBeDefined();
-    }
   });
 
   it('names the first house from what it is given, with an id that is not its name', () => {

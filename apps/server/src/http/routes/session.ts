@@ -1,15 +1,34 @@
 import { randomInt } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { createWorld, humanHouseOf, RULES, TRADES, withFirstHouse, withNewcomer, type Trade } from '@brigue/core';
+import {
+  createWorld,
+  humanHouseOf,
+  renameHouse,
+  RULES,
+  TRADES,
+  withFirstHouse,
+  withNewcomer,
+  type NameRefusal,
+  type Trade,
+  type World,
+} from '@brigue/core';
 
 import { closingOf, HouseAlreadyBoundError, type Player } from '../../identity/players.ts';
 import { authenticate, issueToken } from '../../identity/session.ts';
 import { drawHouseIdentity, drawTownName } from '../../town/names.ts';
-import { type TownInfo, sessionWorld, UnknownWorldError } from '../../town/worlds.ts';
+import { NameInUseError, sessionWorld, UnknownWorldError, type TownInfo } from '../../town/worlds.ts';
 import { identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readSessionCookie, sessionCookie } from '../cookies.ts';
 import { readBody, sendJson, unauthorized } from '../respond.ts';
+import {
+  candidateFor,
+  humanNamesElsewhere,
+  namesInSettledTowns,
+  readClaim,
+  settledCandidate,
+  type Candidate,
+} from './name-suggestion.ts';
 
 export async function readSession(context: AppContext, request: IncomingMessage, response: ServerResponse) {
   const player = await identifiedBy(context, request, response);
@@ -74,17 +93,46 @@ export async function openSession(
     return;
   }
 
+  // The name is the player's, kept from the creation screen. It is judged
+  // before anything is founded, so a bad paste costs nothing.
+  const claim = await claimed(context, body);
+  if (claim === null) {
+    sendJson(response, 400, { error: 'invalid_name' });
+    return;
+  }
+
   // The cookie is an identity too: an account a reset left without a house
   // takes a new one with the trade it chooses, instead of a second account.
   // The choice is an explicit action; no read ever binds.
   const cookiePlayer = await authenticate(context.deps.store, readSessionCookie(request.headers.cookie));
 
   if (cookiePlayer !== null) {
-    await chooseHouse(context, response, ip, cookiePlayer, trade as Trade);
+    await chooseHouse(context, response, ip, cookiePlayer, trade as Trade, claim);
     return;
   }
 
-  await joinTown(context, response, ip, trade as Trade);
+  await joinTown(context, response, ip, trade as Trade, claim);
+}
+
+/**
+ * The candidate a join writes, resolved lazily: a suggestion is drawn inside
+ * the join lock, so it is free against the towns the join will look at. A name
+ * the rule refuses is answered with nothing, before any town exists.
+ */
+async function claimed(context: AppContext, body: unknown): Promise<(() => Promise<Candidate>) | null> {
+  const raw = readClaim(body);
+
+  if (raw.kind === 'poisoned') {
+    return null;
+  }
+
+  // An empty name is a refusal of the suggestion, which the join then keeps.
+  const kept = raw.kind === 'claimed' && raw.name !== '' ? settledCandidate(raw, []) : null;
+  if (raw.kind === 'claimed' && raw.name !== '' && kept === null) {
+    return null;
+  }
+
+  return async () => kept ?? candidateFor(undefined, await namesInSettledTowns(context));
 }
 
 async function resumeSession(context: AppContext, response: ServerResponse, ip: string, token: string): Promise<void> {
@@ -107,30 +155,39 @@ async function resumeSession(context: AppContext, response: ServerResponse, ip: 
   sendJson(response, 200, sessionBody(player), { 'Set-Cookie': sessionCookie(token, context.secureCookies) });
 }
 
-async function joinTown(context: AppContext, response: ServerResponse, ip: string, trade: Trade): Promise<void> {
+/** A join's candidate, drawn once the join lock is held. */
+type Claim = () => Promise<Candidate>;
+
+async function joinTown(
+  context: AppContext,
+  response: ServerResponse,
+  ip: string,
+  trade: Trade,
+  claim: Claim,
+): Promise<void> {
   const at = new Date(context.now());
 
   try {
     // The join is one critical section: two newcomers must not both take the
     // same freed place, nor read an empty database and found two towns.
     const joined = await context.deps.worlds.withJoinLock(async () => {
-      const placed = await takePlaceAnywhere(context, trade, at);
-      const issued = await issueToken(context.deps.store, placed.town.id, placed.houseId, at);
+      const candidate = await claim();
+      const elsewhere = await humanNamesElsewhere(context);
+      const placed = await takePlace(context, trade, candidate, elsewhere, at);
+      const { token } = await issueToken(context.deps.store, placed.town.id, placed.houseId, at);
 
-      return { ...placed, token: issued.token };
+      return { townId: placed.town.id, houseId: placed.houseId, token };
     });
 
-    context.deps.logger.info('session.joined', { ip, townId: joined.town.id, houseId: joined.houseId });
+    context.deps.logger.info('session.joined', { ip, townId: joined.townId, houseId: joined.houseId });
     sendJson(
       response,
       201,
-      { townId: joined.town.id, houseId: joined.houseId, token: joined.token },
+      { townId: joined.townId, houseId: joined.houseId, token: joined.token },
       { 'Set-Cookie': sessionCookie(joined.token, context.secureCookies) },
     );
   } catch (error) {
-    if (error instanceof HouseAlreadyBoundError) {
-      context.deps.logger.warn('session.no_free_house', { ip });
-      sendJson(response, 409, { error: 'no_free_house' });
+    if (await refusedJoin(context, response, ip, error)) {
       return;
     }
     throw error;
@@ -149,6 +206,7 @@ async function chooseHouse(
   ip: string,
   player: Player,
   trade: Trade,
+  claim: Claim,
 ): Promise<void> {
   const at = new Date(context.now());
   const closing = closingOf(player, at);
@@ -185,15 +243,15 @@ async function chooseHouse(
         return { kind: 'bound' as const, player: current };
       }
 
-      const placed = await takePlaceAnywhere(context, trade, at);
+      const candidate = await claim();
+      const elsewhere = await humanNamesElsewhere(context);
+      const placed = await takePlace(context, trade, candidate, elsewhere, at);
       const rebound = await context.deps.store.rebind(player.tokenHash, placed.town.id, placed.houseId, at);
 
       return rebound === null ? { kind: 'refused' as const } : { kind: 'rebound' as const, player: rebound };
     });
   } catch (error) {
-    if (error instanceof HouseAlreadyBoundError) {
-      context.deps.logger.warn('session.no_free_house', { ip });
-      sendJson(response, 409, { error: 'no_free_house' });
+    if (await refusedJoin(context, response, ip, error)) {
       return;
     }
     throw error;
@@ -223,20 +281,63 @@ async function chooseHouse(
   sendJson(response, 200, sessionBody(outcome.player));
 }
 
+/** The two refusals a join answers itself, instead of letting them surface. */
+async function refusedJoin(
+  context: AppContext,
+  response: ServerResponse,
+  ip: string,
+  error: unknown,
+): Promise<boolean> {
+  if (error instanceof HouseAlreadyBoundError) {
+    context.deps.logger.warn('session.no_free_house', { ip });
+    sendJson(response, 409, { error: 'no_free_house' });
+    return true;
+  }
+  if (error instanceof NameRefusedError) {
+    // The suggestion is exhausted and the body carried no name to fall back on.
+    context.deps.logger.warn('session.name_missing', { ip });
+    sendJson(response, 409, { error: 'name_required' });
+    return true;
+  }
+  if (error instanceof NameTakenError || error instanceof NameInUseError) {
+    // The town's own rule, or the index that catches a name a second server
+    // slipped in: the screen answers both the same way.
+    context.deps.logger.warn('session.name_taken', { ip });
+    sendJson(response, 409, { error: 'name_taken' });
+    return true;
+  }
+
+  return false;
+}
+
+/** The name a join kept is one the server already carries, in a human house. */
+class NameTakenError extends Error {
+  constructor() {
+    super('the name is taken');
+    this.name = 'NameTakenError';
+  }
+}
+
 /**
  * The place a join takes: a free house in a town, else a town of its own. The
- * caller holds the join lock, so two joins never take the same place.
+ * caller holds the join lock, so two joins never take the same place, and the
+ * place is written here — before the token, so a failure after it leaves a
+ * house the next join takes, under that join's own name. The house it returns
+ * is the one written: the place's own id when it waited, the candidate's when
+ * it is new.
  */
-async function takePlaceAnywhere(
+async function takePlace(
   context: AppContext,
   trade: Trade,
+  candidate: Candidate,
+  elsewhere: ReadonlySet<string>,
   at: Date,
 ): Promise<{ town: TownInfo; houseId: string }> {
   for (const town of await context.deps.worlds.listTowns()) {
-    let houseId: string | null;
+    let placed: string | null;
 
     try {
-      houseId = await takePlace(context, town.id, trade);
+      placed = await takePlaceIn(context, town, trade, candidate, elsewhere);
     } catch (error) {
       // The town went between the list and its lock, or the scheduler deleted
       // it: the next join will not see it either.
@@ -248,24 +349,34 @@ async function takePlaceAnywhere(
       throw error;
     }
 
-    if (houseId !== null) {
-      return { town, houseId };
+    if (placed !== null) {
+      return { town, houseId: placed };
     }
   }
 
-  return foundTown(context, trade, at);
+  const name = drawTownName();
+  const world = createWorld(randomSeed());
+  const houseId = settle(world, trade, candidate, elsewhere, 'first');
+
+  return { town: await context.deps.worlds.createTown(name, world, at), houseId };
 }
 
 /**
- * The place a newcomer takes in a town: a human house no player has ever
- * taken (the one the town was just created with, or a place whose token was
- * never issued), else a new human house until the town is full. A house a
- * player has taken stays theirs while it is silent — a revoked token does not
- * give it away — until the silence rule deletes it. A full town offers
- * nothing; the join moves on. A town whose last human house has gone is on
- * its way out, and is left alone.
+ * The place a newcomer takes in a town: a human house no player has ever taken
+ * (the one the town was just created with, or a place whose token was never
+ * issued), else a new human house until the town is full. A house a player has
+ * taken stays theirs while it is silent — a revoked token does not give it away
+ * — until the silence rule deletes it. A full town offers nothing; the join
+ * moves on. A town whose last human house has gone is on its way out, and is
+ * left alone.
  */
-async function takePlace(context: AppContext, townId: number, trade: Trade): Promise<string | null> {
+async function takePlaceIn(
+  context: AppContext,
+  town: TownInfo,
+  trade: Trade,
+  candidate: Candidate,
+  elsewhere: ReadonlySet<string>,
+): Promise<string | null> {
   return context.deps.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
 
@@ -273,32 +384,93 @@ async function takePlace(context: AppContext, townId: number, trade: Trade): Pro
       return null;
     }
 
-    const players = await context.deps.store.listByTown(townId);
+    const players = await context.deps.store.listByTown(town.id);
     const taken = new Set(players.map((player) => player.houseId));
     const free = Object.values(world.houses).find((house) => house.controller === 'human' && !taken.has(house.id));
 
     if (free !== undefined) {
+      // The place waits with the name its first player would have had: the one
+      // this player kept takes over, unpaid, as at creation.
+      const next = structuredClone(world);
+      const outcome = renameHouse(next, next.houses[free.id]!, {
+        name: candidate.houseName,
+        priceCents: 0,
+        takenElsewhere: elsewhere,
+      });
+      if (!outcome.ok) {
+        throw refusalOf(outcome.reason, candidate.houseName);
+      }
+
+      await session.save(next, session.snapshot.hourStartedAt, []);
       return free.id;
     }
     if (Object.keys(world.houses).length >= RULES.houseCap) {
       return null;
     }
 
-    const identity = drawHouseIdentity(world);
-    await session.save(withNewcomer(world, trade, identity), session.snapshot.hourStartedAt, []);
+    const next = structuredClone(world);
+    const houseId = settle(next, trade, candidate, elsewhere, 'newcomer');
+    await session.save(next, session.snapshot.hourStartedAt, []);
 
-    return identity.id;
-  }, townId);
+    return houseId;
+  }, town.id);
 }
 
-/** No town has a free place: the newcomer founds one, named from the places left. */
-async function foundTown(context: AppContext, trade: Trade, at: Date): Promise<{ town: TownInfo; houseId: string }> {
-  const name = drawTownName();
-  const world = createWorld(randomSeed());
-  const identity = drawHouseIdentity(world);
-  const town = await context.deps.worlds.createTown(name, withFirstHouse(world, trade, identity), at);
+/**
+ * Adds a house under the name it kept, and gives the world back changed in
+ * place: the identity carries an opaque id, the name is the player's, and the
+ * person is named after it. The two builders share that shape, and the name is
+ * judged here — against the houses of the town and the human ones elsewhere —
+ * before the caller writes anything. Returns the id the house was written
+ * under: the candidate's, unless this world already holds it, in which case a
+ * client is replaying a candidate and the house is minted again rather than
+ * overwriting the one that carries the id.
+ */
+function settle(
+  world: World,
+  trade: Trade,
+  candidate: Candidate,
+  elsewhere: ReadonlySet<string>,
+  kind: 'first' | 'newcomer',
+): string {
+  const houseId = Object.hasOwn(world.houses, candidate.id) ? drawHouseIdentity(candidate.houseName).id : candidate.id;
+  const firstName = candidate.personName.split(' ')[0] ?? '';
+  const identity = {
+    id: houseId,
+    houseName: candidate.houseName,
+    personName: `${firstName} ${candidate.houseName}`.trim(),
+  };
+  const placed = kind === 'first' ? withFirstHouse(world, trade, identity) : withNewcomer(world, trade, identity);
+  const house = placed.houses[houseId];
+  if (house === undefined) {
+    throw new Error(`the house ${houseId} was not added to the world`);
+  }
 
-  return { town, houseId: identity.id };
+  const outcome = renameHouse(placed, house, { name: candidate.houseName, priceCents: 0, takenElsewhere: elsewhere });
+  if (!outcome.ok) {
+    throw refusalOf(outcome.reason, candidate.houseName);
+  }
+
+  Object.assign(world, placed);
+
+  return houseId;
+}
+
+/**
+ * A name the town will not keep, said the way a join answers: taken, or not a
+ * name at all — the second is the suggestion's pool exhausted, and a client
+ * with no field has nothing to write. It is a refusal, not a bug.
+ */
+function refusalOf(reason: NameRefusal, name: string): Error {
+  return reason === 'name_taken' ? new NameTakenError() : new NameRefusedError(name);
+}
+
+/** A name the town cannot carry, and nothing a retry of the same body fixes. */
+class NameRefusedError extends Error {
+  constructor(name: string) {
+    super(`the name "${name}" was refused`);
+    this.name = 'NameRefusedError';
+  }
 }
 
 function sessionBody(player: Player): Record<string, unknown> {

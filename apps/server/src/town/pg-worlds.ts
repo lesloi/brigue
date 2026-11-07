@@ -1,11 +1,12 @@
 import type { ClientConfig, Pool, PoolClient } from 'pg';
 
-import { residenceOf, titleOf } from '@brigue/core';
+import { nameKey, residenceOf, titleOf } from '@brigue/core';
 import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
   DuplicateActionError,
   JOURNAL_PAGE,
+  NameInUseError,
   UnknownWorldError,
   type JournalPage,
   type StoredAction,
@@ -84,7 +85,7 @@ export class PgWorldStore implements WorldStore {
       return { id, name };
     } catch (error) {
       await rollback(client);
-      throw error;
+      throw isNameViolation(error) ? new NameInUseError() : error;
     } finally {
       client.release();
     }
@@ -102,6 +103,16 @@ export class PgWorldStore implements WorldStore {
     );
 
     return rows.map((row) => ({ id: Number(row.id), name: row.name }));
+  }
+
+  async listHumanNames(): Promise<string[]> {
+    // Only human houses: the three AI houses carry the same names in every
+    // town, and the partial index on the table is the same filter.
+    const { rows } = await this.pool.query<{ name: string }>(
+      `SELECT name FROM houses WHERE controller = 'human' ORDER BY name`,
+    );
+
+    return rows.map((row) => row.name);
   }
 
   async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
@@ -129,13 +140,16 @@ export class PgWorldStore implements WorldStore {
     try {
       await client.query('BEGIN');
       const snapshot = await readWorld(client, townId);
-      const result = await run(new PgWorldSession(client, townId, snapshot));
+      const result = await run(new PgWorldSession(client, townId, snapshot.snapshot, snapshot.unkeyed));
       await client.query('COMMIT');
 
       return result;
     } catch (error) {
       await rollback(client);
-      throw error;
+      // The index over human names is the net behind the routes' check: a
+      // second server that slipped a name in between is a refusal the screen
+      // already knows, never a 500.
+      throw isNameViolation(error) ? new NameInUseError() : error;
     } finally {
       client.release();
     }
@@ -166,11 +180,32 @@ class PgWorldSession implements WorldSession {
   readonly snapshot: WorldSnapshot;
   private readonly client: PoolClient;
   private readonly townId: number;
+  /** The names the read found without a key: its keys are then written here. */
+  private readonly unkeyed: number;
 
-  constructor(client: PoolClient, townId: number, snapshot: WorldSnapshot) {
+  constructor(client: PoolClient, townId: number, snapshot: WorldSnapshot, unkeyed: number) {
     this.client = client;
     this.townId = townId;
     this.snapshot = snapshot;
+    this.unkeyed = unkeyed;
+  }
+
+  /**
+   * The keys of a town read from a schema before the column. The read carries
+   * the names, and `writeWorld` writes every key; what a town read by an older
+   * server left as `'legacy:…'` is replaced here, one statement, and only where
+   * no human house already holds the key. The reservation is not a name, so
+   * the second statement only fires for a town the old index never saw twice.
+   */
+  private async fillUnkeyedKeys(): Promise<void> {
+    if (this.unkeyed === 0) {
+      return;
+    }
+
+    await this.client.query(
+      `UPDATE houses SET name_key = $2 || town_id || '-' || id WHERE town_id = $1 AND name_key = ''`,
+      [this.townId, LEGACY_KEY_PREFIX],
+    );
   }
 
   async actionsBetween(from: number, to: number): Promise<StoredAction[]> {
@@ -274,6 +309,7 @@ class PgWorldSession implements WorldSession {
   async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
     await clearWorld(this.client, this.townId);
     await writeWorld(this.client, this.townId, world);
+    await this.fillUnkeyedKeys();
     await this.client.query(
       `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, workshop_seq = $6, hour_started_at = $7
        WHERE town_id = $1`,
@@ -289,7 +325,7 @@ export async function createPgWorldStore(connectionString: string): Promise<PgWo
   return new PgWorldStore(new PgPool({ connectionString }));
 }
 
-async function readWorld(client: PoolClient, townId: number): Promise<WorldSnapshot> {
+async function readWorld(client: PoolClient, townId: number): Promise<{ snapshot: WorldSnapshot; unkeyed: number }> {
   const town = await client.query<{ id: string; name: string }>(`SELECT id, name FROM towns WHERE id = $1`, [townId]);
   const townRow = town.rows[0];
   if (!townRow) {
@@ -310,7 +346,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
 
   const [houses, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all([
     client.query(
-      `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, title, residence_level, career, dormant FROM houses WHERE town_id = $1 ORDER BY id`,
+      `SELECT id, name, name_key, controller, treasury_cents, debt_cents, favour, prestige, title, residence_level, career, dormant FROM houses WHERE town_id = $1 ORDER BY id`,
       [townId],
     ),
     client.query(
@@ -359,6 +395,8 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     workshopSeq: row.workshop_seq,
   };
 
+  let unkeyed = 0;
+
   for (const house of houses.rows) {
     world.houses[house.id] = {
       id: house.id,
@@ -375,6 +413,11 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       workshops: [],
       stock: {},
     };
+    // A town read from a schema before the key: the migration reserved a key
+    // no name can carry, and writing the town replaces it with the real one.
+    if (house.name_key === '' || house.name_key.startsWith(LEGACY_KEY_PREFIX)) {
+      unkeyed += 1;
+    }
   }
 
   for (const workshop of workshops.rows) {
@@ -455,11 +498,17 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   }
 
   return {
-    town: { id: Number(townRow.id), name: townRow.name },
-    world,
-    hourStartedAt: asDate(row.hour_started_at),
+    snapshot: {
+      town: { id: Number(townRow.id), name: townRow.name },
+      world,
+      hourStartedAt: asDate(row.hour_started_at),
+    },
+    unkeyed,
   };
 }
+
+/** What a town read before the column was written with: no name can equal it. */
+const LEGACY_KEY_PREFIX = 'legacy:';
 
 /**
  * A site row back into the world's union. The columns are nullable in the
@@ -522,6 +571,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       'residence_level',
       'career',
       'dormant',
+      'name_key',
     ],
     houses.map((house) => [
       townId,
@@ -536,6 +586,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       residenceOf(house),
       house.career,
       house.dormant,
+      nameKey(house.name),
     ]),
   );
 
@@ -737,6 +788,16 @@ function rowToStoredAction(row: {
 
 function asDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
+}
+
+/** The partial index over the names of human houses, and nothing else. */
+function isNameViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === '23505' &&
+    (error as { constraint?: unknown }).constraint === 'houses_human_name'
+  );
 }
 
 function isUniqueViolation(error: unknown): boolean {

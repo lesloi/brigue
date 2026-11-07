@@ -2,13 +2,21 @@ export { canonicalJson } from './canonical.ts';
 export { isVisibleTo, visibleTo } from './events.ts';
 export type { Action, Audience, Event, EventDraft, RefusalReason } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
+export {
+  HOUSE_NAMES,
+  isValidName,
+  nameIsTaken,
+  nameKey,
+  NAME_MAX_LENGTH,
+  sanitizeName,
+  type HouseRenameOutcome,
+  type HouseRenameRequest,
+  type NameRefusal,
+} from './names.ts';
 export { advanceRng, drawBelow, MINSTD_MODULUS } from './prng.ts';
 export {
   advance,
-  isValidName,
-  NAME_MAX_LENGTH,
-  nameIsTaken,
-  nameKey,
+  houseRenamed,
   nextPriceCents,
   renameHouse,
   renamePerson,
@@ -18,6 +26,7 @@ export {
   type TickResult,
 } from './tick.ts';
 export {
+  AI_HOUSE_NAMES,
   createFirstHouse,
   createWorld,
   withFirstHouse,
@@ -26,6 +35,7 @@ export {
   displayedPrestige,
   FORMAT_VERSION,
   GOODS,
+  NAME_PRICE,
   nextTitle,
   PACING,
   PRICE_HISTORY_BELLS,
