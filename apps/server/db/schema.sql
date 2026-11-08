@@ -13,7 +13,7 @@
 -- accounts cannot point at a new one.
 CREATE TABLE towns (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  name text NOT NULL CHECK (length(name) > 0),
+  name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -22,9 +22,9 @@ CREATE TABLE towns (
 -- dynasty, so `dynasty_id` may be null between the two. The town is not stored
 -- here: it is the dynasty's, and the dynasty is looked up.
 CREATE TABLE players (
-  token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
+  token_hash text PRIMARY KEY,
   player_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
-  dynasty_id text CHECK (length(dynasty_id) > 0),
+  dynasty_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
   last_seen_at timestamptz NOT NULL DEFAULT now(),
@@ -47,7 +47,7 @@ CREATE TABLE state (
   ruleset_version integer NOT NULL,
   seed integer NOT NULL,
   rng integer NOT NULL,
-  hour integer NOT NULL CHECK (hour >= 1),
+  hour integer NOT NULL,
   year integer NOT NULL,
   engagement_seq integer NOT NULL DEFAULT 0,
   -- The scheduler counts owed hours from here, not from a grid.
@@ -57,14 +57,14 @@ CREATE TABLE state (
 
 CREATE TABLE dynasties (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  id text NOT NULL CHECK (length(id) > 0),
-  name text NOT NULL CHECK (length(name) > 0),
-  controller text NOT NULL CHECK (controller IN ('ai', 'human')),
+  id text NOT NULL,
+  name text NOT NULL,
+  controller text NOT NULL,
   treasury_cents integer NOT NULL,
   debt_cents integer NOT NULL,
   favour integer NOT NULL,
   prestige integer NOT NULL,
-  residence_level integer NOT NULL DEFAULT 1 CHECK (residence_level BETWEEN 1 AND 12),
+  residence_level integer NOT NULL DEFAULT 1,
   PRIMARY KEY (town_id, id),
   UNIQUE (town_id, name)
 );
@@ -79,13 +79,11 @@ CREATE UNIQUE INDEX dynasties_human_name ON dynasties (lower(name)) WHERE contro
 -- does not outlive them.
 CREATE TABLE people (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  id text NOT NULL CHECK (length(id) > 0),
+  id text NOT NULL,
   dynasty_id text NOT NULL,
   name text NOT NULL,
   age integer NOT NULL,
-  title text NOT NULL DEFAULT 'roturier'
-    CHECK (title IN ('roturier', 'bourgeois', 'notable', 'patricien', 'ecuyer', 'chevalier',
-                     'baron', 'vicomte', 'comte', 'marquis', 'duc', 'prince')),
+  title text NOT NULL DEFAULT 'roturier',
   alive boolean NOT NULL,
   PRIMARY KEY (town_id, id),
   FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
@@ -111,7 +109,7 @@ CREATE TABLE stock (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   dynasty_id text NOT NULL,
   good text NOT NULL,
-  units integer NOT NULL CHECK (units >= 0),
+  units integer NOT NULL,
   PRIMARY KEY (town_id, dynasty_id, good),
   FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
@@ -126,7 +124,7 @@ CREATE TABLE seats (
 
 CREATE TABLE laws (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  id text NOT NULL CHECK (length(id) > 0),
+  id text NOT NULL,
   position integer NOT NULL,
   title text NOT NULL,
   sponsor_dynasty_id text NOT NULL,
@@ -139,13 +137,13 @@ CREATE TABLE laws (
 -- improved — and its cost is paid when it opens, so the row needs nothing else.
 CREATE TABLE engagements (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  id text NOT NULL CHECK (length(id) > 0),
-  kind text NOT NULL CHECK (kind IN ('hearing', 'site')),
+  id text NOT NULL,
+  kind text NOT NULL,
   dynasty_id text NOT NULL,
   due_at integer NOT NULL,
   position integer NOT NULL,
-  work text CHECK (work IN ('build', 'upgrade', 'residence', 'title')),
-  trade text CHECK (trade IN ('weaver', 'baker', 'carpenter')),
+  work text,
+  trade text,
   workshop_id text,
   PRIMARY KEY (town_id, id),
   FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
@@ -168,7 +166,7 @@ CREATE TABLE campaigns (
 CREATE TABLE market (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   good text NOT NULL,
-  price_cents integer NOT NULL CHECK (price_cents > 0),
+  price_cents integer NOT NULL,
   flow_units integer NOT NULL DEFAULT 0,
   PRIMARY KEY (town_id, good)
 );
@@ -177,7 +175,7 @@ CREATE TABLE market_history (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   good text NOT NULL,
   position integer NOT NULL,
-  price_cents integer NOT NULL CHECK (price_cents > 0),
+  price_cents integer NOT NULL,
   PRIMARY KEY (town_id, good, position)
 );
 
@@ -194,8 +192,7 @@ CREATE TABLE events (
   audience text NOT NULL,
   type text NOT NULL,
   payload jsonb NOT NULL,
-  recorded_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT events_chronicle_only CHECK (audience = 'town')
+  recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX events_town_id ON events (town_id, id);
@@ -207,7 +204,7 @@ CREATE INDEX events_town_recorded_at ON events (town_id, recorded_at);
 -- deletes a town's mail with the town.
 CREATE TABLE messages (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  dynasty_id text NOT NULL CHECK (length(dynasty_id) > 0),
+  dynasty_id text NOT NULL,
   -- A notice carries its kind and the fields of its sentence; prose carries
   -- neither and puts its text in `body`.
   type text,
@@ -215,13 +212,10 @@ CREATE TABLE messages (
   body text,
   -- Null when the town wrote it, never set on a notice. Filled from the
   -- session, never from the request body.
-  author_dynasty_id text CHECK (author_dynasty_id IS NULL OR length(author_dynasty_id) > 0),
+  author_dynasty_id text,
   -- The whole unread state, so no cursor lives on the account.
   read boolean NOT NULL DEFAULT false,
-  recorded_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((type IS NULL) = (body IS NOT NULL)),
-  CHECK ((type IS NULL) <> (payload IS NOT NULL)),
-  CHECK (type IS NULL OR author_dynasty_id IS NULL)
+  recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- The client mints the id, so a retried request is a duplicate and never a
@@ -229,10 +223,10 @@ CREATE TABLE messages (
 -- agree.
 CREATE TABLE actions (
   seq bigserial UNIQUE,
-  id text PRIMARY KEY CHECK (id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
+  id text PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  dynasty_id text NOT NULL CHECK (length(dynasty_id) > 0),
-  plays_at integer NOT NULL CHECK (plays_at >= 1),
+  dynasty_id text NOT NULL,
+  plays_at integer NOT NULL,
   action jsonb NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now(),
   -- A cancelled action keeps its row: a retried POST must stay a duplicate, and

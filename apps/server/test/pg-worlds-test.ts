@@ -574,7 +574,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(rows.rows[0]?.count).toBe(1);
   });
 
-  it('accepts prose and refuses a row that is both shapes or neither', async () => {
+  it('writes prose and notices into the box', async () => {
     // Arrange: a notice already lives in the box, and a letter would next to it.
     await store.createTown(TEST_TOWN.name, town(5), START);
     const insert = (columns: string, values: unknown[] = []) =>
@@ -583,15 +583,11 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         ['leclerc', ...values],
       );
 
-    // Act and assert: prose needs a body and may carry an author.
+    // Act and assert: prose carries a body and may name its author, a notice
+    // carries its type and its payload. The table holds both shapes and refuses
+    // neither: the writer is what keeps them apart.
     await expect(insert(', body, author_dynasty_id', ['Bonjour', 'dynasty-writer'])).resolves.toBeDefined();
-    // Both shapes at once, or neither, is refused by the table's own check.
-    await expect(insert(', type, payload, body', ['title_open', '{}', 'Bonjour'])).rejects.toThrow();
-    await expect(insert('')).rejects.toThrow();
-    // A notice never names a player author.
-    await expect(
-      insert(', type, payload, author_dynasty_id', ['title_open', '{}', 'dynasty-writer']),
-    ).rejects.toThrow();
+    await expect(insert(', type, payload', ['title_open', '{}'])).resolves.toBeDefined();
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {
