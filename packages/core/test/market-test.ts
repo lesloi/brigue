@@ -7,16 +7,20 @@ import { playHalfDay, playUntil, tick, town } from './helpers.ts';
 const SEED = 20261029;
 
 /** A world where the weaver is idle, so the hour's flow is only the town's. */
-function playWeek(world: World, actions: Action[] = []): { world: World; events: Event[] } {
-  return tick(world, actions);
+function playWeek(
+  world: World,
+  actions: Action[] = [],
+  dormant: ReadonlySet<string> = new Set(),
+): { world: World; events: Event[] } {
+  return tick(world, actions, dormant);
 }
 
 /**
  * One period: the town plays the actions on its first hour, then runs to the
  * bell, where the accumulated flow prices the market.
  */
-function playPeriod(world: World, actions: Action[] = []): World {
-  return playHalfDay(world, actions).world;
+function playPeriod(world: World, actions: Action[] = [], dormant: ReadonlySet<string> = new Set()): World {
+  return playHalfDay(world, actions, dormant).world;
 }
 
 /** The cloth price the bell sets for a half-day flow, drift aside. */
@@ -307,7 +311,7 @@ describe('the warehouse', () => {
     const treasuryCents = world.dynasties.leclerc.treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
 
     // Act
-    const { world: after, events } = playWeek(world);
+    const { world: after, events } = playWeek(world, [], new Set(['caron']));
 
     // Assert: the cloth is in the stock, and the hour wrote no journal line.
     expect(after.dynasties.leclerc.stock.cloth).toBe(4);
@@ -400,7 +404,7 @@ describe('the warehouse', () => {
     world.dynasties.leclerc.stock = { cloth: stockCapacityUnits(world.dynasties.leclerc) - 1 };
 
     // Act
-    const { world: after, events } = playWeek(world);
+    const { world: after, events } = playWeek(world, [], new Set(['caron']));
 
     // Assert: four wool were wanted, one fit, and the three refused are named.
     expect(events).toContainEqual(
@@ -516,11 +520,10 @@ describe('an AI dynasty', () => {
   it("does not sell a dormant dynasty's stock", () => {
     // Arrange
     const world = town(SEED);
-    world.dynasties.caron.dormant = true;
     world.dynasties.caron.stock = { cloth: 5 };
 
     // Act
-    const { world: after, events } = playWeek(world);
+    const { world: after, events } = playWeek(world, [], new Set(['caron']));
 
     // Assert
     expect(after.dynasties.caron.stock.cloth).toBe(5);

@@ -20,12 +20,17 @@ import { tick, town } from './helpers.ts';
 const SEED = 20261029;
 const HOURS = 200;
 
-function play(world: World, hours: number, actionAt?: (hour: number) => Action[]): { world: World; events: Event[] } {
+function play(
+  world: World,
+  hours: number,
+  actionAt?: (hour: number) => Action[],
+  dormant: ReadonlySet<string> = new Set(),
+): { world: World; events: Event[] } {
   let current = world;
   const events: Event[] = [];
 
   for (let hour = 0; hour < hours; hour += 1) {
-    const result = tick(current, actionAt?.(hour) ?? []);
+    const result = tick(current, actionAt?.(hour) ?? [], dormant);
     current = result.world;
     events.push(...result.events);
   }
@@ -258,7 +263,7 @@ describe('the simulation core', () => {
       // degree that opens the next level.
       const world = town(SEED);
       if (kind === 'site') {
-        world.dynasties.leclerc.title = 'bourgeois';
+        world.people['person-leclerc'].title = 'bourgeois';
       }
       world.engagements = [
         kind === 'site'
@@ -284,7 +289,7 @@ describe('the simulation core', () => {
     // moves only the wall clock, so this is the defensive path, not the normal one.
     const world = town(SEED);
     world.hour = 900;
-    world.dynasties.leclerc.title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     world.engagements = [{ id: 'engagement-late', kind: 'site', dynastyId: 'leclerc', dueAt: 800, work: 'residence' }];
 
     // Act
@@ -336,12 +341,13 @@ describe('the simulation core', () => {
   it('refuses an action from a dormant dynasty instead of running it', () => {
     // Arrange
     const world = town(SEED);
-    world.dynasties.leclerc.dormant = true;
 
     // Act
-    const { world: after, events } = tick(world, [
-      { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 1 },
-    ]);
+    const { world: after, events } = tick(
+      world,
+      [{ type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units: 1 }],
+      new Set(['leclerc']),
+    );
 
     // Assert
     expect(events).toContainEqual(
@@ -360,7 +366,6 @@ describe('the simulation core', () => {
     // Arrange: the human holds the mayoralty, then goes dormant.
     const world = town(SEED);
     world.seats.maire = { personId: 'person-leclerc' };
-    world.dynasties.leclerc.dormant = true;
     // A workshop with no input, so any sale at all would be the dormant dynasty
     // running when it must not.
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
@@ -368,8 +373,9 @@ describe('the simulation core', () => {
     const treasuryCents = world.dynasties.leclerc.treasuryCents;
 
     // Act: one plain hour, then the five periods that bring the next scrutiny.
-    const quiet = tick(world);
-    const later = play(quiet.world, HOURS_PER_YEAR * 5);
+    const dormant = new Set(['leclerc']);
+    const quiet = tick(world, [], dormant);
+    const later = play(quiet.world, HOURS_PER_YEAR * 5, undefined, dormant);
 
     // Assert: the dormant holder does not trade, leaves the seat vacant at the
     // first scrutiny, and votes in none of them.

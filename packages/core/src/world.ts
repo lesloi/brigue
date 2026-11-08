@@ -36,13 +36,6 @@ export const SEATS: readonly SeatId[] = ['maire', 'prevot', 'echevin-north', 'ec
 /** AI or HUMAN. The simulation does not care which: only who controls decides. */
 export type Controller = 'ai' | 'human';
 
-/** The attributes a person raises by use. */
-export interface Attributes {
-  artisanat: number;
-  parole: number;
-  intrigue: number;
-}
-
 export interface Workshop {
   /** Stable inside its dynasty: two workshops of one trade are two buildings. */
   id: string;
@@ -167,8 +160,25 @@ export const RESIDENCE_LADDER: readonly ResidenceStep[] = [
  */
 export const WORKSHOP_CAPACITY_UNITS: readonly number[] = [0, 100, 200, 350, 550, 800, 1100, 1450, 1850];
 
-export function titleOf(dynasty: Dynasty): TitleId {
-  return dynasty.title ?? 'roturier';
+export function titleOf(person: Person): TitleId {
+  return person.title ?? 'roturier';
+}
+
+/** The one person a dynasty acts through, which is also the one it answers through. */
+export function livingPersonOf(world: World, dynastyId: string): Person | undefined {
+  return Object.values(world.people)
+    .filter((person) => person.dynastyId === dynastyId && person.alive)
+    .sort((left, right) => left.id.localeCompare(right.id))[0];
+}
+
+/**
+ * The degree the dynasty holds, read from the person who holds it. A dynasty
+ * with nobody alive has no degree above the lowest.
+ */
+export function dynastyTitle(world: World, dynastyId: string): TitleId {
+  const head = livingPersonOf(world, dynastyId);
+
+  return head === undefined ? 'roturier' : titleOf(head);
 }
 
 export function residenceOf(dynasty: Dynasty): number {
@@ -183,6 +193,15 @@ export function titleIndex(title: TitleId): number {
 /** The next degree, or undefined for the prince. */
 export function nextTitle(title: TitleId): TitleId | undefined {
   return TITLES[titleIndex(title) + 1];
+}
+
+/**
+ * Workshops are an array and the array is part of the state hash, so its order
+ * is canonical: by id, in byte order, which is how the table reads them back
+ * (`ORDER BY id COLLATE "C"`). Anything that adds or removes one keeps it so.
+ */
+export function sortWorkshops(dynasty: Dynasty): void {
+  dynasty.workshops.sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 }
 
 export function workshopCapacity(level: number): number {
@@ -211,21 +230,19 @@ export function workshopCap(dynasty: Dynasty): number {
   return RESIDENCE_LADDER[residenceOf(dynasty) - 1].workshops;
 }
 
-/** The highest level a workshop may reach at the dynasty's degree. */
-export function workshopLevelCap(dynasty: Dynasty): number {
-  return 2 + Math.ceil(titleIndex(titleOf(dynasty)) / 2);
+/** The highest level a workshop may reach at a degree. */
+export function workshopLevelCap(title: TitleId): number {
+  return 2 + Math.ceil(titleIndex(title) / 2);
 }
 
 /**
  * Prestige as the screen reads it: what the title and the residence gave, plus
  * the service, the service stopping at the residence's cap.
  */
-export function displayedPrestige(dynasty: Dynasty): number {
+export function displayedPrestige(dynasty: Dynasty, title: TitleId): number {
   const residence = RESIDENCE_LADDER[residenceOf(dynasty) - 1];
 
-  return (
-    TITLE_LADDER[titleOf(dynasty)].prestige + residence.prestige + Math.min(dynasty.prestige, residence.prestigeCap)
-  );
+  return TITLE_LADDER[title].prestige + residence.prestige + Math.min(dynasty.prestige, residence.prestigeCap);
 }
 
 /** The trade a workshop practises: its output names its chain. */
@@ -248,35 +265,24 @@ export interface Dynasty {
    * residence. Optional because the ladder arrived with ruleset 3.
    */
   prestige: number;
-  /** The degree bought at the town hall; it opens the residence and the workshops. */
-  title?: TitleId;
-  /** One ladder: the title opens a level, money pays for it. */
+  /** One ladder: the degree opens a level, money pays for it. */
   residenceLevel?: number;
-  /**
-   * The highest council floor the dynasty has reached. A mandate raises it, the
-   * heir keeps it one floor lower (#7), and the gate of #55 reads it.
-   */
-  career: number;
-  /**
-   * Written by the server from the players table. The core never asks who
-   * controls the dynasty: a dormant dynasty keeps its money, its seat and its
-   * grudges, but nothing runs and it votes nowhere.
-   */
-  dormant: boolean;
   workshops: Workshop[];
   stock: Partial<Record<GoodId, number>>;
 }
 
 /**
- * A person belongs to a dynasty and holds at most one office. The attributes are
- * theirs and die with them; the dynasty keeps the career.
+ * A person belongs to a dynasty and holds at most one office. The degree is
+ * theirs: a title is bought by the person who holds it, and it does not outlive
+ * them.
  */
 export interface Person {
   id: string;
   dynastyId: string;
   name: string;
   age: number;
-  attributes: Attributes;
+  /** The degree bought at the town hall; it opens the residence and the workshops. */
+  title?: TitleId;
   alive: boolean;
 }
 
@@ -361,7 +367,7 @@ export interface World {
   workshopSeq?: number;
 }
 
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 1;
 
 export const RULES = {
   version: 4,
@@ -526,7 +532,7 @@ export interface DynastyIdentity {
 
 /**
  * The dynasty a new player starts with: the workshop of its trade, a little
- * money, its first input, no seat and no career. The town is built without it;
+ * money, its first input, no seat and no degree. The town is built without it;
  * `withFirstDynasty` adds it when the first player joins, and puts it back into a
  * freed place so a deleted first dynasty cannot brick the join path. Its name is an
  * input: the server draws it, and nothing about the first dynasty is fixed.
@@ -543,10 +549,7 @@ export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): Dyn
       debtCents: 0,
       favour: 50,
       prestige: 0,
-      title: 'roturier',
       residenceLevel: 1,
-      career: 0,
-      dormant: false,
       workshops: [{ id: 'workshop-1', good: chain.output, level: RULES.startingWorkshopLevel }],
       stock: { [chain.input]: RULES.startingInputUnits },
     },
@@ -555,7 +558,7 @@ export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): Dyn
       dynastyId: identity.id,
       name: identity.personName,
       age: 20,
-      attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+      title: 'roturier',
       alive: true,
     },
   };
@@ -657,10 +660,7 @@ export function createWorld(seed: number): World {
         prestige: 65,
         // A cloth workshop of level 3 needs the patrician's workshop cap; the
         // seed gives Caron the degree that carries it rather than a bad workshop.
-        title: 'bourgeois',
         residenceLevel: 2,
-        career: 0,
-        dormant: false,
         workshops: [{ id: 'workshop-1', good: 'cloth', level: 3 }],
         stock: {},
       },
@@ -672,10 +672,7 @@ export function createWorld(seed: number): World {
         debtCents: 0,
         favour: 45,
         prestige: 50,
-        title: 'roturier',
         residenceLevel: 1,
-        career: 0,
-        dormant: false,
         workshops: [{ id: 'workshop-1', good: 'bread', level: 2 }],
         stock: {},
       },
@@ -687,10 +684,7 @@ export function createWorld(seed: number): World {
         debtCents: 0,
         favour: 55,
         prestige: 52,
-        title: 'roturier',
         residenceLevel: 1,
-        career: 0,
-        dormant: false,
         workshops: [{ id: 'workshop-1', good: 'planks', level: 2 }],
         stock: {},
       },
@@ -701,7 +695,7 @@ export function createWorld(seed: number): World {
         dynastyId: 'caron',
         name: 'Robert Caron',
         age: 44,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+        title: 'bourgeois',
         alive: true,
       },
       'person-fournier': {
@@ -709,7 +703,7 @@ export function createWorld(seed: number): World {
         dynastyId: 'fournier',
         name: 'Jehan Fournier',
         age: 41,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+        title: 'roturier',
         alive: true,
       },
       'person-charpentier': {
@@ -717,7 +711,7 @@ export function createWorld(seed: number): World {
         dynastyId: 'charpentier',
         name: 'Perrin Charpentier',
         age: 49,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
+        title: 'roturier',
         alive: true,
       },
     },

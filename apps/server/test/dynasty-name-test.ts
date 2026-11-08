@@ -300,6 +300,21 @@ describe('the rename route', () => {
     expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
   });
 
+  it('refuses a rename from a dynasty the silence has already deleted', async () => {
+    // Arrange: a live token whose last visit is past the deletion threshold, so
+    // the next read removes the dynasty. The rename must not slip in first.
+    const harness = await start(town(7));
+    const month = 31 * 24 * 60 * 60 * 1000;
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc', new Date(START - month));
+
+    // Act
+    const response = await put(harness, token, 'Moreau');
+
+    // Assert
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'unknown_dynasty' });
+  });
+
   it('refuses a name taken in the town or by a human dynasty elsewhere, whatever its case', async () => {
     // Arrange: another town whose human dynasty is Moreau.
     const { harness, token } = await seated();

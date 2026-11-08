@@ -48,7 +48,7 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [player('caron', seen)], START);
 
     // Assert
-    expect(presence.world.dynasties.caron.dormant).toBe(true);
+    expect(presence.dormant.has('caron')).toBe(true);
     expect(presence.world.dynasties.caron.treasuryCents).toBe(treasuryCents);
     expect(presence.world.seats.maire.personId).toBe('person-caron');
   });
@@ -86,7 +86,7 @@ describe('dormancy', () => {
 
     // Assert
     expect(presence.deletedDynastyIds).toEqual([]);
-    expect(presence.world.dynasties.caron.dormant).toBe(true);
+    expect(presence.dormant.has('caron')).toBe(true);
   });
 
   it('goes dormant exactly at the dormancy boundary', () => {
@@ -98,7 +98,7 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [player('caron', seen)], START);
 
     // Assert
-    expect(presence.world.dynasties.caron.dormant).toBe(true);
+    expect(presence.dormant.has('caron')).toBe(true);
   });
 
   it('walks a twenty-dynasty town without changing it', () => {
@@ -129,22 +129,20 @@ describe('dormancy', () => {
     // Assert
     expect(Object.keys(presence.world.dynasties)).toHaveLength(20);
     expect(presence.deletedDynastyIds).toEqual([]);
-    expect(presence.changed).toBe(false);
   });
 
   it('treats a dynasty with no live token as dormant, and an AI dynasty as never dormant', () => {
     // Arrange
     const world = aHumanWorld();
-    world.dynasties.fournier.dormant = true;
     const seen = new Date(START - HOUR);
 
     // Act
     const presence = applyPresence(world, [player('leclerc', seen, seen)], START);
 
     // Assert: a closed session leaves the dynasty dormant even after a visit...
-    expect(presence.world.dynasties.leclerc.dormant).toBe(true);
+    expect(presence.dormant.has('leclerc')).toBe(true);
     // ...and an AI dynasty is always played.
-    expect(presence.world.dynasties.fournier.dormant).toBe(false);
+    expect(presence.dormant.has('fournier')).toBe(false);
   });
 
   it('revokes a player row whose dynasty the world no longer holds', () => {
@@ -168,7 +166,7 @@ describe('dormancy', () => {
     const presence = applyPresence(world, [], START);
 
     // Assert
-    expect(presence.world.dynasties.leclerc.dormant).toBe(true);
+    expect(presence.dormant.has('leclerc')).toBe(true);
     expect(presence.deletedDynastyIds).toEqual([]);
   });
 });

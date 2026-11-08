@@ -1,4 +1,5 @@
 import {
+  dynastyTitle,
   displayedPrestige,
   GOODS,
   HOURS_PER_YEAR,
@@ -10,7 +11,6 @@ import {
   stockCapacityUnits,
   stockUnits,
   TITLE_LADDER,
-  titleOf,
   workshopCapacity,
   workshopLevelCap,
   type Engagement,
@@ -80,8 +80,6 @@ export interface OwnDynastyView {
   favour: number;
   /** The prestige the screens show: title plus residence plus capped service. */
   prestige: number;
-  career: number;
-  dormant: boolean;
   title: TitleId;
   residenceLevel: number;
   ladder: LadderView;
@@ -100,7 +98,6 @@ export interface PublicDynastyView {
   id: string;
   name: string;
   prestige: number;
-  dormant: boolean;
   /**
    * The residence a dynasty has reached. Public because the screen shows it on
    * the register of dynasties; an event no longer tells the town when it grows,
@@ -177,8 +174,7 @@ export function projectWorld(town: TownInfo, world: World, dynastyId: string, ho
         .map((candidate) => ({
           id: candidate.id,
           name: candidate.name,
-          prestige: displayedPrestige(candidate),
-          dormant: candidate.dormant,
+          prestige: displayedPrestige(candidate, dynastyTitle(world, candidate.id)),
           residenceLevel: candidate.residenceLevel ?? 1,
         }))
         .sort((left, right) => left.id.localeCompare(right.id)),
@@ -232,7 +228,7 @@ function calendarOf(world: World, hourStartedAt: Date): CalendarView {
 
 function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
   const residence = RESIDENCE_LADDER[residenceOf(dynasty) - 1];
-  const title = titleOf(dynasty);
+  const title = dynastyTitle(world, dynasty.id);
   const next = nextTitle(title);
 
   return {
@@ -241,9 +237,7 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
     treasuryCents: dynasty.treasuryCents,
     debtCents: dynasty.debtCents,
     favour: dynasty.favour,
-    prestige: displayedPrestige(dynasty),
-    career: dynasty.career,
-    dormant: dynasty.dormant,
+    prestige: displayedPrestige(dynasty, title),
     title,
     residenceLevel: residenceOf(dynasty),
     ladder: {
@@ -255,7 +249,7 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
       prestigeCap: residence.prestigeCap,
       workshops: residence.workshops,
       stockDefence: residence.stockDefence,
-      workshopLevelCap: workshopLevelCap(dynasty),
+      workshopLevelCap: workshopLevelCap(title),
       nextTitle: next === undefined ? null : { title: next, priceCents: TITLE_LADDER[next].priceCents },
       nextResidence:
         residenceOf(dynasty) >= RESIDENCE_LADDER.length
@@ -279,7 +273,7 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
         inputUnitsPerHour: recipe === null ? 0 : outputUnitsPerHour * recipe.perUnit,
         upkeepCentsPerHour: workshop.level * RULES.upkeepPerWorkshopLevelCents,
         capacityUnits: workshopCapacity(workshop.level),
-        canUpgrade: workshop.level < workshopLevelCap(dynasty),
+        canUpgrade: workshop.level < workshopLevelCap(title),
         upgradeHours: RULES.improvementHours[workshop.level + 1] ?? null,
       };
     }),

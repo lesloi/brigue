@@ -27,6 +27,7 @@ function play(
   world: World,
   until: number,
   actions: (hour: number) => Action[] = () => [],
+  dormant: ReadonlySet<string> = new Set(),
 ): { world: World; events: Event[] } {
   const placed = [];
   for (let hour = world.hour; hour <= until; hour += 1) {
@@ -35,7 +36,7 @@ function play(
     }
   }
 
-  return advance(world, until, placed);
+  return advance(world, until, placed, dormant);
 }
 
 function leased(world: World, dynastyId: string) {
@@ -63,7 +64,7 @@ describe('workshops, trades and the ladder', () => {
     const treasury = world.dynasties.leclerc.treasuryCents;
 
     // A second building needs a residence that holds two: the level 1 holds one.
-    world.dynasties.leclerc.title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     world.dynasties.leclerc.residenceLevel = 3;
 
     // Act: the build is a twelve-hour site.
@@ -139,7 +140,7 @@ describe('workshops, trades and the ladder', () => {
     // Act: the upgrade is refused at the cap, then allowed once the title opens it.
     const { events } = tick(world, [{ type: 'workshop.upgrade', dynastyId: 'leclerc', workshopId }]);
     const promoted = town(SEED);
-    promoted.dynasties.leclerc.title = 'bourgeois';
+    promoted.people['person-leclerc'].title = 'bourgeois';
     const run = play(promoted, promoted.hour + RULES.improvementHours[3], (hour) =>
       hour === promoted.hour ? [{ type: 'workshop.upgrade', dynastyId: 'leclerc', workshopId }] : [],
     );
@@ -156,7 +157,7 @@ describe('workshops, trades and the ladder', () => {
   it('stops production for the hours a workshop is under improvement', () => {
     // Arrange: a loom with wool, on a short works.
     const world = town(SEED);
-    world.dynasties.leclerc.title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     world.dynasties.leclerc.stock = { wool: 60 };
     const workshopId = 'workshop-1';
 
@@ -170,7 +171,7 @@ describe('workshops, trades and the ladder', () => {
   it('refuses a second site while one is under way', () => {
     // Arrange: a dynasty whose residence holds two, so only the site guard can refuse.
     const world = town(SEED);
-    world.dynasties.leclerc.title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     world.dynasties.leclerc.residenceLevel = 3;
     world.dynasties.leclerc.treasuryCents = 1_000_000;
 
@@ -189,13 +190,14 @@ describe('workshops, trades and the ladder', () => {
   it("holds a dormant dynasty's site until it comes back", () => {
     // Arrange: a dynasty that went silent while its works were open.
     const world = town(SEED);
-    world.dynasties.leclerc.title = 'bourgeois';
-    world.dynasties.leclerc.dormant = true;
+    world.people['person-leclerc'].title = 'bourgeois';
 
     // Act
-    const { world: after, events } = tick(world, [
-      { type: 'workshop.upgrade', dynastyId: 'leclerc', workshopId: 'workshop-1' },
-    ]);
+    const { world: after, events } = tick(
+      world,
+      [{ type: 'workshop.upgrade', dynastyId: 'leclerc', workshopId: 'workshop-1' }],
+      new Set(['leclerc']),
+    );
 
     // Assert: the action is refused, and nothing opens.
     expect(refusal(events, 'dormant_dynasty')).toBeDefined();
@@ -206,7 +208,7 @@ describe('workshops, trades and the ladder', () => {
     // Arrange: a dynasty with a purse and no stock to sell.
     const world = town(SEED);
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
-    world.dynasties.leclerc.title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     world.dynasties.leclerc.stock = { wool: 50 };
     const workshopId = 'workshop-1';
 
@@ -239,7 +241,7 @@ describe('workshops, trades and the ladder', () => {
         dueAt: HOURS_PER_YEAR / 2,
       }),
     );
-    expect(titleOf(leased(after, 'leclerc'))).toBe('bourgeois');
+    expect(titleOf(after.people['person-leclerc']!)).toBe('bourgeois');
     expect(world.dynasties.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeGreaterThanOrEqual(
       price,
     );
@@ -255,7 +257,7 @@ describe('workshops, trades and the ladder', () => {
 
     // Assert: nothing is opened and the degree does not move.
     expect(refusal(events, 'insufficient_funds')).toBeDefined();
-    expect(titleOf(leased(after, 'leclerc'))).toBe('roturier');
+    expect(titleOf(after.people['person-leclerc']!)).toBe('roturier');
     expect(after.engagements).toEqual([]);
   });
 
@@ -299,7 +301,7 @@ describe('workshops, trades and the ladder', () => {
   it('pays for a residence level the title opened, and the level caps prestige and workshops', () => {
     // Arrange: a bourgeois has opened level 2; level 1 holds one workshop.
     const world = town(SEED);
-    leased(world, 'leclerc').title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     leased(world, 'leclerc').treasuryCents = 1_000_000;
     expect(workshopCap(leased(world, 'leclerc'))).toBe(1);
 
@@ -313,20 +315,20 @@ describe('workshops, trades and the ladder', () => {
     expect(dynasty.residenceLevel).toBe(2);
     // Level 2 holds one workshop as well: the second service arrives at level 3.
     expect(workshopCap(dynasty)).toBe(1);
-    expect(displayedPrestige(dynasty)).toBe(80 + 50 + Math.min(dynasty.prestige, 300));
+    expect(displayedPrestige(dynasty, 'bourgeois')).toBe(80 + 50 + Math.min(dynasty.prestige, 300));
   });
 
   it('shows the prestige of the title and of the residence, and caps only the service', () => {
     // Arrange: a patrician at residence 4, with more service than the cap allows.
     const world = town(SEED);
     const dynasty = leased(world, 'leclerc');
-    dynasty.title = 'patricien';
+    world.people['person-leclerc'].title = 'patricien';
     dynasty.residenceLevel = 4;
     dynasty.prestige = 10_000;
 
     // Assert: the title adds its 140 and the residence 90, the service stops at 500.
-    expect(displayedPrestige(dynasty)).toBe(140 + 90 + 500);
-    expect(workshopLevelCap(dynasty)).toBe(4);
+    expect(displayedPrestige(dynasty, 'patricien')).toBe(140 + 90 + 500);
+    expect(workshopLevelCap('patricien')).toBe(4);
   });
 
   it('walks the twelve degrees in order and stops at the prince', () => {

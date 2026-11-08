@@ -49,9 +49,6 @@ an entry only for a choice that is costly to reverse and whose reason the code d
 - After a change: `pnpm format`, then `pnpm check` (formatting, lint, types).
 - Before committing: `pnpm test` and `pnpm build`, unless already run since the last change.
 - Run `pnpm install` after a pull, merge or rebase that changes dependencies.
-- `apps/server/db/schema.sql` reads the whole schema in one file and is never applied: fold a
-  migration into it in the same commit that adds the migration, or `schema-reference-test.ts`
-  fails.
 - Branches: `type/short-description` (`feature`, `bugfix`, `hotfix`, `release`, `chore`).
   Commits: Conventional Commits under 72 characters, without `Co-authored-by:`.
 - Update the docs only when a rule, a convention or a command changes, not for a new feature.

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { NAME_PRICE, renameDynasty } from '@brigue/core';
 
+import { applyPresence } from '../../town/presence.ts';
 import { NameInUseError, sessionWorld } from '../../town/worlds.ts';
 import type { BoundPlayer } from '../../identity/players.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
@@ -79,7 +80,16 @@ async function renameInTown(context: AppContext, bound: BoundPlayer, name: strin
     if (dynasty === undefined) {
       return { kind: 'lost' as const };
     }
-    if (dynasty.dormant) {
+    // Silence is a fact about the account, not the world: it is read here the
+    // same way the catch-up reads it. Past the deletion threshold the dynasty is
+    // already gone, and a rename must not slip into the snapshot before the
+    // next read removes it.
+    const players = await context.deps.store.listByTown(bound.townId);
+    const presence = applyPresence(world, players, context.now());
+    if (presence.deletedDynastyIds.includes(dynasty.id)) {
+      return { kind: 'lost' as const };
+    }
+    if (presence.dormant.has(dynasty.id)) {
       return { kind: 'dormant' as const };
     }
 

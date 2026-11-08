@@ -376,16 +376,16 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   const [dynasties, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all(
     [
       client.query(
-        `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, title, residence_level, career, dormant FROM dynasties WHERE town_id = $1 ORDER BY id`,
+        `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, residence_level FROM dynasties WHERE town_id = $1 ORDER BY id`,
         [townId],
       ),
-      client.query(
-        `SELECT id, dynasty_id, name, age, artisanat, parole, intrigue, alive FROM people WHERE town_id = $1 ORDER BY id`,
-        [townId],
-      ),
-      client.query(`SELECT dynasty_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY dynasty_id, id`, [
+      client.query(`SELECT id, dynasty_id, name, age, title, alive FROM people WHERE town_id = $1 ORDER BY id`, [
         townId,
       ]),
+      client.query(
+        `SELECT dynasty_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY dynasty_id, id COLLATE "C"`,
+        [townId],
+      ),
       client.query(`SELECT dynasty_id, good, units FROM stock WHERE town_id = $1 ORDER BY dynasty_id, good`, [townId]),
       client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
       client.query(
@@ -438,10 +438,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       debtCents: dynasty.debt_cents,
       favour: dynasty.favour,
       prestige: dynasty.prestige,
-      title: dynasty.title as TitleId,
       residenceLevel: dynasty.residence_level,
-      career: dynasty.career,
-      dormant: dynasty.dormant,
       workshops: [],
       stock: {},
     };
@@ -468,11 +465,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       dynastyId: person.dynasty_id,
       name: person.name,
       age: person.age,
-      attributes: {
-        artisanat: person.artisanat,
-        parole: person.parole,
-        intrigue: person.intrigue,
-      },
+      title: person.title as TitleId,
       alive: person.alive,
     };
   }
@@ -579,20 +572,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'dynasties',
-    [
-      'town_id',
-      'id',
-      'name',
-      'controller',
-      'treasury_cents',
-      'debt_cents',
-      'favour',
-      'prestige',
-      'title',
-      'residence_level',
-      'career',
-      'dormant',
-    ],
+    ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige', 'residence_level'],
     dynasties.map((dynasty) => [
       townId,
       dynasty.id,
@@ -602,10 +582,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       dynasty.debtCents,
       dynasty.favour,
       dynasty.prestige,
-      titleOf(dynasty),
       residenceOf(dynasty),
-      dynasty.career,
-      dynasty.dormant,
     ]),
   );
 
@@ -613,16 +590,14 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'people',
-    ['town_id', 'id', 'dynasty_id', 'name', 'age', 'artisanat', 'parole', 'intrigue', 'alive'],
+    ['town_id', 'id', 'dynasty_id', 'name', 'age', 'title', 'alive'],
     people.map((person) => [
       townId,
       person.id,
       person.dynastyId,
       person.name,
       person.age,
-      person.attributes.artisanat,
-      person.attributes.parole,
-      person.attributes.intrigue,
+      titleOf(person),
       person.alive,
     ]),
   );
@@ -630,16 +605,9 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'workshops',
-    ['town_id', 'dynasty_id', 'position', 'id', 'good', 'level'],
+    ['town_id', 'dynasty_id', 'id', 'good', 'level'],
     dynasties.flatMap((dynasty) =>
-      dynasty.workshops.map((workshop, position) => [
-        townId,
-        dynasty.id,
-        position,
-        workshop.id,
-        workshop.good,
-        workshop.level,
-      ]),
+      dynasty.workshops.map((workshop) => [townId, dynasty.id, workshop.id, workshop.good, workshop.level]),
     ),
   );
 

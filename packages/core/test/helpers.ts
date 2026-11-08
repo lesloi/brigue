@@ -5,17 +5,26 @@ import type { Action, Event, DynastyIdentity, Trade, World } from '../src/index.
  * One hour of the town, played the way the scheduler plays it: the actions are
  * placed on the hour being stepped.
  */
-export function tick(world: World, actions: readonly Action[] = []): { world: World; events: Event[] } {
+export function tick(
+  world: World,
+  actions: readonly Action[] = [],
+  dormant: ReadonlySet<string> = new Set(),
+): { world: World; events: Event[] } {
   return advance(
     world,
     world.hour,
     actions.map((action) => ({ at: world.hour, action })),
+    dormant,
   );
 }
 
 /** Plays until the town reaches `hour`, one hour at a time. */
-export function playUntil(world: World, hour: number): { world: World; events: Event[] } {
-  return advance(world, hour);
+export function playUntil(
+  world: World,
+  hour: number,
+  dormant: ReadonlySet<string> = new Set(),
+): { world: World; events: Event[] } {
+  return advance(world, hour, [], dormant);
 }
 
 /** The next bell: noon or midnight, whichever comes first. */
@@ -26,10 +35,14 @@ export function nextBell(hour: number): number {
 }
 
 /** Plays to the next bell, where the market is priced. */
-export function playHalfDay(world: World, actions: readonly Action[] = []): { world: World; events: Event[] } {
-  const first = tick(world, actions);
+export function playHalfDay(
+  world: World,
+  actions: readonly Action[] = [],
+  dormant: ReadonlySet<string> = new Set(),
+): { world: World; events: Event[] } {
+  const first = tick(world, actions, dormant);
 
-  return playUntil(first.world, nextBell(first.world.hour - 1));
+  return playUntil(first.world, nextBell(first.world.hour - 1), dormant);
 }
 
 /** The fixture identity the tests play; production draws its own. */

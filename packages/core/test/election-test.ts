@@ -10,12 +10,13 @@ function play(
   world: World,
   hours: number,
   at: (hour: number) => Action[] = () => [],
+  dormant: ReadonlySet<string> = new Set(),
 ): { world: World; events: Event[] } {
   let current = world;
   const events: Event[] = [];
 
   for (let hour = 0; hour < hours; hour += 1) {
-    const result = tick(current, at(hour));
+    const result = tick(current, at(hour), dormant);
     current = result.world;
     events.push(...result.events);
   }
@@ -144,10 +145,9 @@ describe('the election', () => {
     // Arrange: caron holds the mayoralty and goes dormant; no AI can campaign.
     const world = withoutAiCampaigns(town(SEED));
     world.seats.maire = { personId: 'person-caron' };
-    world.dynasties.caron.dormant = true;
 
     // Act
-    const result = play(world, YEAR);
+    const result = play(world, YEAR, undefined, new Set(['caron']));
 
     // Assert: the seat is cleared and announced as vacant.
     expect(result.world.seats.maire.personId).toBeNull();

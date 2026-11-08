@@ -110,7 +110,6 @@ describe('renaming a dynasty', () => {
       dynastyId: 'leclerc',
       name: 'Hugues Leclerc',
       age: 80,
-      attributes: { artisanat: 10, parole: 10, intrigue: 10 },
       alive: false,
     };
     const treasury = world.dynasties.leclerc?.treasuryCents ?? 0;

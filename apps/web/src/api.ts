@@ -92,8 +92,6 @@ export interface WorldProjection {
     debtCents: number;
     favour: number;
     prestige: number;
-    career: number;
-    dormant: boolean;
     title: TitleId;
     residenceLevel: number;
     ladder: ProjectedLadder;
@@ -108,7 +106,7 @@ export interface WorldProjection {
   town: {
     id: number;
     name: string;
-    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean; residenceLevel: number }>;
+    dynasties: Array<{ id: string; name: string; prestige: number; residenceLevel: number }>;
     people: Array<{ id: string; dynastyId: string; name: string }>;
     seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];

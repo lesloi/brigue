@@ -53,12 +53,15 @@ export function catchUpTown(access: TownAccess, townId: number, dynastyId: strin
 
     // The reader is the backstop, not the clock: it only wakes a town the
     // scheduler has left more than an hour behind.
-    const due = await playDue(session, { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt }, at, 2);
-    // The absence was simulated dormant; the visit itself wakes the dynasty for
-    // the hour that follows.
-    const woke = wake(due.world, dynastyId);
+    const due = await playDue(
+      session,
+      { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
+      at,
+      2,
+      presence.dormant,
+    );
 
-    if (due.hours > 0 || presence.changed || woke) {
+    if (due.hours > 0) {
       await session.save(due.world, due.hourStartedAt, due.events);
     }
 
@@ -104,13 +107,17 @@ export function advanceTown(
     // One hour further than the town's own clock, whatever the wall clock
     // says: the click is the hour.
     const forced = new Date(session.snapshot.hourStartedAt.getTime() + HOUR_MS);
+    // The absence was simulated dormant; the visit itself wakes the reader for
+    // the hour that follows, and for that hour only.
+    const awake = new Set(presence.dormant);
+    awake.delete(dynastyId);
     const due = await playDue(
       session,
       { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
       forced,
       1,
+      awake,
     );
-    wake(due.world, dynastyId);
     // The hour was simulated, not lived. Put the next natural hour an hour
     // from the real now, instead of stacking a backlog.
     const savedAt = new Date(now());
@@ -140,17 +147,4 @@ async function synchronisePresence(access: TownAccess, townId: number, world: Wo
   }
 
   return presence;
-}
-
-/** The visit wakes a dynasty the absence had made dormant, for the hour to come. */
-function wake(world: World, dynastyId: string): boolean {
-  const dynasty = world.dynasties[dynastyId];
-
-  if (dynasty === undefined || !dynasty.dormant) {
-    return false;
-  }
-
-  dynasty.dormant = false;
-
-  return true;
 }

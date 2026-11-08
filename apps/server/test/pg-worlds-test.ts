@@ -3,7 +3,15 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { createWorld, RULES, WorldVersionError, type Action, type Event, type World } from '@brigue/core';
+import {
+  createWorld,
+  RULES,
+  sortWorkshops,
+  WorldVersionError,
+  type Action,
+  type Event,
+  type World,
+} from '@brigue/core';
 
 import { applyMigrations } from '../src/db/migrations.ts';
 import { PgWorldStore } from '../src/town/pg-worlds.ts';
@@ -79,6 +87,27 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(created.id).toBe(TEST_TOWN.id);
     expect(again.id).not.toBe(created.id);
     expect(await store.listTowns()).toHaveLength(2);
+  });
+
+  it('reads workshops back in the order the world hashes them', async () => {
+    // Arrange: ids whose byte order is not their creation order, since the row
+    // no longer carries a position.
+    await store.createTown(TEST_TOWN.name, createWorld(31), START);
+    await withWorld(async (session) => {
+      const world = session.snapshot.world;
+      world.dynasties.caron.workshops = [
+        { id: 'workshop-9', good: 'cloth', level: 1 },
+        { id: 'workshop-10', good: 'cloth', level: 1 },
+      ];
+      sortWorkshops(world.dynasties.caron);
+      await session.save(world, START, []);
+    });
+
+    // Act
+    const world = await withWorld(async (session) => session.snapshot.world);
+
+    // Assert: the canonical order, the one the array is hashed in.
+    expect(world.dynasties.caron.workshops.map((workshop) => workshop.id)).toEqual(['workshop-10', 'workshop-9']);
   });
 
   it('refuses a world it does not hold', async () => {

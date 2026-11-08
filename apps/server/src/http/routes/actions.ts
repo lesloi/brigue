@@ -4,7 +4,7 @@ import {
   GOODS,
   nextTitle,
   SEATS,
-  titleOf,
+  dynastyTitle,
   TRADES,
   type Action,
   type GoodId,
@@ -216,7 +216,7 @@ export async function appendAction(
         // The degree is named when the order is taken, from the dynasty as it is
         // then, so no later purchase changes what this line says.
         ...(submission.intent.type === 'dynasty.buy_title'
-          ? { title: nextTitle(titleOf(world.dynasties[bound.dynastyId]!)) }
+          ? { title: nextTitle(dynastyTitle(world, bound.dynastyId)) }
           : {}),
       };
       await session.append(stored);

@@ -180,7 +180,7 @@ describe('the projection calendar', () => {
   it('carries the ladder in its three shares, its names and the doors', () => {
     // Arrange: a fait, bourgeois, whose level 2 opens the residence 2.
     const world = town(SEED);
-    world.dynasties.leclerc.title = 'bourgeois';
+    world.people['person-leclerc'].title = 'bourgeois';
     world.dynasties.leclerc.prestige = 10_000;
     world.engagements = [
       { id: 'engagement-1', kind: 'site', dynastyId: 'leclerc', dueAt: world.hour + 6, work: 'title' },

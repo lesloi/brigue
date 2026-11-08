@@ -43,7 +43,13 @@ export interface Source {
  *
  * Pure: the caller decides whether to save the result.
  */
-export async function playDue(session: WorldSession, source: Source, now: Date, minHours = 1): Promise<Due> {
+export async function playDue(
+  session: WorldSession,
+  source: Source,
+  now: Date,
+  minHours = 1,
+  dormant: ReadonlySet<string> = new Set(),
+): Promise<Due> {
   const elapsed = Math.floor((now.getTime() - source.hourStartedAt.getTime()) / HOUR_MS);
 
   if (elapsed < minHours) {
@@ -58,6 +64,7 @@ export async function playDue(session: WorldSession, source: Source, now: Date, 
     source.world,
     until,
     actions.map((stored) => ({ at: stored.playsAt, action: stored.action })),
+    dormant,
   );
 
   // The anchor moves by every elapsed hour, played or skipped, so the town's
@@ -158,9 +165,11 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           session,
           { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
           at,
+          1,
+          presence.dormant,
         );
 
-        if (due.hours > 0 || presence.changed || dynasties.size > 0) {
+        if (due.hours > 0 || presence.deletedDynastyIds.length > 0 || dynasties.size > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
         if (due.skipped > 0) {

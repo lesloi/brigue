@@ -105,8 +105,8 @@ French in the data and in the interface, and the English here is only how we tal
 
 ## The person
 
-- **Attributs** — artisanat, parole, intrigue. Raised by use, capped by the trade and the title,
-  and lost with the person.
+- **Degré** — the title a person holds (roturier, bourgeois, …). Bought by the person, it opens
+  the residence and the workshops and dies with them; the heir starts one degree lower.
 - **Métier** — the trade a workshop practises: weaver, baker, carpenter. A player chooses one at
   creation; to change it, the dynasty builds a workshop of the other trade and destroys the old one.
 - **Atelier** — the workshop: one trade, one level. It produces into the warehouse, holds its share

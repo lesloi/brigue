@@ -74,9 +74,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **The town's council is a pyramid of twelve: one, two, four, five.** The seats are ranked, and
   each floor holds a different right rather than a stronger version of the one below. One office per
   person, all elected on the same day, every day; to climb, a person gives up the office they
-  hold. **The career is the gate**: standing for a floor requires the dynasty to have held an
-  office of a lower floor, and one mandate is enough. The career belongs to the dynasty, and the
-  heir keeps it one floor lower. The five
+  hold. **The gate of a floor is an open question**: the design asked for a career of offices held,
+  the code has none, and the career field went with the format of the single baseline. Whatever
+  replaces it must be stated before it is built. The five
   seats at the base hold no lever: salary, prestige, a vote on exceptional measures, and jury
   duty. A vacant seat blocks nothing — the power is simply unavailable, as in Europe 1400 — so a
   young town has no mayor for its first four elections. Revisit if twelve seats for twenty dynasties
@@ -101,16 +101,16 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   that votes and a court. Revisit if the tiers end up voting the same thing three times.
 
 - **One franchise everywhere.** Every dynasty votes at every tier, at the same scrutiny, with the
-  same roll and the same campaign bonus; what changes with the tier is the title required, the
-  career required and the price of a campaign. A narrower college — mayors electing the county,
-  counts electing the king — would disenfranchise the dynasty that has just lost, and the career
-  gate already forces the ladder. The price of a campaign rises with the tier and the favour
+  same roll and the same campaign bonus; what changes with the tier is the title required and the
+  price of a campaign. A narrower college — mayors electing the county, counts electing the king —
+  would disenfranchise the dynasty that has just lost. The price of a campaign rises with the tier and the favour
   spent on one is never refunded: buying a crown must ruin a dynasty.
 
 - **Titles are bought, and lost by a court, not by a vote.** Twelve degrees, from roturier to
   prince, bought at the town hall: they cost gold, give prestige, open a level of residence and
   some offices. Money buys the ladder; the court can strip a degree as a sentence; death drops the
-  dynasty one degree. A majority that could strip a title would be a weapon, and a judge is a
+  heir one degree. The degree is the person's: the dynasty keeps its residence and its name, not
+  the rank of a dead head. A majority that could strip a title would be a weapon, and a judge is a
   defence. Revisit if titles become a pure money sink.
 
 - **Favour is earned by service and by visible spending.** A mandate held, a jury served, a vote
@@ -269,6 +269,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   format after. One thing at a time, and the only change that cannot wait is the one that breaks
   the shape of the world.
 
+- **The schema is one baseline, and a schema change is a reset.** The migration tree is a single
+  `0001_initial.sql`, replayed on an empty schema; there is no upgrade path to write, because no
+  world of another format is read. A schema change edits that file, and the database crosses with
+  `reset --full`, which deletes the towns, the accounts and the book of kings. The format number
+  carries no history: it went back to one with this baseline, and the next schema change may pick
+  another. `migrate` builds an empty database and nothing else; its gate cannot see a baseline that
+  was rewritten in place, and it is not the path a deployed database takes.
+
 ## Simulation
 
 - **The core is pure, deterministic and clock-free.** One seed in, one world out: the town is
@@ -387,14 +395,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   a seat hold power, and the secret ballot is the only vote one can buy without knowing whether
   the money worked. Revisit if juries are captured or trials are too slow.
 
-- **Death is a window, retirement is a choice, and the heir inherits the dynasty and the career one
-  floor lower.**
+- **Death is a window, retirement is a choice, and the heir inherits the dynasty one degree
+  lower.**
   At fifty, retirement is offered; refusing opens a window in which death may come at any
   scrutiny, with a chance that rises to certainty around a hundred and ten. The roll happens at
   the midnight bell, whether the player is connected or not. The heir keeps the dynasty's money, workshops, stock and
-  grudges, keeps the career one floor lower, loses the seats, drops one title, pays about fifteen
-  per cent of the estate in duty and funerals, and starts with ten in each attribute plus a tenth
-  of what the parent had gained. The choice is what keeps death from being a tax on time passing; the rise
+  grudges, loses the seats, drops one degree, pays about fifteen per cent of the estate in duty and
+  funerals, and starts at the bottom of the attributes the parent had raised. The choice is what keeps death from being a tax on time passing; the rise
   is what makes staying a gamble. Revisit if generations feel like a treadmill.
 
 - **The AI plays politics.** At the start of each year an AI dynasty without a seat tries a random

@@ -4,20 +4,20 @@ import type { Player } from '../identity/players.ts';
 
 export interface Presence {
   world: World;
+  /** Dynasties that run nothing and vote nowhere for this advance only. */
+  dormant: ReadonlySet<string>;
   /** Dynasties that crossed the deletion threshold; their tokens must be revoked. */
   deletedDynastyIds: string[];
-  /** Whether the world changed even if no week elapsed, so the caller saves it. */
-  changed: boolean;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The server owns dormancy: it reads the last visit from the players table and
- * writes the dynasty state the core reads. A human dynasty with no live token, or
- * whose last visit is older than the dormancy threshold, runs nothing and votes
- * nowhere. Past the deletion threshold it is removed with its people, and its
- * seats become vacant.
+ * hands the core the set of dynasties that run nothing and vote nowhere for the
+ * advance. A human dynasty with no live token, or whose last visit is older than
+ * the dormancy threshold, is in that set. Past the deletion threshold it is
+ * removed with its people, and its seats become vacant.
  *
  * A dynasty with no player row at all is dormant but not deleted: there is no
  * visit to measure the silence from, and the join path puts the first dynasty back.
@@ -40,18 +40,14 @@ export function applyPresence(world: World, players: readonly Player[], now: num
   }
 
   const next = structuredClone(world);
+  const dormant = new Set<string>();
   const deletedDynastyIds: string[] = [];
-  let changed = false;
   const dormancyMs = PACING.dormancyDays * DAY_MS;
   const deletionMs = PACING.deletionDays * DAY_MS;
 
   for (const dynasty of Object.values(next.dynasties)) {
     // An AI dynasty is always played; it has no token to go silent.
     if (dynasty.controller === 'ai') {
-      if (dynasty.dormant) {
-        dynasty.dormant = false;
-        changed = true;
-      }
       continue;
     }
 
@@ -61,16 +57,13 @@ export function applyPresence(world: World, players: readonly Player[], now: num
       continue;
     }
 
-    const dormant = seen === undefined || !live.has(dynasty.id) || now - seen >= dormancyMs;
-    if (dynasty.dormant !== dormant) {
-      dynasty.dormant = dormant;
-      changed = true;
+    if (seen === undefined || !live.has(dynasty.id) || now - seen >= dormancyMs) {
+      dormant.add(dynasty.id);
     }
   }
 
   for (const dynastyId of deletedDynastyIds) {
     removeDynasty(next, dynastyId);
-    changed = true;
   }
 
   // A token can outlive its dynasty if a revocation failed after the world was
@@ -82,7 +75,7 @@ export function applyPresence(world: World, players: readonly Player[], now: num
     }
   }
 
-  return { world: next, deletedDynastyIds, changed };
+  return { world: next, dormant, deletedDynastyIds };
 }
 
 /** Removes a dynasty, its people and their seats, and its queued campaign votes. */

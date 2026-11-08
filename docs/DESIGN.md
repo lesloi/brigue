@@ -48,7 +48,7 @@ buy again later. Its offices do not exist yet:
 every seat is empty, and the pyramid fills from the bottom, one floor per election.
 
 A human who arrives later chooses a trade and takes a free place with the same kit as the first
-dynasty — the workshop, eight units of its input and a purse — and no seat or career.
+dynasty — the workshop, eight units of its input and a purse — and no seat or degree.
 The three AI dynasties are the finished trades, one per trade. Wool, grain and wood are bought at
 the market at the current price: no dynasty produces them, so every chain is fed whatever the
 town's trades. No AI is created or removed after the opening: the three are the composition.
@@ -85,10 +85,11 @@ Twelve seats in a pyramid: one mayor, two great offices, four small ones, five w
   exceptional measures, and jury duty.
 
 Every office is elected, all of them on the same day, every day. A person holds one office; to
-climb, they give up the one they have. **The career is the gate**: to stand for a floor, the dynasty
-must have held an office of a lower floor, and one mandate is enough. The career belongs to the
-dynasty, not the person: the heir keeps it one floor lower. A mayor's son may stand for the great
-offices, not the mayoralty.
+climb, they give up the one they have. **The gate of a floor is a career of offices held**: to
+stand for a floor, the dynasty must have held an office of a lower floor, and one mandate is
+enough. What the gate costs at each tier is still open: the code carries no gate, and the career
+that was to be one is not in the world. A mayor's son may stand for the great offices, not the
+mayoralty.
 
 A vacant seat blocks nothing. Its power is simply unavailable, as it was in Europe 1400: no
 mayor, no agenda; no provost, no investigation. A young town has no mayor for its first four
@@ -168,8 +169,9 @@ act and fades with the hours.
 
 ## The character
 
-Three attributes, raised by use: **artisanat, parole, intrigue**. Returns diminish, and the
-ceiling is set by the trade and the title. They belong to the person and die with them.
+Three attributes were meant to be raised by use: **artisanat, parole, intrigue**. They belong to
+the person and die with them. They are not in the world yet: the person carries no attributes
+until the mechanic that raises them exists.
 
 A workshop is bound to one trade — weaver, baker, carpenter — and a dynasty may hold several,
 even two of the same trade. There is no conversion: to change what the dynasty makes, it builds
@@ -199,11 +201,9 @@ hundred and ten. The median death is around sixty-two; one in two hundred reache
 hundred is a legend. The roll happens at the midnight bell, whether or not the player is
 connected.
 
-The heir keeps the dynasty — money, workshops, stock, grudges — keeps the career one floor lower,
-loses the seats,
-drops one title, one residence level and one level from every workshop, pays about fifteen per
-cent of the estate in duty and funerals, and starts with
-ten in each attribute plus a tenth of what the parent had gained. Retirement is clean and lets
+The heir keeps the dynasty — money, workshops, stock, grudges — loses the seats, drops one degree,
+one residence level and one level from every workshop, pays about fifteen per cent of the estate in
+duty and funerals, and starts with the attributes the parent had raised, less a tenth. Retirement is clean and lets
 the player choose the heir; death takes the choice away.
 
 ## The world model
@@ -211,9 +211,9 @@ the player choose the heir; death takes the choice away.
 A dynasty is a place, a person holds an office, and every dynasty has a controller:
 
 ```
-Dynasty    = { id, name, controller, treasury, title, residence, prestige, favour, career, workshops, stock, grudges }
+Dynasty    = { id, name, controller, treasury, residence, prestige, favour, workshops, stock, grudges }
 Workshop = { id, trade, level }
-Person = { id, dynastyId, name, age, attributes, alive }
+Person = { id, dynastyId, name, age, title, alive }
 Seat   = { personId | null }
 ```
 
