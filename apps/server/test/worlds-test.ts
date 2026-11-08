@@ -176,7 +176,7 @@ describe('the town store', () => {
     expect(amountsOf(kept.messages)).toEqual(range(11, 20));
   });
 
-  it('counts the unread mail and marks the box read on open', async () => {
+  it('counts the unread mail and reads one message at a time', async () => {
     // Arrange: five messages, all unread.
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
@@ -184,22 +184,26 @@ describe('the town store', () => {
       await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5));
     }, created.id);
     const before = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const target = before.messages[2];
+    expect(target).toBeDefined();
 
     // Assert: the page reads in order, the badge counts the box, and a stored
     // message carries no town hour.
     expect(amountsOf(before.messages)).toEqual(range(1, 5));
     expect(before.messages.every((message) => message.event.at === 0)).toBe(true);
+    expect(before.messages.every((message) => !message.read)).toBe(true);
     expect(before.unread).toBe(5);
 
-    // Act: the player opens the Courrier.
-    await store.markMessagesRead('leclerc');
+    // Act: another dynasty names the id, then the owner opens it.
+    const foreign = await store.markMessageRead(target?.id ?? 0, 'caron');
+    const own = await store.markMessageRead(target?.id ?? 0, 'leclerc');
 
-    // Assert: the lines stay, the badge clears, and another dynasty is untouched.
+    // Assert: the foreigner reads nothing; the owner's one line only.
+    expect(foreign).toEqual({ read: false, unread: 0 });
+    expect(own).toEqual({ read: true, unread: 4 });
     const after = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
-    const caron = await store.withWorld(async (session) => session.recentMessages(100, 'caron'), created.id);
-    expect(amountsOf(after.messages)).toEqual(range(1, 5));
-    expect(after.unread).toBe(0);
-    expect(caron.unread).toBe(0);
+    expect(after.unread).toBe(4);
+    expect(after.messages.filter((message) => message.read).map((message) => message.id)).toEqual([target?.id]);
   });
 
   it('caps the badge at the page it can open', async () => {

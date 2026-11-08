@@ -121,8 +121,21 @@ export class PgWorldStore implements WorldStore {
     await this.pool.query(`DELETE FROM messages WHERE recorded_at < $1`, [messagesBefore]);
   }
 
-  async markMessagesRead(dynastyId: string): Promise<void> {
-    await this.pool.query(`UPDATE messages SET read = true WHERE dynasty_id = $1 AND read = false`, [dynastyId]);
+  async markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }> {
+    // Scoped to the dynasty: an id from another box changes nothing.
+    const { rowCount } = await this.pool.query(`UPDATE messages SET read = true WHERE id = $1 AND dynasty_id = $2`, [
+      id,
+      dynastyId,
+    ]);
+    const counts = await this.pool.query<{ unread: number }>(
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE dynasty_id = $1`,
+      [dynastyId],
+    );
+
+    return {
+      read: (rowCount ?? 0) > 0,
+      unread: Math.min(counts.rows[0]?.unread ?? 0, JOURNAL_PAGE),
+    };
   }
 
   async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
@@ -231,7 +244,7 @@ class PgWorldSession implements WorldSession {
 
   async recentMessages(limit: number, dynastyId: string): Promise<MessagePage> {
     const { rows } = await this.client.query<MessageRow>(
-      `SELECT id, dynasty_id, type, payload
+      `SELECT id, dynasty_id, type, payload, read
        FROM messages
        WHERE dynasty_id = $2
        ORDER BY id DESC
@@ -250,7 +263,7 @@ class PgWorldSession implements WorldSession {
       messages: rows
         .slice()
         .reverse()
-        .map((row) => ({ id: Number(row.id), event: rowToMessage(row) })),
+        .map((row) => ({ id: Number(row.id), read: row.read, event: rowToMessage(row) })),
       // The badge names what the page can open, never a backlog below it.
       unread: Math.min(counts.rows[0]?.unread ?? 0, limit),
     };
@@ -830,6 +843,7 @@ interface MessageRow {
   dynasty_id: string;
   type: string;
   payload: Record<string, unknown>;
+  read: boolean;
 }
 
 function rowToChronicleEvent(row: ChronicleRow): Event {

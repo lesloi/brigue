@@ -182,13 +182,14 @@ export async function deleteMessage(
 }
 
 /**
- * The player opened the Courrier: every message of the box is marked read. The
- * flag is the whole unread state, and it hides no line.
+ * The player opened one message: it is marked read. The flag is the whole
+ * unread state, and a message of another box is left alone.
  */
-export async function markMessagesRead(
+export async function markMessageRead(
   context: AppContext,
   request: IncomingMessage,
   response: ServerResponse,
+  rawId: string,
 ): Promise<void> {
   const player = await identifiedBy(context, request, response);
 
@@ -208,9 +209,15 @@ export async function markMessagesRead(
     return;
   }
 
-  await context.deps.worlds.markMessagesRead(bound.dynastyId);
+  const id = Number(rawId);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    sendJson(response, 404, { error: 'unknown_message' });
+    return;
+  }
 
-  sendJson(response, 200, { unreadMessages: 0 });
+  const result = await context.deps.worlds.markMessageRead(id, bound.dynastyId);
+
+  sendJson(response, 200, { read: result.read, unreadMessages: result.unread });
 }
 
 function townAccess(context: AppContext): TownAccess {

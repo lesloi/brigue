@@ -839,24 +839,41 @@ button:disabled {
   color: var(--ink-2);
 }
 
-.msg-del {
+.msg-text {
   appearance: none;
   border: 0;
   background: transparent;
-  color: #9a9385;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 0;
+  text-align: left;
+  flex: 1;
+}
+
+.ev.unread .msg-text {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.msg-read {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
   font: inherit;
   font-size: 11px;
-  font-weight: 600;
-  padding: 1px 0;
-  margin-left: auto;
+  font-weight: 700;
+  padding: 1px 0 1px 10px;
   flex: none;
   align-self: flex-start;
   white-space: nowrap;
 }
 
-.msg-del:hover,
-.msg-del:focus-visible {
-  color: var(--accent);
+.msg-read:hover,
+.msg-read:focus-visible {
+  text-decoration: underline;
 }
 
 .dot {

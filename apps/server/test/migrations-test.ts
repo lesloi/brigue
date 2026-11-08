@@ -32,6 +32,13 @@ describe.runIf(databaseUrl !== '')('migrations', () => {
   });
 
   afterEach(async () => {
+    // A temp migration is recorded like a real one; left behind, it would make
+    // the next run of this suite believe it was already applied.
+    await pool.query(
+      `DELETE FROM schema_migrations
+       WHERE name IN ('9999_pending.sql', '9998_once.sql', '9997_broken.sql')`,
+    );
+    await pool.query('DROP TABLE IF EXISTS once_test');
     await Promise.all(directories.splice(0).map((path) => rm(path, { recursive: true, force: true })));
   });
 

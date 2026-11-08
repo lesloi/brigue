@@ -44,9 +44,10 @@ export interface WorldSnapshot {
   hourStartedAt: Date;
 }
 
-/** One stored message: the row's id, so it can be deleted, and the line. */
+/** One stored message: the row's id, its flag, and the line. */
 export interface MessageView {
   id: number;
+  read: boolean;
   event: Event;
 }
 
@@ -127,10 +128,10 @@ export interface WorldStore {
    */
   pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void>;
   /**
-   * Marks the unread mail of a dynasty as read, without locking the town: the
-   * flag feeds the badge and no rule.
+   * Marks one message of a dynasty as read, without locking the town: the flag
+   * feeds the badge and no rule. A message of another box is left alone.
    */
-  markMessagesRead(dynastyId: string): Promise<void>;
+  markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }>;
   /**
    * Deletes one message of a dynasty. No trash: the row goes, and the badge's
    * new count comes back with the answer.
@@ -263,16 +264,25 @@ export class MemoryWorldStore implements WorldStore {
     return { deleted, unread: Math.min(unread, JOURNAL_PAGE) };
   }
 
-  async markMessagesRead(dynastyId: string): Promise<void> {
+  async markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }> {
+    let read = false;
+    let unread = 0;
+
     // The box is addressed by its dynasty alone, so every town is a candidate
     // for where it lives.
     for (const stored of this.towns.values()) {
       for (const entry of stored.messages) {
-        if (entry.dynastyId === dynastyId) {
+        if (entry.id === id && entry.dynastyId === dynastyId) {
           entry.read = true;
+          read = true;
+        }
+        if (entry.dynastyId === dynastyId && !entry.read) {
+          unread += 1;
         }
       }
     }
+
+    return { read, unread: Math.min(unread, JOURNAL_PAGE) };
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
@@ -331,7 +341,7 @@ export class MemoryWorldStore implements WorldStore {
         return {
           messages: own
             .slice(Math.max(0, own.length - limit))
-            .map((entry) => ({ id: entry.id, event: structuredClone(entry.event) })),
+            .map((entry) => ({ id: entry.id, read: entry.read, event: structuredClone(entry.event) })),
           // The badge names what the page can open, never a backlog below it.
           unread: Math.min(own.filter((entry) => !entry.read).length, limit),
         };

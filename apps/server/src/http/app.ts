@@ -11,7 +11,7 @@ import { renameDynastyRoute } from './routes/dynasty.ts';
 import { readCandidate } from './routes/name-suggestion.ts';
 import { cancelDeletion, requestDeletion } from './routes/player.ts';
 import { openSession, readSession } from './routes/session.ts';
-import { advanceHour, deleteMessage, markMessagesRead, readWorld } from './routes/world.ts';
+import { advanceHour, deleteMessage, markMessageRead, readWorld } from './routes/world.ts';
 import { assertWebRoot, serveStatic } from './static.ts';
 
 const SESSION_ATTEMPTS_PER_MINUTE = 10;
@@ -76,6 +76,16 @@ export function createApp(deps: AppDeps): Server {
 
 async function handle(context: AppContext, request: IncomingMessage, response: ServerResponse): Promise<void> {
   const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+
+  const readMessageMatch = /^\/api\/messages\/(\d+)\/read$/.exec(path);
+  if (readMessageMatch !== null) {
+    if (request.method !== 'POST') {
+      methodNotAllowed(response, 'POST');
+      return;
+    }
+    await markMessageRead(context, request, response, readMessageMatch[1] as string);
+    return;
+  }
 
   const messageMatch = /^\/api\/messages\/(\d+)$/.exec(path);
   if (messageMatch !== null) {
@@ -162,14 +172,6 @@ async function handle(context: AppContext, request: IncomingMessage, response: S
         return;
       }
       await readWorld(context, request, response);
-      return;
-
-    case '/api/messages/read':
-      if (request.method !== 'POST') {
-        methodNotAllowed(response, 'POST');
-        return;
-      }
-      await markMessagesRead(context, request, response);
       return;
 
     case '/api/actions':

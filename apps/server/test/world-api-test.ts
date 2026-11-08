@@ -33,6 +33,7 @@ interface Harness {
 
 interface MessageBody {
   id: number;
+  read: boolean;
   event: Record<string, unknown> & { type: string; dynastyId?: string; units?: number };
 }
 
@@ -438,50 +439,78 @@ describe('GET /api/world', () => {
   });
 });
 
-describe('POST /api/messages/read', () => {
-  function markRead(harness: Harness, init: RequestInit = {}): Promise<Response> {
-    return fetch(`${harness.url}/api/messages/read`, {
+describe('POST /api/messages/:id/read', () => {
+  function markRead(harness: Harness, id: number, dynastyId = 'leclerc'): Promise<Response> {
+    return fetch(`${harness.url}/api/messages/${id}/read`, {
       method: 'POST',
-      headers: { Cookie: harness.cookie },
-      ...init,
+      headers: { Cookie: harness.cookies[dynastyId] as string },
     });
   }
 
-  it('clears the unread badge and leaves the page whole', async () => {
-    // Arrange: a refusal of the weaver's, written as a message.
-    const harness = await start();
+  async function twoRefusals(harness: Harness): Promise<void> {
     await postAction(harness, sellGrain(ID_A, 1, 1));
+    await postAction(harness, { id: ID_B, hour: 1, action: { type: 'dynasty.buy_title' } });
     await harness.advance(HOUR);
+  }
+
+  it('marks one message read and leaves the other unread', async () => {
+    // Arrange: two refusals of the weaver's, so two messages.
+    const harness = await start();
+    await twoRefusals(harness);
     const before = await worldBody(harness);
-    expect(before.messages).toHaveLength(1);
-    expect(before.unreadMessages).toBe(1);
+    expect(before.messages).toHaveLength(2);
+    expect(before.unreadMessages).toBe(2);
+    const target = before.messages[0];
 
     // Act
-    const response = await markRead(harness);
+    const response = await markRead(harness, target?.id ?? 0);
 
-    // Assert: the badge is at zero and the line stays.
+    // Assert: one line is read, the other still waits, and the badge follows.
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ unreadMessages: 0 });
+    expect(await response.json()).toEqual({ read: true, unreadMessages: 1 });
     const after = await worldBody(harness);
-    expect(after.messages).toEqual(before.messages);
-    expect(after.unreadMessages).toBe(0);
+    expect(after.messages.filter((message) => message.read).map((message) => message.id)).toEqual([target?.id]);
+    expect(after.unreadMessages).toBe(1);
   });
 
-  it('refuses without a session', async () => {
-    const harness = await start();
+  it('does not mark another dynasty’s message', async () => {
+    // Arrange: two humans, each with a refusal.
+    const world = town(20261031);
+    world.dynasties.caron.controller = 'human';
+    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
+    await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
+    await harness.advance(HOUR);
+    const caron = await worldBodyAs(harness, 'caron');
+    const target = caron.messages[0];
 
-    const response = await fetch(`${harness.url}/api/messages/read`, { method: 'POST' });
+    // Act: the weaver names the other's id.
+    const response = await markRead(harness, target?.id ?? 0);
 
-    expect(response.status).toBe(401);
+    // Assert: nothing is read, and the owner still has its unread line.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ read: false, unreadMessages: 1 });
+    expect((await worldBodyAs(harness, 'caron')).unreadMessages).toBe(1);
   });
 
-  it('refuses anything but POST', async () => {
+  it('refuses an id that is not one, without a session, and anything but POST', async () => {
+    // Arrange
     const harness = await start();
 
-    const response = await fetch(`${harness.url}/api/messages/read`, { headers: { Cookie: harness.cookie } });
+    // Act
+    const malformed = await fetch(`${harness.url}/api/messages/0/read`, {
+      method: 'POST',
+      headers: { Cookie: harness.cookie },
+    });
+    const anonymous = await fetch(`${harness.url}/api/messages/1/read`, { method: 'POST' });
+    const wrongMethod = await fetch(`${harness.url}/api/messages/1/read`, { headers: { Cookie: harness.cookie } });
 
-    expect(response.status).toBe(405);
-    expect(response.headers.get('allow')).toBe('POST');
+    // Assert
+    expect(malformed.status).toBe(404);
+    expect(await malformed.json()).toEqual({ error: 'unknown_message' });
+    expect(anonymous.status).toBe(401);
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get('allow')).toBe('POST');
   });
 });
 

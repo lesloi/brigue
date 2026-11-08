@@ -125,9 +125,10 @@ export interface CatchUpSummary {
   skipped: number;
 }
 
-/** One stored message: its row id, for a delete, and the line. */
+/** One stored message: its row id, its unread state, and the line. */
 export interface MessageView {
   id: number;
+  read: boolean;
   event: Event;
 }
 
@@ -248,9 +249,9 @@ export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
 }
 
-/** The player opened the Courrier: the unread badge goes back to zero. */
-export function markMessagesRead(): Promise<{ unreadMessages: number }> {
-  return send('/api/messages/read', { method: 'POST' });
+/** The player opened one message: it is marked read. */
+export function markMessageRead(id: number): Promise<{ read: boolean; unreadMessages: number }> {
+  return send(`/api/messages/${id}/read`, { method: 'POST' });
 }
 
 /** Deletes one message. No trash: the row goes, and the badge count comes back. */

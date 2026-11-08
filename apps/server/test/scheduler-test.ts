@@ -385,7 +385,7 @@ describe('startScheduler', () => {
       withWorld: (run, townId) =>
         townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
       deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),
@@ -538,7 +538,7 @@ describe('startScheduler', () => {
       listHumanNames: () => real.listHumanNames(),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
       deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) => {
         pruned.push(townId);
@@ -577,7 +577,7 @@ describe('startScheduler', () => {
       listHumanNames: () => real.listHumanNames(),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
       deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: () => Promise.reject(new Error('the journal is stuck')),
       close: () => real.close(),
@@ -618,7 +618,7 @@ describe('startScheduler', () => {
         return attempts === 1 ? Promise.reject(new Error('the database is down')) : real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessagesRead: (dynastyId) => real.markMessagesRead(dynastyId),
+      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
       deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),

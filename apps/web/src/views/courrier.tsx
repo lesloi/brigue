@@ -1,38 +1,41 @@
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 
-import type { WorldResponse } from '../api.ts';
-import { eventLine } from '../events.ts';
+import type { MessageView, WorldResponse } from '../api.ts';
+import { eventLine, type EventLine } from '../events.ts';
 import { formatCount } from '../format.ts';
 import { Seal } from '../icons.tsx';
+import { Modal } from './modal.tsx';
 import { dynastyName } from './ville.tsx';
 
 /**
  * The Courrier is the dynasty's own mailbox: refusals, works done or lost, its
- * debts, its candidacies. It is private, and opening it clears the badge.
+ * debts, its candidacies. A message is unread until the player opens it, so the
+ * list carries a « Lu » action per unread line, and the detail the delete.
  */
 export function Courrier({
   data,
-  onSeen,
+  onRead,
   onDelete,
 }: {
   data: WorldResponse;
-  onSeen(): void;
+  onRead(id: number): void;
   onDelete(id: number): void;
 }) {
   const { messages, world } = data;
   const nameOf = dynastyName(world);
-  // The badge follows the mailbox, not the page: one visit clears it once.
-  const asked = useRef(false);
-
-  useEffect(() => {
-    if (data.unreadMessages > 0 && !asked.current) {
-      asked.current = true;
-      onSeen();
-    }
-  }, [data.unreadMessages, onSeen]);
+  const [opened, setOpened] = useState<MessageView | null>(null);
 
   // The server hands the page in time order; an inbox reads newest first.
   const newestFirst = [...messages].reverse();
+
+  function open(message: MessageView): void {
+    setOpened(message);
+
+    // Showing the message is what reads it; the list itself reads nothing.
+    if (!message.read) {
+      onRead(message.id);
+    }
+  }
 
   return (
     <main class="screen">
@@ -72,19 +75,21 @@ export function Courrier({
                 const line = eventLine(message.event, world.dynasty.id, nameOf);
 
                 return (
-                  <div class="ev" key={message.id}>
+                  <div class={`ev${message.read ? '' : ' unread'}`} key={message.id}>
                     <span class={`dot ${line.tone}`} aria-hidden="true"></span>
-                    <p>{line.text}</p>
-                    {/* No trash: the message goes for good, and its line with it. */}
-                    <button
-                      class="msg-del"
-                      type="button"
-                      aria-label="Supprimer ce message"
-                      title="Supprimer"
-                      onClick={() => onDelete(message.id)}
-                    >
-                      Supprimer
+                    <button class="msg-text" type="button" onClick={() => open(message)}>
+                      {line.text}
                     </button>
+                    {message.read ? null : (
+                      <button
+                        class="msg-read"
+                        type="button"
+                        aria-label="Marquer comme lu"
+                        onClick={() => onRead(message.id)}
+                      >
+                        Lu
+                      </button>
+                    )}
                   </div>
                 );
               })
@@ -92,6 +97,42 @@ export function Courrier({
           </div>
         </section>
       </div>
+
+      {opened !== null ? (
+        <MessageDialog
+          line={eventLine(opened.event, world.dynasty.id, nameOf)}
+          onClose={() => setOpened(null)}
+          onDelete={() => {
+            onDelete(opened.id);
+            setOpened(null);
+          }}
+        />
+      ) : null}
     </main>
+  );
+}
+
+/** One message, displayed: that is when it is read, and where it can go. */
+function MessageDialog({ line, onClose, onDelete }: { line: EventLine; onClose(): void; onDelete(): void }) {
+  const closeButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // The safe choice is what a stray Enter lands on.
+    closeButton.current?.focus();
+  }, []);
+
+  return (
+    <Modal titleId="message-title" onClose={onClose}>
+      <h2 id="message-title">Message</h2>
+      <p class="msg-body">{line.text}</p>
+      <div class="dialog-actions">
+        <button class="btn outline" type="button" ref={closeButton} onClick={onClose}>
+          Fermer
+        </button>
+        <button class="btn" type="button" onClick={onDelete}>
+          Supprimer
+        </button>
+      </div>
+    </Modal>
   );
 }

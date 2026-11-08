@@ -210,7 +210,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
     expect(read.chronicle).toEqual([chronicle]);
     // A message keeps no town hour: it comes back with `at` at zero.
-    expect(read.mail.messages).toEqual([{ id: 1, event: { ...mail, at: 0 } }]);
+    expect(read.mail.messages).toEqual([{ id: 1, read: false, event: { ...mail, at: 0 } }]);
     expect(read.mail.unread).toBe(1);
   });
 
@@ -454,7 +454,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(rows.rows[0]?.count).toBe(71);
   });
 
-  it('marks the mail read without locking the town', async () => {
+  it('marks one message read without locking the town, and only its own', async () => {
     // Arrange: three unread messages for the weaver.
     await store.createTown(TEST_TOWN.name, town(5), START);
     await withWorld(async (session) => {
@@ -471,18 +471,22 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       );
     });
     const before = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const target = before.messages[0];
+    expect(target).toBeDefined();
     expect(before.unread).toBe(3);
 
-    // Act
-    await store.markMessagesRead('leclerc');
+    // Act: another dynasty names the id, then the owner does.
+    const foreign = await store.markMessageRead(target?.id ?? 0, 'caron');
+    const own = await store.markMessageRead(target?.id ?? 0, 'leclerc');
 
-    // Assert: the flag is off, the lines stay, and an AI dynasty has no mail.
+    // Assert: the foreign call reads nothing, the owner's line only.
+    expect(foreign).toEqual({ read: false, unread: 0 });
+    expect(own).toEqual({ read: true, unread: 2 });
     const after = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
-    const caron = await withWorld(async (session) => session.recentMessages(50, 'caron'));
     const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
-    expect(after.unread).toBe(0);
+    expect(after.unread).toBe(2);
     expect(after.messages).toHaveLength(3);
-    expect(caron.unread).toBe(0);
+    expect(after.messages.filter((message) => message.read)).toHaveLength(1);
     expect(rows.rows[0]?.count).toBe(3);
   });
 

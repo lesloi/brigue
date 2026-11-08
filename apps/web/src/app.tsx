@@ -8,7 +8,7 @@ import {
   cancelDeletion,
   deleteMessage,
   joinTown,
-  markMessagesRead,
+  markMessageRead,
   readCandidate,
   readPending,
   readSession,
@@ -275,20 +275,31 @@ export function App() {
     }
   }
 
-  async function markRead(): Promise<void> {
-    // The badge is cosmetic: a failed call leaves it in place, and the next
-    // visit tries again.
-    if (view.kind !== 'world' || view.data.unreadMessages === 0) {
-      return;
-    }
-
+  async function readMessage(id: number): Promise<void> {
+    // The badge is cosmetic: a failed call leaves the message unread, and
+    // opening it again retries.
     try {
-      await markMessagesRead();
+      const { read, unreadMessages } = await markMessageRead(id);
+
+      if (!read) {
+        return;
+      }
       setView((current) =>
-        current.kind === 'world' ? { kind: 'world', data: { ...current.data, unreadMessages: 0 } } : current,
+        current.kind === 'world'
+          ? {
+              kind: 'world',
+              data: {
+                ...current.data,
+                unreadMessages,
+                messages: current.data.messages.map((message) =>
+                  message.id === id ? { ...message, read: true } : message,
+                ),
+              },
+            }
+          : current,
       );
     } catch {
-      // Nothing to say: the inbox is already on screen.
+      // Nothing to say: the line is on screen anyway.
     }
   }
 
@@ -571,7 +582,11 @@ export function App() {
               onDeleteAccount={askDelete}
             />
           ) : tab === 'courrier' ? (
-            <Courrier data={view.data} onSeen={() => void markRead()} onDelete={(id) => void removeMessage(id)} />
+            <Courrier
+              data={view.data}
+              onRead={(id) => void readMessage(id)}
+              onDelete={(id) => void removeMessage(id)}
+            />
           ) : tab === 'greffe' ? (
             <Greffe data={view.data} />
           ) : tab === 'maison' ? (
