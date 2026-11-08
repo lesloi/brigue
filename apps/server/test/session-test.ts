@@ -107,10 +107,10 @@ describe('the token endpoint', () => {
     expect(response.headers.get('cache-control')).toBe('no-store');
   });
 
-  it('answers a revoked token exactly like an unknown one: 401 and nothing else', async () => {
+  it('answers a token whose account is gone exactly like an unknown one: 401 and nothing else', async () => {
     const harness = await start();
-    const { token, player } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
-    await harness.store.revoke(player.tokenHash);
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
+    await harness.store.deleteDynasty('leclerc');
 
     const unknown = await login(harness, `bgk_${'x'.repeat(43)}`);
     const revoked = await login(harness, token);
@@ -742,13 +742,13 @@ describe('a token a reset left without a dynasty', () => {
 });
 
 describe('the logs', () => {
-  it('never contain a token, whether it was accepted, unknown or revoked', async () => {
+  it('never contain a token, whether it was accepted, unknown or erased', async () => {
     const harness = await start();
-    const { token, player } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
+    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
 
     await login(harness, token);
     await login(harness, `bgk_${'x'.repeat(43)}`);
-    await harness.store.revoke(player.tokenHash);
+    await harness.store.deleteDynasty('leclerc');
     await login(harness, token);
 
     const lines = harness.logs.join('\n');

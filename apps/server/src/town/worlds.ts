@@ -88,7 +88,7 @@ export interface WorldSession {
 
 /**
  * The loaded town must be the format and ruleset this code plays: wake no dynasty
- * and revoke no token before the world is known readable.
+ * and erase no account before the world is known readable.
  */
 export function sessionWorld(session: WorldSession): World {
   const world = session.snapshot.world;

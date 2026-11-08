@@ -66,12 +66,13 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     expect((await store.findByTokenHash(tokenHash))?.dynastyId).toBe('leclerc');
   });
 
-  it('never binds a revoked account', async () => {
+  it('never binds an account whose deadline has erased it', async () => {
     // Arrange
     const tokenHash = 'a'.repeat(64);
     const at = new Date('2026-12-02T00:00:00.000Z');
     await store.insert({ ...player(tokenHash), townId: null, dynastyId: null });
-    await store.revoke(tokenHash);
+    await store.markDeletion(tokenHash, at);
+    await store.deleteUnboundDue(at);
 
     // Act / Assert
     expect(await store.rebind(tokenHash, 900_001, 'leclerc', at)).toBeNull();

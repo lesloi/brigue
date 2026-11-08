@@ -87,10 +87,6 @@ export class PgPlayerStore implements PlayerStore {
     }
   }
 
-  async revoke(tokenHash: string): Promise<void> {
-    await this.pool.query('DELETE FROM players WHERE token_hash = $1', [tokenHash]);
-  }
-
   async touch(tokenHash: string, at: Date): Promise<void> {
     await this.pool.query(`UPDATE players SET last_seen_at = GREATEST(last_seen_at, $2) WHERE token_hash = $1`, [
       tokenHash,
@@ -107,10 +103,6 @@ export class PgPlayerStore implements PlayerStore {
     );
 
     return rows.map(rowToPlayer);
-  }
-
-  async revokeDynasty(dynastyId: string): Promise<void> {
-    await this.pool.query('DELETE FROM players WHERE dynasty_id = $1', [dynastyId]);
   }
 
   async markDeletion(tokenHash: string, at: Date): Promise<void> {

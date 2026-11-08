@@ -45,21 +45,13 @@ export interface PlayerStore {
   findByTokenHash(tokenHash: string): Promise<Player | null>;
   /**
    * Gives a dynasty back to an account a reset left without one. Null when the
-   * account is already bound or revoked: the choice is only made once.
+   * account is already bound or gone: the choice is only made once.
    */
   rebind(tokenHash: string, townId: number, dynastyId: string, at: Date): Promise<Player | null>;
-  /** Erases the account: there is no revoked state, a token either finds a row or nothing. */
-  revoke(tokenHash: string): Promise<void>;
-  /** Records a visit without reopening a revoked session. */
+  /** Records a visit on an account that still exists. */
   touch(tokenHash: string, at: Date): Promise<void>;
-  /** Every account of a town, live or revoked, so presence can see the last visit. */
+  /** Every account of a town, so presence can see the last visit. */
   listByTown(townId: number): Promise<Player[]>;
-  /**
-   * Erases every account of a dynasty, for the thirty-day deletion. The dynasty
-   * id alone scopes it: a human dynasty id is minted once for the whole server,
-   * and the dynasty row may already be gone from the world.
-   */
-  revokeDynasty(dynastyId: string): Promise<void>;
   /** Schedules the erasure of an identity; a second request keeps the first. */
   markDeletion(tokenHash: string, at: Date): Promise<void>;
   /** Cancels a scheduled erasure: the player came back. */
@@ -132,10 +124,6 @@ export class MemoryPlayerStore implements PlayerStore {
     return player ? { ...player } : null;
   }
 
-  async revoke(tokenHash: string): Promise<void> {
-    this.players.delete(tokenHash);
-  }
-
   async touch(tokenHash: string, at: Date): Promise<void> {
     const player = this.players.get(tokenHash);
     if (player) {
@@ -145,10 +133,6 @@ export class MemoryPlayerStore implements PlayerStore {
 
   async listByTown(townId: number): Promise<Player[]> {
     return [...this.players.values()].filter((player) => player.townId === townId).map((player) => ({ ...player }));
-  }
-
-  async revokeDynasty(dynastyId: string): Promise<void> {
-    this.deleteDynasty(dynastyId);
   }
 
   async markDeletion(tokenHash: string, at: Date): Promise<void> {

@@ -34,7 +34,7 @@ export async function readWorld(
 
   if (outcome.kind === 'gone') {
     // The visit arrived after the dynasty was silent for a month: the world has
-    // already deleted it and revoked the token. Clear the dead cookie so the
+    // already deleted it and erased the account. Clear the dead cookie so the
     // client can take the freed place.
     context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
     unauthorized(response, context.secureCookies, true);

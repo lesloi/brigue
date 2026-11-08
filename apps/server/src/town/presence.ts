@@ -6,7 +6,7 @@ export interface Presence {
   world: World;
   /** Dynasties that run nothing and vote nowhere for this advance only. */
   dormant: ReadonlySet<string>;
-  /** Dynasties that crossed the deletion threshold; their tokens must be revoked. */
+  /** Dynasties that crossed the deletion threshold; their accounts must be erased. */
   deletedDynastyIds: string[];
 }
 
@@ -63,7 +63,7 @@ export function applyPresence(world: World, players: readonly Player[], now: num
   }
 
   // A token can outlive its dynasty if a revocation failed after the world was
-  // saved. Treat that row as a deletion to revoke, so it can never reach a
+  // saved. Treat that row as a deletion to erase, so it can never reach a
   // projection that no longer knows the dynasty.
   for (const dynastyId of latestSeen.keys()) {
     if (next.dynasties[dynastyId] === undefined && !deletedDynastyIds.includes(dynastyId)) {

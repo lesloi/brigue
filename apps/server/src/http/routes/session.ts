@@ -139,7 +139,7 @@ async function resumeSession(context: AppContext, response: ServerResponse, ip: 
   const player = await authenticate(context.deps.store, token);
 
   if (player === null) {
-    // Unknown, revoked and malformed answer the same way: a 401 and nothing.
+    // Unknown and malformed answer the same way: a 401 and nothing.
     context.deps.logger.warn('session.refused', { ip });
     unauthorized(response, context.secureCookies, false);
     return;
@@ -362,7 +362,7 @@ async function takePlace(
  * The place a newcomer takes in a town: a human dynasty no player has ever taken
  * (the one the town was just created with, or a place whose token was never
  * issued), else a new human dynasty until the town is full. A dynasty a player has
- * taken stays theirs while it is silent — a revoked token does not give it away
+ * taken stays theirs while it is silent — a deleted account does not give it away
  * — until the silence rule deletes it. A full town offers nothing; the join
  * moves on. A town whose last human dynasty has gone is on its way out, and is
  * left alone.
