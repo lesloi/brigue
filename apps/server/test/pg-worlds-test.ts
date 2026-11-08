@@ -15,7 +15,13 @@ import {
 
 import { applySchema } from '../src/db/migrations.ts';
 import { PgWorldStore } from '../src/town/pg-worlds.ts';
-import { DuplicateActionError, UnknownWorldError, type StoredAction, type WorldSession } from '../src/town/worlds.ts';
+import {
+  DuplicateActionError,
+  NameInUseError,
+  UnknownWorldError,
+  type StoredAction,
+  type WorldSession,
+} from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z');
@@ -74,19 +80,19 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await pool.end();
   });
 
-  it('creates a second town when called twice', async () => {
+  it('refuses a second live town with the same name', async () => {
     // Arrange
     const first = { ...createWorld(11), hour: 5 };
     const second = { ...createWorld(22), hour: 9 };
 
     // Act
     const created = await store.createTown(TEST_TOWN.name, first, START);
-    const again = await store.createTown(TEST_TOWN.name, second, START);
+    const again = store.createTown(TEST_TOWN.name, second, START);
 
-    // Assert: an id is assigned, and a second call is a second town.
+    // Assert: an id is assigned, and a name names one live town.
     expect(created.id).toBe(TEST_TOWN.id);
-    expect(again.id).not.toBe(created.id);
-    expect(await store.listTowns()).toHaveLength(2);
+    await expect(again).rejects.toBeInstanceOf(NameInUseError);
+    expect(await store.listTowns()).toHaveLength(1);
   });
 
   it('reads workshops back in the order the world hashes them', async () => {

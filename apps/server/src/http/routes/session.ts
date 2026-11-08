@@ -236,9 +236,6 @@ async function chooseDynasty(
       if (refuseClosing(context, current, response, at)) {
         return { kind: 'answered' as const };
       }
-      if (current.revokedAt !== null) {
-        return { kind: 'refused' as const };
-      }
       if (current.dynastyId !== null) {
         return { kind: 'bound' as const, player: current };
       }

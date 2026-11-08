@@ -73,10 +73,9 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       dynasty_id: string | null;
       created_at: Date;
       last_seen_at: Date;
-      revoked_at: Date | null;
       delete_after: Date | null;
     }>(
-      `SELECT token_hash, player_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
+      `SELECT token_hash, player_id, dynasty_id, created_at, last_seen_at, delete_after
        FROM players`,
     );
     const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
@@ -86,7 +85,6 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(players.rows[0]).toMatchObject({
       token_hash: tokenHash,
       dynasty_id: null,
-      revoked_at: null,
     });
     expect(Number(players.rows[0]?.player_id)).toBe(playerId);
     expect(players.rows[0]?.created_at.toISOString()).toBe(CREATED_AT.toISOString());

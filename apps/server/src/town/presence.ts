@@ -15,7 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * The server owns dormancy: it reads the last visit from the players table and
  * hands the core the set of dynasties that run nothing and vote nowhere for the
- * advance. A human dynasty with no live token, or whose last visit is older than
+ * advance. A human dynasty with no account, or whose last visit is older than
  * the dormancy threshold, is in that set. Past the deletion threshold it is
  * removed with its people, and its seats become vacant.
  *
@@ -24,7 +24,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export function applyPresence(world: World, players: readonly Player[], now: number): Presence {
   const latestSeen = new Map<string, number>();
-  const live = new Set<string>();
 
   for (const player of players) {
     // An account between towns has no dynasty to wake or to measure.
@@ -34,9 +33,6 @@ export function applyPresence(world: World, players: readonly Player[], now: num
 
     const seen = player.lastSeenAt.getTime();
     latestSeen.set(player.dynastyId, Math.max(latestSeen.get(player.dynastyId) ?? Number.NEGATIVE_INFINITY, seen));
-    if (player.revokedAt === null) {
-      live.add(player.dynastyId);
-    }
   }
 
   const next = structuredClone(world);
@@ -57,7 +53,7 @@ export function applyPresence(world: World, players: readonly Player[], now: num
       continue;
     }
 
-    if (seen === undefined || !live.has(dynasty.id) || now - seen >= dormancyMs) {
+    if (seen === undefined || now - seen >= dormancyMs) {
       dormant.add(dynasty.id);
     }
   }

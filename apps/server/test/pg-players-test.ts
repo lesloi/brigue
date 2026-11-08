@@ -71,7 +71,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     const tokenHash = 'a'.repeat(64);
     const at = new Date('2026-12-02T00:00:00.000Z');
     await store.insert({ ...player(tokenHash), townId: null, dynastyId: null });
-    await store.revoke(tokenHash, at);
+    await store.revoke(tokenHash);
 
     // Act / Assert
     expect(await store.rebind(tokenHash, 900_001, 'leclerc', at)).toBeNull();
@@ -110,7 +110,6 @@ function player(tokenHash: string): Omit<Player, 'playerId'> {
     dynastyId: 'leclerc',
     createdAt: at,
     lastSeenAt: at,
-    revokedAt: null,
     deleteAfter: null,
   };
 }

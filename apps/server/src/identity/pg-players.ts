@@ -9,7 +9,6 @@ interface PlayerRow {
   dynasty_id: string | null;
   created_at: Date | string;
   last_seen_at: Date | string;
-  revoked_at: Date | string | null;
   delete_after: Date | string | null;
 }
 
@@ -18,7 +17,7 @@ interface PlayerRow {
  * of its own, and one left between towns names no dynasty, hence the left join.
  */
 const SELECT_PLAYER = `SELECT p.token_hash, p.player_id, d.town_id, p.dynasty_id,
-                              p.created_at, p.last_seen_at, p.revoked_at, p.delete_after
+                              p.created_at, p.last_seen_at, p.delete_after
                        FROM players p
                        LEFT JOIN dynasties d ON d.id = p.dynasty_id`;
 
@@ -70,10 +69,10 @@ export class PgPlayerStore implements PlayerStore {
       const { rows } = await this.pool.query<PlayerRow>(
         `UPDATE players p
          SET dynasty_id = $2, last_seen_at = GREATEST(p.last_seen_at, $3)
-         WHERE p.token_hash = $1 AND p.dynasty_id IS NULL AND p.revoked_at IS NULL
+         WHERE p.token_hash = $1 AND p.dynasty_id IS NULL
          RETURNING p.token_hash, p.player_id,
                    (SELECT d.town_id FROM dynasties d WHERE d.id = p.dynasty_id) AS town_id,
-                   p.dynasty_id, p.created_at, p.last_seen_at, p.revoked_at, p.delete_after`,
+                   p.dynasty_id, p.created_at, p.last_seen_at, p.delete_after`,
         [tokenHash, dynastyId, at],
       );
 
@@ -88,22 +87,15 @@ export class PgPlayerStore implements PlayerStore {
     }
   }
 
-  async revoke(tokenHash: string, at: Date): Promise<void> {
-    await this.pool.query(
-      `UPDATE players
-       SET revoked_at = $2, last_seen_at = GREATEST(last_seen_at, $2)
-       WHERE token_hash = $1 AND revoked_at IS NULL`,
-      [tokenHash, at],
-    );
+  async revoke(tokenHash: string): Promise<void> {
+    await this.pool.query('DELETE FROM players WHERE token_hash = $1', [tokenHash]);
   }
 
   async touch(tokenHash: string, at: Date): Promise<void> {
-    await this.pool.query(
-      `UPDATE players
-       SET last_seen_at = GREATEST(last_seen_at, $2)
-       WHERE token_hash = $1 AND revoked_at IS NULL`,
-      [tokenHash, at],
-    );
+    await this.pool.query(`UPDATE players SET last_seen_at = GREATEST(last_seen_at, $2) WHERE token_hash = $1`, [
+      tokenHash,
+      at,
+    ]);
   }
 
   async listByTown(townId: number): Promise<Player[]> {
@@ -117,11 +109,8 @@ export class PgPlayerStore implements PlayerStore {
     return rows.map(rowToPlayer);
   }
 
-  async revokeDynasty(dynastyId: string, at: Date): Promise<void> {
-    await this.pool.query(`UPDATE players SET revoked_at = $2 WHERE dynasty_id = $1 AND revoked_at IS NULL`, [
-      dynastyId,
-      at,
-    ]);
+  async revokeDynasty(dynastyId: string): Promise<void> {
+    await this.pool.query('DELETE FROM players WHERE dynasty_id = $1', [dynastyId]);
   }
 
   async markDeletion(tokenHash: string, at: Date): Promise<void> {
@@ -177,7 +166,6 @@ function rowToPlayer(row: PlayerRow): Player {
     dynastyId: row.dynasty_id,
     createdAt: asDate(row.created_at),
     lastSeenAt: asDate(row.last_seen_at),
-    revokedAt: row.revoked_at === null ? null : asDate(row.revoked_at),
     deleteAfter: row.delete_after === null ? null : asDate(row.delete_after),
   };
 }

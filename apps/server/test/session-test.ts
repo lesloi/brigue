@@ -110,7 +110,7 @@ describe('the token endpoint', () => {
   it('answers a revoked token exactly like an unknown one: 401 and nothing else', async () => {
     const harness = await start();
     const { token, player } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc');
-    await harness.store.revoke(player.tokenHash, new Date());
+    await harness.store.revoke(player.tokenHash);
 
     const unknown = await login(harness, `bgk_${'x'.repeat(43)}`);
     const revoked = await login(harness, token);
@@ -254,25 +254,6 @@ describe('joining the town', () => {
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
     expect(world.dynasties[body.dynastyId]?.name).not.toBe('Leclerc');
     expect(Object.keys(world.dynasties)).toHaveLength(Object.keys(base.dynasties).length);
-  });
-
-  it('leaves a revoked dynasty to its owner', async () => {
-    // Arrange: a dynasty a player has taken, whose token they revoked.
-    const harness = await start();
-    await harness.worlds.createTown(TEST_TOWN.name, town(7), new Date());
-    const { player } = await issueToken(harness.store, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, new Date());
-    await harness.store.revoke(player.tokenHash, new Date());
-
-    // Act
-    const response = await join(harness);
-    const body = (await response.json()) as { dynastyId: string; townId: number };
-
-    // Assert: a new dynasty, and the old one still waits for its owner.
-    expect(response.status).toBe(201);
-    expect(body.townId).toBe(TEST_TOWN.id);
-    expect(body.dynastyId).not.toBe(TEST_FIRST_DYNASTY.id);
-    const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
-    expect(world.dynasties[TEST_FIRST_DYNASTY.id]).toBeDefined();
   });
 
   it('skips a town that vanishes between the list and its lock', async () => {
@@ -767,7 +748,7 @@ describe('the logs', () => {
 
     await login(harness, token);
     await login(harness, `bgk_${'x'.repeat(43)}`);
-    await harness.store.revoke(player.tokenHash, new Date());
+    await harness.store.revoke(player.tokenHash);
     await login(harness, token);
 
     const lines = harness.logs.join('\n');

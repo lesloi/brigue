@@ -13,7 +13,7 @@
 -- accounts cannot point at a new one.
 CREATE TABLE towns (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  name text NOT NULL,
+  name text NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -28,32 +28,15 @@ CREATE TABLE players (
   created_at timestamptz NOT NULL DEFAULT now(),
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
   last_seen_at timestamptz NOT NULL DEFAULT now(),
-  revoked_at timestamptz,
   -- The player asked to delete their identity. The binding stays live so they
   -- can come back before the deadline, which is when the scheduler erases the
   -- dynasty, its queue and every row of the dynasty.
   delete_after timestamptz
 );
 
--- One live account per dynasty today. "Several accounts per dynasty" is a later
--- release, with a revoke-all; it lifts this partial index in its own migration.
--- An account between towns has no dynasty, and nulls do not collide here.
-CREATE UNIQUE INDEX players_live_dynasty ON players (dynasty_id) WHERE revoked_at IS NULL;
-
--- One row per town: what belongs to no dynasty, and the row the writer locks.
-CREATE TABLE state (
-  town_id bigint PRIMARY KEY REFERENCES towns (id) ON DELETE CASCADE,
-  format_version integer NOT NULL,
-  ruleset_version integer NOT NULL,
-  seed integer NOT NULL,
-  rng integer NOT NULL,
-  hour integer NOT NULL,
-  year integer NOT NULL,
-  engagement_seq integer NOT NULL DEFAULT 0,
-  -- The scheduler counts owed hours from here, not from a grid.
-  hour_started_at timestamptz NOT NULL,
-  workshop_seq integer NOT NULL DEFAULT 0
-);
+-- One account per dynasty: a dynasty erased with its accounts leaves none
+-- behind. An account between towns has no dynasty, and nulls do not collide.
+CREATE UNIQUE INDEX players_live_dynasty ON players (dynasty_id);
 
 CREATE TABLE dynasties (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
@@ -73,6 +56,21 @@ CREATE TABLE dynasties (
 -- same names in every town. `lower()` is the key because a valid name has no
 -- accent or ligature to fold.
 CREATE UNIQUE INDEX dynasties_human_name ON dynasties (lower(name)) WHERE controller = 'human';
+
+-- One row per town: what belongs to no dynasty, and the row the writer locks.
+CREATE TABLE state (
+  town_id bigint PRIMARY KEY REFERENCES towns (id) ON DELETE CASCADE,
+  format_version integer NOT NULL,
+  ruleset_version integer NOT NULL,
+  seed integer NOT NULL,
+  rng integer NOT NULL,
+  hour integer NOT NULL,
+  year integer NOT NULL,
+  engagement_seq integer NOT NULL DEFAULT 0,
+  -- The scheduler counts owed hours from here, not from a grid.
+  hour_started_at timestamptz NOT NULL,
+  workshop_seq integer NOT NULL DEFAULT 0
+);
 
 -- The persons of a dynasty: a seat points at one of them, never at the dynasty.
 -- The degree is theirs: a title is bought by the person who holds it, and it

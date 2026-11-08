@@ -35,7 +35,6 @@ interface SurvivingAccount {
   player_id: number;
   created_at: Date;
   last_seen_at: Date;
-  revoked_at: Date | null;
   delete_after: Date | null;
 }
 
@@ -77,14 +76,13 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'players',
-        ['token_hash', 'player_id', 'dynasty_id', 'created_at', 'last_seen_at', 'revoked_at', 'delete_after'],
+        ['token_hash', 'player_id', 'dynasty_id', 'created_at', 'last_seen_at', 'delete_after'],
         accounts.map((account) => [
           account.token_hash,
           account.player_id,
           null,
           account.created_at,
           account.last_seen_at,
-          account.revoked_at,
           account.delete_after,
         ]),
         true,
@@ -198,7 +196,7 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
      WHERE table_schema = 'public' AND table_name = 'players'`,
   );
   const presentColumns = new Set(columns.map((column) => column.column_name));
-  const needed = ['token_hash', 'player_id', 'created_at', 'last_seen_at', 'revoked_at', 'delete_after'];
+  const needed = ['token_hash', 'player_id', 'created_at', 'last_seen_at', 'delete_after'];
 
   if (!needed.every((column) => presentColumns.has(column))) {
     const { rows: count } = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM players');
@@ -217,10 +215,9 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
     player_id: string;
     created_at: Date;
     last_seen_at: Date;
-    revoked_at: Date | null;
     delete_after: Date | null;
   }>(
-    `SELECT token_hash, player_id, created_at, last_seen_at, revoked_at, delete_after
+    `SELECT token_hash, player_id, created_at, last_seen_at, delete_after
      FROM players
      ORDER BY player_id`,
   );
@@ -230,7 +227,6 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
     player_id: Number(row.player_id),
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    revoked_at: row.revoked_at,
     delete_after: row.delete_after,
   }));
 }

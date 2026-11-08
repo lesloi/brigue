@@ -27,7 +27,6 @@ export async function issueToken(
     dynastyId,
     createdAt: now,
     lastSeenAt: now,
-    revokedAt: null,
     deleteAfter: null,
   };
 
@@ -38,9 +37,9 @@ export async function authenticate(store: PlayerStore, token: string | undefined
   const digest = hashToken(token ?? '');
   const player = token !== undefined && isTokenShaped(token) ? await store.findByTokenHash(digest) : null;
 
-  // A missing, malformed, unknown and revoked token all run the same
-  // comparison; only a live match survives.
+  // A missing, malformed and unknown token all run the same comparison; only a
+  // match survives.
   const matches = sameDigest(digest, player?.tokenHash ?? DUMMY_DIGEST);
 
-  return matches && player !== null && player.revokedAt === null ? player : null;
+  return matches ? player : null;
 }

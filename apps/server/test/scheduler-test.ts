@@ -484,7 +484,6 @@ describe('startScheduler', () => {
       dynastyId: null,
       createdAt: START,
       lastSeenAt: START,
-      revokedAt: null,
       deleteAfter: new Date(START.getTime() - HOUR),
     });
     const logs: string[] = [];

@@ -138,7 +138,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         const presence = applyPresence(world, players, at.getTime());
 
         for (const dynastyId of presence.deletedDynastyIds) {
-          await options.players.revokeDynasty(dynastyId, at);
+          await options.players.revokeDynasty(dynastyId);
           options.logger.warn('world.dynasty_deleted', { townId: town.id, dynastyId });
         }
 

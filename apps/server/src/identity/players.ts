@@ -9,7 +9,6 @@ export interface Player {
   createdAt: Date;
   /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
   lastSeenAt: Date;
-  revokedAt: Date | null;
   /** Set when the player asks to delete their identity: the erasure deadline. */
   deleteAfter: Date | null;
 }
@@ -49,17 +48,18 @@ export interface PlayerStore {
    * account is already bound or revoked: the choice is only made once.
    */
   rebind(tokenHash: string, townId: number, dynastyId: string, at: Date): Promise<Player | null>;
-  revoke(tokenHash: string, at: Date): Promise<void>;
+  /** Erases the account: there is no revoked state, a token either finds a row or nothing. */
+  revoke(tokenHash: string): Promise<void>;
   /** Records a visit without reopening a revoked session. */
   touch(tokenHash: string, at: Date): Promise<void>;
   /** Every account of a town, live or revoked, so presence can see the last visit. */
   listByTown(townId: number): Promise<Player[]>;
   /**
-   * Revokes every live account of a dynasty, for the thirty-day deletion. The
-   * dynasty id alone scopes it: a human dynasty id is minted once for the whole
-   * server, and the dynasty row may already be gone from the world.
+   * Erases every account of a dynasty, for the thirty-day deletion. The dynasty
+   * id alone scopes it: a human dynasty id is minted once for the whole server,
+   * and the dynasty row may already be gone from the world.
    */
-  revokeDynasty(dynastyId: string, at: Date): Promise<void>;
+  revokeDynasty(dynastyId: string): Promise<void>;
   /** Schedules the erasure of an identity; a second request keeps the first. */
   markDeletion(tokenHash: string, at: Date): Promise<void>;
   /** Cancels a scheduled erasure: the player came back. */
@@ -93,7 +93,6 @@ export class MemoryPlayerStore implements PlayerStore {
       if (
         player.townId !== null &&
         player.dynastyId !== null &&
-        existing.revokedAt === null &&
         existing.townId === player.townId &&
         existing.dynastyId === player.dynastyId
       ) {
@@ -111,12 +110,12 @@ export class MemoryPlayerStore implements PlayerStore {
   async rebind(tokenHash: string, townId: number, dynastyId: string, at: Date): Promise<Player | null> {
     const player = this.players.get(tokenHash);
 
-    if (player === undefined || player.revokedAt !== null || player.dynastyId !== null) {
+    if (player === undefined || player.dynastyId !== null) {
       return null;
     }
 
     for (const existing of this.players.values()) {
-      if (existing.revokedAt === null && existing.townId === townId && existing.dynastyId === dynastyId) {
+      if (existing.townId === townId && existing.dynastyId === dynastyId) {
         throw new DynastyAlreadyBoundError(townId, dynastyId);
       }
     }
@@ -133,16 +132,13 @@ export class MemoryPlayerStore implements PlayerStore {
     return player ? { ...player } : null;
   }
 
-  async revoke(tokenHash: string, at: Date): Promise<void> {
-    const player = this.players.get(tokenHash);
-    if (player && player.revokedAt === null) {
-      this.players.set(tokenHash, { ...player, revokedAt: at, lastSeenAt: at });
-    }
+  async revoke(tokenHash: string): Promise<void> {
+    this.players.delete(tokenHash);
   }
 
   async touch(tokenHash: string, at: Date): Promise<void> {
     const player = this.players.get(tokenHash);
-    if (player && player.revokedAt === null) {
+    if (player) {
       this.players.set(tokenHash, { ...player, lastSeenAt: at });
     }
   }
@@ -151,12 +147,8 @@ export class MemoryPlayerStore implements PlayerStore {
     return [...this.players.values()].filter((player) => player.townId === townId).map((player) => ({ ...player }));
   }
 
-  async revokeDynasty(dynastyId: string, at: Date): Promise<void> {
-    for (const [tokenHash, player] of this.players) {
-      if (player.dynastyId === dynastyId && player.revokedAt === null) {
-        this.players.set(tokenHash, { ...player, revokedAt: at });
-      }
-    }
+  async revokeDynasty(dynastyId: string): Promise<void> {
+    this.deleteDynasty(dynastyId);
   }
 
   async markDeletion(tokenHash: string, at: Date): Promise<void> {

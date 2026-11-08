@@ -811,12 +811,14 @@ function asDate(value: Date | string): Date {
 
 /** The partial index over the names of human dynasties, and nothing else. */
 function isNameViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === '23505' &&
-    (error as { constraint?: unknown }).constraint === 'dynasties_human_name'
-  );
+  if (typeof error !== 'object' || error === null || (error as { code?: unknown }).code !== '23505') {
+    return false;
+  }
+
+  const constraint = (error as { constraint?: unknown }).constraint;
+
+  // A town's name is unique, and so is a human dynasty's across towns.
+  return constraint === 'towns_name_key' || constraint === 'dynasties_human_name';
 }
 
 function isUniqueViolation(error: unknown): boolean {

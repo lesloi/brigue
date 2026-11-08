@@ -68,21 +68,21 @@ describe('the binding', () => {
     expect(await authenticate(store, token)).toBeNull();
   });
 
-  it('refuses a revoked token', async () => {
+  it('refuses a token whose account is gone', async () => {
     const store = new MemoryPlayerStore();
     const { token, player } = await issueToken(store, 1, 'leclerc');
 
-    await store.revoke(player.tokenHash, new Date('2026-10-31T12:00:00Z'));
+    await store.revoke(player.tokenHash);
 
     expect(await authenticate(store, token)).toBeNull();
   });
 
-  it('holds one live token per dynasty, and allows a new one after revoke', async () => {
+  it('holds one live token per dynasty, and allows a new one once the account is gone', async () => {
     const store = new MemoryPlayerStore();
     const first = await issueToken(store, 1, 'leclerc');
 
     await expect(issueToken(store, 1, 'leclerc')).rejects.toThrow();
-    await store.revoke(first.player.tokenHash, new Date());
+    await store.revoke(first.player.tokenHash);
 
     await expect(issueToken(store, 1, 'leclerc')).resolves.toBeDefined();
   });

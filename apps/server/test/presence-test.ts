@@ -16,7 +16,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
 const START = Date.parse('2026-11-05T12:00:00.000Z');
 
-function player(dynastyId: string, lastSeenAt: Date, revokedAt: Date | null = null): Player {
+function player(dynastyId: string, lastSeenAt: Date): Player {
   return {
     tokenHash: dynastyId.padEnd(64, '0'),
     playerId: 1,
@@ -24,7 +24,6 @@ function player(dynastyId: string, lastSeenAt: Date, revokedAt: Date | null = nu
     dynastyId,
     createdAt: lastSeenAt,
     lastSeenAt,
-    revokedAt,
     deleteAfter: null,
   };
 }
@@ -131,15 +130,14 @@ describe('dormancy', () => {
     expect(presence.deletedDynastyIds).toEqual([]);
   });
 
-  it('treats a dynasty with no live token as dormant, and an AI dynasty as never dormant', () => {
-    // Arrange
+  it('treats a dynasty with no account as dormant, and an AI dynasty as never dormant', () => {
+    // Arrange: the visitor belongs to another dynasty, so leclerc has no token.
     const world = aHumanWorld();
-    const seen = new Date(START - HOUR);
 
     // Act
-    const presence = applyPresence(world, [player('leclerc', seen, seen)], START);
+    const presence = applyPresence(world, [player('fournier', new Date(START))], START);
 
-    // Assert: a closed session leaves the dynasty dormant even after a visit...
+    // Assert: a dynasty nobody holds a token for runs nothing...
     expect(presence.dormant.has('leclerc')).toBe(true);
     // ...and an AI dynasty is always played.
     expect(presence.dormant.has('fournier')).toBe(false);
@@ -253,9 +251,9 @@ describe('the thirty-day deletion', () => {
     expect(body.world.town.seats.maire.personId).toBeNull();
     expect(await authenticate(harness.store, caronToken)).toBeNull();
 
+    // The account went with the dynasty: there is no revoked state to keep.
     const rows = (await harness.store.listByTown(TEST_TOWN.id)).filter((row) => row.dynastyId === 'caron');
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.revokedAt).not.toBeNull();
+    expect(rows).toHaveLength(0);
 
     // The live-dynasty index no longer blocks the freed place.
     await expect(issueToken(harness.store, TEST_TOWN.id, 'caron', new Date(START))).resolves.toBeDefined();
