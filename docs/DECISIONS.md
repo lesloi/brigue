@@ -30,8 +30,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   is a state of the town, not a punishment: a dynasty with no visit for a few days — three,
   calibrated in `PACING` — goes dormant. It keeps its money, its stock, its grudges and its heir,
   and nothing is taken from it; a rival gains nothing from the door being closed. What it loses is
-  standing: the workshop idles, it stands for nothing and votes for nothing, so its seat is
-  contested without it, and its prestige and favour decay while it is silent. The town is then
+  standing: the workshop idles, it stands for nothing and votes for nothing, so its seat is up
+  without it, and if nobody stands for it the seat falls vacant; its prestige and favour decay while
+  it is silent. The town is then
   governed by the dynasties that are there, which is the point of a shared council. After thirty days
   without a visit the dynasty is deleted and the token with it: no return, no vacation mode, and no
   AI ever plays it. When the last human dynasty goes, the town goes with it: the next player starts
@@ -80,6 +81,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   duty. A vacant seat blocks nothing — the power is simply unavailable, as in Europe 1400 — so a
   young town has no mayor for its first four elections. Revisit if twelve seats for twenty dynasties
   proves too generous.
+
+- **Only those who stand are candidates, and one seat at a time.** A dynasty stands by paying the
+  campaign favour cost; the active incumbent stands without paying. A second open candidacy is
+  refused, and a candidacy is never cumulative on the same seat. A person elected to one seat gives
+  up any other it held: that seat falls vacant and is announced as such, even when it was settled
+  earlier in the same scrutiny. The candidate learns the result whether the town changes hands or
+  not; the town's chronicle carries only a new winner or a vacancy. A dormant incumbent who does not
+  stand leaves the seat vacant. At the start of each year an AI dynasty without a seat tries a
+  random vacant one; a seated AI defends its seat and waits for #55 to climb.
 
 - **Three tiers above the loom: the town, the county, the kingdom.** Twelve seats in the town,
   seven in the county, seven in the kingdom; the mayor heads the town, the count the county, the
@@ -174,7 +184,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The server holds the world; the client renders it.** The client stores nothing: no local save
   to version, to lose with a cleared browser, or to reconcile between two devices. It receives a
-  projection of the world and the events since it last read, and it computes no rule. Revisit if
+  projection of the world and the newest page of its mail and of the town's chronicle, and it
+  computes no rule. Revisit if
   the game has to be playable offline for long stretches.
 
 - **The town moves without a reader; a scheduler advances it.** `tick` is pure, so the server can
@@ -204,15 +215,28 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   list of queued actions does not advance the town either; the town's own hour is the only
   applied verdict, and the wall clock only bounds how far ahead an action may be placed.
 
-- **The journal is a feed, not an archive.** A scheduler writes events nobody is reading, so every
-  event carries its instant and its audience, the log has growing ids, and the filter by audience
-  happens at read time. Each player holds a cursor outside the world, like the last visit. A read
-  returns the newest fifty events since that cursor in detail, and counts the rest by type and by
-  refusal. Every town pass drops the events older than 168 town hours — seven days when the
-  scheduler keeps pace, `PACING.journalRetentionHours` — keeping the newest fifty whatever their
-  age, so the journal always has a page. The cut follows the town's hour, not the wall clock, so a
-  frozen town keeps its journal, and the table is bounded by a week of the town's own events. The
-  book of kings carries what lasts; the journal carries only what is new.
+- **The journal is two pages: a private mailbox and a public chronicle.** A scheduler writes
+  while nobody reads, so every event carries its hour and its audience. A line addressed to the
+  town is a chronicle line: small, shared, and the same page for every reader — an election that
+  changed a seat, later a law. A line addressed to a dynasty is a message: a refusal, a work built
+  or lost, a debt paid or unpaid, a candidacy, an election result. Only a human dynasty has a
+  mailbox, addressed by its dynasty id (minted once for the whole server); an AI one reads
+  nothing, so its private lines are written for nobody. A notice carries its `type` and the
+  `payload` of its sentence; a letter from a player is prose — `type` null, `body`, and the
+  `author_dynasty_id` the server takes from the session — and lands in the recipient's box. A
+  public square is not this table. The chronicle
+  keeps seven real days and the mail thirty (`PACING.chronicleRetentionHours`,
+  `PACING.messageRetentionHours`), cut by the wall clock at the write, so a scheduler stopped
+  longer loses the days before the stop. A read returns the newest fifty of each in time order;
+  there is no per-reader filter, so one reader's visit can never hide a line from another. A message
+  is unread until the player opens the Courrier, which marks the box read; the `read` flag is the
+  whole unread state, there is no cursor on the account, and it hides no line. A dynasty deletes a
+  message one by one, and there is no trash or tombstone: the row goes. The badge counts at
+  most the page it can open, and opening marks the whole box: mail older than the newest fifty is
+  pruned unseen rather than shown twice. The Courrier and the Greffe are the
+  only screens that render the journal: a trade lives on the Marché, production and works on the
+  Maison, and an event no screen needs is not written. The book of kings carries what lasts; the
+  journal carries only what is recent.
 
 - **A format change migrates or resets, and a reset is never silent.** Within a format, changes
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new
@@ -373,8 +397,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   of what the parent had gained. The choice is what keeps death from being a tax on time passing; the rise
   is what makes staying a gamble. Revisit if generations feel like a treadmill.
 
-- **The AI plays politics.** At each scrutiny an AI dynasty chooses a seat by its rank, spends favour to
-  campaign, and remembers who beat it. It votes according to its interests and its grudges. It also buys the input its workshops lack,
+- **The AI plays politics.** At the start of each year an AI dynasty without a seat tries a random
+  vacant one, paying the campaign cost if it has the favour; a seated AI defends its seat and does
+  not challenge another holder or climb until #55. It votes with the same roll and campaign bonus
+  as a human. It also buys the input its workshops lack,
   as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
   nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
   It sells its whole stock every hour, at the market price: it takes the price, it does not

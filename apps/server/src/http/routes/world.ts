@@ -30,7 +30,7 @@ export async function readWorld(
     return;
   }
 
-  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, bound.cursorEventId ?? 0, at);
+  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, at);
 
   if (outcome.kind === 'gone') {
     // The visit arrived after the dynasty was silent for a month: the world has
@@ -59,16 +59,15 @@ export async function readWorld(
   });
 
   const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
-  await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
     world: projection,
-    events: outcome.journal.events,
+    messages: outcome.messages,
+    chronicle: outcome.chronicle,
+    unreadMessages: outcome.unread,
     summary: {
       hours: caught.hours,
       skipped: caught.skipped,
-      counts: outcome.journal.counts,
-      refusals: outcome.journal.refusals,
     },
     // The projected state, not the world: hashing the world would reveal the
     // seed and with it every future the town has not lived yet.
@@ -109,14 +108,7 @@ export async function advanceHour(
     return;
   }
 
-  const outcome = await advanceTown(
-    townAccess(context),
-    bound.townId,
-    bound.dynastyId,
-    bound.cursorEventId ?? 0,
-    at,
-    context.now,
-  );
+  const outcome = await advanceTown(townAccess(context), bound.townId, bound.dynastyId, at, context.now);
 
   if (outcome.kind === 'gone') {
     context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
@@ -134,21 +126,98 @@ export async function advanceHour(
   });
 
   const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
-  await context.deps.store.advanceCursor(bound.tokenHash, outcome.journal.lastId);
 
   sendJson(response, 200, {
     world: projection,
-    events: outcome.journal.events,
+    messages: outcome.messages,
+    chronicle: outcome.chronicle,
+    unreadMessages: outcome.unread,
     summary: {
       hours: caught.hours,
       skipped: caught.skipped,
-      counts: outcome.journal.counts,
-      refusals: outcome.journal.refusals,
     },
     stateHash: hashJson(projection),
     deletionGraceDays: PACING.deletionGraceDays,
     dev: true,
   });
+}
+
+/**
+ * The player deletes one of its messages. No trash and no tombstone: the row
+ * goes, and an id from another box deletes nothing.
+ */
+export async function deleteMessage(
+  context: AppContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+  rawId: string,
+): Promise<void> {
+  const player = await identifiedBy(context, request, response);
+
+  if (player === null) {
+    return;
+  }
+
+  const at = new Date(context.now());
+
+  if (refuseClosing(context, player, response, at)) {
+    return;
+  }
+
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
+  const id = Number(rawId);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    sendJson(response, 404, { error: 'unknown_message' });
+    return;
+  }
+
+  const result = await context.deps.worlds.deleteMessage(id, bound.dynastyId);
+
+  sendJson(response, 200, { deleted: result.deleted, unreadMessages: result.unread });
+}
+
+/**
+ * The player opened one message: it is marked read. The flag is the whole
+ * unread state, and a message of another box is left alone.
+ */
+export async function markMessageRead(
+  context: AppContext,
+  request: IncomingMessage,
+  response: ServerResponse,
+  rawId: string,
+): Promise<void> {
+  const player = await identifiedBy(context, request, response);
+
+  if (player === null) {
+    return;
+  }
+
+  const at = new Date(context.now());
+
+  if (refuseClosing(context, player, response, at)) {
+    return;
+  }
+
+  const bound = boundPlayerOf(context, player, response);
+
+  if (bound === null) {
+    return;
+  }
+
+  const id = Number(rawId);
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    sendJson(response, 404, { error: 'unknown_message' });
+    return;
+  }
+
+  const result = await context.deps.worlds.markMessageRead(id, bound.dynastyId);
+
+  sendJson(response, 200, { read: result.read, unreadMessages: result.unread });
 }
 
 function townAccess(context: AppContext): TownAccess {

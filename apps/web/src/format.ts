@@ -214,6 +214,8 @@ export function refusalText(reason: RefusalReason): string {
       return 'la résidence est au plus haut';
     case 'site_in_progress':
       return 'un chantier est déjà en cours';
+    case 'already_candidate':
+      return 'vous avez déjà une candidature en cours';
     case 'name_taken':
       return 'ce nom est déjà porté';
     case 'invalid_name':

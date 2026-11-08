@@ -3,7 +3,7 @@ import { GOODS } from '@brigue/core/world';
 import { describe, expect, it } from 'vitest';
 
 import type { PendingActionView } from '../src/api.ts';
-import { eventLine, ledgerEvents } from '../src/events.ts';
+import { eventLine } from '../src/events.ts';
 import {
   buyMax,
   FINISHED_GOODS,
@@ -26,7 +26,8 @@ import {
   tradeName,
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
-import { catchUpText, countdownText, lawAgeText } from '../src/views/ville.tsx';
+import { catchUpText } from '../src/views/greffe.tsx';
+import { countdownText, lawAgeText } from '../src/views/ville.tsx';
 
 const NAMES: Record<string, string> = {
   leclerc: 'Leclerc',
@@ -110,6 +111,40 @@ describe('eventLine', () => {
 
     // Assert
     expect(line.text).toContain('Caron a acheté 1 laine');
+  });
+
+  it('announces a vacant seat and a private election result', () => {
+    // Arrange
+    const vacant: Event = {
+      type: 'council.election_held',
+      audience: 'town',
+      at: 0,
+      seatId: 'maire',
+      winnerDynastyId: null,
+      votes: {},
+    };
+    const won: Event = {
+      type: 'council.election_result',
+      audience: { dynastyId: 'leclerc' },
+      at: 0,
+      dynastyId: 'leclerc',
+      seatId: 'maire',
+      won: true,
+      winnerDynastyId: 'leclerc',
+      votes: { leclerc: 4, caron: 2 },
+    };
+    const lost: Event = { ...won, won: false, winnerDynastyId: 'caron' };
+
+    // Act
+    const vacantLine = eventLine(vacant, 'leclerc', nameOf);
+    const wonLine = eventLine(won, 'leclerc', nameOf);
+    const lostLine = eventLine(lost, 'leclerc', nameOf);
+
+    // Assert
+    expect(vacantLine.text).toContain('reste vacante');
+    expect(wonLine.text).toContain('Vous êtes élu à la mairie');
+    expect(lostLine.text).toContain('Vous avez perdu la mairie');
+    expect(lostLine.text).toContain('Caron');
   });
 
   it('reads a refusal as a refusal, not as money moving', () => {
@@ -218,7 +253,7 @@ describe('eventLine', () => {
     // has already closed this year's.
     expect(line.tone).toBe('council');
     expect(line.text).toContain('candidature à la mairie');
-    expect(line.text).toContain('dans 36 heures');
+    expect(line.text).toContain("à l'heure 48");
   });
 
   it('counts a late engagement in hours', () => {
@@ -273,6 +308,7 @@ describe('format helpers', () => {
     expect(refusalText('unknown_good')).toBe('denrée inconnue');
     expect(refusalText('insufficient_stock')).toBe('stock insuffisant');
     expect(refusalText('stock_full')).toBe('entrepôt plein');
+    expect(refusalText('already_candidate')).toBe('vous avez déjà une candidature en cours');
     expect(readErrorText('invalid_trade')).toBe('Métier inconnu.');
   });
 
@@ -309,37 +345,18 @@ describe('lawAgeText', () => {
 });
 
 describe('catchUpText', () => {
-  const nothing = { counts: {}, refusals: {} };
-
   it('agrees with a single hour', () => {
-    expect(catchUpText({ hours: 1, skipped: 0, ...nothing })).toBe('1 heure vécue depuis votre dernière visite.');
-    expect(catchUpText({ hours: 1, skipped: 1, ...nothing })).toContain('1 heure sautée');
+    expect(catchUpText({ hours: 1, skipped: 0 })).toBe('1 heure vécue depuis votre dernière visite.');
+    expect(catchUpText({ hours: 1, skipped: 1 })).toContain('1 heure sautée');
   });
 
   it('pluralises above one', () => {
-    expect(catchUpText({ hours: 2, skipped: 0, ...nothing })).toBe('2 heures vécues depuis votre dernière visite.');
-    expect(catchUpText({ hours: 0, skipped: 2, ...nothing })).toContain('2 heures sautées');
-  });
-
-  it('counts what the page left behind, refusals by reason', () => {
-    // Act
-    const text = catchUpText({
-      hours: 30,
-      skipped: 0,
-      counts: { 'market.bought': 312, 'market.sold': 40, 'action.refused': 12 },
-      refusals: { insufficient_funds: 5, stock_full: 7 },
-    });
-
-    // Assert: the refusal is not also listed as a type.
-    expect(text).toContain('30 heures vécues');
-    expect(text).toContain('312 achats');
-    expect(text).toContain('40 ventes');
-    expect(text).toContain('12 refus (7 entrepôt plein, 5 fonds insuffisants)');
-    expect(text).not.toContain('12 refus,');
+    expect(catchUpText({ hours: 2, skipped: 0 })).toBe('2 heures vécues depuis votre dernière visite.');
+    expect(catchUpText({ hours: 0, skipped: 2 })).toContain('2 heures sautées');
   });
 
   it('says nothing when the visit owes nothing', () => {
-    expect(catchUpText({ hours: 0, skipped: 0, ...nothing })).toBeNull();
+    expect(catchUpText({ hours: 0, skipped: 0 })).toBeNull();
   });
 });
 
@@ -363,60 +380,12 @@ describe('tab history', () => {
   it('seeds the tab from the hash and validates history state', () => {
     expect(tabFromHash('#marche')).toBe('marche');
     expect(tabFromHash('#maison')).toBe('maison');
+    expect(tabFromHash('#courrier')).toBe('courrier');
+    expect(tabFromHash('#greffe')).toBe('greffe');
     expect(tabFromHash('#conseil')).toBe('ville');
     expect(tabFromHash('')).toBe('ville');
     expect(stateOf(null)).toBeNull();
     expect(stateOf({ tab: 'marche', pushed: true })).toEqual({ tab: 'marche', pushed: true });
-  });
-});
-
-describe('the ledger filter', () => {
-  const events: Event[] = [
-    {
-      type: 'market.sold',
-      audience: 'town',
-
-      at: 0,
-      dynastyId: 'leclerc',
-      good: 'cloth',
-      units: 2,
-      priceCents: 1240,
-      revenueCents: 2480,
-    },
-    {
-      type: 'market.bought',
-      audience: 'town',
-
-      at: 0,
-      dynastyId: 'caron',
-      good: 'wool',
-      units: 6,
-      priceCents: 380,
-      totalCents: 2280,
-    },
-    { type: 'council.election_held', audience: 'town', at: 0, seatId: 'maire', winnerDynastyId: 'caron', votes: {} },
-    { type: 'market.price_changed', audience: 'town', at: 0, good: 'cloth', before: 1240, after: 1250 },
-    { type: 'dynasty.upkeep_paid', audience: { dynastyId: 'leclerc' }, at: 0, dynastyId: 'leclerc', amountCents: 240 },
-  ];
-
-  it('keeps the dynasty and the town politics by default', () => {
-    // Act
-    const filtered = ledgerEvents(events, 'leclerc', 'dynasty');
-
-    // Assert
-    expect(filtered.map((event) => event.type)).toEqual([
-      'market.sold',
-      'council.election_held',
-      'dynasty.upkeep_paid',
-    ]);
-  });
-
-  it('keeps only the prices in the prices cut', () => {
-    expect(ledgerEvents(events, 'leclerc', 'prices').map((event) => event.type)).toEqual(['market.price_changed']);
-  });
-
-  it('keeps everything in the full cut', () => {
-    expect(ledgerEvents(events, 'leclerc', 'all')).toEqual(events);
   });
 });
 

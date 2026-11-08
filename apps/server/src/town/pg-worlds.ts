@@ -2,14 +2,13 @@ import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import { nameKey, residenceOf, titleOf } from '@brigue/core';
 import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
-import { emptyTally, foldGrouped, type GroupedCount } from './journal.ts';
 import {
   DuplicateActionError,
   JOURNAL_PAGE,
   NameInUseError,
   UnknownWorldError,
-  type JournalPage,
   type StoredAction,
+  type MessagePage,
   type TownInfo,
   type WorldSession,
   type WorldSnapshot,
@@ -115,23 +114,46 @@ export class PgWorldStore implements WorldStore {
     return rows.map((row) => row.name);
   }
 
-  async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
-    // The boundary is the id of the newest page's oldest entry; a journal with
-    // fewer than a page has none, and `id < NULL` deletes nothing. The index on
-    // (town_id, id) serves both the boundary and the walk back from the newest.
-    await this.pool.query(
-      `DELETE FROM events
-       WHERE town_id = $1
-         AND at < $2
-         AND id < (
-           SELECT id FROM events
-           WHERE town_id = $1
-           ORDER BY id DESC
-           OFFSET $3
-           LIMIT 1
-         )`,
-      [townId, oldestKeptHour, JOURNAL_PAGE - 1],
+  async pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void> {
+    await this.pool.query(`DELETE FROM events WHERE town_id = $1 AND recorded_at < $2`, [townId, chronicleBefore]);
+    // The mail has no town column: the thirty-day cut is the same for every
+    // box, and a pass over any town may as well take what every box has aged out.
+    await this.pool.query(`DELETE FROM messages WHERE recorded_at < $1`, [messagesBefore]);
+  }
+
+  async markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }> {
+    // Scoped to the dynasty: an id from another box changes nothing.
+    const { rowCount } = await this.pool.query(`UPDATE messages SET read = true WHERE id = $1 AND dynasty_id = $2`, [
+      id,
+      dynastyId,
+    ]);
+    const counts = await this.pool.query<{ unread: number }>(
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE dynasty_id = $1`,
+      [dynastyId],
     );
+
+    return {
+      read: (rowCount ?? 0) > 0,
+      unread: Math.min(counts.rows[0]?.unread ?? 0, JOURNAL_PAGE),
+    };
+  }
+
+  async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
+    // Scoped to the dynasty: an id from another box deletes nothing and says
+    // nothing, so a bad guess is not an oracle.
+    const { rowCount } = await this.pool.query(`DELETE FROM messages WHERE id = $1 AND dynasty_id = $2`, [
+      id,
+      dynastyId,
+    ]);
+    const counts = await this.pool.query<{ unread: number }>(
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE dynasty_id = $1`,
+      [dynastyId],
+    );
+
+    return {
+      deleted: (rowCount ?? 0) > 0,
+      unread: Math.min(counts.rows[0]?.unread ?? 0, JOURNAL_PAGE),
+    };
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
@@ -220,36 +242,44 @@ class PgWorldSession implements WorldSession {
     return rows.map(rowToStoredAction);
   }
 
-  async eventsSince(afterId: number, limit: number, dynastyId: string): Promise<JournalPage> {
-    // Dynasty-visible in one place, so the page and its counts cannot disagree.
-    const visible = `(audience = 'town' OR (audience = 'dynasty' AND dynasty_id = $2))`;
-    const { rows } = await this.client.query(
-      `SELECT id, at, audience, dynasty_id, type, payload
-       FROM events
-       WHERE town_id = $4 AND id > $1 AND ${visible}
+  async recentMessages(limit: number, dynastyId: string): Promise<MessagePage> {
+    const { rows } = await this.client.query<MessageRow>(
+      `SELECT id, dynasty_id, type, payload, read
+       FROM messages
+       WHERE dynasty_id = $2
        ORDER BY id DESC
-       LIMIT $3`,
-      [afterId, dynastyId, limit, this.townId],
+       LIMIT $1`,
+      [limit, dynastyId],
     );
-    // The query walks back from the newest; the page reads forward in time.
-    const newest = rows.slice().reverse();
-    const events = newest.map(rowToEvent);
-    const lastId = events.length === 0 ? afterId : Number(rows[0].id);
-    const tally = emptyTally();
+    const counts = await this.client.query<{ unread: number }>(
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread
+       FROM messages
+       WHERE dynasty_id = $1`,
+      [dynastyId],
+    );
 
-    if (newest.length > 0) {
-      const oldest = Number(newest[0].id);
-      const { rows: grouped } = await this.client.query(
-        `SELECT type, payload->>'reason' AS reason, count(*)::int AS count
-         FROM events
-         WHERE town_id = $4 AND id > $1 AND id < $3 AND ${visible}
-         GROUP BY type, payload->>'reason'`,
-        [afterId, dynastyId, oldest, this.townId],
-      );
-      foldGrouped(tally, grouped.map(toGroupedCount));
-    }
+    return {
+      // The query walks back from the newest; the page reads forward in time.
+      messages: rows
+        .slice()
+        .reverse()
+        .map((row) => ({ id: Number(row.id), read: row.read, event: rowToMessage(row) })),
+      // The badge names what the page can open, never a backlog below it.
+      unread: Math.min(counts.rows[0]?.unread ?? 0, limit),
+    };
+  }
 
-    return { events, lastId, ...tally };
+  async recentChronicle(limit: number): Promise<Event[]> {
+    const { rows } = await this.client.query<ChronicleRow>(
+      `SELECT id, at, audience, type, payload
+       FROM events
+       WHERE town_id = $2
+       ORDER BY id DESC
+       LIMIT $1`,
+      [limit, this.townId],
+    );
+
+    return rows.slice().reverse().map(rowToChronicleEvent);
   }
 
   async findAction(id: string): Promise<StoredAction | null> {
@@ -302,7 +332,11 @@ class PgWorldSession implements WorldSession {
   async clear(): Promise<void> {
     // The town goes whole — its state, dynasties, actions and journal — and the
     // player rows and the sealed seasons, which live outside it, stay. Deleting
-    // the town row cascades every town table.
+    // the town row cascades every town table; the mail has no town column, so
+    // its rows are named by the dynasties before they go.
+    await this.client.query(`DELETE FROM messages WHERE dynasty_id IN (SELECT id FROM dynasties WHERE town_id = $1)`, [
+      this.townId,
+    ]);
     await this.client.query(`DELETE FROM towns WHERE id = $1`, [this.townId]);
   }
 
@@ -315,7 +349,24 @@ class PgWorldSession implements WorldSession {
        WHERE town_id = $1`,
       [this.townId, world.hour, world.year, world.rng, world.engagementSeq, world.workshopSeq ?? 0, hourStartedAt],
     );
-    await appendEvents(this.client, this.townId, events);
+    await appendChronicle(
+      this.client,
+      this.townId,
+      events.filter((event) => event.audience === 'town'),
+    );
+    await appendMessages(
+      this.client,
+      this.townId,
+      // A private line is written for a human dynasty only: an AI one has no
+      // mailbox to read it in.
+      events.filter((event) => {
+        if (typeof event.audience !== 'object') {
+          return false;
+        }
+
+        return world.dynasties[event.audience.dynastyId]?.controller === 'human';
+      }),
+    );
   }
 }
 
@@ -707,7 +758,7 @@ function campaignRows(campaigns: World['campaigns'], closed: boolean): [string, 
   );
 }
 
-async function appendEvents(client: PoolClient, townId: number, events: Event[]): Promise<void> {
+async function appendChronicle(client: PoolClient, townId: number, events: Event[]): Promise<void> {
   if (events.length === 0) {
     return;
   }
@@ -715,20 +766,41 @@ async function appendEvents(client: PoolClient, townId: number, events: Event[])
   await insertRows(
     client,
     'events',
-    ['town_id', 'at', 'audience', 'dynasty_id', 'type', 'payload'],
+    ['town_id', 'at', 'audience', 'type', 'payload'],
     events.map((event) => {
       const { audience, at, type, ...body } = event;
 
-      return [
-        townId,
-        at,
-        typeof audience === 'string' ? audience : 'dynasty',
-        typeof audience === 'string' ? null : audience.dynastyId,
-        type,
-        json(body),
-      ];
+      return [townId, at, audience, type, json(body)];
     }),
   );
+}
+
+async function appendMessages(client: PoolClient, townId: number, events: Event[]): Promise<void> {
+  if (events.length === 0) {
+    return;
+  }
+
+  await insertRows(
+    client,
+    'messages',
+    ['dynasty_id', 'type', 'payload'],
+    events.map((event) => {
+      // The caller kept only the dynasty-addressed events.
+      const dynastyId = typeof event.audience === 'object' ? event.audience.dynastyId : '';
+
+      return [dynastyId, event.type, json(messageBody(event))];
+    }),
+  );
+}
+
+/** The payload of a message: the event minus what the row already carries. */
+function messageBody(event: Event): Record<string, unknown> {
+  const body = { ...event } as Record<string, unknown>;
+  delete body.audience;
+  delete body.at;
+  delete body.type;
+
+  return body;
 }
 
 async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {
@@ -758,21 +830,30 @@ async function rollback(client: PoolClient): Promise<void> {
   }
 }
 
-function rowToEvent(row: {
+interface ChronicleRow {
   id: string | number;
   at: number;
   audience: string;
-  dynasty_id: string | null;
   type: string;
   payload: Record<string, unknown>;
-}): Event {
-  const audience = row.audience === 'dynasty' ? { dynastyId: row.dynasty_id ?? '' } : row.audience;
-
-  return { ...row.payload, type: row.type, audience, at: row.at } as Event;
 }
 
-function toGroupedCount(row: { type: string; reason: string | null; count: number | string }): GroupedCount {
-  return { type: row.type, reason: row.reason, count: Number(row.count) };
+interface MessageRow {
+  id: string | number;
+  dynasty_id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  read: boolean;
+}
+
+function rowToChronicleEvent(row: ChronicleRow): Event {
+  return { ...row.payload, type: row.type, audience: 'town', at: row.at } as Event;
+}
+
+function rowToMessage(row: MessageRow): Event {
+  // A message has no town hour: the page orders by id, the prune by the write
+  // instant, and no line reads `at`.
+  return { ...row.payload, type: row.type, audience: { dynastyId: row.dynasty_id }, at: 0 } as Event;
 }
 
 function rowToStoredAction(row: {

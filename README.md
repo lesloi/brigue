@@ -38,8 +38,8 @@ Early, and in two layers.
   format that replaces the week-based one — it deletes the test towns and starts the version at
   one; no world is in production.
 
-The server issues a token, advances the town on its own, serves the projection and the journal
-page since the reader's cursor, and accepts actions for the hour being played or the next one.
+The server issues a token, advances the town on its own, serves the projection and the newest
+journal page, and accepts actions for the hour being played or the next one.
 The PWA has its shell, the creation screen, the Ville screen and the Marché screen, rendered with
 Preact: it renders the projection and the journal, and sends market intents. The Marché buys and
 sells, lists the queued actions with their cancel, and draws the year's price history; the Ville

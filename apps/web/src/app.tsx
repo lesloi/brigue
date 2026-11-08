@@ -6,7 +6,9 @@ import {
   advanceHour,
   cancelAction,
   cancelDeletion,
+  deleteMessage,
   joinTown,
+  markMessageRead,
   readCandidate,
   readPending,
   readSession,
@@ -24,8 +26,10 @@ import {
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
 import { ClosingDynasty, DeleteAccountDialog } from './views/account.tsx';
+import { Courrier } from './views/courrier.tsx';
 import { Create } from './views/create.tsx';
 import { Failure, LostDynasty, TokenDialog } from './views/gate.tsx';
+import { Greffe } from './views/greffe.tsx';
 import { Maison } from './views/maison.tsx';
 import { Marche } from './views/marche.tsx';
 import { Nav } from './views/nav.tsx';
@@ -248,6 +252,54 @@ export function App() {
       const fresh = pendingToken.current;
       pendingToken.current = null;
       setToken(fresh);
+    }
+  }
+
+  async function removeMessage(id: number): Promise<void> {
+    try {
+      const { unreadMessages } = await deleteMessage(id);
+      setView((current) =>
+        current.kind === 'world'
+          ? {
+              kind: 'world',
+              data: {
+                ...current.data,
+                messages: current.data.messages.filter((message) => message.id !== id),
+                unreadMessages,
+              },
+            }
+          : current,
+      );
+    } catch {
+      showToast("Le message n'a pas pu être supprimé.", true);
+    }
+  }
+
+  async function readMessage(id: number): Promise<void> {
+    // The badge is cosmetic: a failed call leaves the message unread, and
+    // opening it again retries.
+    try {
+      const { read, unreadMessages } = await markMessageRead(id);
+
+      if (!read) {
+        return;
+      }
+      setView((current) =>
+        current.kind === 'world'
+          ? {
+              kind: 'world',
+              data: {
+                ...current.data,
+                unreadMessages,
+                messages: current.data.messages.map((message) =>
+                  message.id === id ? { ...message, read: true } : message,
+                ),
+              },
+            }
+          : current,
+      );
+    } catch {
+      // Nothing to say: the line is on screen anyway.
     }
   }
 
@@ -529,6 +581,14 @@ export function App() {
               onAdvance={() => void advanceOneHour()}
               onDeleteAccount={askDelete}
             />
+          ) : tab === 'courrier' ? (
+            <Courrier
+              data={view.data}
+              onRead={(id) => void readMessage(id)}
+              onDelete={(id) => void removeMessage(id)}
+            />
+          ) : tab === 'greffe' ? (
+            <Greffe data={view.data} />
           ) : tab === 'maison' ? (
             <Maison
               data={view.data}
@@ -573,7 +633,7 @@ export function App() {
             />
           )}
           <div class="fade" aria-hidden="true"></div>
-          <Nav tab={tab} onSelect={selectTab} />
+          <Nav tab={tab} unread={view.data.unreadMessages} onSelect={selectTab} />
         </div>
       ) : view.kind === 'closing' ? (
         <ClosingDynasty after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />

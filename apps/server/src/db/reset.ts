@@ -73,9 +73,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
         kings.map((king) => [king.player_id, king.dynasty_name, king.person_name, king.crowned_at, king.elapsed_hours]),
       );
 
-      // The account keeps its id and its dates; the dynasty and the journal
-      // cursor do not cross. `cursor_event_id` restarts at zero because the
-      // rebuilt journal restarts at one.
+      // The account keeps its id and its dates; the dynasty does not cross.
       await insertRows(
         client,
         'players',
@@ -88,7 +86,6 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
           'last_seen_at',
           'revoked_at',
           'delete_after',
-          'cursor_event_id',
         ],
         accounts.map((account) => [
           account.token_hash,
@@ -99,7 +96,6 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
           account.last_seen_at,
           account.revoked_at,
           account.delete_after,
-          0,
         ]),
         true,
       );

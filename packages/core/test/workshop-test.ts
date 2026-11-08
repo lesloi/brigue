@@ -73,9 +73,6 @@ describe('workshops, trades and the ladder', () => {
 
     // Assert: paid at the opening, the workshop appears when the site falls due.
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'engagement.opened', dynastyId: 'leclerc', dueAt: 1 + RULES.siteHours }),
-    );
-    expect(events).toContainEqual(
       expect.objectContaining({ type: 'workshop.built', audience: { dynastyId: 'leclerc' }, trade: 'baker' }),
     );
     expect(leased(after, 'leclerc').workshops).toHaveLength(2);
@@ -166,12 +163,8 @@ describe('workshops, trades and the ladder', () => {
     // Act: the improvement is open at the first hour, and its site runs one hour.
     const started = tick(world, [{ type: 'workshop.upgrade', dynastyId: 'leclerc', workshopId }]);
 
-    // Assert: no cloth is woven while the site is open.
-    expect(
-      started.events.filter(
-        (event) => event.type === 'workshop.produced' && event.dynastyId === 'leclerc' && event.good === 'cloth',
-      ),
-    ).toEqual([]);
+    // Assert: no cloth is woven while the site is open, and the wool is untouched.
+    expect(started.world.dynasties.leclerc.stock).toEqual({ wool: 60 });
   });
 
   it('refuses a second site while one is under way', () => {
@@ -221,13 +214,9 @@ describe('workshops, trades and the ladder', () => {
     const started = tick(world, [{ type: 'workshop.upgrade', dynastyId: 'leclerc', workshopId }]);
     const after = tick(started.world);
 
-    // Assert: no upkeep is charged for that workshop while it is a site.
-    const upkeep = (events: Event[]) =>
-      events.filter(
-        (event): event is Extract<Event, { type: 'dynasty.upkeep_paid' }> =>
-          event.type === 'dynasty.upkeep_paid' && event.dynastyId === 'leclerc',
-      );
-    expect(upkeep(after.events)).toEqual([]);
+    // Assert: no upkeep is charged for that workshop while it is a site, so the
+    // purse does not move at all.
+    expect(after.world.dynasties.leclerc.treasuryCents).toBe(world.dynasties.leclerc.treasuryCents);
   });
 
   it('obtains a title at the next noon or midnight', () => {
@@ -242,9 +231,6 @@ describe('workshops, trades and the ladder', () => {
     );
 
     // Assert
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: 'dynasty.title_bought', dynastyId: 'leclerc', title: 'bourgeois' }),
-    );
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'dynasty.title_received',
@@ -298,10 +284,9 @@ describe('workshops, trades and the ladder', () => {
     ]);
 
     // Assert: one works, one charge, one refusal.
-    expect(events.filter((event) => event.type === 'dynasty.title_bought')).toHaveLength(1);
-    expect(events.filter((event) => event.type === 'dynasty.title_bought')[0]).toEqual(
-      expect.objectContaining({ title: 'bourgeois' }),
-    );
+    expect(
+      after.engagements.filter((engagement) => engagement.kind === 'site' && engagement.work === 'title'),
+    ).toHaveLength(1);
     expect(refusal(events, 'site_in_progress')).toBeDefined();
     expect(world.dynasties.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeGreaterThanOrEqual(
       60_000,
@@ -324,9 +309,6 @@ describe('workshops, trades and the ladder', () => {
     );
 
     // Assert
-    expect(run.events).toContainEqual(
-      expect.objectContaining({ type: 'dynasty.residence_received', dynastyId: 'leclerc', level: 2 }),
-    );
     const dynasty = leased(run.world, 'leclerc');
     expect(dynasty.residenceLevel).toBe(2);
     // Level 2 holds one workshop as well: the second service arrives at level 3.

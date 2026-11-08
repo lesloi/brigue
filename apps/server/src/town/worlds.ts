@@ -1,16 +1,4 @@
-import {
-  FORMAT_VERSION,
-  isVisibleTo,
-  PACING,
-  RULES,
-  WorldVersionError,
-  type Action,
-  type Event,
-  type RefusalReason,
-  type World,
-} from '@brigue/core';
-
-import { countEvent, emptyTally } from './journal.ts';
+import { FORMAT_VERSION, PACING, RULES, WorldVersionError, type Action, type Event, type World } from '@brigue/core';
 
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -22,7 +10,7 @@ export function currentHourOf(world: World, hourStartedAt: Date, at: Date): numb
   return world.hour + Math.min(elapsed, PACING.maxCatchUpHours);
 }
 
-/** A read returns at most this many journal entries; the rest is counted. */
+/** A read returns at most this many messages, and as many chronicle lines. */
 export const JOURNAL_PAGE = 50;
 
 /** A town a player can join: the id the rows carry, the name the screen shows. */
@@ -49,20 +37,6 @@ export interface StoredAction {
   title?: string;
 }
 
-export type JournalCounts = Partial<Record<Event['type'], number>>;
-export type JournalRefusals = Partial<Record<RefusalReason, number>>;
-
-export interface JournalPage {
-  /** The newest entries after the cursor, in the order they happened. */
-  events: Event[];
-  /** The newest entry's id: the cursor jumps over what the counts cover. */
-  lastId: number;
-  /** What the page left behind, counted by type. */
-  counts: JournalCounts;
-  /** The refused actions among them, counted by reason. */
-  refusals: JournalRefusals;
-}
-
 export interface WorldSnapshot {
   town: TownInfo;
   world: World;
@@ -70,13 +44,33 @@ export interface WorldSnapshot {
   hourStartedAt: Date;
 }
 
+/** One stored message: the row's id, its flag, and the line. */
+export interface MessageView {
+  id: number;
+  read: boolean;
+  event: Event;
+}
+
+/** One page of a dynasty's private mail, and what the badge counts. */
+export interface MessagePage {
+  /**
+   * In the order they happened. Their `at` is 0: a message carries no town
+   * hour, only the instant it was written.
+   */
+  messages: MessageView[];
+  /** How many messages of the box are still unread, at most the page. */
+  unread: number;
+}
+
 /** One unit of work on the town, inside the state row's lock. */
 export interface WorldSession {
   readonly snapshot: WorldSnapshot;
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
   actionsBetween(from: number, to: number): Promise<StoredAction[]>;
-  /** The journal after a reader's cursor, and how much is left beyond the page. */
-  eventsSince(afterId: number, limit: number, dynastyId: string): Promise<JournalPage>;
+  /** The newest private messages of a dynasty, in the order they happened. */
+  recentMessages(limit: number, dynastyId: string): Promise<MessagePage>;
+  /** The newest public chronicle lines, in the order they happened. */
+  recentChronicle(limit: number): Promise<Event[]>;
   findAction(id: string): Promise<StoredAction | null>;
   append(action: StoredAction): Promise<void>;
   /** Marks an unplayed action cancelled; it is never handed to the advance. */
@@ -126,12 +120,23 @@ export interface WorldStore {
    */
   withJoinLock<T>(run: () => Promise<T>): Promise<T>;
   /**
-   * Drops the journal older than `oldestKeptHour`, keeping the newest page
-   * whatever its age, so the journal always has one to show. Its own statement,
-   * outside the state lock: a prune that fails must not roll back an hour the
-   * town already lived.
+   * Drops the chronicle and the mail written before their cut. Their own
+   * statements, outside the state lock: a prune that fails must not roll back an
+   * hour the town already lived. The cutoffs are the server's clock; each row
+   * carries the database's instant at insertion, so the boundary is only as
+   * exact as the two clocks.
    */
-  pruneJournal(townId: number, oldestKeptHour: number): Promise<void>;
+  pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void>;
+  /**
+   * Marks one message of a dynasty as read, without locking the town: the flag
+   * feeds the badge and no rule. A message of another box is left alone.
+   */
+  markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }>;
+  /**
+   * Deletes one message of a dynasty. No trash: the row goes, and the badge's
+   * new count comes back with the answer.
+   */
+  deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }>;
   /**
    * The keys of every human dynasty's name, the whole server over: the global
    * ranking reads human dynasties by name, so no two of them may share one. An AI
@@ -170,8 +175,10 @@ export class DuplicateActionError extends Error {
 interface MemoryWorld {
   snapshot: WorldSnapshot;
   actions: StoredAction[];
-  events: { id: number; event: Event }[];
+  chronicle: { id: number; event: Event; recordedAt: Date }[];
+  messages: { id: number; dynastyId: string; event: Event; recordedAt: Date; read: boolean }[];
   nextEventId: number;
+  nextMessageId: number;
 }
 
 /**
@@ -185,6 +192,12 @@ export class MemoryWorldStore implements WorldStore {
   private nextTownId = 1;
   private queue: Promise<unknown> = Promise.resolve();
   private joinQueue: Promise<unknown> = Promise.resolve();
+  /** The instant an event is written, for the real-time journal cut. */
+  private readonly now: () => Date;
+
+  constructor(now: () => Date = () => new Date()) {
+    this.now = now;
+  }
 
   async createTown(name: string, world: World, hourStartedAt: Date): Promise<TownInfo> {
     const town: TownInfo = { id: this.nextTownId, name };
@@ -196,8 +209,10 @@ export class MemoryWorldStore implements WorldStore {
         hourStartedAt: new Date(hourStartedAt),
       },
       actions: [],
-      events: [],
+      chronicle: [],
+      messages: [],
       nextEventId: 1,
+      nextMessageId: 1,
     });
 
     return { ...town };
@@ -221,17 +236,53 @@ export class MemoryWorldStore implements WorldStore {
     );
   }
 
-  async pruneJournal(townId: number, oldestKeptHour: number): Promise<void> {
+  async pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void> {
     const stored = this.towns.get(townId);
 
     if (stored === undefined) {
       return;
     }
-    // The page floor is by id, like the SQL boundary: the newest entries stay
-    // even when every one of them predates the cut.
-    const pageStart = Math.max(0, stored.events.length - JOURNAL_PAGE);
-    const keepFrom = stored.events[pageStart]?.id ?? Number.POSITIVE_INFINITY;
-    stored.events = stored.events.filter((entry) => entry.event.at >= oldestKeptHour || entry.id >= keepFrom);
+    stored.chronicle = stored.chronicle.filter((entry) => entry.recordedAt >= chronicleBefore);
+    stored.messages = stored.messages.filter((entry) => entry.recordedAt >= messagesBefore);
+  }
+
+  async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
+    let deleted = false;
+    let unread = 0;
+
+    for (const stored of this.towns.values()) {
+      const index = stored.messages.findIndex((entry) => entry.id === id && entry.dynastyId === dynastyId);
+
+      if (index >= 0) {
+        stored.messages.splice(index, 1);
+        deleted = true;
+      }
+
+      unread += stored.messages.filter((entry) => entry.dynastyId === dynastyId && !entry.read).length;
+    }
+
+    return { deleted, unread: Math.min(unread, JOURNAL_PAGE) };
+  }
+
+  async markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }> {
+    let read = false;
+    let unread = 0;
+
+    // The box is addressed by its dynasty alone, so every town is a candidate
+    // for where it lives.
+    for (const stored of this.towns.values()) {
+      for (const entry of stored.messages) {
+        if (entry.id === id && entry.dynastyId === dynastyId) {
+          entry.read = true;
+          read = true;
+        }
+        if (entry.dynastyId === dynastyId && !entry.read) {
+          unread += 1;
+        }
+      }
+    }
+
+    return { read, unread: Math.min(unread, JOURNAL_PAGE) };
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
@@ -284,20 +335,21 @@ export class MemoryWorldStore implements WorldStore {
           .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
           .sort((left, right) => left.playsAt - right.playsAt)
           .map((action) => structuredClone(action)),
-      eventsSince: async (afterId, limit, dynastyId) => {
-        const visible = stored.events.filter((entry) => entry.id > afterId && isVisibleTo(entry.event, dynastyId));
-        const page = visible.slice(-limit);
-        const tally = emptyTally();
-
-        for (const entry of visible.slice(0, visible.length - page.length)) {
-          countEvent(tally, entry.event);
-        }
+      recentMessages: async (limit, dynastyId) => {
+        const own = stored.messages.filter((entry) => entry.dynastyId === dynastyId);
 
         return {
-          events: page.map((entry) => structuredClone(entry.event)),
-          lastId: page.at(-1)?.id ?? afterId,
-          ...tally,
+          messages: own
+            .slice(Math.max(0, own.length - limit))
+            .map((entry) => ({ id: entry.id, read: entry.read, event: structuredClone(entry.event) })),
+          // The badge names what the page can open, never a backlog below it.
+          unread: Math.min(own.filter((entry) => !entry.read).length, limit),
         };
+      },
+      recentChronicle: async (limit) => {
+        const visible = stored.chronicle.slice(Math.max(0, stored.chronicle.length - limit));
+
+        return visible.map((entry) => structuredClone(entry.event));
       },
       findAction: async (id) => {
         const found = stored.actions.find((action) => action.id === id);
@@ -331,8 +383,23 @@ export class MemoryWorldStore implements WorldStore {
           hourStartedAt: new Date(hourStartedAt),
         };
         for (const event of events) {
-          stored.events.push({ id: stored.nextEventId, event: structuredClone(event) });
-          stored.nextEventId += 1;
+          if (event.audience === 'town') {
+            stored.chronicle.push({ id: stored.nextEventId, event: structuredClone(event), recordedAt: this.now() });
+            stored.nextEventId += 1;
+          } else if (typeof event.audience === 'object') {
+            const reader = world.dynasties[event.audience.dynastyId];
+            // An AI dynasty has no mailbox: the line is written for nobody.
+            if (reader?.controller === 'human') {
+              stored.messages.push({
+                id: stored.nextMessageId,
+                dynastyId: event.audience.dynastyId,
+                event: { ...structuredClone(event), at: 0 },
+                recordedAt: this.now(),
+                read: false,
+              });
+              stored.nextMessageId += 1;
+            }
+          }
         }
       },
       clear: async () => {

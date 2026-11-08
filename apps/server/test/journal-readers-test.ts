@@ -2,22 +2,31 @@ import { describe, expect, it } from 'vitest';
 
 import type { Event } from '@brigue/core';
 
-import { JOURNAL_PAGE, MemoryWorldStore, type JournalPage, type WorldSession } from '../src/town/worlds.ts';
+import { JOURNAL_PAGE, MemoryWorldStore, type WorldSession } from '../src/town/worlds.ts';
 import { town } from './helpers.ts';
 
-const event = (at: number): Event => ({
+const chronicleAt = (at: number): Event => ({
   at,
-  type: 'market.price_changed',
+  type: 'council.election_held',
   audience: 'town',
-  good: 'cloth',
-  before: 1,
-  after: 2,
+  seatId: 'maire',
+  winnerDynastyId: null,
+  votes: {},
+});
+
+const mailAt = (at: number, dynastyId = 'leclerc'): Event => ({
+  at,
+  type: 'dynasty.debt_repaid',
+  audience: { dynastyId },
+  dynastyId,
+  // The payload carries the hour, since a stored message keeps no `at`.
+  amountCents: at,
 });
 
 /**
- * The journal is read one reader at a time: the town's events are shared, but
- * each dynasty holds its own cursor, so one player reading must never hide a
- * line from another.
+ * The journal is two pages: a public chronicle every reader shares, and one
+ * mailbox per dynasty. A private line never surfaces in the chronicle, and no
+ * reader's visit hides a line from another.
  */
 describe('the journal of a town with two readers', () => {
   async function stored(): Promise<{ store: MemoryWorldStore; session: WorldSession }> {
@@ -34,68 +43,61 @@ describe('the journal of a town with two readers', () => {
     };
   }
 
-  it('hands each reader the lines after their own cursor', async () => {
-    // Arrange: three lines, and one reader who has already read the first.
+  it('puts the town’s line in the chronicle and a dynasty’s in its mailbox', async () => {
+    // Arrange: one election and one private debt line.
     const { session } = await stored();
-    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [event(1), event(2), event(3)]);
-    const first = await session.eventsSince(0, JOURNAL_PAGE, 'leclerc');
-
-    // Act: the other reader starts from zero, the first from its cursor.
-    const second = await session.eventsSince(0, JOURNAL_PAGE, 'caron');
-    const again = await session.eventsSince(second.lastId, JOURNAL_PAGE, 'leclerc');
-
-    // Assert
-    expect(first.events).toHaveLength(3);
-    expect(second.events).toHaveLength(3);
-    expect(again.events).toEqual([]);
-  });
-
-  it('keeps a dynasty line from another dynasty', async () => {
-    // Arrange: one line for the clerk, one for the town.
-    const { session } = await stored();
-    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [
-      {
-        type: 'dynasty.upkeep_paid',
-        audience: { dynastyId: 'leclerc' },
-        at: 1,
-        dynastyId: 'leclerc',
-        amountCents: 240,
-      },
-      event(2),
-    ]);
+    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [chronicleAt(1), mailAt(2)]);
 
     // Act
-    const other = await session.eventsSince(0, JOURNAL_PAGE, 'caron');
-    const own = await session.eventsSince(0, JOURNAL_PAGE, 'leclerc');
+    const chronicle = await session.recentChronicle(JOURNAL_PAGE);
+    const leclerc = await session.recentMessages(JOURNAL_PAGE, 'leclerc');
+    const caron = await session.recentMessages(JOURNAL_PAGE, 'caron');
 
-    // Assert
-    expect(other.events.map((entry) => entry.type)).toEqual(['market.price_changed']);
-    expect(own.events.map((entry) => entry.type)).toEqual(['dynasty.upkeep_paid', 'market.price_changed']);
+    // Assert: the private line is in its own box only.
+    expect(chronicle.map((event) => event.type)).toEqual(['council.election_held']);
+    expect(leclerc.messages.map((message) => message.event.type)).toEqual(['dynasty.debt_repaid']);
+    expect(caron.messages).toEqual([]);
   });
-});
 
-describe('the page of a journal', () => {
-  it('keeps the newest page and counts what it left behind', async () => {
-    // Arrange: more lines than a page.
+  it('hands every reader the same chronicle page', async () => {
+    // Arrange: three lines.
+    const { session } = await stored();
+    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [
+      chronicleAt(1),
+      chronicleAt(2),
+      chronicleAt(3),
+    ]);
+
+    // Act: one reader reads, then the other, then the first again.
+    const first = await session.recentChronicle(JOURNAL_PAGE);
+    const second = await session.recentChronicle(JOURNAL_PAGE);
+    const again = await session.recentChronicle(JOURNAL_PAGE);
+
+    // Assert: reading is not a consumption; the page is the same for all.
+    expect(first).toHaveLength(3);
+    expect(second).toEqual(first);
+    expect(again).toEqual(first);
+  });
+
+  it('keeps the newest page of a mailbox, and says how much is unread', async () => {
+    // Arrange: more lines than a page, all for the weaver.
     const store = new MemoryWorldStore();
     const info = await store.createTown('Amiens', town(7), new Date());
     await store.withWorld(async (session) => {
       await session.save(
         session.snapshot.world,
         session.snapshot.hourStartedAt,
-        Array.from({ length: JOURNAL_PAGE + 5 }, (_, index) => event(index)),
+        Array.from({ length: JOURNAL_PAGE + 5 }, (_, index) => mailAt(index + 1)),
       );
     }, info.id);
 
     // Act
-    const page: JournalPage | null = await store.withWorld(
-      async (session) => session.eventsSince(0, JOURNAL_PAGE, 'leclerc'),
-      info.id,
-    );
+    const page = await store.withWorld(async (session) => session.recentMessages(JOURNAL_PAGE, 'leclerc'), info.id);
 
-    // Assert: the page reads in time, and the five oldest are counted, not lost.
-    expect(page?.events).toHaveLength(JOURNAL_PAGE);
-    expect(page?.events.at(0)?.at).toBe(5);
-    expect(page?.counts['market.price_changed']).toBe(5);
+    // Assert: the page reads in time, the five oldest fall out of it, and the
+    // badge counts the page it can open.
+    expect(page.messages).toHaveLength(JOURNAL_PAGE);
+    expect(page.messages.at(0)).toMatchObject({ event: { amountCents: 6 } });
+    expect(page.unread).toBe(JOURNAL_PAGE);
   });
 });

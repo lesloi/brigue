@@ -1,4 +1,4 @@
-import type { Action, Event, RefusalReason } from '@brigue/core';
+import type { Action, Event } from '@brigue/core';
 
 import {
   formatCents,
@@ -11,110 +11,7 @@ import {
   tradeName,
 } from './format.ts';
 
-/** The three cuts of the journal: the dynasty's own story, everything, the prices. */
-export type LedgerFilter = 'dynasty' | 'all' | 'prices';
-
-/**
- * The default is the dynasty's own story plus the town's politics; the AI's
- * market noise and the price lines stay behind the other cuts. `prices` is
- * where chapter I's lesson lives; `all` is the whole page.
- */
-export function ledgerEvents(events: readonly Event[], dynastyId: string, filter: LedgerFilter): Event[] {
-  switch (filter) {
-    case 'all':
-      return [...events];
-    case 'prices':
-      return events.filter((event) => event.type === 'market.price_changed');
-    case 'dynasty':
-      return events.filter(
-        (event) =>
-          ('dynastyId' in event && event.dynastyId === dynastyId) ||
-          event.type.startsWith('council.') ||
-          event.type.startsWith('engagement.'),
-      );
-  }
-}
-
 export type Tone = 'gain' | 'loss' | 'warning' | 'refusal' | 'council' | 'neutral';
-
-/** What one counted type is called in a tally, in both numbers. */
-const COUNT_NAMES: Record<Event['type'], [string, string]> = {
-  'action.refused': ['refus', 'refus'],
-  'market.bought': ['achat', 'achats'],
-  'market.sold': ['vente', 'ventes'],
-  'market.price_changed': ['prix changé', 'prix changés'],
-  'workshop.produced': ['production', 'productions'],
-  'workshop.overflow': ['débordement', 'débordements'],
-  'workshop.idle': ['atelier à l’arrêt', 'ateliers à l’arrêt'],
-  'workshop.built': ['atelier construit', 'ateliers construits'],
-  'workshop.destroyed': ['atelier détruit', 'ateliers détruits'],
-  'workshop.upgraded': ['atelier agrandi', 'ateliers agrandis'],
-  'workshop.build_lost': ['chantier perdu', 'chantiers perdus'],
-  'dynasty.title_bought': ['titre acheté', 'titres achetés'],
-  'dynasty.title_received': ['titre obtenu', 'titres obtenus'],
-  'dynasty.residence_received': ['résidence élevée', 'résidences élevées'],
-  'dynasty.renamed': ['dynastie renommée', 'dynasties renommées'],
-  'dynasty.upkeep_paid': ['entretien payé', 'entretiens payés'],
-  'dynasty.penniless': ['entretien impayé', 'entretiens impayés'],
-  'dynasty.debt_repaid': ['remboursement', 'remboursements'],
-  'council.campaigned': ['candidature', 'candidatures'],
-  'engagement.opened': ['chantier ouvert', 'chantiers ouverts'],
-  'engagement.resolved': ['engagement résolu', 'engagements résolus'],
-  'council.scrutiny_held': ['scrutin', 'scrutins'],
-  'council.election_held': ['élection', 'élections'],
-};
-
-/**
- * The entries a page left behind, said as a tally. A refusal is carried by the
- * refusal clause alone, so it is not listed twice.
- */
-export function journalCountsText(
-  counts: Partial<Record<Event['type'], number>>,
-  refusals: Partial<Record<string, number>>,
-): string | null {
-  const parts: Array<{ count: number; text: string }> = [];
-
-  for (const [type, raw] of Object.entries(counts)) {
-    const count = raw ?? 0;
-    if (count <= 0 || type === 'action.refused') {
-      continue;
-    }
-    parts.push({ count, text: `${formatCount(count)} ${countName(type as Event['type'], count)}` });
-  }
-
-  let refused = 0;
-  const reasons: Array<{ count: number; text: string }> = [];
-  for (const [reason, raw] of Object.entries(refusals)) {
-    const count = raw ?? 0;
-    if (count <= 0) {
-      continue;
-    }
-    refused += count;
-    reasons.push({ count, text: `${formatCount(count)} ${refusalText(reason as RefusalReason)}` });
-  }
-  if (refused > 0) {
-    const detail = reasons
-      .sort((left, right) => right.count - left.count)
-      .map((reason) => reason.text)
-      .join(', ');
-    parts.push({ count: refused, text: `${formatCount(refused)} refus (${detail})` });
-  }
-
-  if (parts.length === 0) {
-    return null;
-  }
-
-  return parts
-    .sort((left, right) => right.count - left.count)
-    .map((part) => part.text)
-    .join(', ');
-}
-
-function countName(type: Event['type'], count: number): string {
-  const [one, many] = COUNT_NAMES[type];
-
-  return count > 1 ? many : one;
-}
 
 export interface EventLine {
   tone: Tone;
@@ -134,7 +31,7 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'action.refused':
       return {
         tone: 'refusal',
-        text: `${subject(event.dynastyId)} : ${actionName(event.action)} refusé — ${refusalText(event.reason)}.`,
+        text: `${subject(event.dynastyId)} : ${refusalName(event.action)} — ${refusalText(event.reason)}.`,
       };
 
     case 'market.bought':
@@ -176,7 +73,7 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'workshop.built':
       return {
         tone: 'gain',
-        text: `L'atelier de ${tradeName(event.trade)} de ${subject(event.dynastyId)} est bâti.`,
+        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez bâti', 'a bâti')} un atelier de ${tradeName(event.trade).toLowerCase()}.`,
       };
 
     case 'workshop.destroyed':
@@ -242,7 +139,9 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'council.campaigned':
       return {
         tone: 'council',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est dans ${formatCount(event.countsAt - event.at)} heures.`,
+        // A stored message keeps no town hour, so the line names the scrutiny's
+        // own hour rather than a countdown from the moment it was written.
+        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est à l'heure ${formatCount(event.countsAt)}.`,
       };
 
     case 'engagement.resolved': {
@@ -280,6 +179,13 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
       };
 
     case 'council.election_held': {
+      if (event.winnerDynastyId === null) {
+        return {
+          tone: 'council',
+          text: `Élection : la ${seatName(event.seatId)} reste vacante, personne ne s'est présenté.`,
+        };
+      }
+
       const votes = Object.entries(event.votes)
         .map(([dynastyId, count]) => `${nameOf(dynastyId)} ${formatCount(count)}`)
         .join(', ');
@@ -288,31 +194,43 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
         text: `Élection : la ${seatName(event.seatId)} revient à ${nameOf(event.winnerDynastyId)}. Voix : ${votes}.`,
       };
     }
+
+    case 'council.election_result':
+      return event.won
+        ? {
+            tone: 'council',
+            text: `Vous êtes élu à la ${seatName(event.seatId)} avec ${formatCount(event.votes[event.dynastyId] ?? 0)} voix.`,
+          }
+        : {
+            tone: 'neutral',
+            text: `Vous avez perdu la ${seatName(event.seatId)} ; ${nameOf(event.winnerDynastyId)} l'emporte.`,
+          };
   }
 }
 
-function actionName(action: Action['type'] | 'unknown'): string {
+/** The refused action with its agreement: a vente is refusede, an achat refusé. */
+function refusalName(action: Action['type'] | 'unknown'): string {
   switch (action) {
     case 'market.buy':
-      return 'achat';
+      return 'achat refusé';
     case 'market.sell':
-      return 'vente';
+      return 'vente refusée';
     case 'council.campaign':
-      return 'candidature';
+      return 'candidature refusée';
     case 'workshop.build':
-      return 'construction';
+      return 'construction refusée';
     case 'workshop.destroy':
-      return 'démolition';
+      return 'démolition refusée';
     case 'workshop.upgrade':
-      return 'agrandissement';
+      return 'agrandissement refusé';
     case 'dynasty.buy_title':
-      return 'achat de titre';
+      return 'achat de titre refusé';
     case 'dynasty.upgrade_residence':
-      return 'élévation de la résidence';
+      return 'élévation de la résidence refusée';
     case 'unknown':
-      return 'action';
+      return 'action refusée';
     default:
-      return 'action';
+      return 'action refusée';
   }
 }
 

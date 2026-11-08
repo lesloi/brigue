@@ -108,7 +108,7 @@ export interface WorldProjection {
   town: {
     id: number;
     name: string;
-    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean }>;
+    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean; residenceLevel: number }>;
     people: Array<{ id: string; dynastyId: string; name: string }>;
     seats: Record<SeatId, { personId: string | null }>;
     laws: Law[];
@@ -123,15 +123,23 @@ export interface WorldProjection {
 export interface CatchUpSummary {
   hours: number;
   skipped: number;
-  /** What the journal page left behind, counted by type. */
-  counts: Partial<Record<Event['type'], number>>;
-  /** The refused actions among them, counted by reason. */
-  refusals: Partial<Record<string, number>>;
+}
+
+/** One stored message: its row id, its unread state, and the line. */
+export interface MessageView {
+  id: number;
+  read: boolean;
+  event: Event;
 }
 
 export interface WorldResponse {
   world: WorldProjection;
-  events: Event[];
+  /** The dynasty's private mail, newest page, in the order it happened. */
+  messages: MessageView[];
+  /** The town's public chronicle, newest page, in the order it happened. */
+  chronicle: Event[];
+  /** How many messages came after the reader's watermark, at most a page. */
+  unreadMessages: number;
   summary: CatchUpSummary;
   stateHash: string;
   /** How long a deletion waits; the screen says it, the server owns it. */
@@ -239,6 +247,16 @@ export function cancelDeletion(): Promise<void> {
 
 export function readWorld(): Promise<WorldResponse> {
   return send('/api/world');
+}
+
+/** The player opened one message: it is marked read. */
+export function markMessageRead(id: number): Promise<{ read: boolean; unreadMessages: number }> {
+  return send(`/api/messages/${id}/read`, { method: 'POST' });
+}
+
+/** Deletes one message. No trash: the row goes, and the badge count comes back. */
+export function deleteMessage(id: number): Promise<{ deleted: boolean; unreadMessages: number }> {
+  return send(`/api/messages/${id}`, { method: 'DELETE' });
 }
 
 /** Local development only: plays the next hour now. The server refuses in production. */

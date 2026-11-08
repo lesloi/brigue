@@ -31,6 +31,12 @@ interface Harness {
   cookies: Record<string, string>;
 }
 
+interface MessageBody {
+  id: number;
+  read: boolean;
+  event: Record<string, unknown> & { type: string; dynastyId?: string; units?: number };
+}
+
 interface WorldBody {
   world: {
     hour: number;
@@ -39,12 +45,12 @@ interface WorldBody {
     town: { dynasties: Array<Record<string, unknown>> };
     nextBellAt: string;
   };
-  events: Array<Record<string, unknown> & { type: string; dynastyId?: string; units?: number }>;
+  messages: MessageBody[];
+  chronicle: Array<Record<string, unknown> & { type: string; dynastyId?: string; units?: number }>;
+  unreadMessages: number;
   summary: {
     hours: number;
     skipped: number;
-    counts: Partial<Record<string, number>>;
-    refusals: Partial<Record<string, number>>;
   };
   stateHash: string;
   dev?: boolean;
@@ -61,7 +67,7 @@ async function start(
 ): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
-  const worlds = new MemoryWorldStore();
+  const worlds = new MemoryWorldStore(() => new Date(clock.now));
   const logs: string[] = [];
   const logger = createLogger((line) => logs.push(line));
   const server = createApp({
@@ -95,15 +101,17 @@ async function start(
   // The scheduler's pass, minus the timer: what the loop would do on its own.
   const play = async (): Promise<void> => {
     try {
-      const hour = await worlds.withWorld(async (session) => {
+      await worlds.withWorld(async (session) => {
         const due = await playDue(session, session.snapshot, new Date(clock.now));
         if (due.hours > 0) {
           await session.save(due.world, due.hourStartedAt, due.events);
         }
-
-        return due.world.hour;
       }, TEST_TOWN.id);
-      await worlds.pruneJournal(TEST_TOWN.id, hour - PACING.journalRetentionHours);
+      await worlds.pruneJournal(
+        TEST_TOWN.id,
+        new Date(clock.now - PACING.chronicleRetentionHours * HOUR),
+        new Date(clock.now - PACING.messageRetentionHours * HOUR),
+      );
     } catch (error) {
       // The loop logs a refused world and leaves it for the reader to report.
       if (!(error instanceof WorldVersionError)) {
@@ -185,6 +193,10 @@ function sellWool(id: string, hour: number, units: number): unknown {
   return { id, hour, action: { type: 'market.sell', good: 'wool', units } };
 }
 
+function sellGrain(id: string, hour: number, units: number): unknown {
+  return { id, hour, action: { type: 'market.sell', good: 'grain', units } };
+}
+
 describe('GET /api/world', () => {
   it('refuses without a session', async () => {
     const harness = await start();
@@ -205,11 +217,13 @@ describe('GET /api/world', () => {
 
     // Assert
     expect(first.stateHash).toBe(second.stateHash);
-    expect(first.events).toEqual(second.events);
+    expect(first.messages).toEqual(second.messages);
+    expect(first.chronicle).toEqual(second.chronicle);
+    expect(first.unreadMessages).toBe(second.unreadMessages);
     expect(first.world.hour).toBe(1);
   });
 
-  it('catches a month up when the scheduler never ran, and counts what it left behind', async () => {
+  it('catches a month up when the scheduler never ran, and keeps the newest page', async () => {
     // Arrange: the loop is down; a visit is the only thing that wakes the town.
     const harness = await start();
     await harness.lapse(30 * 24 * HOUR);
@@ -221,14 +235,19 @@ describe('GET /api/world', () => {
     expect(body.summary.hours).toBe(720);
     expect(body.summary.skipped).toBe(0);
     expect(body.world.hour).toBe(721);
-    // The page is the newest fifty, in time order, up to the last hour lived.
-    expect(body.events).toHaveLength(50);
-    expect(Number(body.events.at(-1)?.at)).toBe(720);
-    // The rest is counted, not sent.
-    expect(body.summary.counts['market.bought']).toBeGreaterThan(50);
+    // The player was dormant for the whole month, so its workshops idled and it
+    // got no message; the badge counts nothing.
+    expect(body.messages).toEqual([]);
+    expect(body.unreadMessages).toBe(0);
+    // The chronicle carries the town's elections only, never a private line.
+    expect(body.chronicle.length).toBeGreaterThan(0);
+    for (const line of body.chronicle) {
+      expect(line.type).toBe('council.election_held');
+      expect(Number(line.at)).toBeLessThanOrEqual(720);
+    }
   });
 
-  it('keeps the last hour on the following read that has nothing to play', async () => {
+  it('returns the same page on a read that has nothing to play', async () => {
     // Arrange: the read is the backstop and only wakes a town more than an
     // hour behind, so the loop must have missed two.
     const harness = await start();
@@ -238,17 +257,16 @@ describe('GET /api/world', () => {
     // Act
     const second = await worldBody(harness);
 
-    // Assert: the cursor consumed the page; the hours are neither played nor
-    // shown twice.
+    // Assert: the page is a window; a read is not a consumption.
     expect(first.summary.hours).toBe(2);
-    expect(first.events.length).toBeGreaterThan(0);
-    expect(second.events).toEqual([]);
+    expect(second.messages).toEqual(first.messages);
+    expect(second.chronicle).toEqual(first.chronicle);
+    expect(second.unreadMessages).toBe(first.unreadMessages);
     expect(second.summary.hours).toBe(0);
-    expect(second.summary.counts).toEqual({});
     expect(second.stateHash).toBe(first.stateHash);
   });
 
-  it('shows the newest page and forgets what it counted', async () => {
+  it('shows the same newest page on every read', async () => {
     // Arrange: a month of entries, far more than one page.
     const harness = await start();
     await harness.lapse(30 * 24 * HOUR);
@@ -257,12 +275,10 @@ describe('GET /api/world', () => {
     // Act
     const second = await worldBody(harness);
 
-    // Assert: the cursor jumped to the newest entry, so the counted entries
-    // are never shown again, and a second read has nothing left.
-    expect(first.events).toHaveLength(50);
-    expect(second.events).toEqual([]);
+    // Assert: reading is not a consumption, on either page.
+    expect(second.messages).toEqual(first.messages);
+    expect(second.chronicle).toEqual(first.chronicle);
     expect(second.summary.hours).toBe(0);
-    expect(second.summary.counts).toEqual({});
   });
 
   it('leaves a town one hour behind to the scheduler', async () => {
@@ -351,12 +367,14 @@ describe('GET /api/world', () => {
     expect(body.stateHash).toBe(hashJson(body.world));
   });
 
-  it('returns a dynasty its own ledger and not another dynasty’s', async () => {
-    // Arrange: both dynasties read the same last hour, so the second read is
-    // served from the stored events of the first.
+  it('returns a dynasty its own mail and not another dynasty’s', async () => {
+    // Arrange: both dynasties sell grain they do not hold in the same hour, so
+    // each gets a refusal of its own.
     const world = town(20261031);
     world.dynasties.caron.controller = 'human';
     const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
+    await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
     await harness.advance(HOUR);
 
     // Act
@@ -364,13 +382,27 @@ describe('GET /api/world', () => {
     const caron = await worldBodyAs(harness, 'caron');
 
     // Assert
-    const wagesOf = (body: WorldBody, dynastyId: string) =>
-      body.events.filter((event) => event.type === 'dynasty.upkeep_paid' && event.dynastyId === dynastyId);
+    const refusalsOf = (body: WorldBody) => body.messages.filter((message) => message.event.type === 'action.refused');
 
-    expect(wagesOf(leclerc, 'leclerc').length).toBeGreaterThan(0);
-    expect(wagesOf(leclerc, 'caron')).toEqual([]);
-    expect(wagesOf(caron, 'caron').length).toBeGreaterThan(0);
-    expect(wagesOf(caron, 'leclerc')).toEqual([]);
+    expect(refusalsOf(leclerc)).toHaveLength(1);
+    expect(refusalsOf(leclerc)[0]?.event).toMatchObject({ dynastyId: 'leclerc' });
+    expect(refusalsOf(caron)).toHaveLength(1);
+    expect(refusalsOf(caron)[0]?.event).toMatchObject({ dynastyId: 'caron' });
+  });
+
+  it('keeps the chronicle to the town and the mail to the dynasty', async () => {
+    // Arrange: a whole year, so the scrutiny elects the AI candidates.
+    const harness = await start();
+
+    // Act
+    await harness.advance(24 * HOUR);
+    const body = await worldBody(harness);
+
+    // Assert: the town's page carries the elections, the weaver's mailbox
+    // carries nothing it did not do, and the two never mix.
+    expect(body.chronicle.length).toBeGreaterThan(0);
+    expect(body.chronicle.every((line) => line.type === 'council.election_held')).toBe(true);
+    expect(body.messages).toEqual([]);
   });
 
   it('projects and ticks a town of twenty dynasties', async () => {
@@ -407,6 +439,81 @@ describe('GET /api/world', () => {
   });
 });
 
+describe('POST /api/messages/:id/read', () => {
+  function markRead(harness: Harness, id: number, dynastyId = 'leclerc'): Promise<Response> {
+    return fetch(`${harness.url}/api/messages/${id}/read`, {
+      method: 'POST',
+      headers: { Cookie: harness.cookies[dynastyId] as string },
+    });
+  }
+
+  async function twoRefusals(harness: Harness): Promise<void> {
+    await postAction(harness, sellGrain(ID_A, 1, 1));
+    await postAction(harness, { id: ID_B, hour: 1, action: { type: 'dynasty.buy_title' } });
+    await harness.advance(HOUR);
+  }
+
+  it('marks one message read and leaves the other unread', async () => {
+    // Arrange: two refusals of the weaver's, so two messages.
+    const harness = await start();
+    await twoRefusals(harness);
+    const before = await worldBody(harness);
+    expect(before.messages).toHaveLength(2);
+    expect(before.unreadMessages).toBe(2);
+    const target = before.messages[0];
+
+    // Act
+    const response = await markRead(harness, target?.id ?? 0);
+
+    // Assert: one line is read, the other still waits, and the badge follows.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ read: true, unreadMessages: 1 });
+    const after = await worldBody(harness);
+    expect(after.messages.filter((message) => message.read).map((message) => message.id)).toEqual([target?.id]);
+    expect(after.unreadMessages).toBe(1);
+  });
+
+  it('does not mark another dynasty’s message', async () => {
+    // Arrange: two humans, each with a refusal.
+    const world = town(20261031);
+    world.dynasties.caron.controller = 'human';
+    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
+    await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
+    await harness.advance(HOUR);
+    const caron = await worldBodyAs(harness, 'caron');
+    const target = caron.messages[0];
+
+    // Act: the weaver names the other's id.
+    const response = await markRead(harness, target?.id ?? 0);
+
+    // Assert: nothing is read, and the owner still has its unread line.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ read: false, unreadMessages: 1 });
+    expect((await worldBodyAs(harness, 'caron')).unreadMessages).toBe(1);
+  });
+
+  it('refuses an id that is not one, without a session, and anything but POST', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const malformed = await fetch(`${harness.url}/api/messages/0/read`, {
+      method: 'POST',
+      headers: { Cookie: harness.cookie },
+    });
+    const anonymous = await fetch(`${harness.url}/api/messages/1/read`, { method: 'POST' });
+    const wrongMethod = await fetch(`${harness.url}/api/messages/1/read`, { headers: { Cookie: harness.cookie } });
+
+    // Assert
+    expect(malformed.status).toBe(404);
+    expect(await malformed.json()).toEqual({ error: 'unknown_message' });
+    expect(anonymous.status).toBe(401);
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get('allow')).toBe('POST');
+  });
+});
+
 describe('POST /api/actions', () => {
   it('refuses without a session', async () => {
     const harness = await start();
@@ -429,18 +536,11 @@ describe('POST /api/actions', () => {
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
-    // Assert
+    // Assert: the buy played before the hour's production, which ate four.
     expect(response.status).toBe(201);
     expect(await response.json()).toEqual({ id: ID_A, hour: 1, dynastyId: 'leclerc' });
-    expect(body.events[0]).toMatchObject({
-      type: 'market.bought',
-      dynastyId: 'leclerc',
-      good: 'wool',
-      units: 2,
-      priceCents: 380,
-      totalCents: 760,
-    });
     expect(body.world.dynasty.stock.wool).toBe(6);
+    expect(body.messages).toEqual([]);
   });
 
   it("queues a sale at the hour's price", async () => {
@@ -452,12 +552,11 @@ describe('POST /api/actions', () => {
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
-    // Assert: two of the eight wool are sold, four are woven, two remain.
+    // Assert: two of the eight wool are sold, four are woven, two remain, and
+    // the sale is the Marché's, not a journal line.
     expect(response.status).toBe(201);
-    expect(body.events).toContainEqual(
-      expect.objectContaining({ type: 'market.sold', dynastyId: 'leclerc', good: 'wool', units: 2, priceCents: 380 }),
-    );
     expect(body.world.dynasty.stock.wool).toBe(2);
+    expect(body.messages).toEqual([]);
   });
 
   it('refuses a replayed request and applies it once', async () => {
@@ -475,7 +574,8 @@ describe('POST /api/actions', () => {
     expect(first.status).toBe(201);
     expect(replay.status).toBe(409);
     expect(await replay.json()).toEqual({ error: 'duplicate_action' });
-    expect(body.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);
+    // The buy played once: eight wool, two bought, four woven.
+    expect(body.world.dynasty.stock.wool).toBe(6);
   });
 
   it('refuses a retry once the hour it belonged to has been played', async () => {
@@ -490,14 +590,14 @@ describe('POST /api/actions', () => {
     const replay = await postAction(harness, submitted);
     const body = await worldBody(harness);
 
-    // Assert: the hour is not replayed, and the cursor has already consumed
-    // the page that carried the first application.
+    // Assert: the hour is not replayed, and both pages are the same.
     expect(replay.status).toBe(409);
     expect(await replay.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
-    expect(body.events).toEqual([]);
+    expect(body.messages).toEqual(applied.messages);
+    expect(body.chronicle).toEqual(applied.chronicle);
     expect(body.stateHash).toBe(applied.stateHash);
     expect(body.summary.hours).toBe(0);
-    expect(applied.events.filter((event) => event.type === 'market.bought' && event.units === 2)).toHaveLength(1);
+    expect(body.world.dynasty.stock.wool).toBe(6);
   });
 
   it('refuses a hour that has already been played', async () => {
@@ -548,12 +648,11 @@ describe('POST /api/actions', () => {
     await harness.advance(2 * HOUR);
     const body = await worldBody(harness);
 
-    // Assert
+    // Assert: the queued action plays on its own hour, not on the one before:
+    // eight wool, three bought, four woven on each of the two hours.
     expect(response.status).toBe(201);
-    // The queued action plays on its own hour, not on the one before.
-    const buys = body.events.filter((event) => event.type === 'market.bought' && event.dynastyId === 'leclerc');
-    expect(buys).toHaveLength(1);
-    expect(buys[0]).toMatchObject({ units: 3, at: 2 });
+    expect(body.world.hour).toBe(3);
+    expect(body.world.dynasty.stock.wool).toBe(3);
   });
 
   it('never takes the dynasty from the body', async () => {
@@ -565,9 +664,9 @@ describe('POST /api/actions', () => {
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
-    // Assert
+    // Assert: the buy is the authenticated dynasty's, and its purse paid.
     expect(response.status).toBe(201);
-    expect(body.events[0]).toMatchObject({ type: 'market.bought', dynastyId: 'leclerc' });
+    expect(body.world.dynasty.stock.wool).toBe(5);
   });
 
   it('refuses an action on a world whose rules changed', async () => {
@@ -607,6 +706,75 @@ describe('POST /api/actions', () => {
       expect(response.status).toBe(400);
       expect(await response.json()).toEqual({ error: 'invalid_action' });
     }
+  });
+});
+
+describe('DELETE /api/messages/:id', () => {
+  function deleteMail(harness: Harness, id: number, dynastyId = 'leclerc'): Promise<Response> {
+    return fetch(`${harness.url}/api/messages/${id}`, {
+      method: 'DELETE',
+      headers: { Cookie: harness.cookies[dynastyId] as string },
+    });
+  }
+
+  it('deletes one message and answers the badge', async () => {
+    // Arrange: a refusal of the weaver's.
+    const harness = await start();
+    await postAction(harness, sellGrain(ID_A, 1, 1));
+    await harness.advance(HOUR);
+    const before = await worldBody(harness);
+    const target = before.messages[0];
+    expect(target).toBeDefined();
+
+    // Act
+    const response = await deleteMail(harness, target?.id ?? 0);
+
+    // Assert: the row goes, the answer says so, and the page loses the line.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: true, unreadMessages: 0 });
+    const after = await worldBody(harness);
+    expect(after.messages).toEqual([]);
+  });
+
+  it('does not delete another dynasty’s message', async () => {
+    // Arrange: two humans, each with a refusal.
+    const world = town(20261031);
+    world.dynasties.caron.controller = 'human';
+    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
+    await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
+    await harness.advance(HOUR);
+    const caron = await worldBodyAs(harness, 'caron');
+    const target = caron.messages[0];
+    expect(target).toBeDefined();
+
+    // Act: the weaver names the other's id.
+    const response = await deleteMail(harness, target?.id ?? 0);
+
+    // Assert: nothing is deleted, and the owner still holds the line.
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ deleted: false });
+    expect((await worldBodyAs(harness, 'caron')).messages).toHaveLength(1);
+  });
+
+  it('refuses an id that is not one, without a session, and anything but DELETE', async () => {
+    // Arrange
+    const harness = await start();
+
+    // Act
+    const malformed = await fetch(`${harness.url}/api/messages/0`, {
+      method: 'DELETE',
+      headers: { Cookie: harness.cookie },
+    });
+    const anonymous = await fetch(`${harness.url}/api/messages/1`, { method: 'DELETE' });
+    const wrongMethod = await fetch(`${harness.url}/api/messages/1`, { headers: { Cookie: harness.cookie } });
+
+    // Assert
+    expect(malformed.status).toBe(404);
+    expect(await malformed.json()).toEqual({ error: 'unknown_message' });
+    expect(anonymous.status).toBe(401);
+    expect(wrongMethod.status).toBe(405);
+    expect(wrongMethod.headers.get('allow')).toBe('DELETE');
   });
 });
 
@@ -848,10 +1016,8 @@ describe('POST /api/dev/advance', () => {
     // Act
     const advanced = (await (await postAdvance(harness)).json()) as WorldBody;
 
-    // Assert
-    expect(advanced.events).toContainEqual(
-      expect.objectContaining({ type: 'market.bought', dynastyId: 'leclerc', units: 10 }),
-    );
+    // Assert: ten wool bought on the hour, four woven.
+    expect(advanced.world.dynasty.stock.wool).toBe(14);
   });
 
   it('advances twice in a row', async () => {

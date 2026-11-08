@@ -283,7 +283,7 @@ describe('the rename route', () => {
       body: JSON.stringify({ name }),
     });
 
-  it('renames at once, keeps the id, charges the price and writes the journal', async () => {
+  it('renames at once, keeps the id and charges the price', async () => {
     // Arrange
     const { harness, token } = await seated();
 
@@ -298,10 +298,6 @@ describe('the rename route', () => {
     expect(after.dynasties.leclerc?.name).toBe('Moreau');
     expect(after.dynasties.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
     expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
-
-    const journal = await fetch(`${harness.url}/api/world`, { headers: { Cookie: harness.cookie(token) } });
-    const body = (await journal.json()) as { events: Array<{ type: string; after?: string }> };
-    expect(body.events).toContainEqual(expect.objectContaining({ type: 'dynasty.renamed', after: 'Moreau' }));
   });
 
   it('refuses a name taken in the town or by a human dynasty elsewhere, whatever its case', async () => {

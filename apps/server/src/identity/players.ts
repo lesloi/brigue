@@ -9,8 +9,6 @@ export interface Player {
   createdAt: Date;
   /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
   lastSeenAt: Date;
-  /** The last journal entry this reader has seen. */
-  cursorEventId?: number;
   revokedAt: Date | null;
   /** Set when the player asks to delete their identity: the erasure deadline. */
   deleteAfter: Date | null;
@@ -54,8 +52,6 @@ export interface PlayerStore {
   revoke(tokenHash: string, at: Date): Promise<void>;
   /** Records a visit without reopening a revoked session. */
   touch(tokenHash: string, at: Date): Promise<void>;
-  /** Moves the reader's journal cursor forward; it never goes back. */
-  advanceCursor(tokenHash: string, cursor: number): Promise<void>;
   /** Every account of a town, live or revoked, so presence can see the last visit. */
   listByTown(townId: number): Promise<Player[]>;
   /** Revokes every live account of a dynasty, for the thirty-day deletion. */
@@ -133,14 +129,6 @@ export class MemoryPlayerStore implements PlayerStore {
     return player ? { ...player } : null;
   }
 
-  async advanceCursor(tokenHash: string, cursor: number): Promise<void> {
-    const player = this.players.get(tokenHash);
-
-    if (player !== undefined) {
-      player.cursorEventId = Math.max(player.cursorEventId ?? 0, cursor);
-    }
-  }
-
   async revoke(tokenHash: string, at: Date): Promise<void> {
     const player = this.players.get(tokenHash);
     if (player && player.revokedAt === null) {
@@ -207,7 +195,7 @@ export class MemoryPlayerStore implements PlayerStore {
   /** Mirrors the reset: every account keeps its identity and loses its dynasty. */
   resetAccounts(): void {
     for (const [tokenHash, player] of this.players) {
-      this.players.set(tokenHash, { ...player, townId: null, dynastyId: null, cursorEventId: 0 });
+      this.players.set(tokenHash, { ...player, townId: null, dynastyId: null });
     }
   }
 }
