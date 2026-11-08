@@ -279,7 +279,7 @@ describe('the simulation core', () => {
       expect(early.world.engagements).toHaveLength(1);
       expect(due.world.engagements).toEqual([]);
       if (kind === 'site') {
-        expect(due.world.dynasties.leclerc.residenceLevel).toBe(2);
+        expect(due.world.people['person-leclerc']?.residenceLevel).toBe(2);
       }
     }
   });
@@ -297,7 +297,7 @@ describe('the simulation core', () => {
 
     // Assert: it resolves on the first tick that runs, and does its work.
     expect(after.engagements).toEqual([]);
-    expect(after.dynasties.leclerc.residenceLevel).toBe(2);
+    expect(after.people['person-leclerc']?.residenceLevel).toBe(2);
   });
 
   it('keeps a campaign for one seat out of another seat vote', () => {

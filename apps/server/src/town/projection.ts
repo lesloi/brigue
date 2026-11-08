@@ -1,4 +1,5 @@
 import {
+  dynastyResidence,
   dynastyTitle,
   displayedPrestige,
   GOODS,
@@ -6,7 +7,6 @@ import {
   NAME_PRICE,
   nextTitle,
   RESIDENCE_LADDER,
-  residenceOf,
   RULES,
   stockCapacityUnits,
   stockUnits,
@@ -174,8 +174,12 @@ export function projectWorld(town: TownInfo, world: World, dynastyId: string, ho
         .map((candidate) => ({
           id: candidate.id,
           name: candidate.name,
-          prestige: displayedPrestige(candidate, dynastyTitle(world, candidate.id)),
-          residenceLevel: candidate.residenceLevel ?? 1,
+          prestige: displayedPrestige(
+            candidate,
+            dynastyTitle(world, candidate.id),
+            dynastyResidence(world, candidate.id),
+          ),
+          residenceLevel: dynastyResidence(world, candidate.id),
         }))
         .sort((left, right) => left.id.localeCompare(right.id)),
       people: Object.values(world.people)
@@ -227,7 +231,8 @@ function calendarOf(world: World, hourStartedAt: Date): CalendarView {
 }
 
 function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
-  const residence = RESIDENCE_LADDER[residenceOf(dynasty) - 1];
+  const level = dynastyResidence(world, dynasty.id);
+  const residence = RESIDENCE_LADDER[level - 1];
   const title = dynastyTitle(world, dynasty.id);
   const next = nextTitle(title);
 
@@ -237,9 +242,9 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
     treasuryCents: dynasty.treasuryCents,
     debtCents: dynasty.debtCents,
     favour: dynasty.favour,
-    prestige: displayedPrestige(dynasty, title),
+    prestige: displayedPrestige(dynasty, title, level),
     title,
-    residenceLevel: residenceOf(dynasty),
+    residenceLevel: level,
     ladder: {
       title,
       residence: residence.name,
@@ -252,14 +257,14 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
       workshopLevelCap: workshopLevelCap(title),
       nextTitle: next === undefined ? null : { title: next, priceCents: TITLE_LADDER[next].priceCents },
       nextResidence:
-        residenceOf(dynasty) >= RESIDENCE_LADDER.length
+        level >= RESIDENCE_LADDER.length
           ? null
           : {
-              level: residenceOf(dynasty) + 1,
-              name: RESIDENCE_LADDER[residenceOf(dynasty)]!.name,
-              priceCents: RESIDENCE_LADDER[residenceOf(dynasty)].priceCents,
-              opened: residenceOf(dynasty) < TITLE_LADDER[title].residenceLevel,
-              hours: RULES.improvementHours[residenceOf(dynasty) + 1] ?? RULES.siteHours,
+              level: level + 1,
+              name: RESIDENCE_LADDER[level]!.name,
+              priceCents: RESIDENCE_LADDER[level].priceCents,
+              opened: level < TITLE_LADDER[title].residenceLevel,
+              hours: RULES.improvementHours[level + 1] ?? RULES.siteHours,
             },
     },
     workshops: dynasty.workshops.map((workshop) => {

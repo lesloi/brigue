@@ -181,8 +181,18 @@ export function dynastyTitle(world: World, dynastyId: string): TitleId {
   return head === undefined ? 'roturier' : titleOf(head);
 }
 
-export function residenceOf(dynasty: Dynasty): number {
-  return dynasty.residenceLevel ?? 1;
+export function residenceOf(person: Person): number {
+  return person.residenceLevel ?? 1;
+}
+
+/**
+ * The residence the dynasty lives in, read from the person who holds it, with
+ * the lowest level when nobody is alive.
+ */
+export function dynastyResidence(world: World, dynastyId: string): number {
+  const head = livingPersonOf(world, dynastyId);
+
+  return head === undefined ? 1 : residenceOf(head);
 }
 
 /** Where a degree stands in the ladder: roturier is zero, prince is eleven. */
@@ -225,9 +235,9 @@ export function residenceName(level: number): string {
   return step?.name ?? RESIDENCE_LADDER[0]!.name;
 }
 
-/** How many workshops the residence allows. */
-export function workshopCap(dynasty: Dynasty): number {
-  return RESIDENCE_LADDER[residenceOf(dynasty) - 1].workshops;
+/** How many workshops a residence level allows. */
+export function workshopCap(residenceLevel: number): number {
+  return RESIDENCE_LADDER[residenceLevel - 1].workshops;
 }
 
 /** The highest level a workshop may reach at a degree. */
@@ -239,8 +249,8 @@ export function workshopLevelCap(title: TitleId): number {
  * Prestige as the screen reads it: what the title and the residence gave, plus
  * the service, the service stopping at the residence's cap.
  */
-export function displayedPrestige(dynasty: Dynasty, title: TitleId): number {
-  const residence = RESIDENCE_LADDER[residenceOf(dynasty) - 1];
+export function displayedPrestige(dynasty: Dynasty, title: TitleId, residenceLevel: number): number {
+  const residence = RESIDENCE_LADDER[residenceLevel - 1];
 
   return TITLE_LADDER[title].prestige + residence.prestige + Math.min(dynasty.prestige, residence.prestigeCap);
 }
@@ -265,8 +275,6 @@ export interface Dynasty {
    * residence. Optional because the ladder arrived with ruleset 3.
    */
   prestige: number;
-  /** One ladder: the degree opens a level, money pays for it. */
-  residenceLevel?: number;
   workshops: Workshop[];
   stock: Partial<Record<GoodId, number>>;
 }
@@ -283,6 +291,8 @@ export interface Person {
   age: number;
   /** The degree bought at the town hall; it opens the residence and the workshops. */
   title?: TitleId;
+  /** One ladder: the degree opens a level, money pays for it. */
+  residenceLevel?: number;
   alive: boolean;
 }
 
@@ -549,7 +559,6 @@ export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): Dyn
       debtCents: 0,
       favour: 50,
       prestige: 0,
-      residenceLevel: 1,
       workshops: [{ id: 'workshop-1', good: chain.output, level: RULES.startingWorkshopLevel }],
       stock: { [chain.input]: RULES.startingInputUnits },
     },
@@ -559,6 +568,7 @@ export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): Dyn
       name: identity.personName,
       age: 20,
       title: 'roturier',
+      residenceLevel: 1,
       alive: true,
     },
   };
@@ -660,7 +670,6 @@ export function createWorld(seed: number): World {
         prestige: 65,
         // A cloth workshop of level 3 needs the patrician's workshop cap; the
         // seed gives Caron the degree that carries it rather than a bad workshop.
-        residenceLevel: 2,
         workshops: [{ id: 'workshop-1', good: 'cloth', level: 3 }],
         stock: {},
       },
@@ -672,7 +681,6 @@ export function createWorld(seed: number): World {
         debtCents: 0,
         favour: 45,
         prestige: 50,
-        residenceLevel: 1,
         workshops: [{ id: 'workshop-1', good: 'bread', level: 2 }],
         stock: {},
       },
@@ -684,7 +692,6 @@ export function createWorld(seed: number): World {
         debtCents: 0,
         favour: 55,
         prestige: 52,
-        residenceLevel: 1,
         workshops: [{ id: 'workshop-1', good: 'planks', level: 2 }],
         stock: {},
       },
@@ -696,6 +703,7 @@ export function createWorld(seed: number): World {
         name: 'Robert Caron',
         age: 44,
         title: 'bourgeois',
+        residenceLevel: 2,
         alive: true,
       },
       'person-fournier': {
@@ -704,6 +712,7 @@ export function createWorld(seed: number): World {
         name: 'Jehan Fournier',
         age: 41,
         title: 'roturier',
+        residenceLevel: 1,
         alive: true,
       },
       'person-charpentier': {
@@ -712,6 +721,7 @@ export function createWorld(seed: number): World {
         name: 'Perrin Charpentier',
         age: 49,
         title: 'roturier',
+        residenceLevel: 1,
         alive: true,
       },
     },

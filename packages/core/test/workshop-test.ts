@@ -65,7 +65,7 @@ describe('workshops, trades and the ladder', () => {
 
     // A second building needs a residence that holds two: the level 1 holds one.
     world.people['person-leclerc'].title = 'bourgeois';
-    world.dynasties.leclerc.residenceLevel = 3;
+    world.people['person-leclerc'].residenceLevel = 3;
 
     // Act: the build is a twelve-hour site.
     const { world: after, events } = play(world, world.hour + RULES.siteHours, (hour) =>
@@ -172,7 +172,7 @@ describe('workshops, trades and the ladder', () => {
     // Arrange: a dynasty whose residence holds two, so only the site guard can refuse.
     const world = town(SEED);
     world.people['person-leclerc'].title = 'bourgeois';
-    world.dynasties.leclerc.residenceLevel = 3;
+    world.people['person-leclerc'].residenceLevel = 3;
     world.dynasties.leclerc.treasuryCents = 1_000_000;
 
     // Act: a build opens a site, a destroy in the same hour is refused.
@@ -271,7 +271,7 @@ describe('workshops, trades and the ladder', () => {
 
     // Assert
     expect(refusal(events, 'title_open')).toBeDefined();
-    expect(leased(after, 'leclerc').residenceLevel).toBe(1);
+    expect(after.people['person-leclerc']?.residenceLevel).toBe(1);
   });
 
   it('charges a title bought twice in one hour only once', () => {
@@ -303,7 +303,7 @@ describe('workshops, trades and the ladder', () => {
     const world = town(SEED);
     world.people['person-leclerc'].title = 'bourgeois';
     leased(world, 'leclerc').treasuryCents = 1_000_000;
-    expect(workshopCap(leased(world, 'leclerc'))).toBe(1);
+    expect(workshopCap(1)).toBe(1);
 
     // Act
     const run = play(world, world.hour + RULES.improvementHours[2], (hour) =>
@@ -312,10 +312,11 @@ describe('workshops, trades and the ladder', () => {
 
     // Assert
     const dynasty = leased(run.world, 'leclerc');
-    expect(dynasty.residenceLevel).toBe(2);
+    const person = run.world.people['person-leclerc'];
+    expect(person?.residenceLevel).toBe(2);
     // Level 2 holds one workshop as well: the second service arrives at level 3.
-    expect(workshopCap(dynasty)).toBe(1);
-    expect(displayedPrestige(dynasty, 'bourgeois')).toBe(80 + 50 + Math.min(dynasty.prestige, 300));
+    expect(workshopCap(2)).toBe(1);
+    expect(displayedPrestige(dynasty, 'bourgeois', 2)).toBe(80 + 50 + Math.min(dynasty.prestige, 300));
   });
 
   it('shows the prestige of the title and of the residence, and caps only the service', () => {
@@ -323,11 +324,11 @@ describe('workshops, trades and the ladder', () => {
     const world = town(SEED);
     const dynasty = leased(world, 'leclerc');
     world.people['person-leclerc'].title = 'patricien';
-    dynasty.residenceLevel = 4;
+    world.people['person-leclerc'].residenceLevel = 4;
     dynasty.prestige = 10_000;
 
     // Assert: the title adds its 140 and the residence 90, the service stops at 500.
-    expect(displayedPrestige(dynasty, 'patricien')).toBe(140 + 90 + 500);
+    expect(displayedPrestige(dynasty, 'patricien', 4)).toBe(140 + 90 + 500);
     expect(workshopLevelCap('patricien')).toBe(4);
   });
 

@@ -211,9 +211,9 @@ the player choose the heir; death takes the choice away.
 A dynasty is a place, a person holds an office, and every dynasty has a controller:
 
 ```
-Dynasty    = { id, name, controller, treasury, residence, prestige, favour, workshops, stock, grudges }
+Dynasty    = { id, name, controller, treasury, prestige, favour, workshops, stock, grudges }
 Workshop = { id, trade, level }
-Person = { id, dynastyId, name, age, title, alive }
+Person = { id, dynastyId, name, age, title, residence, alive }
 Seat   = { personId | null }
 ```
 

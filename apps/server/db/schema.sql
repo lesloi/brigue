@@ -47,7 +47,6 @@ CREATE TABLE dynasties (
   debt_cents integer NOT NULL,
   favour integer NOT NULL,
   prestige integer NOT NULL,
-  residence_level integer NOT NULL DEFAULT 1,
   PRIMARY KEY (town_id, id),
   UNIQUE (town_id, name)
 );
@@ -73,8 +72,8 @@ CREATE TABLE state (
 );
 
 -- The persons of a dynasty: a seat points at one of them, never at the dynasty.
--- The degree is theirs: a title is bought by the person who holds it, and it
--- does not outlive them.
+-- The degree and the residence are theirs: both are bought by the person who
+-- holds them, and neither outlives them.
 CREATE TABLE people (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL,
@@ -82,6 +81,7 @@ CREATE TABLE people (
   name text NOT NULL,
   age integer NOT NULL,
   title text NOT NULL DEFAULT 'roturier',
+  residence_level integer NOT NULL DEFAULT 1,
   alive boolean NOT NULL,
   PRIMARY KEY (town_id, id),
   FOREIGN KEY (town_id, dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE

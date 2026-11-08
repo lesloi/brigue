@@ -112,8 +112,9 @@ French in the data and in the interface, and the English here is only how we tal
 - **Atelier** — the workshop: one trade, one level. It produces into the warehouse, holds its share
   of the warehouse's capacity, and costs an upkeep for every level it has.
 - **Entretien** — the upkeep of a workshop, one level's share an hour; nothing while it is a works.
-- **Résidence** — the dynasty's one ladder: the title opens a level, money pays for it, and the level
-  sets the prestige cap, the defence of the stock and the number of workshops.
+- **Résidence** — the person's one ladder: the title opens a level, money pays for it, and the level
+  sets the prestige cap, the defence of the stock and the number of workshops. It dies with its
+  holder.
 - **Héritier** — the next person of the dynasty. Chosen at retirement; taken, unprepared, by death.
 - **Retraite** — the clean handover at fifty, chosen by the player. It keeps the estate and
   prepares the heir; refusing it opens the window in which death may come.

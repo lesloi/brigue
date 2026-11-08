@@ -27,6 +27,7 @@ import {
   titleOf,
   TRADES,
   TRADE_CHAINS,
+  dynastyResidence,
   dynastyTitle,
   sortWorkshops,
   livingPersonOf,
@@ -396,7 +397,10 @@ function applyAction(
       }
       // The residence counts the sites as well as the buildings: two builds in
       // two hours must not slip past a cap of one.
-      if (dynasty.workshops.length + sitesOf(world, dynasty.id, 'build') >= workshopCap(dynasty)) {
+      if (
+        dynasty.workshops.length + sitesOf(world, dynasty.id, 'build') >=
+        workshopCap(dynastyResidence(world, dynasty.id))
+      ) {
         refuse(events, action, dynasty.id, 'workshop_cap', true);
         return;
       }
@@ -476,7 +480,7 @@ function applyAction(
     }
 
     case 'dynasty.upgrade_residence': {
-      const target = residenceOf(dynasty) + 1;
+      const target = dynastyResidence(world, dynasty.id) + 1;
       const opened = TITLE_LADDER[dynastyTitle(world, dynasty.id)].residenceLevel;
       if (target > RESIDENCE_LADDER.length) {
         refuse(events, action, dynasty.id, 'no_next_residence', true);
@@ -936,7 +940,7 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
 
   switch (site.work) {
     case 'build': {
-      if (dynasty.workshops.length >= workshopCap(dynasty)) {
+      if (dynasty.workshops.length >= workshopCap(dynastyResidence(world, dynasty.id))) {
         events.push({
           type: 'workshop.build_lost',
           audience: { dynastyId: dynasty.id },
@@ -980,8 +984,12 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
     }
     case 'residence': {
       // The level is read on the Maison screen; the town has no line for it.
-      dynasty.residenceLevel = Math.min(
-        residenceOf(dynasty) + 1,
+      const person = livingPersonOf(world, dynasty.id);
+      if (person === undefined) {
+        return;
+      }
+      person.residenceLevel = Math.min(
+        residenceOf(person) + 1,
         TITLE_LADDER[dynastyTitle(world, dynasty.id)].residenceLevel,
       );
       return;
@@ -998,8 +1006,8 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
       person.title = next;
       // The residence never exceeds what the new degree opens: buying a degree
       // below a residence already paid for leaves the residence where it is.
-      if (residenceOf(dynasty) > TITLE_LADDER[next].residenceLevel) {
-        dynasty.residenceLevel = TITLE_LADDER[next].residenceLevel;
+      if (residenceOf(person) > TITLE_LADDER[next].residenceLevel) {
+        person.residenceLevel = TITLE_LADDER[next].residenceLevel;
       }
       events.push({
         type: 'dynasty.title_received',

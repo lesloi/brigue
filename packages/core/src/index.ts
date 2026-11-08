@@ -56,6 +56,7 @@ export {
   TRADES,
   tradeOf,
   HOURS_PER_YEAR,
+  dynastyResidence,
   dynastyTitle,
   livingPersonOf,
   sortWorkshops,

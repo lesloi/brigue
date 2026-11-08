@@ -376,12 +376,13 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   const [dynasties, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all(
     [
       client.query(
-        `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige, residence_level FROM dynasties WHERE town_id = $1 ORDER BY id`,
+        `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige FROM dynasties WHERE town_id = $1 ORDER BY id`,
         [townId],
       ),
-      client.query(`SELECT id, dynasty_id, name, age, title, alive FROM people WHERE town_id = $1 ORDER BY id`, [
-        townId,
-      ]),
+      client.query(
+        `SELECT id, dynasty_id, name, age, title, residence_level, alive FROM people WHERE town_id = $1 ORDER BY id`,
+        [townId],
+      ),
       client.query(
         `SELECT dynasty_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY dynasty_id, id COLLATE "C"`,
         [townId],
@@ -438,7 +439,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       debtCents: dynasty.debt_cents,
       favour: dynasty.favour,
       prestige: dynasty.prestige,
-      residenceLevel: dynasty.residence_level,
       workshops: [],
       stock: {},
     };
@@ -466,6 +466,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       name: person.name,
       age: person.age,
       title: person.title as TitleId,
+      residenceLevel: person.residence_level,
       alive: person.alive,
     };
   }
@@ -572,7 +573,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'dynasties',
-    ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige', 'residence_level'],
+    ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige'],
     dynasties.map((dynasty) => [
       townId,
       dynasty.id,
@@ -582,7 +583,6 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       dynasty.debtCents,
       dynasty.favour,
       dynasty.prestige,
-      residenceOf(dynasty),
     ]),
   );
 
@@ -590,7 +590,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
   await insertRows(
     client,
     'people',
-    ['town_id', 'id', 'dynasty_id', 'name', 'age', 'title', 'alive'],
+    ['town_id', 'id', 'dynasty_id', 'name', 'age', 'title', 'residence_level', 'alive'],
     people.map((person) => [
       townId,
       person.id,
@@ -598,6 +598,7 @@ async function writeWorld(client: PoolClient, townId: number, world: World): Pro
       person.name,
       person.age,
       titleOf(person),
+      residenceOf(person),
       person.alive,
     ]),
   );
