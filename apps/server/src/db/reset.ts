@@ -77,20 +77,10 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'players',
-        [
-          'token_hash',
-          'player_id',
-          'town_id',
-          'dynasty_id',
-          'created_at',
-          'last_seen_at',
-          'revoked_at',
-          'delete_after',
-        ],
+        ['token_hash', 'player_id', 'dynasty_id', 'created_at', 'last_seen_at', 'revoked_at', 'delete_after'],
         accounts.map((account) => [
           account.token_hash,
           account.player_id,
-          null,
           null,
           account.created_at,
           account.last_seen_at,

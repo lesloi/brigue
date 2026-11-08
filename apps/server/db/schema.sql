@@ -5,7 +5,8 @@
 -- by replaying `db/migrations/*.sql` in order, and this file is folded from each
 -- migration in the same commit that adds it. A test builds both schemas and
 -- compares their catalogues, so a migration left unfolded here turns the suite
--- red. As of 0007_messages.sql; when the two disagree, the migrations are right.
+-- red. As of 0008_storage_without_copies.sql; when the two disagree, the migrations
+-- are right.
 --
 -- Every town table carries its `town_id` and its keys are composite: the rows of
 -- a town are the town, and `state` is the row the writer locks.
@@ -20,12 +21,11 @@ CREATE TABLE towns (
 
 -- An account, outside the town: the town is replayed, a login is not a game
 -- rule. An ordinary reset or a season's seal keeps the token and takes the
--- dynasty, and the rebuilt `towns` identity would make a carried `town_id` meet
--- a new town, so both may be null between the two.
+-- dynasty, so `dynasty_id` may be null between the two. The town is not stored
+-- here: it is the dynasty's, and the dynasty is looked up (see 0008).
 CREATE TABLE players (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
   player_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
-  town_id bigint,
   dynasty_id text CHECK (length(dynasty_id) > 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
@@ -34,15 +34,13 @@ CREATE TABLE players (
   -- The player asked to delete their identity. The binding stays live so they
   -- can come back before the deadline, which is when the scheduler erases the
   -- dynasty, its queue and every row of the dynasty.
-  delete_after timestamptz,
-  CONSTRAINT players_binding CHECK ((town_id IS NULL) = (dynasty_id IS NULL))
+  delete_after timestamptz
 );
 
 -- One live account per dynasty today. "Several accounts per dynasty" is a later
 -- release, with a revoke-all; it lifts this partial index in its own migration.
-CREATE UNIQUE INDEX players_live_dynasty ON players (town_id, dynasty_id) WHERE revoked_at IS NULL;
-
-CREATE INDEX players_dynasty ON players (town_id, dynasty_id);
+-- An account between towns has no dynasty, and nulls do not collide here.
+CREATE UNIQUE INDEX players_live_dynasty ON players (dynasty_id) WHERE revoked_at IS NULL;
 
 -- One row per town: what belongs to no dynasty, and the row the writer locks.
 CREATE TABLE state (
@@ -74,16 +72,14 @@ CREATE TABLE dynasties (
     CHECK (title IN ('roturier', 'bourgeois', 'notable', 'patricien', 'ecuyer', 'chevalier',
                      'baron', 'vicomte', 'comte', 'marquis', 'duc', 'prince')),
   residence_level integer NOT NULL DEFAULT 1 CHECK (residence_level BETWEEN 1 AND 12),
-  -- The name folded to the rule's key: the server writes it, and the index below
-  -- is the net behind the rule, never the rule itself.
-  name_key text NOT NULL DEFAULT '',
   PRIMARY KEY (town_id, id),
   UNIQUE (town_id, name)
 );
 
 -- Only a human dynasty is ranked by name across towns; the AI ones carry the
--- same names in every town.
-CREATE UNIQUE INDEX dynasties_human_name ON dynasties (name_key) WHERE controller = 'human';
+-- same names in every town. `lower()` is the key because a valid name has no
+-- accent or ligature to fold.
+CREATE UNIQUE INDEX dynasties_human_name ON dynasties (lower(name)) WHERE controller = 'human';
 
 -- The persons of a dynasty: a seat points at one of them, never at the dynasty.
 CREATE TABLE people (

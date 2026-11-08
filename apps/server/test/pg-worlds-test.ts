@@ -13,6 +13,10 @@ import { TEST_TOWN, town } from './helpers.ts';
 const START = new Date('2026-10-31T12:00:00.000Z');
 const databaseUrl = process.env.DATABASE_URL ?? '';
 
+// The only token this file writes: `clear()` orphans its account, so the
+// fixture cleans it by token and never by the town it no longer names.
+const CLEARED_TOKEN = 'e'.repeat(64);
+
 // Skips as a whole when there is no database to talk to, so `pnpm test` stays
 // green without DATABASE_URL.
 describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
@@ -31,10 +35,24 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Restarting the identity keeps every case on the same town id; the book is
     // deleted before the accounts it names, and both are scoped to this fixture
     // so the parallel account test keeps its own rows.
-    await pool.query('DELETE FROM kings WHERE player_id IN (SELECT player_id FROM players WHERE town_id = $1)', [
+    await pool.query(
+      `DELETE FROM kings
+       WHERE player_id IN (
+         SELECT p.player_id FROM players p
+         JOIN dynasties d ON d.id = p.dynasty_id
+         WHERE d.town_id = $1
+       )`,
+      [TEST_TOWN.id],
+    );
+    await pool.query(`DELETE FROM players p USING dynasties d WHERE d.id = p.dynasty_id AND d.town_id = $1`, [
       TEST_TOWN.id,
     ]);
-    await pool.query('DELETE FROM players WHERE town_id = $1', [TEST_TOWN.id]);
+    // An account whose town was cleared names no dynasty any more, so the join
+    // above cannot reach it, nor the king it named; its token is what scopes it.
+    await pool.query('DELETE FROM kings WHERE player_id IN (SELECT player_id FROM players WHERE token_hash = $1)', [
+      CLEARED_TOKEN,
+    ]);
+    await pool.query('DELETE FROM players WHERE token_hash = $1', [CLEARED_TOKEN]);
     // The mail has no town column, so the cascade does not reach it.
     await pool.query('TRUNCATE messages RESTART IDENTITY');
     await pool.query('TRUNCATE towns RESTART IDENTITY CASCADE');
@@ -264,10 +282,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         },
       ]);
     });
-    const tokenHash = 'b'.repeat(64);
+    const tokenHash = CLEARED_TOKEN;
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, dynasty_id) VALUES ($1, $2, 'leclerc') RETURNING player_id`,
-      [tokenHash, TEST_TOWN.id],
+      `INSERT INTO players (token_hash, dynasty_id) VALUES ($1, 'leclerc') RETURNING player_id`,
+      [tokenHash],
     );
     await pool.query(
       `INSERT INTO kings (player_id, dynasty_name, person_name, crowned_at, elapsed_hours)
@@ -284,7 +302,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
     const messages = await pool.query('SELECT count(*)::int AS count FROM messages');
     const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
-    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE town_id = $1', [TEST_TOWN.id]);
+    // The account survives the cleared town; the town it named does not, so it
+    // is found by its token and not by a join.
+    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE token_hash = $1', [tokenHash]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
     expect(state.rows[0]?.count).toBe(0);

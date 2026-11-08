@@ -37,10 +37,10 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const townId = Number(townRows[0]?.id);
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, dynasty_id, created_at, last_seen_at, delete_after)
-       VALUES ($1, $2, 'leclerc', $3, $4, $5)
+      `INSERT INTO players (token_hash, dynasty_id, created_at, last_seen_at, delete_after)
+       VALUES ($1, 'leclerc', $2, $3, $4)
        RETURNING player_id`,
-      [tokenHash, townId, CREATED_AT, LAST_SEEN_AT, DELETE_AFTER],
+      [tokenHash, CREATED_AT, LAST_SEEN_AT, DELETE_AFTER],
     );
     const playerId = Number(playerRows[0]?.player_id);
     await pool.query(
@@ -70,14 +70,13 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     const players = await pool.query<{
       token_hash: string;
       player_id: string;
-      town_id: string | null;
       dynasty_id: string | null;
       created_at: Date;
       last_seen_at: Date;
       revoked_at: Date | null;
       delete_after: Date | null;
     }>(
-      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
+      `SELECT token_hash, player_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
        FROM players`,
     );
     const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
@@ -86,7 +85,6 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(players.rows).toHaveLength(1);
     expect(players.rows[0]).toMatchObject({
       token_hash: tokenHash,
-      town_id: null,
       dynasty_id: null,
       revoked_at: null,
     });
@@ -142,12 +140,9 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     await resetDatabase(pool);
 
     // Act: a new account after the reset.
-    const { rows: townRows } = await pool.query<{ id: string }>(
-      `INSERT INTO towns (name) VALUES ('Saint-Aubin') RETURNING id`,
-    );
     const { rows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, town_id, dynasty_id) VALUES ($1, $2, 'herse') RETURNING player_id`,
-      ['b'.repeat(64), Number(townRows[0]?.id)],
+      `INSERT INTO players (token_hash, dynasty_id) VALUES ($1, 'herse') RETURNING player_id`,
+      ['b'.repeat(64)],
     );
 
     // Assert: the rebuilt sequence starts after the carried ids, not at 1.

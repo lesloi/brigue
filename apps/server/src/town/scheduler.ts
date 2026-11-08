@@ -131,7 +131,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         const presence = applyPresence(world, players, at.getTime());
 
         for (const dynastyId of presence.deletedDynastyIds) {
-          await options.players.revokeDynasty(town.id, dynastyId, at);
+          await options.players.revokeDynasty(dynastyId, at);
           options.logger.warn('world.dynasty_deleted', { townId: town.id, dynastyId });
         }
 
@@ -176,7 +176,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
       // The rows go once the world has committed: a failed save leaves the
       // identity whole, and the next pass tries again.
       for (const dynastyId of new Set(outcome.expired.map((player) => player.dynastyId))) {
-        await options.players.deleteDynasty(town.id, dynastyId);
+        await options.players.deleteDynasty(dynastyId);
         options.logger.info('player.deleted', { townId: town.id, dynastyId });
       }
 

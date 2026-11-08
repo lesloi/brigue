@@ -14,6 +14,15 @@ interface PlayerRow {
 }
 
 /**
+ * The account with the town of the dynasty it names. The account stores no town
+ * of its own, and one left between towns names no dynasty, hence the left join.
+ */
+const SELECT_PLAYER = `SELECT p.token_hash, p.player_id, d.town_id, p.dynasty_id,
+                              p.created_at, p.last_seen_at, p.revoked_at, p.delete_after
+                       FROM players p
+                       LEFT JOIN dynasties d ON d.id = p.dynasty_id`;
+
+/**
  * The binding lives in Postgres, outside the world. `pg` is imported lazily so
  * the auth tests run without a database or the driver's side effects.
  */
@@ -27,10 +36,10 @@ export class PgPlayerStore implements PlayerStore {
   async insert(player: Omit<Player, 'playerId'>): Promise<Player> {
     try {
       const { rows } = await this.pool.query<{ player_id: string }>(
-        `INSERT INTO players (token_hash, town_id, dynasty_id, created_at, last_seen_at)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO players (token_hash, dynasty_id, created_at, last_seen_at)
+         VALUES ($1, $2, $3, $4)
          RETURNING player_id`,
-        [player.tokenHash, player.townId, player.dynastyId, player.createdAt, player.lastSeenAt],
+        [player.tokenHash, player.dynastyId, player.createdAt, player.lastSeenAt],
       );
 
       return { ...player, playerId: Number(rows[0]?.player_id) };
@@ -44,9 +53,8 @@ export class PgPlayerStore implements PlayerStore {
 
   async findByTokenHash(tokenHash: string): Promise<Player | null> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
-       FROM players
-       WHERE token_hash = $1`,
+      `${SELECT_PLAYER}
+       WHERE p.token_hash = $1`,
       [tokenHash],
     );
 
@@ -57,12 +65,16 @@ export class PgPlayerStore implements PlayerStore {
 
   async rebind(tokenHash: string, townId: number, dynastyId: string, at: Date): Promise<Player | null> {
     try {
+      // The town is read back through the dynasty it names: the account no
+      // longer stores a copy that could disagree with it.
       const { rows } = await this.pool.query<PlayerRow>(
-        `UPDATE players
-         SET town_id = $2, dynasty_id = $3, last_seen_at = GREATEST(last_seen_at, $4)
-         WHERE token_hash = $1 AND town_id IS NULL AND dynasty_id IS NULL AND revoked_at IS NULL
-         RETURNING token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after`,
-        [tokenHash, townId, dynastyId, at],
+        `UPDATE players p
+         SET dynasty_id = $2, last_seen_at = GREATEST(p.last_seen_at, $3)
+         WHERE p.token_hash = $1 AND p.dynasty_id IS NULL AND p.revoked_at IS NULL
+         RETURNING p.token_hash, p.player_id,
+                   (SELECT d.town_id FROM dynasties d WHERE d.id = p.dynasty_id) AS town_id,
+                   p.dynasty_id, p.created_at, p.last_seen_at, p.revoked_at, p.delete_after`,
+        [tokenHash, dynastyId, at],
       );
 
       const row = rows[0];
@@ -96,23 +108,20 @@ export class PgPlayerStore implements PlayerStore {
 
   async listByTown(townId: number): Promise<Player[]> {
     const { rows } = await this.pool.query<PlayerRow>(
-      `SELECT token_hash, player_id, town_id, dynasty_id, created_at, last_seen_at, revoked_at, delete_after
-       FROM players
-       WHERE town_id = $1
-       ORDER BY created_at, token_hash`,
+      `${SELECT_PLAYER}
+       WHERE d.town_id = $1
+       ORDER BY p.created_at, p.token_hash`,
       [townId],
     );
 
     return rows.map(rowToPlayer);
   }
 
-  async revokeDynasty(townId: number, dynastyId: string, at: Date): Promise<void> {
-    await this.pool.query(
-      `UPDATE players
-       SET revoked_at = $3
-       WHERE town_id = $1 AND dynasty_id = $2 AND revoked_at IS NULL`,
-      [townId, dynastyId, at],
-    );
+  async revokeDynasty(dynastyId: string, at: Date): Promise<void> {
+    await this.pool.query(`UPDATE players SET revoked_at = $2 WHERE dynasty_id = $1 AND revoked_at IS NULL`, [
+      dynastyId,
+      at,
+    ]);
   }
 
   async markDeletion(tokenHash: string, at: Date): Promise<void> {
@@ -128,8 +137,8 @@ export class PgPlayerStore implements PlayerStore {
     await this.pool.query('UPDATE players SET delete_after = NULL WHERE token_hash = $1', [tokenHash]);
   }
 
-  async deleteDynasty(townId: number, dynastyId: string): Promise<void> {
-    await this.pool.query('DELETE FROM players WHERE town_id = $1 AND dynasty_id = $2', [townId, dynastyId]);
+  async deleteDynasty(dynastyId: string): Promise<void> {
+    await this.pool.query('DELETE FROM players WHERE dynasty_id = $1', [dynastyId]);
   }
 
   async deleteUnboundDue(at: Date): Promise<number> {

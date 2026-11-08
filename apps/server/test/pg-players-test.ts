@@ -20,10 +20,11 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
   });
 
   afterEach(async () => {
-    // Scoped to this file's world: the other Postgres tests share the database
-    // and run in parallel. An account a reset left without a dynasty belongs to
-    // no town, so it is cleaned by its own shape.
-    await pool.query('DELETE FROM players WHERE town_id = $1 OR town_id IS NULL', [900_001]);
+    // Scoped to this file's tokens: the other Postgres tests share the database
+    // and run in parallel, and the account no longer names a town to scope by.
+    await pool.query('DELETE FROM players WHERE token_hash = ANY($1)', [
+      ['a'.repeat(64), 'b'.repeat(64), 'c'.repeat(64)],
+    ]);
   });
 
   afterAll(async () => {
@@ -40,12 +41,11 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     // deadline is stored, cleared, then the rows go.
     expect(typeof stored.playerId).toBe('number');
     expect((await store.findByTokenHash(tokenHash))?.playerId).toBe(stored.playerId);
-    expect((await store.findByTokenHash(tokenHash))?.townId).toBe(900_001);
     await store.markDeletion(tokenHash, after);
     expect((await store.findByTokenHash(tokenHash))?.deleteAfter).toEqual(after);
     await store.cancelDeletion(tokenHash);
     expect((await store.findByTokenHash(tokenHash))?.deleteAfter).toBeNull();
-    await store.deleteDynasty(900_001, 'leclerc');
+    await store.deleteDynasty('leclerc');
     expect(await store.findByTokenHash(tokenHash)).toBeNull();
   });
 
@@ -60,7 +60,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
 
     // Assert: the dynasty is back and the visit is now, so the new dynasty is not
     // measured from the old silence.
-    expect(rebound).toMatchObject({ townId: 900_001, dynastyId: 'leclerc' });
+    expect(rebound).toMatchObject({ dynastyId: 'leclerc' });
     expect(rebound?.lastSeenAt).toEqual(at);
     expect(await store.rebind(tokenHash, 900_001, 'herse', at)).toBeNull();
     expect((await store.findByTokenHash(tokenHash))?.dynastyId).toBe('leclerc');

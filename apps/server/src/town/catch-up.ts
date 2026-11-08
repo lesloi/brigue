@@ -135,7 +135,7 @@ async function synchronisePresence(access: TownAccess, townId: number, world: Wo
   const presence = applyPresence(world, players, at.getTime());
 
   for (const dynastyId of presence.deletedDynastyIds) {
-    await access.players.revokeDynasty(townId, dynastyId, at);
+    await access.players.revokeDynasty(dynastyId, at);
     access.logger.warn('world.dynasty_deleted', { townId, dynastyId });
   }
 

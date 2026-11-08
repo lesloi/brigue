@@ -54,14 +54,18 @@ export interface PlayerStore {
   touch(tokenHash: string, at: Date): Promise<void>;
   /** Every account of a town, live or revoked, so presence can see the last visit. */
   listByTown(townId: number): Promise<Player[]>;
-  /** Revokes every live account of a dynasty, for the thirty-day deletion. */
-  revokeDynasty(townId: number, dynastyId: string, at: Date): Promise<void>;
+  /**
+   * Revokes every live account of a dynasty, for the thirty-day deletion. The
+   * dynasty id alone scopes it: a human dynasty id is minted once for the whole
+   * server, and the dynasty row may already be gone from the world.
+   */
+  revokeDynasty(dynastyId: string, at: Date): Promise<void>;
   /** Schedules the erasure of an identity; a second request keeps the first. */
   markDeletion(tokenHash: string, at: Date): Promise<void>;
   /** Cancels a scheduled erasure: the player came back. */
   cancelDeletion(tokenHash: string): Promise<void>;
   /** Deletes every row of a dynasty, for an identity the scheduler erased. */
-  deleteDynasty(townId: number, dynastyId: string): Promise<void>;
+  deleteDynasty(dynastyId: string): Promise<void>;
   /**
    * Erases the accounts a reset left without a dynasty whose deletion deadline
    * has passed, and returns how many. They belong to no town, so the per-town
@@ -147,9 +151,9 @@ export class MemoryPlayerStore implements PlayerStore {
     return [...this.players.values()].filter((player) => player.townId === townId).map((player) => ({ ...player }));
   }
 
-  async revokeDynasty(townId: number, dynastyId: string, at: Date): Promise<void> {
+  async revokeDynasty(dynastyId: string, at: Date): Promise<void> {
     for (const [tokenHash, player] of this.players) {
-      if (player.townId === townId && player.dynastyId === dynastyId && player.revokedAt === null) {
+      if (player.dynastyId === dynastyId && player.revokedAt === null) {
         this.players.set(tokenHash, { ...player, revokedAt: at });
       }
     }
@@ -171,9 +175,9 @@ export class MemoryPlayerStore implements PlayerStore {
     }
   }
 
-  async deleteDynasty(townId: number, dynastyId: string): Promise<void> {
+  async deleteDynasty(dynastyId: string): Promise<void> {
     for (const [tokenHash, player] of this.players) {
-      if (player.townId === townId && player.dynastyId === dynastyId) {
+      if (player.dynastyId === dynastyId) {
         this.players.delete(tokenHash);
       }
     }
