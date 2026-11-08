@@ -96,7 +96,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(Number(kings.rows[0]?.player_id)).toBe(playerId);
     expect(kings.rows[0]?.crowned_at.toISOString()).toBe(CROWNED_AT.toISOString());
     expect(report).toMatchObject({ kings: 1, accounts: 1, full: false });
-    expect(report.applied).toContain('0001_initial.sql');
+    expect(report.applied).toEqual(['schema.sql']);
   });
 
   it('carries a book of kings written before the rename', async () => {

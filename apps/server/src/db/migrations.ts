@@ -1,91 +1,84 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 
 import type { Pool, PoolClient } from 'pg';
 
 /**
- * One Postgres advisory lock guards a migration run: two deploy runners can
- * start together, and only one of them may look at the schema at a time.
- * Arbitrary but stable, so two deployments of two versions meet on the same
- * key. Shared with the reset, which destroys the schema the runners watch.
+ * One Postgres advisory lock guards a schema run: two deploy runners can start
+ * together, and only one of them may look at the schema at a time. Arbitrary but
+ * stable, so two deployments of two versions meet on the same key. Shared with
+ * the reset, which destroys the schema the runners watch.
  */
 export const MIGRATION_LOCK = 4_211_902;
 
-/** Where the image ships its migrations: `src/db` sits two levels under the package's `db`. */
-export function defaultMigrationsDirectory(): string {
-  return join(import.meta.dirname, '..', '..', 'db', 'migrations');
+/** Where the image ships its schema: `src/db` sits two levels under the package's `db`. */
+export function defaultSchemaPath(): string {
+  return join(import.meta.dirname, '..', '..', 'db', 'schema.sql');
 }
 
 /**
- * Applies every migration exactly once, in file order, each in its own
- * transaction. Shared by the deploy command and the Postgres integration test:
- * the test starts from an empty database, and running this after the command is
- * a no-op because `schema_migrations` already lists the files.
+ * Applies the schema to an empty database, once, in one transaction, and
+ * records it in `schema_migrations`. There is one file and no upgrade path: a
+ * change edits `db/schema.sql`, and a deployed database crosses with a reset.
  *
- * Returns the files it applied, so the caller decides whether to log them.
+ * Shared by the deploy command and the Postgres integration tests. Returns the
+ * file it applied, so the caller decides whether to log it.
  */
-export function applyMigrations(pool: Pool, directory = defaultMigrationsDirectory()): Promise<string[]> {
+export function applySchema(pool: Pool, file = defaultSchemaPath()): Promise<string[]> {
   return withMigrationLock(pool, async (client) => {
     await ensureMigrationsTable(client);
 
-    const files = await migrationFiles(directory);
+    const name = basename(file);
     const applied = await appliedMigrations(client);
-    const appliedNow: string[] = [];
 
-    for (const file of files) {
-      if (applied.has(file)) {
-        continue;
-      }
-
-      const sql = await readFile(join(directory, file), 'utf8');
-
-      try {
-        await client.query('BEGIN');
-        await client.query(sql);
-        await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-        await client.query('COMMIT');
-        appliedNow.push(file);
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      }
+    if (applied.has(name)) {
+      return [];
     }
 
-    return appliedNow;
+    const sql = await readFile(file, 'utf8');
+
+    try {
+      await client.query('BEGIN');
+      await client.query(sql);
+      await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [name]);
+      await client.query('COMMIT');
+
+      return [name];
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
   });
 }
 
 /**
- * Builds the schema inside a transaction the caller owns: every migration is
- * applied in order and recorded, against an empty schema. The reset uses it so
- * the drop, the rebuild and the surviving rows commit together.
+ * Builds the schema inside a transaction the caller owns, against an empty
+ * schema, and records it. The reset uses it so the drop, the rebuild and the
+ * surviving rows commit together.
  */
-export async function buildSchema(client: PoolClient, directory = defaultMigrationsDirectory()): Promise<string[]> {
+export async function buildSchema(client: PoolClient, file = defaultSchemaPath()): Promise<string[]> {
   await ensureMigrationsTable(client);
 
-  const files = await migrationFiles(directory);
+  const name = basename(file);
+  await client.query(await readFile(file, 'utf8'));
+  await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [name]);
 
-  for (const file of files) {
-    await client.query(await readFile(join(directory, file), 'utf8'));
-    await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
-  }
-
-  return files;
+  return [name];
 }
 
 /**
- * What a deploy's schema gate asks: does this image carry a migration the
- * database does not have yet? If so the release must not serve, and the
- * migrations have either not run or not finished. Waiting for the lock means a
- * check that arrives during a migration run answers about the schema after it.
+ * What a deploy's schema gate asks: does this image carry a schema the database
+ * does not have yet? If so the release must not serve. Waiting for the lock
+ * means a check that arrives during a run answers about the schema after it.
  */
-export function pendingMigrations(pool: Pool, directory = defaultMigrationsDirectory()): Promise<string[]> {
+export function pendingSchema(pool: Pool, file = defaultSchemaPath()): Promise<string[]> {
   return withMigrationLock(pool, async (client) => {
     await ensureMigrationsTable(client);
 
+    const name = basename(file);
     const applied = await appliedMigrations(client);
 
-    return (await migrationFiles(directory)).filter((file) => !applied.has(file));
+    return applied.has(name) ? [] : [name];
   });
 }
 
@@ -121,10 +114,6 @@ async function ensureMigrationsTable(client: PoolClient): Promise<void> {
        applied_at timestamptz NOT NULL DEFAULT now()
      )`,
   );
-}
-
-async function migrationFiles(directory: string): Promise<string[]> {
-  return (await readdir(directory)).filter((file) => file.endsWith('.sql')).sort();
 }
 
 async function appliedMigrations(client: PoolClient): Promise<Set<string>> {

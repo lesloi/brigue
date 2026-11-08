@@ -17,7 +17,7 @@ export interface ResetReport {
   accounts: number;
   /** Whether the book of kings was deleted too. */
   full: boolean;
-  /** The migrations the empty schema was built from. */
+  /** The schema file the empty schema was built from. */
   applied: string[];
 }
 
@@ -40,7 +40,7 @@ interface SurvivingAccount {
 }
 
 /**
- * Drops the whole schema and builds it again from the migrations.
+ * Drops the whole schema and builds it again from `db/schema.sql`.
  *
  * The book of kings and the accounts are copied across, because no ordinary
  * reset touches them: the token is the identity, and a reset takes the dynasty,

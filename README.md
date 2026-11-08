@@ -70,7 +70,7 @@ pnpm --filter @brigue/server dev
 ```
 
 When a format change cannot migrate the old schema, the database is reset instead: `pnpm
---filter @brigue/server reset` drops the town and rebuilds the schema from the migrations,
+--filter @brigue/server reset` drops the town and rebuilds the schema from `db/schema.sql`,
 carrying the book of kings and the accounts across. Run it with the application stopped: it
 drops the schema under any writer. A carried account keeps its token and its player id and
 loses its dynasty; the next visit asks for a trade and gives it one. It shows what it would

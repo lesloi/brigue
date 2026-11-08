@@ -1,11 +1,10 @@
 -- The whole schema of the server's database, in one file: the tables of a town,
--- the accounts and the book of kings. It is the only migration, and it is applied
--- to an empty schema.
+-- the accounts and the book of kings. It is the only schema file, and it is
+-- applied to an empty database.
 --
 -- A schema change edits this file; a database crosses with `reset --full`, which
 -- rebuilds it from here. There is no upgrade path, because no world of another
--- format is read. `migrate` builds an empty database and nothing else, and its
--- gate cannot see a baseline rewritten in place.
+-- format is read. `migrate` builds an empty database and nothing else.
 --
 -- Every town table carries its `town_id` and its keys are composite: the rows of
 -- a town are the town, and `state` is the row the writer locks.

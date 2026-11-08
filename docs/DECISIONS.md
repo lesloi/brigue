@@ -254,8 +254,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   number that records a history nobody can read is a cost, not a safeguard. Once a town has
   players whose history matters, a breaking change ships a migration by default.
 
-  A reset (`pnpm --filter @brigue/server reset`) drops the schema and rebuilds it from the
-  migrations, and the book of kings and the accounts stay. `--check` shows what
+  A reset (`pnpm --filter @brigue/server reset`) drops the schema and rebuilds it from
+  `db/schema.sql`, and the book of kings and the accounts stay. `--check` shows what
   would go, `--force` skips the question, and otherwise an operator reads the same report and
   answers `yes` on a terminal; without one, it refuses. A full reset, with `--full`, deletes the
   book and the accounts too and is the only one that touches them. A carried account keeps its
@@ -269,13 +269,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   format after. One thing at a time, and the only change that cannot wait is the one that breaks
   the shape of the world.
 
-- **The schema is one baseline, and a schema change is a reset.** The migration tree is a single
-  `0001_initial.sql`, replayed on an empty schema; there is no upgrade path to write, because no
-  world of another format is read. A schema change edits that file, and the database crosses with
+- **The schema is one file, and a schema change is a reset.** `db/schema.sql` is the whole
+  schema, replayed on an empty database; there is no upgrade path to write, because no world of
+  another format is read. A schema change edits that file, and the database crosses with
   `reset --full`, which deletes the towns, the accounts and the book of kings. The format number
   carries no history: it went back to one with this baseline, and the next schema change may pick
-  another. `migrate` builds an empty database and nothing else; its gate cannot see a baseline that
-  was rewritten in place, and it is not the path a deployed database takes.
+  another. `migrate` builds an empty database and nothing else; its gate reports the schema missing on
+  a database that predates it, and the reset is the path a deployed database takes.
 
 ## Simulation
 
@@ -450,10 +450,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   404 on the domain that every probe would otherwise call healthy. Hashed assets are cached
   forever, `index.html` and the service worker never.
 
-- **Migrations can be checked without being applied.** `migrate --check` exits non-zero while the
-  image carries a migration `schema_migrations` does not have, and `applyMigrations` takes a
-  Postgres advisory lock before touching anything, table included. That is the hook a deploy can
-  use to hold back a new instance until the schema matches its image.
+- **The schema can be checked without being applied.** `migrate --check` exits non-zero while the
+  image carries a schema `schema_migrations` does not have, and `applySchema` takes a Postgres
+  advisory lock before touching anything, table included. That is the hook a deploy can use to
+  hold back a new instance until the schema matches its image, and after a rewritten baseline it
+  is the signal that the database must be reset.
 
 - **Readiness asks the database; liveness does not.** `/readyz` runs one `SELECT 1` and fails
   while it cannot; `/healthz` touches nothing. Wired the other way, a database outage would

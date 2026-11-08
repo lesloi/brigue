@@ -4,7 +4,7 @@ import { previewReset, resetDatabase, type ResetPreview } from '../src/db/reset.
 /**
  * The schema reset, for the one deployment that changes the shape of the
  * database. It destroys the town — its dynasties, its actions, its journal — and
- * the migrations record, then builds an empty schema from `db/migrations` and
+ * the migrations record, then builds an empty schema from `db/schema.sql` and
  * carries the book of kings and the accounts across. A carried account keeps
  * its token and its player id and loses its dynasty: the next visit chooses a
  * trade. With `--full` it deletes the book and the accounts too.
@@ -70,7 +70,7 @@ async function main(): Promise<void> {
 
 function printPreview(preview: ResetPreview): void {
   process.stdout.write(
-    `database ${preview.database}: a reset drops the public schema and rebuilds it from the migrations.\n`,
+    `database ${preview.database}: a reset drops the public schema and rebuilds it from the schema file.\n`,
   );
 
   for (const table of preview.tables) {

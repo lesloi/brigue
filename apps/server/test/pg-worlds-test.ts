@@ -13,7 +13,7 @@ import {
   type World,
 } from '@brigue/core';
 
-import { applyMigrations } from '../src/db/migrations.ts';
+import { applySchema } from '../src/db/migrations.ts';
 import { PgWorldStore } from '../src/town/pg-worlds.ts';
 import { DuplicateActionError, UnknownWorldError, type StoredAction, type WorldSession } from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
@@ -34,7 +34,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
-    await applyMigrations(pool);
+    await applySchema(pool);
     store = new PgWorldStore(pool);
   });
 

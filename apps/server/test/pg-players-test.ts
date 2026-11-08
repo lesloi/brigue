@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyMigrations } from '../src/db/migrations.ts';
+import { applySchema } from '../src/db/migrations.ts';
 import { PgPlayerStore } from '../src/identity/pg-players.ts';
 import type { Player } from '../src/identity/players.ts';
 
@@ -15,7 +15,7 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
-    await applyMigrations(pool);
+    await applySchema(pool);
     store = new PgPlayerStore(pool);
   });
 
