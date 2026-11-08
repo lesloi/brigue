@@ -221,7 +221,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   changed a seat, later a law. A line addressed to a dynasty is a message: a refusal, a work built
   or lost, a debt paid or unpaid, a candidacy, an election result. Only a human dynasty has a
   mailbox, addressed by its dynasty id (minted once for the whole server); an AI one reads
-  nothing, so its private lines are written for nobody. The chronicle
+  nothing, so its private lines are written for nobody. A notice carries its `type` and the
+  `payload` of its sentence; a letter from a player is prose — `type` null, `body`, and the
+  `author_dynasty_id` the server takes from the session — and lands in the recipient's box. A
+  public square is not this table. The chronicle
   keeps seven real days and the mail thirty (`PACING.chronicleRetentionHours`,
   `PACING.messageRetentionHours`), cut by the wall clock at the write, so a scheduler stopped
   longer loses the days before the stop. A read returns the newest fifty of each in time order;

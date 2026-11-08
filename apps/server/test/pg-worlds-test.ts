@@ -521,6 +521,26 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(rows.rows[0]?.count).toBe(1);
   });
 
+  it('accepts prose and refuses a row that is both shapes or neither', async () => {
+    // Arrange: a notice already lives in the box, and a letter would next to it.
+    await store.createTown(TEST_TOWN.name, town(5), START);
+    const insert = (columns: string, values: unknown[] = []) =>
+      pool.query(
+        `INSERT INTO messages (dynasty_id${columns}) VALUES ($1${values.map((_, index) => `, $${index + 2}`).join('')})`,
+        ['leclerc', ...values],
+      );
+
+    // Act and assert: prose needs a body and may carry an author.
+    await expect(insert(', body, author_dynasty_id', ['Bonjour', 'dynasty-writer'])).resolves.toBeDefined();
+    // Both shapes at once, or neither, is refused by the table's own check.
+    await expect(insert(', type, payload, body', ['title_open', '{}', 'Bonjour'])).rejects.toThrow();
+    await expect(insert('')).rejects.toThrow();
+    // A notice never names a player author.
+    await expect(
+      insert(', type, payload, author_dynasty_id', ['title_open', '{}', 'dynasty-writer']),
+    ).rejects.toThrow();
+  });
+
   it('rolls the world and the actions back when the callback throws', async () => {
     // Arrange
     const world = { ...createWorld(6), hour: 3 };

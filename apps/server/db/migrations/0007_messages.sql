@@ -20,12 +20,25 @@ CREATE TABLE messages (
   -- for the whole server (`dynasty-<uuid>`), and an AI one has no mailbox, so
   -- the id alone names the box; the writer deletes a town's mail with the town.
   dynasty_id text NOT NULL CHECK (length(dynasty_id) > 0),
-  type text NOT NULL,
-  payload jsonb NOT NULL,
+  -- A notice carries its kind and the fields of its sentence. Prose — a letter
+  -- from a player, later a rumour from the town — carries neither: its `type`
+  -- is null and its text lives in `body`.
+  type text,
+  payload jsonb,
+  body text,
+  -- Who wrote a prose message. Null when the town wrote it; never set on a
+  -- notice, whose author is the simulation. The server fills it from the
+  -- session, never from the request body.
+  author_dynasty_id text CHECK (author_dynasty_id IS NULL OR length(author_dynasty_id) > 0),
   -- A message is unread until the player opens the Courrier; the flag is the
   -- whole unread state, so no cursor lives on the account.
   read boolean NOT NULL DEFAULT false,
   -- The instant it was written, and nothing else: retention follows the real
   -- clock, and the ids order the page. A message carries no town hour.
-  recorded_at timestamptz NOT NULL DEFAULT now()
+  recorded_at timestamptz NOT NULL DEFAULT now(),
+  -- Exactly one shape: a notice has a type and its payload, prose has a body.
+  CHECK ((type IS NULL) = (body IS NOT NULL)),
+  CHECK ((type IS NULL) <> (payload IS NOT NULL)),
+  -- A notice has no player author; prose may or may not have one.
+  CHECK (type IS NULL OR author_dynasty_id IS NULL)
 );
