@@ -1,38 +1,27 @@
--- The schema of the server's database, as the migrations leave it: every table
--- of a town, the accounts and the book of kings, in one file.
+-- The schema of the server's database, as the migrations leave it: the tables of
+-- a town, the accounts and the book of kings, in one file.
 --
--- A reading aid, never a source. Nothing applies this file: a database is built
--- by replaying `db/migrations/*.sql` in file order and recording each in
--- `schema_migrations`. This file only restates where that leaves the schema, and
--- it is folded from a migration in the same commit that adds the migration: a
--- test builds both schemas and compares their catalogues, so a migration left
--- unfolded here turns the suite red.
+-- A reading aid, never a source: nothing applies this file. A database is built
+-- by replaying `db/migrations/*.sql` in order, and this file is folded from each
+-- migration in the same commit that adds it. A test builds both schemas and
+-- compares their catalogues, so a migration left unfolded here turns the suite
+-- red. As of 0007_messages.sql; when the two disagree, the migrations are right.
 --
--- As of 0007_messages.sql. When this file and the migrations disagree, the
--- migrations are right.
---
--- One database holds several towns. Every town table carries its `town_id` and
--- its keys are composite: the rows of a town are the town, and `state` is the
--- row the writer locks. The accounts and the book of kings outlive their town: a
--- reset takes the town and the dynasty, never the player.
+-- Every town table carries its `town_id` and its keys are composite: the rows of
+-- a town are the town, and `state` is the row the writer locks.
 
--- A town is a place a player can join. Its name is what the screen shows; the
--- id is assigned by the database and is what the rows carry. A name may come
--- back: the id never does, so a dead town's accounts can never point at a new
--- one.
+-- A name may come back after a reset; an id never does, so a dead town's
+-- accounts cannot point at a new one.
 CREATE TABLE towns (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   name text NOT NULL CHECK (length(name) > 0),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- An account, outside the town: the town is versioned and replayed, a login is
--- not a game rule. `player_id` is the stable identity the book of kings keeps.
--- An ordinary reset and the seal of a season both keep the token and take the
--- dynasty, so a row carries no town and no dynasty until the player chooses a
--- trade again. `town_id` cannot keep the dead town's id, either: the rebuilt
--- `towns` identity starts over, so a carried id would meet a new town and the
--- account would look like one of its members.
+-- An account, outside the town: the town is replayed, a login is not a game
+-- rule. An ordinary reset or a season's seal keeps the token and takes the
+-- dynasty, and the rebuilt `towns` identity would make a carried `town_id` meet
+-- a new town, so both may be null between the two.
 CREATE TABLE players (
   token_hash text PRIMARY KEY CHECK (token_hash ~ '^[0-9a-f]{64}$'),
   player_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
@@ -42,12 +31,10 @@ CREATE TABLE players (
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
   last_seen_at timestamptz NOT NULL DEFAULT now(),
   revoked_at timestamptz,
-  -- Set when the player asks to delete their identity. The binding stays live
-  -- so they can come back before the deadline; when it passes, the scheduler
-  -- erases the dynasty, its queue and every row of the dynasty.
+  -- The player asked to delete their identity. The binding stays live so they
+  -- can come back before the deadline, which is when the scheduler erases the
+  -- dynasty, its queue and every row of the dynasty.
   delete_after timestamptz,
-  -- The binding is all or nothing: an account is either in a town with a
-  -- dynasty, or between the two.
   CONSTRAINT players_binding CHECK ((town_id IS NULL) = (dynasty_id IS NULL))
 );
 
@@ -57,9 +44,8 @@ CREATE UNIQUE INDEX players_live_dynasty ON players (town_id, dynasty_id) WHERE 
 
 CREATE INDEX players_dynasty ON players (town_id, dynasty_id);
 
+-- One row per town: what belongs to no dynasty, and the row the writer locks.
 CREATE TABLE state (
-  -- One row per town. It is the row the writer locks, so the key is not
-  -- decoration: two rows for one town would be two towns.
   town_id bigint PRIMARY KEY REFERENCES towns (id) ON DELETE CASCADE,
   format_version integer NOT NULL,
   ruleset_version integer NOT NULL,
@@ -68,10 +54,8 @@ CREATE TABLE state (
   hour integer NOT NULL CHECK (hour >= 1),
   year integer NOT NULL,
   engagement_seq integer NOT NULL DEFAULT 0,
-  -- When the current hour began, in real time. The scheduler measures how many
-  -- hours are owed from here, not from a grid.
+  -- The scheduler counts owed hours from here, not from a grid.
   hour_started_at timestamptz NOT NULL,
-  -- The counter that mints workshop ids.
   workshop_seq integer NOT NULL DEFAULT 0
 );
 
@@ -86,23 +70,22 @@ CREATE TABLE dynasties (
   prestige integer NOT NULL,
   career integer NOT NULL,
   dormant boolean NOT NULL DEFAULT false,
-  -- The ladder: a dynasty carries a title and a residence level.
   title text NOT NULL DEFAULT 'roturier'
     CHECK (title IN ('roturier', 'bourgeois', 'notable', 'patricien', 'ecuyer', 'chevalier',
                      'baron', 'vicomte', 'comte', 'marquis', 'duc', 'prince')),
   residence_level integer NOT NULL DEFAULT 1 CHECK (residence_level BETWEEN 1 AND 12),
-  -- The name as the uniqueness rule sees it (`nameKey` in the core): letters and
-  -- digits, case folded. The server writes it, and the partial index below is
-  -- the net behind the rule, never the rule itself.
+  -- The name folded to the rule's key: the server writes it, and the index below
+  -- is the net behind the rule, never the rule itself.
   name_key text NOT NULL DEFAULT '',
   PRIMARY KEY (town_id, id),
   UNIQUE (town_id, name)
 );
 
--- Only a human dynasty is ranked by name across towns; the three AI dynasties
--- carry the same names in every town.
+-- Only a human dynasty is ranked by name across towns; the AI ones carry the
+-- same names in every town.
 CREATE UNIQUE INDEX dynasties_human_name ON dynasties (name_key) WHERE controller = 'human';
 
+-- The persons of a dynasty: a seat points at one of them, never at the dynasty.
 CREATE TABLE people (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
@@ -119,17 +102,15 @@ CREATE TABLE people (
 
 CREATE INDEX people_dynasty ON people (town_id, dynasty_id);
 
--- `position` holds the order the core writes and reads: the world has arrays,
--- and an array is part of the state hash. Loading in a different order would
--- give the same town two hashes.
+-- The world holds workshops as an array and hashes it in order, so `position`
+-- is that order. The id is the world's (`workshopSeq`): two workshops of one
+-- trade are two buildings that "destroy" must tell apart.
 CREATE TABLE workshops (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   dynasty_id text NOT NULL,
   position integer NOT NULL,
   good text NOT NULL,
   level integer NOT NULL,
-  -- The id the world mints (`workshopSeq`), the same in every dynasty: two
-  -- workshops of one trade are two buildings that "destroy" must tell apart.
   id text NOT NULL DEFAULT gen_random_uuid()::text,
   PRIMARY KEY (town_id, dynasty_id, position),
   CONSTRAINT workshops_id_key UNIQUE (town_id, dynasty_id, id),
@@ -164,10 +145,8 @@ CREATE TABLE laws (
   FOREIGN KEY (town_id, sponsor_dynasty_id) REFERENCES dynasties (town_id, id) ON DELETE CASCADE
 );
 
--- A hearing and a site still have a duration, so they carry the instant they
--- fall due. A site says what it is for: a title is obtained at the next noon or
--- midnight, a workshop is built or improved. The cost is paid when the site
--- opens, so the work and its object are all the row needs.
+-- A site says what it is for — a title at the next bell, a workshop built or
+-- improved — and its cost is paid when it opens, so the row needs nothing else.
 CREATE TABLE engagements (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   id text NOT NULL CHECK (length(id) > 0),
@@ -184,10 +163,8 @@ CREATE TABLE engagements (
 
 CREATE INDEX engagements_due ON engagements (town_id, due_at);
 
--- A campaign has no duration: it is a candidacy, and it counts for one
--- scrutiny. The noon bell closes the open map into the closed one, so `closed`
--- says which scrutiny the votes land on: a candidacy lodged after the bell
--- waits for the next one.
+-- A campaign has no duration: it counts for one scrutiny, and `closed` says
+-- which — a candidacy lodged after the bell waits for the next one.
 CREATE TABLE campaigns (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   seat_id text NOT NULL,
@@ -214,14 +191,12 @@ CREATE TABLE market_history (
   PRIMARY KEY (town_id, good, position)
 );
 
--- The town's chronicle: what the town remembers of its own affairs, today the
--- elections that changed a seat, tomorrow its laws. It is read as a page,
--- newest first, and every reader sees the same one; a line meant for one
--- dynasty lives in `messages`.
+-- The town's chronicle, read as a page: every reader sees the same one, and a
+-- line meant for a single dynasty lives in `messages`.
 --
--- `at` is the town's hour and diverges from real time after a catch-up, so the
--- row also carries the instant it was written: the purge keeps the last seven
--- real days of that instant.
+-- `at` is the town's hour, which diverges from real time after a catch-up;
+-- `recorded_at` is when the row was written, and the purge keeps seven real days
+-- of it.
 CREATE TABLE events (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
@@ -233,47 +208,35 @@ CREATE TABLE events (
   CONSTRAINT events_chronicle_only CHECK (audience = 'town')
 );
 
--- Read newest first, a town at a time: the pair is also what the cascade needs
--- when a town goes.
 CREATE INDEX events_town_id ON events (town_id, id);
 
 CREATE INDEX events_town_recorded_at ON events (town_id, recorded_at);
 
--- One mailbox per dynasty. A private line — a refusal, a workshop built or
--- lost, a penniless hour, an election result — belongs to one dynasty and would
--- drown the chronicle. A human dynasty id is minted once for the whole server
--- (`dynasty-<uuid>`) and an AI one has no mailbox, so the id alone names the box;
--- the writer deletes a town's mail with the town.
+-- One mailbox per dynasty. A human dynasty id is minted once for the whole
+-- server and an AI one has no mailbox, so the id alone names the box; the writer
+-- deletes a town's mail with the town.
 CREATE TABLE messages (
   id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   dynasty_id text NOT NULL CHECK (length(dynasty_id) > 0),
-  -- A notice carries its kind and the fields of its sentence. Prose — a letter
-  -- from a player, later a rumour from the town — carries neither: its `type`
-  -- is null and its text lives in `body`.
+  -- A notice carries its kind and the fields of its sentence; prose carries
+  -- neither and puts its text in `body`.
   type text,
   payload jsonb,
   body text,
-  -- Who wrote a prose message. Null when the town wrote it; never set on a
-  -- notice, whose author is the simulation. The server fills it from the
+  -- Null when the town wrote it, never set on a notice. Filled from the
   -- session, never from the request body.
   author_dynasty_id text CHECK (author_dynasty_id IS NULL OR length(author_dynasty_id) > 0),
-  -- A message is unread until the player opens the Courrier; the flag is the
-  -- whole unread state, so no cursor lives on the account.
+  -- The whole unread state, so no cursor lives on the account.
   read boolean NOT NULL DEFAULT false,
-  -- The instant it was written, and nothing else: retention follows the real
-  -- clock, and the ids order the page. A message carries no town hour.
   recorded_at timestamptz NOT NULL DEFAULT now(),
-  -- Exactly one shape: a notice has a type and its payload, prose has a body.
   CHECK ((type IS NULL) = (body IS NOT NULL)),
   CHECK ((type IS NULL) <> (payload IS NOT NULL)),
-  -- A notice has no player author; prose may or may not have one.
   CHECK (type IS NULL OR author_dynasty_id IS NULL)
 );
 
--- A client-generated UUID makes a retried request a duplicate, never a second
--- action: the id is globally unique, so a retry is caught whatever town it
--- names. `seq` is the order the actions were received in, because two clocks
--- never agree.
+-- The client mints the id, so a retried request is a duplicate and never a
+-- second action; `seq` is the order they arrived in, because two clocks never
+-- agree.
 CREATE TABLE actions (
   seq bigserial UNIQUE,
   id text PRIMARY KEY CHECK (id ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
@@ -282,24 +245,23 @@ CREATE TABLE actions (
   plays_at integer NOT NULL CHECK (plays_at >= 1),
   action jsonb NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now(),
-  -- A queued action can be cancelled before its hour plays. The row stays: a
-  -- retried POST must remain a duplicate, and the hour's replay is the set of
-  -- rows that were not cancelled when it played.
+  -- A cancelled action keeps its row: a retried POST must stay a duplicate, and
+  -- the hour replays the rows that were not cancelled.
   cancelled_at timestamptz
 );
 
 CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, seq);
 
--- The book of kings is the only record that crosses a reset; a full reset
--- deletes it too. It is keyed by the player and the instant: the crown follows
--- the player, and a town's hour means nothing once the town is gone. No foreign
--- key to `players`: the book outlives the account.
+-- The only record that crosses a reset, and a full reset deletes it too. Keyed
+-- by the player and the instant: the crown follows the player, and a town's hour
+-- means nothing once the town is gone. No foreign key to `players`, because the
+-- book outlives the account.
 CREATE TABLE kings (
   player_id bigint NOT NULL,
   dynasty_name text NOT NULL,
   person_name text NOT NULL,
   crowned_at timestamptz NOT NULL,
-  -- The town's age at the crowning, in hours from `createWorld`'s first hour.
+  -- The town's age at the crowning, in hours from the first hour of the world.
   elapsed_hours integer NOT NULL,
   PRIMARY KEY (player_id, crowned_at)
 );
