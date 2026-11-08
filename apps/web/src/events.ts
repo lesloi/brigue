@@ -31,7 +31,7 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'action.refused':
       return {
         tone: 'refusal',
-        text: `${subject(event.dynastyId)} : ${actionName(event.action)} refusé — ${refusalText(event.reason)}.`,
+        text: `${subject(event.dynastyId)} : ${refusalName(event.action)} — ${refusalText(event.reason)}.`,
       };
 
     case 'market.bought':
@@ -73,7 +73,7 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'workshop.built':
       return {
         tone: 'gain',
-        text: `L'atelier de ${tradeName(event.trade)} de ${subject(event.dynastyId)} est bâti.`,
+        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez bâti', 'a bâti')} un atelier de ${tradeName(event.trade).toLowerCase()}.`,
       };
 
     case 'workshop.destroyed':
@@ -208,28 +208,29 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
   }
 }
 
-function actionName(action: Action['type'] | 'unknown'): string {
+/** The refused action with its agreement: a vente is refusede, an achat refusé. */
+function refusalName(action: Action['type'] | 'unknown'): string {
   switch (action) {
     case 'market.buy':
-      return 'achat';
+      return 'achat refusé';
     case 'market.sell':
-      return 'vente';
+      return 'vente refusée';
     case 'council.campaign':
-      return 'candidature';
+      return 'candidature refusée';
     case 'workshop.build':
-      return 'construction';
+      return 'construction refusée';
     case 'workshop.destroy':
-      return 'démolition';
+      return 'démolition refusée';
     case 'workshop.upgrade':
-      return 'agrandissement';
+      return 'agrandissement refusé';
     case 'dynasty.buy_title':
-      return 'achat de titre';
+      return 'achat de titre refusé';
     case 'dynasty.upgrade_residence':
-      return 'élévation de la résidence';
+      return 'élévation de la résidence refusée';
     case 'unknown':
-      return 'action';
+      return 'action refusée';
     default:
-      return 'action';
+      return 'action refusée';
   }
 }
 
