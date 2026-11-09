@@ -77,7 +77,7 @@ export class PgWorldStore implements WorldStore {
           hourStartedAt,
         ],
       );
-      await writeWorld(client, id, world);
+      await syncWorld(client, id, world);
 
       await client.query('COMMIT');
 
@@ -301,19 +301,14 @@ class PgWorldSession implements WorldSession {
   }
 
   async clear(): Promise<void> {
-    // The town goes whole — its state, dynasties, actions and journal — and the
-    // player rows and the sealed seasons, which live outside it, stay. Deleting
-    // the town row cascades every town table; the mail has no town column, so
-    // its rows are named by the dynasties before they go.
-    await this.client.query(`DELETE FROM messages WHERE dynasty_id IN (SELECT id FROM dynasties WHERE town_id = $1)`, [
-      this.townId,
-    ]);
+    // Deleting the town cascades every town table. The accounts and the sealed
+    // seasons live outside it, and the mail belongs to an account, so all of
+    // them stay.
     await this.client.query(`DELETE FROM towns WHERE id = $1`, [this.townId]);
   }
 
   async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
-    await clearWorld(this.client, this.townId);
-    await writeWorld(this.client, this.townId, world);
+    await syncWorld(this.client, this.townId, world);
     await this.client.query(
       `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, workshop_seq = $6, hour_started_at = $7
        WHERE town_id = $1`,
@@ -537,18 +532,21 @@ function siteOf(
 }
 
 /**
- * The town is small and written whole, so a save clears the tables and writes
- * them again: a person that disappeared, or a stock that fell to zero, cannot
- * leave a row behind the way an upsert would.
+ * A save brings each table to what the world says: the rows are upserted by their
+ * key, and the ones the world no longer holds are deleted. A row keeps its
+ * identity from one hour to the next, and a piece that disappeared cannot leave
+ * a row behind.
  *
- * One descriptor per table, in the order the foreign keys require: the clear and
- * the write both read this list, so a table cannot be deleted and forgotten on
- * the way back. A row names its columns, so a value cannot land in the wrong one
- * by position.
+ * One descriptor per table, in the order the foreign keys require, so a table
+ * cannot be forgotten. A row names its columns, so a value cannot land in the
+ * wrong one by position.
  */
 interface TownTable {
   readonly table: string;
+  /** Every column the row carries, the primary key included. */
   readonly columns: readonly string[];
+  /** The primary key, which is also what the update matches on. */
+  readonly key: readonly string[];
   rows(world: World, townId: number): ReadonlyArray<Record<string, unknown>>;
 }
 
@@ -557,6 +555,7 @@ const byId = <T extends { id: string }>(left: T, right: T): number => left.id.lo
 export const TOWN_TABLES: readonly TownTable[] = [
   {
     table: 'dynasties',
+    key: ['town_id', 'id'],
     columns: ['town_id', 'id', 'name', 'controller'],
     rows: (world, townId) =>
       Object.values(world.dynasties)
@@ -570,6 +569,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'people',
+    key: ['town_id', 'id'],
     columns: [
       'town_id',
       'id',
@@ -604,6 +604,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'workshops',
+    key: ['town_id', 'dynasty_id', 'id'],
     columns: ['town_id', 'dynasty_id', 'id', 'good', 'level'],
     rows: (world, townId) =>
       Object.values(world.dynasties)
@@ -620,6 +621,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'stock',
+    key: ['town_id', 'dynasty_id', 'good'],
     columns: ['town_id', 'dynasty_id', 'good', 'units'],
     rows: (world, townId) =>
       Object.values(world.dynasties)
@@ -635,6 +637,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'seats',
+    key: ['town_id', 'seat_id'],
     columns: ['town_id', 'seat_id', 'person_id'],
     rows: (world, townId) =>
       Object.entries(world.seats).map(([seatId, seat]) => ({
@@ -645,6 +648,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'laws',
+    key: ['town_id', 'id'],
     columns: ['town_id', 'id', 'position', 'title', 'sponsor_dynasty_id', 'enacted_at'],
     rows: (world, townId) =>
       world.laws.map((law, position) => ({
@@ -658,6 +662,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'engagements',
+    key: ['town_id', 'id'],
     columns: ['town_id', 'id', 'kind', 'dynasty_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
     rows: (world, townId) =>
       world.engagements.map((engagement, position) => ({
@@ -674,6 +679,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'campaigns',
+    key: ['town_id', 'seat_id', 'dynasty_id', 'closed'],
     columns: ['town_id', 'seat_id', 'dynasty_id', 'closed', 'votes'],
     rows: (world, townId) =>
       [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)].map((row) => ({
@@ -683,6 +689,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'market',
+    key: ['town_id', 'good'],
     columns: ['town_id', 'good', 'price_cents', 'flow_units'],
     rows: (world, townId) =>
       Object.entries(world.market).map(([good, price]) => ({
@@ -694,6 +701,7 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'market_history',
+    key: ['town_id', 'good', 'position'],
     columns: ['town_id', 'good', 'position', 'price_cents'],
     rows: (world, townId) =>
       Object.entries(world.marketHistory ?? {}).flatMap(([good, prices]) =>
@@ -702,18 +710,17 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
 ];
 
-async function clearWorld(client: PoolClient, townId: number): Promise<void> {
-  // One statement per table: a parameterised query is sent with the extended
-  // protocol, which refuses several commands at once. Children first, so the
-  // delete never leans on the cascade.
-  for (const entry of [...TOWN_TABLES].reverse()) {
-    await client.query(`DELETE FROM ${entry.table} WHERE town_id = $1`, [townId]);
-  }
-}
-
-async function writeWorld(client: PoolClient, townId: number, world: World): Promise<void> {
+/**
+ * Brings the town's rows to what the world says: every row is inserted or
+ * updated by its key, and the rows the world no longer holds are deleted.
+ * Nothing is rewritten for the sake of it, and a row keeps its identity from
+ * one hour to the next.
+ */
+async function syncWorld(client: PoolClient, townId: number, world: World): Promise<void> {
   for (const entry of TOWN_TABLES) {
-    await insertRows(client, entry.table, entry.columns, entry.rows(world, townId));
+    const rows = entry.rows(world, townId);
+    await upsertRows(client, entry.table, entry.columns, entry.key, rows);
+    await deleteMissing(client, entry.table, entry.key, townId, rows);
   }
 }
 
@@ -804,6 +811,68 @@ async function insertRows(
   });
 
   await client.query(`INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}`, values);
+}
+
+/** The same, but a row whose key is already there is updated in place. */
+async function upsertRows(
+  client: PoolClient,
+  table: string,
+  columns: readonly string[],
+  key: readonly string[],
+  rows: ReadonlyArray<Record<string, unknown>>,
+): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
+
+  const values: unknown[] = [];
+  const tuples = rows.map((row) => {
+    if (Object.keys(row).length !== columns.length || !columns.every((column) => Object.hasOwn(row, column))) {
+      throw new Error(`${table}: a row does not match its columns`);
+    }
+
+    const marks = columns.map((column) => {
+      values.push(row[column]);
+
+      return `$${values.length}`;
+    });
+
+    return `(${marks.join(', ')})`;
+  });
+
+  const updates = columns.filter((column) => !key.includes(column)).map((column) => `${column} = EXCLUDED.${column}`);
+  const clause = updates.length === 0 ? 'DO NOTHING' : `DO UPDATE SET ${updates.join(', ')}`;
+
+  await client.query(
+    `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}
+     ON CONFLICT (${key.join(', ')}) ${clause}`,
+    values,
+  );
+}
+
+/** Deletes the town's rows the world no longer carries, by their key. */
+async function deleteMissing(
+  client: PoolClient,
+  table: string,
+  key: readonly string[],
+  townId: number,
+  rows: ReadonlyArray<Record<string, unknown>>,
+): Promise<void> {
+  if (rows.length === 0) {
+    await client.query(`DELETE FROM ${table} WHERE town_id = $1`, [townId]);
+    return;
+  }
+
+  const marks = rows.map(
+    (_, index) => `(${key.map((__, offset) => `$${index * key.length + offset + 2}`).join(', ')})`,
+  );
+  const values = [townId, ...rows.flatMap((row) => key.map((column) => row[column]))];
+
+  // Scoped to the town: the rows of another town are not this save's business.
+  await client.query(
+    `DELETE FROM ${table} WHERE town_id = $1 AND (${key.join(', ')}) NOT IN (${marks.join(', ')})`,
+    values,
+  );
 }
 
 async function rollback(client: PoolClient): Promise<void> {

@@ -347,7 +347,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(state.rows[0]?.count).toBe(0);
     expect(dynasties.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
-    expect(messages.rows[0]?.count).toBe(0);
+    // The mail belongs to the account, so it outlives the town it was written in.
+    expect(messages.rows[0]?.count).toBe(1);
     expect(actions.rows[0]?.count).toBe(0);
     expect(players.rows[0]?.count).toBe(1);
     expect(kings.rows[0]?.count).toBe(1);
