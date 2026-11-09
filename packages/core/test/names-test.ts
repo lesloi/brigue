@@ -95,8 +95,8 @@ describe('the rename as the town asks for it', () => {
     // move — the upkeep of the hour is all that touched the purse.
     expect(events).toContainEqual(expect.objectContaining({ type: 'action.refused', reason: 'unknown_action' }));
     expect(after.dynasties.leclerc?.name).toBe('Leclerc');
-    expect(after.dynasties.leclerc?.treasuryCents).toBe(
-      (world.dynasties.leclerc?.treasuryCents ?? 0) - RULES.upkeepPerWorkshopLevelCents * 2,
+    expect(after.people['person-leclerc']?.treasuryCents).toBe(
+      (world.people['person-leclerc']?.treasuryCents ?? 0) - RULES.upkeepPerWorkshopLevelCents * 2,
     );
   });
 });
@@ -110,9 +110,13 @@ describe('renaming a dynasty', () => {
       dynastyId: 'leclerc',
       name: 'Hugues Leclerc',
       age: 80,
+      treasuryCents: 0,
+      debtCents: 0,
+      favour: 0,
+      prestige: 0,
       alive: false,
     };
-    const treasury = world.dynasties.leclerc?.treasuryCents ?? 0;
+    const treasury = world.people['person-leclerc']?.treasuryCents ?? 0;
 
     // Act
     const outcome = renameDynasty(world, world.dynasties.leclerc!, {
@@ -125,7 +129,7 @@ describe('renaming a dynasty', () => {
     expect(outcome).toEqual({ ok: true, name: 'Moreau' });
     expect(world.dynasties.leclerc?.id).toBe('leclerc');
     expect(world.dynasties.leclerc?.name).toBe('Moreau');
-    expect(world.dynasties.leclerc?.treasuryCents).toBe(treasury - NAME_PRICE.renameCents);
+    expect(world.people['person-leclerc']?.treasuryCents).toBe(treasury - NAME_PRICE.renameCents);
     expect(world.people['person-leclerc']?.name).toBe('Colin Moreau');
     expect(world.people['person-leclerc-old']?.name).toBe('Hugues Leclerc');
   });
@@ -133,14 +137,14 @@ describe('renaming a dynasty', () => {
   it('changes the name for nothing at creation, and writes no journal line', () => {
     // Arrange
     const world = town(SEED);
-    const treasury = world.dynasties.leclerc?.treasuryCents ?? 0;
+    const treasury = world.people['person-leclerc']?.treasuryCents ?? 0;
 
     // Act: the first dynasty takes the name its player kept.
     const outcome = renameDynasty(world, world.dynasties.leclerc!, { name: 'Moreau', priceCents: 0 });
 
     // Assert: kept, and unpaid.
     expect(outcome).toEqual({ ok: true, name: 'Moreau' });
-    expect(world.dynasties.leclerc?.treasuryCents).toBe(treasury);
+    expect(world.people['person-leclerc']?.treasuryCents).toBe(treasury);
     expect(world.people['person-leclerc']?.name).toBe('Colin Moreau');
   });
 
@@ -166,7 +170,7 @@ describe('renaming a dynasty', () => {
       // Assert: a refusal comes back as an answer, not a throw, and the dynasty stays.
       expect(outcome).toEqual({ ok: false, reason: attempt.reason });
       expect(world.dynasties.leclerc?.name).toBe('Leclerc');
-      expect(world.dynasties.leclerc?.treasuryCents).toBe(town(SEED).dynasties.leclerc?.treasuryCents);
+      expect(world.people['person-leclerc']?.treasuryCents).toBe(town(SEED).people['person-leclerc']?.treasuryCents);
     }
   });
 

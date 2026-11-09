@@ -249,10 +249,10 @@ export function workshopLevelCap(title: TitleId): number {
  * Prestige as the screen reads it: what the title and the residence gave, plus
  * the service, the service stopping at the residence's cap.
  */
-export function displayedPrestige(dynasty: Dynasty, title: TitleId, residenceLevel: number): number {
+export function displayedPrestige(servicePrestige: number, title: TitleId, residenceLevel: number): number {
   const residence = RESIDENCE_LADDER[residenceLevel - 1];
 
-  return TITLE_LADDER[title].prestige + residence.prestige + Math.min(dynasty.prestige, residence.prestigeCap);
+  return TITLE_LADDER[title].prestige + residence.prestige + Math.min(servicePrestige, residence.prestigeCap);
 }
 
 /** The trade a workshop practises: its output names its chain. */
@@ -264,17 +264,6 @@ export interface Dynasty {
   id: string;
   name: string;
   controller: Controller;
-  treasuryCents: number;
-  /** Unpaid upkeep. The design says a debt follows the dynasty; this is where it lives. */
-  debtCents: number;
-  favour: number;
-  /**
-   * What the dynasty earned by service only: offices held, juries served, works
-   * funded (#55). The title and the residence are bought and live in the ladder
-   * tables; what this field shows is the share of prestige that is capped by the
-   * residence. Optional because the ladder arrived with ruleset 3.
-   */
-  prestige: number;
   workshops: Workshop[];
   stock: Partial<Record<GoodId, number>>;
 }
@@ -293,6 +282,18 @@ export interface Person {
   title?: TitleId;
   /** One ladder: the degree opens a level, money pays for it. */
   residenceLevel?: number;
+  /** The purse is the person's: the heir inherits it, a death empties it with them. */
+  treasuryCents: number;
+  /** Unpaid upkeep. The design says a debt follows the dynasty; it is the head's. */
+  debtCents: number;
+  /** What the person earned by service: offices held, juries served, works funded. */
+  favour: number;
+  /**
+   * Prestige earned by service only: offices held, juries served, works funded
+   * (#55). The title and the residence are bought and live in the ladder tables;
+   * what this field shows is the share of prestige capped by the residence.
+   */
+  prestige: number;
   alive: boolean;
 }
 
@@ -555,10 +556,6 @@ export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): Dyn
       id: identity.id,
       name: identity.dynastyName,
       controller: 'human',
-      treasuryCents: RULES.startingPurseCents,
-      debtCents: 0,
-      favour: 50,
-      prestige: 0,
       workshops: [{ id: 'workshop-1', good: chain.output, level: RULES.startingWorkshopLevel }],
       stock: { [chain.input]: RULES.startingInputUnits },
     },
@@ -569,6 +566,10 @@ export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): Dyn
       age: 20,
       title: 'roturier',
       residenceLevel: 1,
+      treasuryCents: RULES.startingPurseCents,
+      debtCents: 0,
+      favour: 50,
+      prestige: 0,
       alive: true,
     },
   };
@@ -664,10 +665,6 @@ export function createWorld(seed: number): World {
         id: 'caron',
         name: 'Caron',
         controller: 'ai',
-        treasuryCents: 240000,
-        debtCents: 0,
-        favour: 60,
-        prestige: 65,
         // A cloth workshop of level 3 needs the patrician's workshop cap; the
         // seed gives Caron the degree that carries it rather than a bad workshop.
         workshops: [{ id: 'workshop-1', good: 'cloth', level: 3 }],
@@ -677,10 +674,6 @@ export function createWorld(seed: number): World {
         id: 'fournier',
         name: 'Fournier',
         controller: 'ai',
-        treasuryCents: 160000,
-        debtCents: 0,
-        favour: 45,
-        prestige: 50,
         workshops: [{ id: 'workshop-1', good: 'bread', level: 2 }],
         stock: {},
       },
@@ -688,10 +681,6 @@ export function createWorld(seed: number): World {
         id: 'charpentier',
         name: 'Charpentier',
         controller: 'ai',
-        treasuryCents: 170000,
-        debtCents: 0,
-        favour: 55,
-        prestige: 52,
         workshops: [{ id: 'workshop-1', good: 'planks', level: 2 }],
         stock: {},
       },
@@ -704,6 +693,10 @@ export function createWorld(seed: number): World {
         age: 44,
         title: 'bourgeois',
         residenceLevel: 2,
+        treasuryCents: 240000,
+        debtCents: 0,
+        favour: 60,
+        prestige: 65,
         alive: true,
       },
       'person-fournier': {
@@ -713,6 +706,10 @@ export function createWorld(seed: number): World {
         age: 41,
         title: 'roturier',
         residenceLevel: 1,
+        treasuryCents: 160000,
+        debtCents: 0,
+        favour: 45,
+        prestige: 50,
         alive: true,
       },
       'person-charpentier': {
@@ -722,6 +719,10 @@ export function createWorld(seed: number): World {
         age: 49,
         title: 'roturier',
         residenceLevel: 1,
+        treasuryCents: 170000,
+        debtCents: 0,
+        favour: 55,
+        prestige: 52,
         alive: true,
       },
     },

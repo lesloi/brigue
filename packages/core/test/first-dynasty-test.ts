@@ -81,7 +81,7 @@ describe('the first dynasty', () => {
 
     // Assert: the same kit as the first dynasty, and a dynasty of its own.
     expect(two.dynasties.moreau?.controller).toBe('human');
-    expect(two.dynasties.moreau?.treasuryCents).toBe(RULES.startingPurseCents);
+    expect(two.people['person-moreau']?.treasuryCents).toBe(RULES.startingPurseCents);
     expect(two.dynasties.moreau?.stock).toEqual({ grain: RULES.startingInputUnits });
     expect(two.people['person-moreau']?.dynastyId).toBe('moreau');
     expect(Object.values(two.dynasties).filter((dynasty) => dynasty.controller === 'human')).toHaveLength(2);
@@ -101,7 +101,9 @@ describe('the first dynasty', () => {
     const weaver = withFirstDynasty(createWorld(1), 'weaver', IDENTITY);
     const baker = withFirstDynasty(createWorld(1), 'baker', IDENTITY);
 
-    expect(baker.dynasties[IDENTITY.id]?.treasuryCents).toBe(weaver.dynasties[IDENTITY.id]?.treasuryCents);
+    expect(baker.people[`person-${IDENTITY.id}`]?.treasuryCents).toBe(
+      weaver.people[`person-${IDENTITY.id}`]?.treasuryCents,
+    );
     expect(stateHash(baker)).not.toBe(stateHash(weaver));
   });
 });

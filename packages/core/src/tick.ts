@@ -35,6 +35,7 @@ import {
   workshopLevelCap,
   type Engagement,
   type GoodId,
+  type Person,
   type Dynasty,
   type SeatId,
   type SiteWork,
@@ -269,6 +270,14 @@ function applyAction(
     return;
   }
 
+  // The purse, the favour and the prestige are the head's: a dynasty nobody
+  // lives in has no hand to spend with.
+  const person = livingPersonOf(world, dynasty.id);
+  if (person === undefined) {
+    refuse(events, action, dynasty.id, 'unknown_dynasty', false);
+    return;
+  }
+
   // A degree or a residence level is bought once: two purchases for the same
   // next object would charge twice and deliver once, since the works of the
   // first already opens the second.
@@ -304,7 +313,7 @@ function applyAction(
 
       const priceCents = world.market[action.good];
       const totalCents = priceCents * action.units;
-      if (dynasty.treasuryCents < totalCents) {
+      if (person.treasuryCents < totalCents) {
         refuse(events, action, dynasty.id, 'insufficient_funds', true);
         return;
       }
@@ -315,7 +324,7 @@ function applyAction(
         return;
       }
 
-      dynasty.treasuryCents -= totalCents;
+      person.treasuryCents -= totalCents;
       dynasty.stock[action.good] = (dynasty.stock[action.good] ?? 0) + action.units;
       flow[action.good] -= action.units;
       // The trade itself has no journal line: the Marché screen holds the
@@ -342,7 +351,7 @@ function applyAction(
 
       const priceCents = world.market[action.good];
       const revenueCents = priceCents * action.units;
-      dynasty.treasuryCents += revenueCents;
+      person.treasuryCents += revenueCents;
       const left = held - action.units;
       if (left === 0) {
         delete dynasty.stock[action.good];
@@ -364,12 +373,12 @@ function applyAction(
         refuse(events, action, dynasty.id, 'already_candidate', true);
         return;
       }
-      if (dynasty.favour < RULES.campaignFavourCost) {
+      if (person.favour < RULES.campaignFavourCost) {
         refuse(events, action, dynasty.id, 'insufficient_favour', true);
         return;
       }
 
-      dynasty.favour -= RULES.campaignFavourCost;
+      person.favour -= RULES.campaignFavourCost;
 
       // A candidacy has no run behind it: it is lodged, and the noon bell
       // decides which scrutiny it counts for. The event says which, so the
@@ -404,12 +413,12 @@ function applyAction(
         refuse(events, action, dynasty.id, 'workshop_cap', true);
         return;
       }
-      if (dynasty.treasuryCents < RULES.buildCents) {
+      if (person.treasuryCents < RULES.buildCents) {
         refuse(events, action, dynasty.id, 'insufficient_funds', true);
         return;
       }
 
-      dynasty.treasuryCents -= RULES.buildCents;
+      person.treasuryCents -= RULES.buildCents;
       openSite(world, dynasty.id, { work: 'build', trade: action.trade }, RULES.siteHours);
       return;
     }
@@ -466,12 +475,12 @@ function applyAction(
         return;
       }
       const price = TITLE_LADDER[next].priceCents;
-      if (dynasty.treasuryCents < price) {
+      if (person.treasuryCents < price) {
         refuse(events, action, dynasty.id, 'insufficient_funds', true);
         return;
       }
 
-      dynasty.treasuryCents -= price;
+      person.treasuryCents -= price;
       // A degree is obtained at the next noon or midnight, whatever the hour of
       // the purchase: the half-day is the calendar's, not a second clock.
       const dueAt = nextBellAfter(world.hour, RULES.titleHours);
@@ -493,12 +502,12 @@ function applyAction(
         return;
       }
       const price = RESIDENCE_LADDER[target - 1].priceCents;
-      if (dynasty.treasuryCents < price) {
+      if (person.treasuryCents < price) {
         refuse(events, action, dynasty.id, 'insufficient_funds', true);
         return;
       }
 
-      dynasty.treasuryCents -= price;
+      person.treasuryCents -= price;
       openSite(world, dynasty.id, { work: 'residence' }, improvementHours(target));
       return;
     }
@@ -584,12 +593,13 @@ export function renameDynasty(world: World, dynasty: Dynasty, request: DynastyRe
   if (request.takenElsewhere?.has(nameKey(name)) === true) {
     return { ok: false, reason: 'name_taken' };
   }
-  if (dynasty.treasuryCents < request.priceCents) {
+  const person = livingPersonOf(world, dynasty.id);
+  if (person === undefined || person.treasuryCents < request.priceCents) {
     return { ok: false, reason: 'insufficient_funds' };
   }
 
   const before = dynasty.name;
-  dynasty.treasuryCents -= request.priceCents;
+  person.treasuryCents -= request.priceCents;
   dynasty.name = name;
 
   for (const person of Object.values(world.people)) {
@@ -676,6 +686,11 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: Rea
       continue;
     }
 
+    const person = livingPersonOf(world, dynastyId);
+    if (person === undefined) {
+      continue;
+    }
+
     // A workshop under improvement buys nothing: it will not eat until its
     // site is closed, and an AI that stocked for it would overflow the loft.
     for (const workshop of openWorkshops(world, dynasty)) {
@@ -693,7 +708,7 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: Rea
       }
 
       const priceCents = world.market[recipe.input];
-      const affordable = Math.floor(dynasty.treasuryCents / priceCents);
+      const affordable = Math.floor(person.treasuryCents / priceCents);
       const room = stockCapacityUnits(dynasty) - stockUnits(dynasty);
       const units = Math.min(shortfall, affordable, room);
 
@@ -701,7 +716,7 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: Rea
         continue;
       }
 
-      dynasty.treasuryCents -= units * priceCents;
+      person.treasuryCents -= units * priceCents;
       dynasty.stock[recipe.input] = (dynasty.stock[recipe.input] ?? 0) + units;
       flow[recipe.input] -= units;
     }
@@ -824,6 +839,11 @@ function aiDynastiesSell(world: World, flow: Record<GoodId, number>, dormant: Re
       continue;
     }
 
+    const person = livingPersonOf(world, dynastyId);
+    if (person === undefined) {
+      continue;
+    }
+
     for (const good of GOODS) {
       const units = dynasty.stock[good] ?? 0;
       if (units <= 0) {
@@ -832,7 +852,7 @@ function aiDynastiesSell(world: World, flow: Record<GoodId, number>, dormant: Re
 
       const priceCents = world.market[good];
       const revenueCents = units * priceCents;
-      dynasty.treasuryCents += revenueCents;
+      person.treasuryCents += revenueCents;
       delete dynasty.stock[good];
       flow[good] += units;
     }
@@ -853,6 +873,11 @@ function payUpkeep(world: World, events: EventDraft[], dormant: ReadonlySet<stri
       continue;
     }
 
+    const person = livingPersonOf(world, dynastyId);
+    if (person === undefined) {
+      continue;
+    }
+
     const building = new Set(
       world.engagements.flatMap((engagement) =>
         engagement.kind === 'site' && engagement.dynastyId === dynastyId && engagement.work === 'upgrade'
@@ -864,26 +889,26 @@ function payUpkeep(world: World, events: EventDraft[], dormant: ReadonlySet<stri
       .filter((workshop) => !building.has(workshop.id))
       .reduce((total, workshop) => total + workshop.level, 0);
 
-    upkeepIsPaid(dynastyId, dynasty, levels * RULES.upkeepPerWorkshopLevelCents, events);
+    upkeepIsPaid(dynastyId, person, levels * RULES.upkeepPerWorkshopLevelCents, events);
   }
 }
 
-function upkeepIsPaid(dynastyId: string, dynasty: Dynasty, upkeep: number, events: EventDraft[]): void {
+function upkeepIsPaid(dynastyId: string, person: Person, upkeep: number, events: EventDraft[]): void {
   if (upkeep > 0) {
-    const paid = Math.min(dynasty.treasuryCents, upkeep);
-    dynasty.treasuryCents -= paid;
+    const paid = Math.min(person.treasuryCents, upkeep);
+    person.treasuryCents -= paid;
 
     if (paid < upkeep) {
       const shortfallCents = upkeep - paid;
-      dynasty.debtCents += shortfallCents;
+      person.debtCents += shortfallCents;
       events.push({ type: 'dynasty.penniless', audience: { dynastyId }, dynastyId, shortfallCents });
     }
   }
 
-  if (dynasty.debtCents > 0 && dynasty.treasuryCents > 0) {
-    const repaid = Math.min(dynasty.treasuryCents, dynasty.debtCents);
-    dynasty.treasuryCents -= repaid;
-    dynasty.debtCents -= repaid;
+  if (person.debtCents > 0 && person.treasuryCents > 0) {
+    const repaid = Math.min(person.treasuryCents, person.debtCents);
+    person.treasuryCents -= repaid;
+    person.debtCents -= repaid;
     events.push({ type: 'dynasty.debt_repaid', audience: { dynastyId }, dynastyId, amountCents: repaid });
   }
 }
@@ -1088,9 +1113,9 @@ function aiDynastiesCampaign(world: World, events: EventDraft[], dormant: Readon
     .sort();
 
   for (const dynastyId of dynasties) {
-    const dynasty = world.dynasties[dynastyId];
     const vacant = SEATS.filter((seatId) => world.seats[seatId].personId === null);
-    if (dynasty.favour < RULES.campaignFavourCost || vacant.length === 0) {
+    const person = livingPersonOf(world, dynastyId);
+    if (person === undefined || person.favour < RULES.campaignFavourCost || vacant.length === 0) {
       continue;
     }
 
@@ -1098,7 +1123,7 @@ function aiDynastiesCampaign(world: World, events: EventDraft[], dormant: Readon
     world.rng = rng;
     const seatId = vacant[roll] as SeatId;
 
-    dynasty.favour -= RULES.campaignFavourCost;
+    person.favour -= RULES.campaignFavourCost;
     const seat = (world.campaigns[seatId] ??= {});
     seat[dynastyId] = (seat[dynastyId] ?? 0) + RULES.campaignVoteBonus;
 

@@ -181,7 +181,7 @@ describe('the projection calendar', () => {
     // Arrange: a fait, bourgeois, whose level 2 opens the residence 2.
     const world = town(SEED);
     world.people['person-leclerc'].title = 'bourgeois';
-    world.dynasties.leclerc.prestige = 10_000;
+    world.people['person-leclerc'].prestige = 10_000;
     world.engagements = [
       { id: 'engagement-1', kind: 'site', dynastyId: 'leclerc', dueAt: world.hour + 6, work: 'title' },
     ];

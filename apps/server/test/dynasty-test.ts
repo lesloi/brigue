@@ -124,7 +124,7 @@ describe('the dynasty name', () => {
   it('renames the dynasty at once, and its living person with it', async () => {
     // Arrange: a purse that pays the rename.
     const world = town(7);
-    world.dynasties.leclerc.treasuryCents = 100_000;
+    world.people['person-leclerc'].treasuryCents = 100_000;
     const harness = await start(world);
 
     // Act
@@ -137,13 +137,13 @@ describe('the dynasty name', () => {
     expect(after.dynasties.leclerc?.id).toBe('leclerc');
     expect(after.dynasties.leclerc?.name).toBe('Moreau');
     expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
-    expect(after.dynasties.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
+    expect(after.people['person-leclerc']?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
   });
 
   it('keeps a rename out of the journal: a name is identity, not a town affair', async () => {
     // Arrange
     const world = town(7);
-    world.dynasties.leclerc.treasuryCents = 100_000;
+    world.people['person-leclerc'].treasuryCents = 100_000;
     const harness = await start(world);
 
     // Act
@@ -162,7 +162,7 @@ describe('the dynasty name', () => {
   it('refuses a name another dynasty carries, whatever its case', async () => {
     // Arrange
     const world = town(7);
-    world.dynasties.leclerc.treasuryCents = 100_000;
+    world.people['person-leclerc'].treasuryCents = 100_000;
     const harness = await start(world);
 
     // Act
@@ -177,7 +177,7 @@ describe('the dynasty name', () => {
   it('refuses a name that is not one, and a dynasty that cannot pay', async () => {
     // Arrange
     const world = town(7);
-    world.dynasties.leclerc.treasuryCents = 10;
+    world.people['person-leclerc'].treasuryCents = 10;
     const harness = await start(world);
 
     // Act
@@ -198,7 +198,7 @@ describe('the action view of the ladder', () => {
   it('names the degree a queued title buys', async () => {
     // Arrange: a dynasty that can pay for its next degree.
     const world = town(7);
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
     const harness = await start(world);
 
     // Act

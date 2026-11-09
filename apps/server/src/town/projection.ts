@@ -1,5 +1,6 @@
 import {
   dynastyResidence,
+  livingPersonOf,
   dynastyTitle,
   displayedPrestige,
   GOODS,
@@ -175,7 +176,7 @@ export function projectWorld(town: TownInfo, world: World, dynastyId: string, ho
           id: candidate.id,
           name: candidate.name,
           prestige: displayedPrestige(
-            candidate,
+            livingPersonOf(world, candidate.id)?.prestige ?? 0,
             dynastyTitle(world, candidate.id),
             dynastyResidence(world, candidate.id),
           ),
@@ -235,14 +236,16 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
   const residence = RESIDENCE_LADDER[level - 1];
   const title = dynastyTitle(world, dynasty.id);
   const next = nextTitle(title);
+  const head = livingPersonOf(world, dynasty.id);
+  const servicePrestige = head?.prestige ?? 0;
 
   return {
     id: dynasty.id,
     name: dynasty.name,
-    treasuryCents: dynasty.treasuryCents,
-    debtCents: dynasty.debtCents,
-    favour: dynasty.favour,
-    prestige: displayedPrestige(dynasty, title, level),
+    treasuryCents: head?.treasuryCents ?? 0,
+    debtCents: head?.debtCents ?? 0,
+    favour: head?.favour ?? 0,
+    prestige: displayedPrestige(servicePrestige, title, level),
     title,
     residenceLevel: level,
     ladder: {
@@ -250,7 +253,7 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
       residence: residence.name,
       titlePrestige: TITLE_LADDER[title].prestige,
       residencePrestige: residence.prestige,
-      servicePrestige: Math.min(dynasty.prestige, residence.prestigeCap),
+      servicePrestige: Math.min(servicePrestige, residence.prestigeCap),
       prestigeCap: residence.prestigeCap,
       workshops: residence.workshops,
       stockDefence: residence.stockDefence,

@@ -308,7 +308,7 @@ describe('the warehouse', () => {
     const world = town(SEED);
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
     world.dynasties.leclerc.stock = { wool: 8 };
-    const treasuryCents = world.dynasties.leclerc.treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
+    const treasuryCents = world.people['person-leclerc'].treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
 
     // Act
     const { world: after, events } = playWeek(world, [], new Set(['caron']));
@@ -316,7 +316,7 @@ describe('the warehouse', () => {
     // Assert: the cloth is in the stock, and the hour wrote no journal line.
     expect(after.dynasties.leclerc.stock.cloth).toBe(4);
     expect(after.dynasties.leclerc.stock.wool).toBe(4);
-    expect(after.dynasties.leclerc.treasuryCents).toBe(treasuryCents);
+    expect(after.people['person-leclerc'].treasuryCents).toBe(treasuryCents);
     expect(events.filter((event) => event.type.startsWith('market.') || event.type.startsWith('workshop.'))).toEqual(
       [],
     );
@@ -327,7 +327,7 @@ describe('the warehouse', () => {
     const world = town(SEED);
     world.dynasties.leclerc.workshops = [];
     world.dynasties.leclerc.stock = { cloth: 10 };
-    world.dynasties.leclerc.treasuryCents = 0;
+    world.people['person-leclerc'].treasuryCents = 0;
     const priceCents = world.market.cloth;
 
     // Act
@@ -336,7 +336,7 @@ describe('the warehouse', () => {
     ]);
 
     // Assert: the purse and the stock moved; the sale is the Marché screen's.
-    expect(after.dynasties.leclerc.treasuryCents).toBe(priceCents * 4);
+    expect(after.people['person-leclerc'].treasuryCents).toBe(priceCents * 4);
     expect(after.dynasties.leclerc.stock.cloth).toBe(6);
     expect(events.filter((event) => event.type.startsWith('market.') || event.type.startsWith('workshop.'))).toEqual(
       [],
@@ -348,7 +348,7 @@ describe('the warehouse', () => {
     const world = town(SEED);
     world.dynasties.leclerc.workshops = [];
     world.dynasties.leclerc.stock = { cloth: 2 };
-    const treasuryCents = world.dynasties.leclerc.treasuryCents;
+    const treasuryCents = world.people['person-leclerc'].treasuryCents;
 
     // Act
     const { world: after, events } = playWeek(world, [
@@ -365,7 +365,7 @@ describe('the warehouse', () => {
         reason: 'insufficient_stock',
       }),
     );
-    expect(after.dynasties.leclerc.treasuryCents).toBe(treasuryCents);
+    expect(after.people['person-leclerc'].treasuryCents).toBe(treasuryCents);
     expect(after.dynasties.leclerc.stock.cloth).toBe(2);
   });
 
@@ -375,7 +375,7 @@ describe('the warehouse', () => {
     const world = town(SEED);
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
     world.dynasties.leclerc.stock = { wool: stockCapacityUnits(world.dynasties.leclerc) };
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
     const upkeep = 2 * RULES.upkeepPerWorkshopLevelCents;
 
     // Act
@@ -394,7 +394,7 @@ describe('the warehouse', () => {
       }),
     );
     expect(stockUnits(after.dynasties.leclerc)).toBe(stockCapacityUnits(after.dynasties.leclerc));
-    expect(after.dynasties.leclerc.treasuryCents).toBe(1_000_000 - upkeep);
+    expect(after.people['person-leclerc'].treasuryCents).toBe(1_000_000 - upkeep);
   });
 
   it('refuses production that does not fit in the warehouse', () => {
@@ -425,7 +425,7 @@ describe('the warehouse', () => {
     const world = town(SEED);
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
     world.dynasties.leclerc.stock = { cloth: stockCapacityUnits(world.dynasties.leclerc) };
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
 
     // Act: a purchase is refused while the warehouse is full; selling makes
     // room, and the bought wool is then woven.
@@ -447,7 +447,7 @@ describe('the warehouse', () => {
       // is the only thing that could otherwise move money.
       const world = town(SEED);
       world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
-      const treasuryCents = world.dynasties.leclerc.treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
+      const treasuryCents = world.people['person-leclerc'].treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
       const malformed = { type, dynastyId: 'leclerc', good: 'gold', units: 1 } as unknown as Action;
 
       // Act
@@ -463,7 +463,7 @@ describe('the warehouse', () => {
           reason: 'unknown_good',
         }),
       );
-      expect(after.dynasties.leclerc.treasuryCents).toBe(treasuryCents);
+      expect(after.people['person-leclerc'].treasuryCents).toBe(treasuryCents);
     }
   });
 });
@@ -476,7 +476,7 @@ describe('an AI dynasty', () => {
     const before = Object.fromEntries(
       Object.values(base.dynasties)
         .filter((dynasty) => dynasty.controller === 'ai')
-        .map((dynasty) => [dynasty.id, dynasty.treasuryCents]),
+        .map((dynasty) => [dynasty.id, base.people[`person-${dynasty.id}`]?.treasuryCents ?? 0]),
     );
 
     // Act
@@ -485,7 +485,7 @@ describe('an AI dynasty', () => {
     // Assert: an idle workshop would only pay upkeep and lose money; every AI
     // ends the hour richer, having bought its input and sold what it made.
     for (const [dynastyId, purse] of Object.entries(before)) {
-      expect(world.dynasties[dynastyId]?.treasuryCents).toBeGreaterThan(purse);
+      expect(world.people[`person-${dynastyId}`]?.treasuryCents ?? 0).toBeGreaterThan(purse);
       expect(world.dynasties[dynastyId]?.stock).toEqual({});
     }
   });
@@ -591,7 +591,7 @@ describe('an AI dynasty', () => {
   it('stays idle, without buying, when it cannot pay', () => {
     // Arrange
     const world = town(SEED);
-    world.dynasties.caron.treasuryCents = 0;
+    world.people['person-caron'].treasuryCents = 0;
     world.dynasties.caron.stock = {};
 
     // Act
@@ -631,8 +631,8 @@ describe('an AI dynasty', () => {
     const clothCents = world.market.cloth;
     const upkeepOf = (dynasty: World['dynasties'][string]) =>
       dynasty.workshops.reduce((total, workshop) => total + workshop.level, 0) * RULES.upkeepPerWorkshopLevelCents;
-    const playerPurse = world.dynasties.leclerc.treasuryCents;
-    const caronPurse = world.dynasties.caron.treasuryCents;
+    const playerPurse = world.people['person-leclerc'].treasuryCents;
+    const caronPurse = world.people['person-caron'].treasuryCents;
     const playerUpkeep = upkeepOf(world.dynasties.leclerc);
     const caronUpkeep = upkeepOf(world.dynasties.caron);
 
@@ -641,7 +641,7 @@ describe('an AI dynasty', () => {
 
     // Assert: the same wool price for both, and Caron sold its six cloth at the
     // hour's price.
-    expect(after.dynasties.leclerc.treasuryCents).toBe(playerPurse - 2 * woolCents - playerUpkeep);
-    expect(after.dynasties.caron.treasuryCents).toBe(caronPurse - 6 * woolCents + 6 * clothCents - caronUpkeep);
+    expect(after.people['person-leclerc'].treasuryCents).toBe(playerPurse - 2 * woolCents - playerUpkeep);
+    expect(after.people['person-caron'].treasuryCents).toBe(caronPurse - 6 * woolCents + 6 * clothCents - caronUpkeep);
   });
 });

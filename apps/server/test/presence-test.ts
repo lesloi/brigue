@@ -40,7 +40,7 @@ describe('dormancy', () => {
     // Arrange
     const world = aHumanWorld();
     world.seats.maire = { personId: 'person-caron' };
-    const treasuryCents = world.dynasties.caron.treasuryCents;
+    const treasuryCents = world.people['person-caron'].treasuryCents;
     const seen = new Date(START - (PACING.dormancyDays * DAY + HOUR));
 
     // Act
@@ -48,7 +48,7 @@ describe('dormancy', () => {
 
     // Assert
     expect(presence.dormant.has('caron')).toBe(true);
-    expect(presence.world.dynasties.caron.treasuryCents).toBe(treasuryCents);
+    expect(presence.world.people['person-caron'].treasuryCents).toBe(treasuryCents);
     expect(presence.world.seats.maire.personId).toBe('person-caron');
   });
 
@@ -263,7 +263,7 @@ describe('the thirty-day deletion', () => {
     // Arrange: the old dynasty has money and a seat, so a failed respawn would
     // keep them.
     const world = town(20261105);
-    world.dynasties.leclerc.treasuryCents = 999_999;
+    world.people['person-leclerc'].treasuryCents = 999_999;
     world.seats.maire = { personId: 'person-leclerc' };
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
     const harness = await start(world, [{ dynastyId: 'leclerc', lastSeenAt: seen }], START);

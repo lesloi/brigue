@@ -231,8 +231,12 @@ describe('joining the town', () => {
     expect(second.dynastyId).not.toBe(first.dynastyId);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, first.townId);
     expect(world.dynasties[second.dynastyId]?.controller).toBe('human');
-    expect(world.dynasties[second.dynastyId]?.treasuryCents).toBe(RULES.startingPurseCents);
-    expect(world.dynasties[first.dynastyId]?.treasuryCents).toBe(RULES.startingPurseCents);
+    expect(Object.values(world.people).find((person) => person.dynastyId === second.dynastyId)?.treasuryCents).toBe(
+      RULES.startingPurseCents,
+    );
+    expect(Object.values(world.people).find((person) => person.dynastyId === first.dynastyId)?.treasuryCents).toBe(
+      RULES.startingPurseCents,
+    );
   });
 
   it('takes a dynasty no player has taken', async () => {

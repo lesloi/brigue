@@ -60,8 +60,8 @@ describe('workshops, trades and the ladder', () => {
   it('builds a workshop that works the new chain, and charges for it', () => {
     // Arrange: a purse that pays the build and the upkeep of the site's hours.
     const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
-    const treasury = world.dynasties.leclerc.treasuryCents;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
+    const treasury = world.people['person-leclerc'].treasuryCents;
 
     // A second building needs a residence that holds two: the level 1 holds one.
     world.people['person-leclerc'].title = 'bourgeois';
@@ -82,7 +82,7 @@ describe('workshops, trades and the ladder', () => {
     // The purse moved by the build and by the upkeep of every hour since: the
     // site is the new workshop's, which does not exist yet, so it stops nothing,
     // and the dynasty also earned what it sold.
-    expect(treasury - leased(after, 'leclerc').treasuryCents).toBeGreaterThanOrEqual(RULES.buildCents);
+    expect(treasury - after.people['person-leclerc'].treasuryCents).toBeGreaterThanOrEqual(RULES.buildCents);
   });
 
   it('counts the site against the residence cap, so two builds cannot beat a cap of one', () => {
@@ -120,7 +120,7 @@ describe('workshops, trades and the ladder', () => {
     ];
     leased(world, 'leclerc').workshops = [first, second];
     leased(world, 'leclerc').stock = { wool: 300 };
-    const treasury = leased(world, 'leclerc').treasuryCents;
+    const treasury = world.people['person-leclerc'].treasuryCents;
 
     // Act
     const { world: after } = tick(world, [{ type: 'workshop.destroy', dynastyId: 'leclerc', workshopId: second.id }]);
@@ -128,7 +128,7 @@ describe('workshops, trades and the ladder', () => {
     // Assert: nothing is credited, nothing is confiscated, and the cap fell.
     expect(leased(after, 'leclerc').workshops).toHaveLength(1);
     expect(stockUnits(leased(after, 'leclerc'))).toBeGreaterThanOrEqual(300);
-    expect(leased(after, 'leclerc').treasuryCents).toBeLessThanOrEqual(treasury);
+    expect(after.people['person-leclerc'].treasuryCents).toBeLessThanOrEqual(treasury);
     expect(stockCapacityUnits(leased(after, 'leclerc'))).toBe(200);
   });
 
@@ -173,7 +173,7 @@ describe('workshops, trades and the ladder', () => {
     const world = town(SEED);
     world.people['person-leclerc'].title = 'bourgeois';
     world.people['person-leclerc'].residenceLevel = 3;
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
 
     // Act: a build opens a site, a destroy in the same hour is refused.
     const { world: after, events } = tick(world, [
@@ -218,13 +218,13 @@ describe('workshops, trades and the ladder', () => {
 
     // Assert: no upkeep is charged for that workshop while it is a site, so the
     // purse does not move at all.
-    expect(after.world.dynasties.leclerc.treasuryCents).toBe(world.dynasties.leclerc.treasuryCents);
+    expect(after.world.people['person-leclerc'].treasuryCents).toBe(world.people['person-leclerc'].treasuryCents);
   });
 
   it('obtains a title at the next noon or midnight', () => {
     // Arrange: a town at the first hour, which is just after midnight.
     const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
     const price = 60_000;
 
     // Act: bought at the first hour, obtained at the coming noon.
@@ -242,15 +242,15 @@ describe('workshops, trades and the ladder', () => {
       }),
     );
     expect(titleOf(after.people['person-leclerc']!)).toBe('bourgeois');
-    expect(world.dynasties.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeGreaterThanOrEqual(
-      price,
-    );
+    expect(
+      world.people['person-leclerc'].treasuryCents - after.people['person-leclerc'].treasuryCents,
+    ).toBeGreaterThanOrEqual(price);
   });
 
   it('refuses a title the dynasty cannot pay for, and names the missing money', () => {
     // Arrange
     const world = town(SEED);
-    leased(world, 'leclerc').treasuryCents = 10;
+    world.people['person-leclerc'].treasuryCents = 10;
 
     // Act
     const { world: after, events } = tick(world, [{ type: 'dynasty.buy_title', dynastyId: 'leclerc' }]);
@@ -264,7 +264,7 @@ describe('workshops, trades and the ladder', () => {
   it('opens the residence only as far as the title did', () => {
     // Arrange: a roturier, whose degree opens level 1.
     const world = town(SEED);
-    leased(world, 'leclerc').treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
 
     // Act
     const { world: after, events } = tick(world, [{ type: 'dynasty.upgrade_residence', dynastyId: 'leclerc' }]);
@@ -277,7 +277,7 @@ describe('workshops, trades and the ladder', () => {
   it('charges a title bought twice in one hour only once', () => {
     // Arrange: the same degree ordered twice before the hour plays.
     const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
 
     // Act
     const { world: after, events } = tick(world, [
@@ -290,10 +290,10 @@ describe('workshops, trades and the ladder', () => {
       after.engagements.filter((engagement) => engagement.kind === 'site' && engagement.work === 'title'),
     ).toHaveLength(1);
     expect(refusal(events, 'site_in_progress')).toBeDefined();
-    expect(world.dynasties.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeGreaterThanOrEqual(
-      60_000,
-    );
-    expect(world.dynasties.leclerc.treasuryCents - leased(after, 'leclerc').treasuryCents).toBeLessThan(
+    expect(
+      world.people['person-leclerc'].treasuryCents - after.people['person-leclerc'].treasuryCents,
+    ).toBeGreaterThanOrEqual(60_000);
+    expect(world.people['person-leclerc'].treasuryCents - after.people['person-leclerc'].treasuryCents).toBeLessThan(
       60_000 + 100_000,
     );
   });
@@ -302,7 +302,7 @@ describe('workshops, trades and the ladder', () => {
     // Arrange: a bourgeois has opened level 2; level 1 holds one workshop.
     const world = town(SEED);
     world.people['person-leclerc'].title = 'bourgeois';
-    leased(world, 'leclerc').treasuryCents = 1_000_000;
+    world.people['person-leclerc'].treasuryCents = 1_000_000;
     expect(workshopCap(1)).toBe(1);
 
     // Act
@@ -311,24 +311,24 @@ describe('workshops, trades and the ladder', () => {
     );
 
     // Assert
-    const dynasty = leased(run.world, 'leclerc');
     const person = run.world.people['person-leclerc'];
     expect(person?.residenceLevel).toBe(2);
     // Level 2 holds one workshop as well: the second service arrives at level 3.
     expect(workshopCap(2)).toBe(1);
-    expect(displayedPrestige(dynasty, 'bourgeois', 2)).toBe(80 + 50 + Math.min(dynasty.prestige, 300));
+    expect(displayedPrestige(person?.prestige ?? 0, 'bourgeois', 2)).toBe(
+      80 + 50 + Math.min(person?.prestige ?? 0, 300),
+    );
   });
 
   it('shows the prestige of the title and of the residence, and caps only the service', () => {
     // Arrange: a patrician at residence 4, with more service than the cap allows.
     const world = town(SEED);
-    const dynasty = leased(world, 'leclerc');
     world.people['person-leclerc'].title = 'patricien';
     world.people['person-leclerc'].residenceLevel = 4;
-    dynasty.prestige = 10_000;
+    world.people['person-leclerc'].prestige = 10_000;
 
     // Assert: the title adds its 140 and the residence 90, the service stops at 500.
-    expect(displayedPrestige(dynasty, 'patricien', 4)).toBe(140 + 90 + 500);
+    expect(displayedPrestige(world.people['person-leclerc'].prestige, 'patricien', 4)).toBe(140 + 90 + 500);
     expect(workshopLevelCap('patricien')).toBe(4);
   });
 

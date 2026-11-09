@@ -83,7 +83,9 @@ describe('the simulation core', () => {
         reason: 'insufficient_funds',
       }),
     );
-    expect(refused.world.dynasties.leclerc.treasuryCents).toBe(control.world.dynasties.leclerc.treasuryCents);
+    expect(refused.world.people['person-leclerc'].treasuryCents).toBe(
+      control.world.people['person-leclerc'].treasuryCents,
+    );
   });
 
   it('refuses an action from a dynasty that does not exist instead of throwing', () => {
@@ -110,7 +112,7 @@ describe('the simulation core', () => {
     expect(world.dynasties.leclerc.stock.cloth).toBe(4);
     expect(world.dynasties.leclerc.stock.wool).toBe(4);
     // The first dynasty is human: its stock is not sold, and production pays no coin.
-    expect(world.dynasties.leclerc.treasuryCents).toBe(RULES.startingPurseCents - 240);
+    expect(world.people['person-leclerc'].treasuryCents).toBe(RULES.startingPurseCents - 240);
   });
 
   it('idles a workshop with no raw material, and produces again once it is bought', () => {
@@ -320,7 +322,7 @@ describe('the simulation core', () => {
 
   it('turns unpaid upkeep into a debt instead of erasing it', () => {
     const world = town(SEED);
-    world.dynasties.leclerc.treasuryCents = 0;
+    world.people['person-leclerc'].treasuryCents = 0;
     world.dynasties.leclerc.stock = {};
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 3 }];
     const upkeep = 3 * RULES.upkeepPerWorkshopLevelCents;
@@ -335,7 +337,7 @@ describe('the simulation core', () => {
         shortfallCents: upkeep,
       }),
     );
-    expect(after.dynasties.leclerc.debtCents).toBe(upkeep);
+    expect(after.people['person-leclerc'].debtCents).toBe(upkeep);
   });
 
   it('refuses an action from a dormant dynasty instead of running it', () => {
@@ -370,7 +372,7 @@ describe('the simulation core', () => {
     // running when it must not.
     world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
     world.dynasties.leclerc.stock = {};
-    const treasuryCents = world.dynasties.leclerc.treasuryCents;
+    const treasuryCents = world.people['person-leclerc'].treasuryCents;
 
     // Act: one plain hour, then the five periods that bring the next scrutiny.
     const dormant = new Set(['leclerc']);
@@ -380,7 +382,7 @@ describe('the simulation core', () => {
     // Assert: the dormant holder does not trade, leaves the seat vacant at the
     // first scrutiny, and votes in none of them.
     expect(quiet.events.filter((event) => event.type === 'market.sold' && event.dynastyId === 'leclerc')).toEqual([]);
-    expect(quiet.world.dynasties.leclerc.treasuryCents).toBe(treasuryCents);
+    expect(quiet.world.people['person-leclerc'].treasuryCents).toBe(treasuryCents);
     expect(
       later.events.some(
         (event) => event.type === 'council.election_held' && event.seatId === 'maire' && event.winnerDynastyId === null,
@@ -396,7 +398,7 @@ describe('the simulation core', () => {
   it('shows a dynasty-ledger event to that dynasty only', () => {
     // Arrange: Caron cannot pay the upkeep of a workshop that cannot run.
     const world = town(SEED);
-    world.dynasties.caron.treasuryCents = 0;
+    world.people['person-caron'].treasuryCents = 0;
     world.dynasties.caron.stock = {};
     world.dynasties.caron.workshops = [{ id: 'workshop-1', good: 'cloth', level: 2 }];
 
@@ -463,9 +465,9 @@ describe('the simulation core', () => {
   it('keeps the ledger in integer cents', () => {
     const { world } = play(town(SEED), 20);
 
-    for (const dynasty of Object.values(world.dynasties)) {
-      expect(Number.isInteger(dynasty.treasuryCents)).toBe(true);
-      expect(Number.isInteger(dynasty.debtCents)).toBe(true);
+    for (const person of Object.values(world.people)) {
+      expect(Number.isInteger(person.treasuryCents)).toBe(true);
+      expect(Number.isInteger(person.debtCents)).toBe(true);
     }
     for (const price of Object.values(world.market)) {
       expect(Number.isInteger(price)).toBe(true);

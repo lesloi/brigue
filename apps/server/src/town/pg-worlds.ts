@@ -375,12 +375,9 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
 
   const [dynasties, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all(
     [
+      client.query(`SELECT id, name, controller FROM dynasties WHERE town_id = $1 ORDER BY id`, [townId]),
       client.query(
-        `SELECT id, name, controller, treasury_cents, debt_cents, favour, prestige FROM dynasties WHERE town_id = $1 ORDER BY id`,
-        [townId],
-      ),
-      client.query(
-        `SELECT id, dynasty_id, name, age, title, residence_level, alive FROM people WHERE town_id = $1 ORDER BY id`,
+        `SELECT id, dynasty_id, name, age, title, residence_level, treasury_cents, debt_cents, favour, prestige, alive FROM people WHERE town_id = $1 ORDER BY id`,
         [townId],
       ),
       client.query(
@@ -435,10 +432,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       id: dynasty.id,
       name: dynasty.name,
       controller: dynasty.controller,
-      treasuryCents: dynasty.treasury_cents,
-      debtCents: dynasty.debt_cents,
-      favour: dynasty.favour,
-      prestige: dynasty.prestige,
       workshops: [],
       stock: {},
     };
@@ -467,6 +460,10 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       age: person.age,
       title: person.title as TitleId,
       residenceLevel: person.residence_level,
+      treasuryCents: person.treasury_cents,
+      debtCents: person.debt_cents,
+      favour: person.favour,
+      prestige: person.prestige,
       alive: person.alive,
     };
   }
@@ -568,7 +565,7 @@ const byId = <T extends { id: string }>(left: T, right: T): number => left.id.lo
 export const TOWN_TABLES: readonly TownTable[] = [
   {
     table: 'dynasties',
-    columns: ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige'],
+    columns: ['town_id', 'id', 'name', 'controller'],
     rows: (world, townId) =>
       Object.values(world.dynasties)
         .sort(byId)
@@ -577,15 +574,24 @@ export const TOWN_TABLES: readonly TownTable[] = [
           id: dynasty.id,
           name: dynasty.name,
           controller: dynasty.controller,
-          treasury_cents: dynasty.treasuryCents,
-          debt_cents: dynasty.debtCents,
-          favour: dynasty.favour,
-          prestige: dynasty.prestige,
         })),
   },
   {
     table: 'people',
-    columns: ['town_id', 'id', 'dynasty_id', 'name', 'age', 'title', 'residence_level', 'alive'],
+    columns: [
+      'town_id',
+      'id',
+      'dynasty_id',
+      'name',
+      'age',
+      'title',
+      'residence_level',
+      'treasury_cents',
+      'debt_cents',
+      'favour',
+      'prestige',
+      'alive',
+    ],
     rows: (world, townId) =>
       Object.values(world.people)
         .sort(byId)
@@ -597,6 +603,10 @@ export const TOWN_TABLES: readonly TownTable[] = [
           age: person.age,
           title: titleOf(person),
           residence_level: residenceOf(person),
+          treasury_cents: person.treasuryCents,
+          debt_cents: person.debtCents,
+          favour: person.favour,
+          prestige: person.prestige,
           alive: person.alive,
         })),
   },

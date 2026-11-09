@@ -28,7 +28,10 @@ function play(
 function withoutAiCampaigns(world: World): World {
   for (const dynasty of Object.values(world.dynasties)) {
     if (dynasty.controller === 'ai') {
-      dynasty.favour = 0;
+      const person = world.people[`person-${dynasty.id}`];
+      if (person !== undefined) {
+        person.favour = 0;
+      }
     }
   }
 
@@ -102,7 +105,7 @@ describe('the election', () => {
   it('refuses a second open candidacy before it can spend favour', () => {
     // Arrange
     const world = withoutAiCampaigns(town(SEED));
-    const before = world.dynasties.leclerc.favour;
+    const before = world.people['person-leclerc'].favour;
 
     // Act: two seats lodged in the same hour.
     const result = tick(world, [
@@ -113,7 +116,7 @@ describe('the election', () => {
     // Assert: the first stands, the second is refused, and only one cost is paid.
     expect(result.world.campaigns.maire?.leclerc).toBe(RULES.campaignVoteBonus);
     expect(result.world.campaigns.tresorier).toBeUndefined();
-    expect(result.world.dynasties.leclerc.favour).toBe(before - RULES.campaignFavourCost);
+    expect(result.world.people['person-leclerc'].favour).toBe(before - RULES.campaignFavourCost);
     expect(result.events).toContainEqual(
       expect.objectContaining({ type: 'action.refused', reason: 'already_candidate', dynastyId: 'leclerc' }),
     );

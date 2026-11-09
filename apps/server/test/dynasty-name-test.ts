@@ -164,7 +164,9 @@ describe('the candidate a creation prefills', () => {
     const world = await worldOf(harness, joined.townId);
     expect(response.status).toBe(201);
     expect(world.dynasties[joined.dynastyId]?.name).toBe('Moreau');
-    expect(world.dynasties[joined.dynastyId]?.treasuryCents).toBe(RULES.startingPurseCents);
+    expect(Object.values(world.people).find((person) => person.dynastyId === joined.dynastyId)?.treasuryCents).toBe(
+      RULES.startingPurseCents,
+    );
     expect(Object.values(world.people).find((person) => person.dynastyId === joined.dynastyId)?.name).toMatch(
       / Moreau$/,
     );
@@ -270,7 +272,7 @@ describe('the rename route', () => {
     const harness = await start(town(7));
     const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc', new Date(START));
     const world = await worldOf(harness, TEST_TOWN.id);
-    world.dynasties.leclerc!.treasuryCents = 100_000;
+    world.people['person-leclerc'].treasuryCents = 100_000;
     await harness.worlds.withWorld((session) => session.save(world, session.snapshot.hourStartedAt, []), TEST_TOWN.id);
 
     return { harness, token };
@@ -296,7 +298,7 @@ describe('the rename route', () => {
     const after = await worldOf(harness, TEST_TOWN.id);
     expect(after.dynasties.leclerc?.id).toBe('leclerc');
     expect(after.dynasties.leclerc?.name).toBe('Moreau');
-    expect(after.dynasties.leclerc?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
+    expect(after.people['person-leclerc']?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
     expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
   });
 
