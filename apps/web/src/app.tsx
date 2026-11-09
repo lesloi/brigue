@@ -56,7 +56,7 @@ export function App() {
   const [trading, setTrading] = useState<TradeIntent | null>(null);
   // The server's list, not a local guess: a reload keeps the queued actions.
   const [pending, setPending] = useState<PendingActionView[]>([]);
-  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<number | null>(null);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [joinTaken, setJoinTaken] = useState(false);
@@ -395,7 +395,7 @@ export function App() {
     }
   }
 
-  async function cancel(id: string): Promise<void> {
+  async function cancel(id: number): Promise<void> {
     setCancelling(id);
     try {
       await cancelAction(id);

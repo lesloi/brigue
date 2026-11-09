@@ -12,7 +12,7 @@ import {
   type Trade,
 } from '@brigue/core';
 
-import { currentHourOf, DuplicateActionError, sessionWorld, type StoredAction } from '../../town/worlds.ts';
+import { currentHourOf, sessionWorld, type NewStoredAction, type StoredAction } from '../../town/worlds.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 
@@ -34,15 +34,11 @@ type ActionIntent =
   | { type: 'dynasty.buy_title' }
   | { type: 'dynasty.upgrade_residence' };
 
-type ActionSubmission =
-  { ok: true; id: string; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
-
-const ACTION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type ActionSubmission = { ok: true; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
 
 type ActionOutcome =
   | { kind: 'stale'; currentHour: number }
   | { kind: 'future'; currentHour: number }
-  | { kind: 'duplicate' }
   | { kind: 'appended'; stored: StoredAction };
 
 export async function listActions(
@@ -95,7 +91,8 @@ export async function cancelAction(
   if (refuseClosing(context, player, response, at)) {
     return;
   }
-  if (!ACTION_ID_PATTERN.test(id)) {
+  const actionId = Number(id);
+  if (!Number.isInteger(actionId) || actionId <= 0) {
     sendJson(response, 404, { error: 'unknown_action' });
     return;
   }
@@ -106,7 +103,6 @@ export async function cancelAction(
     return;
   }
 
-  const actionId = id.toLowerCase();
   const outcome = await context.deps.worlds.withWorld(async (session) => {
     const { world, hourStartedAt } = session.snapshot;
     sessionWorld(session);
@@ -115,11 +111,6 @@ export async function cancelAction(
     // Another dynasty's action is indistinguishable from an unknown one.
     if (stored === null || stored.dynastyId !== bound.dynastyId) {
       return { kind: 'unknown' as const };
-    }
-    // Idempotent: a cancellation already won is 204, even if the hour has
-    // ticked since; the row stays for dedup and replay.
-    if (stored.cancelledAt !== null) {
-      return { kind: 'cancelled' as const };
     }
     if (stored.playsAt < world.hour) {
       return { kind: 'stale' as const, currentHour: currentHourOf(world, hourStartedAt, at) };
@@ -130,7 +121,7 @@ export async function cancelAction(
       return { kind: 'future' as const, currentHour };
     }
 
-    await session.cancel(actionId, at);
+    await session.cancel(actionId);
 
     return { kind: 'cancelled' as const };
   }, bound.townId);
@@ -185,53 +176,36 @@ export async function appendAction(
     return;
   }
 
-  let outcome: ActionOutcome;
-  try {
-    outcome = await context.deps.worlds.withWorld(async (session) => {
-      sessionWorld(session);
-      const { world, hourStartedAt } = session.snapshot;
+  const outcome: ActionOutcome = await context.deps.worlds.withWorld(async (session) => {
+    sessionWorld(session);
+    const { world, hourStartedAt } = session.snapshot;
 
-      // The action names a hour, not a dynasty: the dynasty is the session's.
-      // A hour that already ticked can never be replayed, and the town clock
-      // is the upper bound for a hour that has not begun yet.
-      const currentHour = currentHourOf(world, hourStartedAt, at);
+    // The action names a hour, not a dynasty: the dynasty is the session's.
+    // A hour that already ticked can never be replayed, and the town clock
+    // is the upper bound for a hour that has not begun yet.
+    const currentHour = currentHourOf(world, hourStartedAt, at);
 
-      if (submission.hour < world.hour) {
-        return { kind: 'stale' as const, currentHour };
-      }
-      if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
-        return { kind: 'future' as const, currentHour };
-      }
-      if ((await session.findAction(submission.id)) !== null) {
-        return { kind: 'duplicate' as const };
-      }
-
-      const stored: StoredAction = {
-        id: submission.id,
-        dynastyId: bound.dynastyId,
-        playsAt: submission.hour,
-        action: withDynasty(submission.intent, bound.dynastyId),
-        receivedAt: at,
-        cancelledAt: null,
-        // The degree is named when the order is taken, from the dynasty as it is
-        // then, so no later purchase changes what this line says.
-        ...(submission.intent.type === 'dynasty.buy_title'
-          ? { title: nextTitle(dynastyTitle(world, bound.dynastyId)) }
-          : {}),
-      };
-      await session.append(stored);
-
-      return { kind: 'appended' as const, stored };
-    }, bound.townId);
-  } catch (error) {
-    // The primary key caught an id another hour already used; the pre-check
-    // above covers the common path, this covers a race from another world.
-    if (error instanceof DuplicateActionError) {
-      sendJson(response, 409, { error: 'duplicate_action' });
-      return;
+    if (submission.hour < world.hour) {
+      return { kind: 'stale' as const, currentHour };
     }
-    throw error;
-  }
+    if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
+      return { kind: 'future' as const, currentHour };
+    }
+    const toStore: NewStoredAction = {
+      dynastyId: bound.dynastyId,
+      playsAt: submission.hour,
+      action: withDynasty(submission.intent, bound.dynastyId),
+      receivedAt: at,
+      // The degree is named when the order is taken, from the dynasty as it is
+      // then, so no later purchase changes what this line says.
+      ...(submission.intent.type === 'dynasty.buy_title'
+        ? { title: nextTitle(dynastyTitle(world, bound.dynastyId)) }
+        : {}),
+    };
+    const stored = await session.append(toStore);
+
+    return { kind: 'appended' as const, stored };
+  }, bound.townId);
 
   switch (outcome.kind) {
     case 'stale':
@@ -239,9 +213,6 @@ export async function appendAction(
       return;
     case 'future':
       sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
-      return;
-    case 'duplicate':
-      sendJson(response, 409, { error: 'duplicate_action' });
       return;
     case 'appended':
       context.deps.logger.info('action.appended', {
@@ -282,10 +253,7 @@ function parseActionSubmission(body: unknown): ActionSubmission {
     return invalid();
   }
 
-  const { id, hour, action } = body;
-  if (typeof id !== 'string' || !ACTION_ID_PATTERN.test(id)) {
-    return invalid();
-  }
+  const { hour, action } = body;
   if (!Number.isInteger(hour) || (hour as number) < 1) {
     return invalid();
   }
@@ -305,7 +273,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'market.buy', good: good as GoodId, units: units as number },
       };
@@ -322,7 +289,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'market.sell', good: good as GoodId, units: units as number },
       };
@@ -336,7 +302,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'council.campaign', seatId: seatId as SeatId },
       };
@@ -350,7 +315,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'workshop.build', trade: trade as Trade },
       };
@@ -365,7 +329,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: action.type, workshopId },
       };
@@ -373,7 +336,7 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
     case 'dynasty.buy_title':
     case 'dynasty.upgrade_residence':
-      return { ok: true, id: id.toLowerCase(), hour: hour as number, intent: { type: action.type } };
+      return { ok: true, hour: hour as number, intent: { type: action.type } };
 
     default:
       return invalid();

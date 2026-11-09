@@ -21,7 +21,7 @@ interface MaisonProps {
   data: WorldResponse;
   advancing: boolean;
   pending: PendingActionView[];
-  cancelling: string | null;
+  cancelling: number | null;
   busy: string | null;
   renameError: string | null;
   onBuild(trade: Trade): void;
@@ -30,7 +30,7 @@ interface MaisonProps {
   onBuyTitle(): void;
   onUpgradeResidence(): void;
   onRename(name: string): void;
-  onCancel(id: string): void;
+  onCancel(id: number): void;
   onAdvance(): void;
 }
 

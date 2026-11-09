@@ -14,8 +14,9 @@ import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
-const ID_A = '00000000-0000-4000-8000-00000000000a';
-const ID_B = '00000000-0000-4000-8000-00000000000b';
+// The store assigns action ids in arrival order, one counter per town.
+const ID_A = 1;
+const ID_B = 2;
 
 interface Harness {
   url: string;
@@ -178,22 +179,22 @@ function getPending(harness: Harness, dynastyId = 'leclerc'): Promise<Response> 
   return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[dynastyId] as string } });
 }
 
-function cancelPending(harness: Harness, id: string, dynastyId = 'leclerc'): Promise<Response> {
+function cancelPending(harness: Harness, id: number, dynastyId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions/${id}`, {
     method: 'DELETE',
     headers: { Cookie: harness.cookies[dynastyId] as string },
   });
 }
 
-function buyWool(id: string, hour: number, units: number, extra: Record<string, unknown> = {}): unknown {
+function buyWool(id: number, hour: number, units: number, extra: Record<string, unknown> = {}): unknown {
   return { id, hour, action: { type: 'market.buy', good: 'wool', units, ...extra } };
 }
 
-function sellWool(id: string, hour: number, units: number): unknown {
+function sellWool(id: number, hour: number, units: number): unknown {
   return { id, hour, action: { type: 'market.sell', good: 'wool', units } };
 }
 
-function sellGrain(id: string, hour: number, units: number): unknown {
+function sellGrain(id: number, hour: number, units: number): unknown {
   return { id, hour, action: { type: 'market.sell', good: 'grain', units } };
 }
 
@@ -559,8 +560,9 @@ describe('POST /api/actions', () => {
     expect(body.messages).toEqual([]);
   });
 
-  it('refuses a replayed request and applies it once', async () => {
-    // Arrange
+  it('accepts a replayed request as a second action', async () => {
+    // Arrange: nothing marks the request, so the town has no way to know it is
+    // the same order twice.
     const harness = await start();
     const submitted = buyWool(ID_A, 1, 2);
 
@@ -570,12 +572,10 @@ describe('POST /api/actions', () => {
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
-    // Assert
+    // Assert: both buys played: eight wool, four bought, four woven.
     expect(first.status).toBe(201);
-    expect(replay.status).toBe(409);
-    expect(await replay.json()).toEqual({ error: 'duplicate_action' });
-    // The buy played once: eight wool, two bought, four woven.
-    expect(body.world.dynasty.stock.wool).toBe(6);
+    expect(replay.status).toBe(201);
+    expect(body.world.dynasty.stock.wool).toBe(8);
   });
 
   it('refuses a retry once the hour it belonged to has been played', async () => {
@@ -687,8 +687,6 @@ describe('POST /api/actions', () => {
     // Arrange
     const harness = await start();
     const invalid = [
-      { hour: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
-      { id: 'nope', hour: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
       { id: ID_A, hour: 0, action: { type: 'market.buy', good: 'wool', units: 1 } },
       { id: ID_A, hour: 1, action: { type: 'market.buy', good: 'silk', units: 1 } },
       { id: ID_A, hour: 1, action: { type: 'market.buy', good: 'wool', units: 0 } },
@@ -802,31 +800,31 @@ describe('the queued actions', () => {
     expect(body.world.dynasty.stock.wool).toBe(4);
   });
 
-  it('keeps the cancelled row as a duplicate', async () => {
-    // Arrange
+  it('accepts a retry after a cancellation as a new action', async () => {
+    // Arrange: the cancelled row is gone, so the same order is a new one.
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
     await cancelPending(harness, ID_A);
 
     // Act
-    const retry = await postAction(harness, buyWool(ID_A, 1, 2));
+    const retry = await postAction(harness, buyWool(ID_B, 1, 2));
 
     // Assert
-    expect(retry.status).toBe(409);
-    expect(await retry.json()).toEqual({ error: 'duplicate_action' });
+    expect(retry.status).toBe(201);
+    expect(await retry.json()).toEqual({ id: ID_B, hour: 1, dynastyId: 'leclerc' });
   });
 
-  it('is idempotent', async () => {
+  it('finds nothing to cancel twice', async () => {
     // Arrange
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
 
     // Act and assert
     expect((await cancelPending(harness, ID_A)).status).toBe(204);
-    expect((await cancelPending(harness, ID_A)).status).toBe(204);
+    expect((await cancelPending(harness, ID_A)).status).toBe(404);
   });
 
-  it('keeps a cancellation already won even after the hour ticks', async () => {
+  it('leaves the world untouched when a cancelled action is cancelled again', async () => {
     // Arrange: cancel, then let the world catch up over the action's hour.
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
@@ -837,8 +835,8 @@ describe('the queued actions', () => {
     // Act
     const again = await cancelPending(harness, ID_A);
 
-    // Assert: the retry is a no-op, not a stale refusal.
-    expect(again.status).toBe(204);
+    // Assert: the row is gone, and the world did not move.
+    expect(again.status).toBe(404);
     expect((await worldBody(harness)).stateHash).toBe(warmed.stateHash);
   });
 
@@ -898,7 +896,7 @@ describe('the queued actions', () => {
 
     // Act
     const listed = (await (await getPending(harness)).json()) as {
-      actions: Array<{ id: string; hour: number }>;
+      actions: Array<{ id: number; hour: number }>;
     };
 
     // Assert
@@ -911,13 +909,15 @@ describe('the queued actions', () => {
 
     // Act
     const unknown = await cancelPending(harness, ID_B);
-    const malformed = await cancelPending(harness, 'not-a-uuid');
+    const malformed = await fetch(`${harness.url}/api/actions/not-a-number`, {
+      method: 'DELETE',
+      headers: { Cookie: harness.cookie },
+    });
 
     // Assert
     expect(unknown.status).toBe(404);
     expect(await unknown.json()).toEqual({ error: 'unknown_action' });
     expect(malformed.status).toBe(404);
-    expect(await malformed.json()).toEqual({ error: 'unknown_action' });
   });
 
   it('refuses without a session', async () => {

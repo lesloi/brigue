@@ -391,11 +391,11 @@ describe('tab history', () => {
 
 describe('pending actions', () => {
   const pending: PendingActionView[] = [
-    { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
-    { id: 'b', hour: 3, type: 'market.buy', good: 'grain', units: 10 },
-    { id: 'c', hour: 3, type: 'market.sell', good: 'grain', units: 4 },
-    { id: 'd', hour: 3, type: 'market.buy', good: 'wool', units: 2 },
-    { id: 'e', hour: 3, type: 'council.campaign', seatId: 'maire' },
+    { id: 1, hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+    { id: 2, hour: 3, type: 'market.buy', good: 'grain', units: 10 },
+    { id: 3, hour: 3, type: 'market.sell', good: 'grain', units: 4 },
+    { id: 4, hour: 3, type: 'market.buy', good: 'wool', units: 2 },
+    { id: 5, hour: 3, type: 'council.campaign', seatId: 'maire' },
   ];
 
   it('nets the market actions of one good', () => {
@@ -415,8 +415,8 @@ describe('pending actions', () => {
     // Arrange
     const prices = { wool: 380, cloth: 1240, grain: 260, bread: 520, wood: 300, planks: 980 };
     const queued: PendingActionView[] = [
-      { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
-      { id: 'b', hour: 3, type: 'market.sell', good: 'bread', units: 3 },
+      { id: 1, hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+      { id: 2, hour: 3, type: 'market.sell', good: 'bread', units: 3 },
     ];
 
     // Act and assert: -5 × 260 + 3 × 520, and 5 − 3 units net.

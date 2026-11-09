@@ -3,13 +3,13 @@ import type { ClientConfig, Pool, PoolClient } from 'pg';
 import { residenceOf, titleOf } from '@brigue/core';
 import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
-  DuplicateActionError,
   JOURNAL_PAGE,
   NameInUseError,
   UnknownWorldError,
   type StoredAction,
   type MessagePage,
   type TownInfo,
+  type NewStoredAction,
   type WorldSession,
   type WorldSnapshot,
   type WorldStore,
@@ -211,10 +211,10 @@ class PgWorldSession implements WorldSession {
 
   async actionsBetween(from: number, to: number): Promise<StoredAction[]> {
     const { rows } = await this.client.query(
-      `SELECT id, dynasty_id, plays_at, action, received_at, cancelled_at
+      `SELECT id, dynasty_id, plays_at, action, received_at
        FROM actions
-       WHERE town_id = $3 AND plays_at BETWEEN $1 AND $2 AND cancelled_at IS NULL
-       ORDER BY plays_at, seq`,
+       WHERE town_id = $3 AND plays_at BETWEEN $1 AND $2
+       ORDER BY plays_at, id`,
       [from, to, this.townId],
     );
 
@@ -261,11 +261,11 @@ class PgWorldSession implements WorldSession {
     return rows.slice().reverse().map(rowToChronicleEvent);
   }
 
-  async findAction(id: string): Promise<StoredAction | null> {
-    // Scoped to the town: another town's dynasty may carry the same id, and its
-    // action must be as unknown here as an id that was never issued.
+  async findAction(id: number): Promise<StoredAction | null> {
+    // Scoped to the town: another town may carry the same id, and its action
+    // must be as unknown here as an id that was never issued.
     const { rows } = await this.client.query(
-      `SELECT id, dynasty_id, plays_at, action, received_at, cancelled_at
+      `SELECT id, dynasty_id, plays_at, action, received_at
        FROM actions
        WHERE id = $1 AND town_id = $2`,
       [id, this.townId],
@@ -275,37 +275,29 @@ class PgWorldSession implements WorldSession {
     return row ? rowToStoredAction(row) : null;
   }
 
-  async append(action: StoredAction): Promise<void> {
-    try {
-      await this.client.query(
-        `INSERT INTO actions (id, town_id, dynasty_id, plays_at, action, received_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [action.id, this.townId, action.dynastyId, action.playsAt, json(action.action), action.receivedAt],
-      );
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw new DuplicateActionError(action.id);
-      }
-      throw error;
-    }
+  async append(action: NewStoredAction): Promise<StoredAction> {
+    const { rows } = await this.client.query<{
+      id: string;
+      dynasty_id: string;
+      plays_at: number;
+      action: Action;
+      received_at: Date | string;
+    }>(
+      `INSERT INTO actions (town_id, dynasty_id, plays_at, action, received_at)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, dynasty_id, plays_at, action, received_at`,
+      [this.townId, action.dynastyId, action.playsAt, json(action.action), action.receivedAt],
+    );
+
+    return { ...rowToStoredAction(rows[0]!), ...(action.title === undefined ? {} : { title: action.title }) };
   }
 
-  async cancel(id: string, at: Date): Promise<void> {
-    await this.client.query(
-      `UPDATE actions
-       SET cancelled_at = $2
-       WHERE id = $1 AND town_id = $3 AND cancelled_at IS NULL`,
-      [id, at, this.townId],
-    );
+  async cancel(id: number): Promise<void> {
+    await this.client.query('DELETE FROM actions WHERE id = $1 AND town_id = $2', [id, this.townId]);
   }
 
-  async cancelDynasty(dynastyId: string, at: Date): Promise<void> {
-    await this.client.query(
-      `UPDATE actions
-       SET cancelled_at = $3
-       WHERE town_id = $1 AND dynasty_id = $2 AND cancelled_at IS NULL`,
-      [this.townId, dynastyId, at],
-    );
+  async cancelDynasty(dynastyId: string): Promise<void> {
+    await this.client.query('DELETE FROM actions WHERE town_id = $1 AND dynasty_id = $2', [this.townId, dynastyId]);
   }
 
   async clear(): Promise<void> {
@@ -855,15 +847,13 @@ function rowToStoredAction(row: {
   plays_at: number;
   action: Action;
   received_at: Date | string;
-  cancelled_at: Date | string | null;
 }): StoredAction {
   return {
-    id: row.id,
+    id: Number(row.id),
     dynastyId: row.dynasty_id,
     playsAt: row.plays_at,
     action: row.action,
     receivedAt: asDate(row.received_at),
-    cancelledAt: row.cancelled_at === null ? null : asDate(row.cancelled_at),
   };
 }
 
@@ -881,14 +871,6 @@ function isNameViolation(error: unknown): boolean {
 
   // A town's name is unique, and so is a human dynasty's across towns.
   return constraint === 'towns_name_key' || constraint === 'dynasties_human_name';
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null) {
-    return false;
-  }
-
-  return (error as { code?: unknown }).code === '23505';
 }
 
 function json(value: unknown): string {

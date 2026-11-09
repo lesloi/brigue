@@ -230,8 +230,6 @@ export function actionErrorText(code: string | null): string {
       return 'Cette heure est déjà passée. Le monde va être relu.';
     case 'future_hour':
       return "Cette heure n'a pas encore commencé.";
-    case 'duplicate_action':
-      return 'Cette action a déjà été envoyée.';
     case 'unknown_action':
       return "Cette action n'existe plus.";
     case 'invalid_action':

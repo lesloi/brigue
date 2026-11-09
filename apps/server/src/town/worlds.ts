@@ -19,22 +19,24 @@ export interface TownInfo {
   name: string;
 }
 
-export interface StoredAction {
-  /** Client-generated; the database primary key is what makes a retry a duplicate. */
-  id: string;
+/** An action as the store receives it: the id is the row's own. */
+export interface NewStoredAction {
   /** Always the authenticated player's dynasty, never whatever the request body said. */
   dynastyId: string;
   /** The town hour the action plays on. */
   playsAt: number;
   action: Action;
   receivedAt: Date;
-  /** Set when the player cancels before it plays; the row stays for dedup and replay. */
-  cancelledAt: Date | null;
   /**
    * The degree a title purchase buys, read at the order and kept for the
    * screen: the world replay derives it, so this is a label, never a rule.
    */
   title?: string;
+}
+
+export interface StoredAction extends NewStoredAction {
+  /** Assigned by the store, in the order the actions arrived. */
+  id: number;
 }
 
 export interface WorldSnapshot {
@@ -71,12 +73,13 @@ export interface WorldSession {
   recentMessages(limit: number, dynastyId: string): Promise<MessagePage>;
   /** The newest public chronicle lines, in the order they happened. */
   recentChronicle(limit: number): Promise<Event[]>;
-  findAction(id: string): Promise<StoredAction | null>;
-  append(action: StoredAction): Promise<void>;
-  /** Marks an unplayed action cancelled; it is never handed to the advance. */
-  cancel(id: string, at: Date): Promise<void>;
-  /** Cancels every unplayed action of a dynasty, for an identity that goes. */
-  cancelDynasty(dynastyId: string, at: Date): Promise<void>;
+  findAction(id: number): Promise<StoredAction | null>;
+  /** Appends the action and returns it with the id the store gave it. */
+  append(action: NewStoredAction): Promise<StoredAction>;
+  /** Erases an unplayed action; it is never handed to the advance. */
+  cancel(id: number): Promise<void>;
+  /** Erases every action of a dynasty, for an identity that goes. */
+  cancelDynasty(dynastyId: string): Promise<void>;
   /** Writes the whole town and appends the events of the span. */
   save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
   /**
@@ -165,16 +168,10 @@ export class NameInUseError extends Error {
   }
 }
 
-export class DuplicateActionError extends Error {
-  constructor(id: string) {
-    super(`action ${id} was already received`);
-    this.name = 'DuplicateActionError';
-  }
-}
-
 interface MemoryWorld {
   snapshot: WorldSnapshot;
   actions: StoredAction[];
+  nextActionId: number;
   chronicle: { id: number; event: Event; recordedAt: Date }[];
   messages: { id: number; dynastyId: string; event: Event; recordedAt: Date; read: boolean }[];
   nextEventId: number;
@@ -209,6 +206,7 @@ export class MemoryWorldStore implements WorldStore {
         hourStartedAt: new Date(hourStartedAt),
       },
       actions: [],
+      nextActionId: 1,
       chronicle: [],
       messages: [],
       nextEventId: 1,
@@ -332,8 +330,8 @@ export class MemoryWorldStore implements WorldStore {
       snapshot: stored.snapshot,
       actionsBetween: async (from, to) =>
         stored.actions
-          .filter((action) => action.playsAt >= from && action.playsAt <= to && action.cancelledAt === null)
-          .sort((left, right) => left.playsAt - right.playsAt)
+          .filter((action) => action.playsAt >= from && action.playsAt <= to)
+          .sort((left, right) => left.playsAt - right.playsAt || left.id - right.id)
           .map((action) => structuredClone(action)),
       recentMessages: async (limit, dynastyId) => {
         const own = stored.messages.filter((entry) => entry.dynastyId === dynastyId);
@@ -357,24 +355,17 @@ export class MemoryWorldStore implements WorldStore {
         return found ? structuredClone(found) : null;
       },
       append: async (action) => {
-        if (stored.actions.some((existing) => existing.id === action.id)) {
-          throw new DuplicateActionError(action.id);
-        }
-        stored.actions.push(structuredClone(action));
-      },
-      cancel: async (id, at) => {
-        const found = stored.actions.find((action) => action.id === id);
+        const storedAction: StoredAction = { ...structuredClone(action), id: stored.nextActionId };
+        stored.nextActionId += 1;
+        stored.actions.push(storedAction);
 
-        if (found !== undefined && found.cancelledAt === null) {
-          found.cancelledAt = new Date(at);
-        }
+        return structuredClone(storedAction);
       },
-      cancelDynasty: async (dynastyId, at) => {
-        for (const action of stored.actions) {
-          if (action.dynastyId === dynastyId && action.cancelledAt === null) {
-            action.cancelledAt = new Date(at);
-          }
-        }
+      cancel: async (id) => {
+        stored.actions = stored.actions.filter((action) => action.id !== id);
+      },
+      cancelDynasty: async (dynastyId) => {
+        stored.actions = stored.actions.filter((action) => action.dynastyId !== dynastyId);
       },
       save: async (world, hourStartedAt, events) => {
         stored.snapshot = {

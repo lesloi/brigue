@@ -152,7 +152,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
 
         for (const dynastyId of dynasties) {
           removeDynasty(presence.world, dynastyId);
-          await session.cancelDynasty(dynastyId, at);
+          await session.cancelDynasty(dynastyId);
         }
 
         if (humanDynastyOf(presence.world) === undefined) {

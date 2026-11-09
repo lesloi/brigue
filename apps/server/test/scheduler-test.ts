@@ -10,7 +10,7 @@ import {
   HOUR_MS,
   MemoryWorldStore,
   UnknownWorldError,
-  type StoredAction,
+  type NewStoredAction,
   type WorldSession,
   type WorldStore,
 } from '../src/town/worlds.ts';
@@ -56,10 +56,10 @@ async function worldOf(store: MemoryWorldStore) {
   return withTown(store, async (session) => session.snapshot);
 }
 
-function buy(id: string, at: number, units: number): StoredAction {
+function buy(at: number, units: number): NewStoredAction {
   const action: Action = { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units };
 
-  return { id, dynastyId: 'leclerc', playsAt: at, action, receivedAt: new Date(START), cancelledAt: null };
+  return { dynastyId: 'leclerc', playsAt: at, action, receivedAt: new Date(START) };
 }
 
 /** One chronicle line per hour, so a cut has a visible order to work on. */
@@ -207,18 +207,16 @@ describe('playDue', () => {
     // Arrange: two refusals share an hour, a buy follows on the next one. A
     // refusal keeps the order it was received in, which is what the row order is.
     const store = await town();
-    const refused = (id: string, at: number, action: Action): StoredAction => ({
-      id,
+    const refused = (at: number, action: Action): NewStoredAction => ({
       dynastyId: 'leclerc',
       playsAt: at,
       action,
       receivedAt: new Date(START),
-      cancelledAt: null,
     });
     await withTown(store, async (session) => {
-      await session.append(refused('first', 2, { type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }));
-      await session.append(buy('second', 3, 4));
-      await session.append(refused('third', 2, { type: 'dynasty.buy_title', dynastyId: 'leclerc' }));
+      await session.append(refused(2, { type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }));
+      await session.append(buy(3, 4));
+      await session.append(refused(2, { type: 'dynasty.buy_title', dynastyId: 'leclerc' }));
     });
 
     // Act

@@ -204,16 +204,16 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **One writer per world.** The scheduler and the backstop both write the same town, so two passes
   could each advance it and lose one of them. The `state` row is locked for the duration
   (`SELECT … FOR UPDATE`) whichever way the write comes, and that lock is what keeps the two
-  writers apart. Actions carry a client-generated UUID with a unique constraint (a retried
-  request is refused, not applied twice) and a sequence column holds the order in which they were
-  received, because insertion order alone is not a contract. Applied actions are kept: a retry
-  must stay detectable, and the town must stay replayable. The scheduler applies what was queued
-  before it advances, an action queued for an instant the town has already played is refused
-  rather than replayed, and the action endpoint never advances the world itself. A queued action
-  can be cancelled before its hour plays: the row is marked, never deleted, so a retry stays a
-  duplicate and the hour's replay uses the actions that were still queued when it played. The
-  list of queued actions does not advance the town either; the town's own hour is the only
-  applied verdict, and the wall clock only bounds how far ahead an action may be placed.
+  writers apart. An action's id is the row's own sequence, and that id is the order in which
+  actions were received, because insertion order is the only contract there is. The client sends
+  no id: a request replayed after a lost response is a second action, and the town accepts it.
+  Applied actions are kept, because the town must stay replayable. The scheduler applies what was
+  queued before it advances, an action queued for an instant the town has already played is
+  refused rather than replayed, and the action endpoint never advances the world itself. A queued
+  action can be cancelled before its hour plays: the row is deleted, and the hour's replay uses
+  the actions that were still queued when it played. The list of queued actions does not advance
+  the town either; the town's own hour is the only applied verdict, and the wall clock only
+  bounds how far ahead an action may be placed. Revisit if a flaky phone starts buying twice.
 
 - **The journal is two pages: a private mailbox and a public chronicle.** A scheduler writes
   while nobody reads, so every event carries its hour and its audience. A line addressed to the

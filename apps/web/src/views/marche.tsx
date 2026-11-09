@@ -21,9 +21,9 @@ interface MarcheProps {
   data: WorldResponse;
   trading: TradeIntent | null;
   pending: PendingActionView[];
-  cancelling: string | null;
+  cancelling: number | null;
   onTrade(kind: 'buy' | 'sell', good: GoodId, units: number): void;
-  onCancel(id: string): void;
+  onCancel(id: number): void;
 }
 
 /**

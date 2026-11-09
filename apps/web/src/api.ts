@@ -23,7 +23,7 @@ export interface CommittedCents {
 }
 
 export interface PendingActionView {
-  id: string;
+  id: number;
   hour: number;
   type:
     | 'market.buy'
@@ -269,7 +269,7 @@ export function sendAction(
   return send('/api/actions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: actionId(), hour, action }),
+    body: JSON.stringify({ hour, action }),
   });
 }
 
@@ -289,8 +289,8 @@ export function renameDynasty(name: string): Promise<{ name: string }> {
   });
 }
 
-export async function cancelAction(id: string): Promise<void> {
-  const response = await fetch(`/api/actions/${encodeURIComponent(id)}`, {
+export async function cancelAction(id: number): Promise<void> {
+  const response = await fetch(`/api/actions/${id}`, {
     method: 'DELETE',
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
@@ -299,23 +299,6 @@ export async function cancelAction(id: string): Promise<void> {
   if (!response.ok) {
     throw new ApiError(response.status, await errorCode(response));
   }
-}
-
-/**
- * `crypto.randomUUID` is only exposed in a secure context, and a phone testing
- * the town over plain HTTP is not one. getRandomValues is available everywhere.
- */
-function actionId(): string {
-  if (typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
-  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function send<T>(path: string, init: RequestInit = {}): Promise<T> {

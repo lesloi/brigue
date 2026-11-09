@@ -1,5 +1,3 @@
-import { randomUUID } from 'node:crypto';
-
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -15,13 +13,7 @@ import {
 
 import { applySchema } from '../src/db/migrations.ts';
 import { PgWorldStore, TOWN_TABLES } from '../src/town/pg-worlds.ts';
-import {
-  DuplicateActionError,
-  NameInUseError,
-  UnknownWorldError,
-  type StoredAction,
-  type WorldSession,
-} from '../src/town/worlds.ts';
+import { NameInUseError, UnknownWorldError, type NewStoredAction, type WorldSession } from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z');
@@ -187,35 +179,25 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(world.hour).toBe(startHour + 2);
   });
 
-  it('raises DuplicateActionError on a UUID it already stored', async () => {
+  it('gives each action its own id, in the order it arrived', async () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(4), START);
-    const action = storedAction(randomUUID(), 1, buy(2));
-    await withWorld(async (session) => session.append(action));
 
     // Act
-    const replay = withWorld(async (session) => session.append(action));
+    const first = await withWorld(async (session) => session.append(storedAction(1, buy(2))));
+    const second = await withWorld(async (session) => session.append(storedAction(1, buy(3))));
 
     // Assert
-    await expect(replay).rejects.toBeInstanceOf(DuplicateActionError);
-    const found = await withWorld(async (session) => session.findAction(action.id));
-    expect(found).toEqual(action);
+    expect(second.id).toBe(first.id + 1);
+    expect(await withWorld(async (session) => session.findAction(first.id))).toEqual(first);
   });
 
   it('returns a hour actions in the order they were received', async () => {
-    // Arrange: insert the lexically greater UUID first, so only `seq` can put
-    // them back in insertion order. Ids are random per run because actions are
-    // kept across runs on a developer's database.
+    // Arrange: the row id is the arrival order, so two of the same hour keep it.
     await store.createTown(TEST_TOWN.name, createWorld(5), START);
-    const [lexicallyFirst, lexicallyLast] = [randomUUID(), randomUUID()].sort();
-    const first = storedAction(lexicallyLast, 1, buy(1));
-    const second = storedAction(lexicallyFirst, 1, buy(2));
-    const otherHour = storedAction(randomUUID(), 2, buy(3));
-    await withWorld(async (session) => {
-      await session.append(first);
-      await session.append(second);
-      await session.append(otherHour);
-    });
+    const first = await withWorld(async (session) => session.append(storedAction(1, buy(1))));
+    const second = await withWorld(async (session) => session.append(storedAction(1, buy(2))));
+    await withWorld(async (session) => session.append(storedAction(2, buy(3))));
 
     // Act
     const queued = await withWorld(async (session) => session.actionsBetween(1, 1));
@@ -225,22 +207,19 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(queued.map((action) => action.action)).toEqual([first.action, second.action]);
   });
 
-  it('stops returning an action once it is cancelled, and keeps its row', async () => {
+  it('erases a cancelled action', async () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(6), START);
-    const action = storedAction(randomUUID(), 1, buy(2));
-    await withWorld(async (session) => {
-      await session.append(action);
-      await session.cancel(action.id, START);
-    });
+    const action = await withWorld(async (session) => session.append(storedAction(1, buy(2))));
+    await withWorld(async (session) => session.cancel(action.id));
 
     // Act
     const queued = await withWorld(async (session) => session.actionsBetween(1, 1));
     const found = await withWorld(async (session) => session.findAction(action.id));
 
-    // Assert: the tick no longer sees it, but a retried POST still finds the id.
+    // Assert
     expect(queued).toEqual([]);
-    expect(found?.cancelledAt).toBeInstanceOf(Date);
+    expect(found).toBeNull();
   });
 
   it('writes each line to its own page and reads both back', async () => {
@@ -321,7 +300,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const world = { ...town(8), hour: 5 };
     await store.createTown(TEST_TOWN.name, world, START);
     await withWorld(async (session) => {
-      await session.append(storedAction(randomUUID(), 5, buy(2)));
+      await session.append(storedAction(5, buy(2)));
       await session.save(world, START, [
         {
           type: 'council.election_held',
@@ -623,11 +602,12 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     const world = { ...createWorld(6), hour: 3 };
     await store.createTown(TEST_TOWN.name, world, START);
-    const action = storedAction(randomUUID(), 3, buy(1));
+    const action = storedAction(3, buy(1));
+    let actionId = 0;
 
     // Act: a catch-up that refuses the world version, after writing both tables.
     const attempt = withWorld(async (session) => {
-      await session.append(action);
+      actionId = (await session.append(action)).id;
       await session.save(oneHourLater(session.snapshot.world), START, []);
       throw new WorldVersionError({ ...world, rulesetVersion: RULES.version + 1 });
     });
@@ -636,7 +616,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await expect(attempt).rejects.toBeInstanceOf(WorldVersionError);
     const after = await withWorld(async (session) => ({
       snapshot: session.snapshot,
-      action: await session.findAction(action.id),
+      action: await session.findAction(actionId),
     }));
     expect(after.snapshot.world).toEqual(world);
     expect(after.action).toBeNull();
@@ -671,8 +651,8 @@ function range(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, index) => from + index);
 }
 
-function storedAction(id: string, hour: number, action: Action): StoredAction {
-  return { id, dynastyId: 'leclerc', playsAt: hour, action, receivedAt: new Date(START), cancelledAt: null };
+function storedAction(hour: number, action: Action): NewStoredAction {
+  return { dynastyId: 'leclerc', playsAt: hour, action, receivedAt: new Date(START) };
 }
 
 function delay(ms: number): Promise<void> {

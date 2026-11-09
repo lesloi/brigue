@@ -216,23 +216,18 @@ CREATE TABLE messages (
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
--- The client mints the id, so a retried request is a duplicate and never a
--- second action; `seq` is the order they arrived in, because two clocks never
--- agree.
+-- The row's own id is the order the actions arrived in, because two clocks never
+-- agree. A client that sends the same order twice sends two actions.
 CREATE TABLE actions (
-  seq bigserial UNIQUE,
-  id text PRIMARY KEY,
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   dynasty_id text NOT NULL,
   plays_at integer NOT NULL,
   action jsonb NOT NULL,
-  received_at timestamptz NOT NULL DEFAULT now(),
-  -- A cancelled action keeps its row: a retried POST must stay a duplicate, and
-  -- the hour replays the rows that were not cancelled.
-  cancelled_at timestamptz
+  received_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, seq);
+CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, id);
 
 -- The only record that crosses a reset, and a full reset deletes it too. Keyed
 -- by the player and the instant: the crown follows the player, and a town's hour
