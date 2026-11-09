@@ -28,7 +28,7 @@ export function tick(
   world: World,
   actions: readonly Action[] = [],
   dormant: ReadonlySet<number> = new Set(),
-  random: () => number = seeded(world.seed + world.hour),
+  random: () => number = seeded(world.hour),
 ): { world: World; events: Event[] } {
   return advance(
     world,
@@ -44,7 +44,7 @@ export function playUntil(
   world: World,
   hour: number,
   dormant: ReadonlySet<number> = new Set(),
-  random: () => number = seeded(world.seed + world.hour),
+  random: () => number = seeded(world.hour),
 ): { world: World; events: Event[] } {
   return advance(world, hour, [], dormant, random);
 }
@@ -82,5 +82,5 @@ export const TEST_FIRST_DYNASTY: PersonIdentity = {
 
 /** The playable town: the AI people plus the first player's person. */
 export function town(seed: number, trade: Trade = 'weaver'): World {
-  return withFirstPerson(createWorld(seed), trade, TEST_FIRST_DYNASTY);
+  return withFirstPerson(createWorld(), trade, TEST_FIRST_DYNASTY);
 }

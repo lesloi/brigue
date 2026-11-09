@@ -114,7 +114,7 @@ describe('renaming a person', () => {
 
   it('prices the rename as calibration, outside the ruleset', () => {
     // Arrange
-    const world: World = createWorld(SEED);
+    const world: World = createWorld();
 
     // Assert: the price is calibration, and the world holds no rule of its own.
     expect(NAME_PRICE.renameCents).toBeGreaterThan(0);
@@ -128,7 +128,7 @@ describe('the creation', () => {
     const identity = { ...TEST_FIRST_DYNASTY, personName: 'Colin Moreau' };
 
     // Act
-    const world = withFirstPerson(createWorld(SEED), 'weaver', identity);
+    const world = withFirstPerson(createWorld(), 'weaver', identity);
 
     // Assert
     expect(world.people[LECLERC]?.name).toBe('Colin Moreau');

@@ -193,7 +193,6 @@ interface MemoryWorld {
 interface StoredClock {
   formatVersion: number;
   rulesetVersion: number;
-  seed: number;
   hour: number;
   hourStartedAt: Date;
 }
@@ -228,14 +227,12 @@ export class MemoryWorldStore implements WorldStore {
       this.clock = {
         formatVersion: world.formatVersion,
         rulesetVersion: world.rulesetVersion,
-        seed: world.seed,
         hour: world.hour,
         hourStartedAt: new Date(hourStartedAt),
       };
     } else {
       world.formatVersion = this.clock.formatVersion;
       world.rulesetVersion = this.clock.rulesetVersion;
-      world.seed = this.clock.seed;
       world.hour = this.clock.hour;
     }
 
@@ -339,7 +336,6 @@ export class MemoryWorldStore implements WorldStore {
       if (this.clock !== null) {
         stored.snapshot.world.formatVersion = this.clock.formatVersion;
         stored.snapshot.world.rulesetVersion = this.clock.rulesetVersion;
-        stored.snapshot.world.seed = this.clock.seed;
         stored.snapshot.world.hour = this.clock.hour;
         stored.snapshot.hourStartedAt = new Date(this.clock.hourStartedAt);
       }
@@ -431,7 +427,6 @@ export class MemoryWorldStore implements WorldStore {
           this.clock = {
             formatVersion: world.formatVersion,
             rulesetVersion: world.rulesetVersion,
-            seed: world.seed,
             hour: world.hour,
             hourStartedAt: new Date(hourStartedAt),
           };

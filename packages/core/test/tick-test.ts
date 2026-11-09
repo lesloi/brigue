@@ -53,10 +53,10 @@ describe('the simulation core', () => {
     expect(canonicalJson(first.world)).toBe(canonicalJson(second.world));
   });
 
-  it('gives a different world for a different seed', () => {
-    expect(stateHash(play(town(SEED), HOURS, scripted).world)).not.toBe(
-      stateHash(play(town(1), HOURS, scripted).world),
-    );
+  it('starts the same world every time', () => {
+    // There is no seed: the world is fixed, and what happens next is the
+    // actions and trading, not a draw at creation.
+    expect(stateHash(play(town(SEED), HOURS, scripted).world)).toBe(stateHash(play(town(1), HOURS, scripted).world));
   });
 
   it('never mutates the world it is given', () => {

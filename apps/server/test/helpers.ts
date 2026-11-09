@@ -23,7 +23,7 @@ export function seeded(seed = 1): () => number {
 export function tick(
   world: World,
   actions: readonly Action[] = [],
-  random: () => number = seeded(world.seed + world.hour),
+  random: () => number = seeded(world.hour),
 ): { world: World; events: Event[] } {
   return advance(
     world,
@@ -52,5 +52,5 @@ export const CHARPENTIER = 3;
 
 /** The playable town: the AI people plus the first player's person. */
 export function town(seed: number, trade: Trade = 'weaver'): World {
-  return withFirstPerson(createWorld(seed), trade, TEST_FIRST_PERSON);
+  return withFirstPerson(createWorld(), trade, TEST_FIRST_PERSON);
 }

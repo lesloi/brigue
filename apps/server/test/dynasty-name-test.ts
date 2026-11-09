@@ -161,7 +161,7 @@ describe('the candidate a creation prefills', () => {
 
   it('applies the name kept to the place that waits for a human, for nothing', async () => {
     // Arrange: a town built without its first person, so a free place waits.
-    const harness = await start(createWorld(7));
+    const harness = await start(createWorld());
 
     // Act
     const response = await harness.join({ trade: 'weaver', name: 'Moreau' });

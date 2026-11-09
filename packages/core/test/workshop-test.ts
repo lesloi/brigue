@@ -36,7 +36,7 @@ function play(
     }
   }
 
-  return advance(world, until, placed, dormant, seeded(world.seed + world.hour));
+  return advance(world, until, placed, dormant, seeded(world.hour));
 }
 
 function leased(world: World) {
@@ -54,7 +54,7 @@ describe('workshops, trades and the ladder', () => {
 
     // Assert
     expect(stockCapacityUnits(world.people[LECLERC])).toBe(200);
-    expect(stockCapacityUnits(createWorld(SEED).people[CARON])).toBe(350);
+    expect(stockCapacityUnits(createWorld().people[CARON])).toBe(350);
   });
 
   it('builds a workshop that works the new chain, and charges for it', () => {
@@ -336,7 +336,7 @@ describe('workshops, trades and the ladder', () => {
     const identity = { ...TEST_FIRST_DYNASTY, personName: 'Colin Moreau' };
 
     // Act
-    const world = withFirstPerson(createWorld(SEED), 'weaver', identity);
+    const world = withFirstPerson(createWorld(), 'weaver', identity);
 
     // Assert
     expect(world.people[LECLERC]?.name).toBe('Colin Moreau');

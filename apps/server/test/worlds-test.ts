@@ -53,8 +53,8 @@ describe('the town store', () => {
   it('keeps two towns apart and clears one without the other', async () => {
     // Arrange
     const store = new MemoryWorldStore();
-    const first = await store.createTown('A', { ...createWorld(1), seed: 1 }, new Date());
-    const second = await store.createTown('B', { ...createWorld(2), seed: 2 }, new Date());
+    const first = await store.createTown('A', createWorld(), new Date());
+    const second = await store.createTown('B', createWorld(), new Date());
 
     // Act: each town reads its own snapshot.
     const a = await store.withWorld(async (session) => session.snapshot, first.id);
@@ -63,8 +63,7 @@ describe('the town store', () => {
     // Assert: names do not mix, and both towns share the world's seed.
     expect(a.town).toEqual(first);
     expect(b.town).toEqual(second);
-    expect(a.world.seed).toBe(1);
-    expect(b.world.seed).toBe(1);
+    expect(a.world.hour).toBe(b.world.hour);
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([first.id, second.id]);
 
     // Act: the first town goes, the second stays.
@@ -81,7 +80,7 @@ describe('the town store', () => {
     // Arrange: an older town of four people and a younger one of three.
     const store = new MemoryWorldStore();
     const old = await store.createTown('Old', town(1), new Date());
-    const young = await store.createTown('New', createWorld(2), new Date());
+    const young = await store.createTown('New', createWorld(), new Date());
 
     // Act and assert: the emptier town comes first, whatever its age.
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
@@ -90,11 +89,11 @@ describe('the town store', () => {
   it('gives a name that comes back a new id', async () => {
     // Arrange: a town that has lived and gone.
     const store = new MemoryWorldStore();
-    const first = await store.createTown('Amiens', createWorld(1), new Date());
+    const first = await store.createTown('Amiens', createWorld(), new Date());
     await store.withWorld(async (session) => session.clear(), first.id);
 
     // Act: the same name comes back.
-    const second = await store.createTown('Amiens', createWorld(2), new Date());
+    const second = await store.createTown('Amiens', createWorld(), new Date());
 
     // Assert: the id is new, the name is not.
     expect(second.name).toBe('Amiens');
@@ -104,10 +103,10 @@ describe('the town store', () => {
   it('creates a new town on a second call', async () => {
     // Arrange
     const store = new MemoryWorldStore();
-    const first = await store.createTown('A', createWorld(1), new Date());
+    const first = await store.createTown('A', createWorld(), new Date());
 
     // Act: a second creation is a second town, not a retry.
-    const second = await store.createTown('A', createWorld(9), new Date());
+    const second = await store.createTown('A', createWorld(), new Date());
 
     // Assert
     expect(second.id).not.toBe(first.id);

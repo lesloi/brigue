@@ -306,7 +306,6 @@ export interface World {
   /** The ruleset that produced this world. A catch-up across versions is a bug. */
   rulesetVersion: number;
   /** The world's origin. It identifies the world; it is no generator state. */
-  seed: number;
   hour: number;
   people: Record<PersonId, Person>;
   seats: Record<SeatId, Seat>;
@@ -616,11 +615,10 @@ export function stockUnits(person: Person): number {
   return total;
 }
 
-export function createWorld(seed: number): World {
+export function createWorld(): World {
   return {
     formatVersion: FORMAT_VERSION,
     rulesetVersion: RULES.version,
-    seed,
     hour: 1,
     people: {
       1: {

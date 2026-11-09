@@ -6,7 +6,7 @@ import { drawPersonIdentity, drawTownName, PERSON_NAMES, suggestFamilyName, TOWN
 describe('the suggested family name', () => {
   it('draws a name from the pool, and an opaque id that carries nothing of it', () => {
     // Arrange
-    const world = createWorld(1);
+    const world = createWorld();
     const names = namesOf(world);
 
     // Act and assert: a hundred draws are free, and no two ids are the same.
@@ -46,7 +46,7 @@ describe('the suggested family name', () => {
 
   it('leaves the name empty when every draw is taken, so the player writes their own', () => {
     // Arrange: a town carrying the whole pool.
-    const world = createWorld(1);
+    const world = createWorld();
     const taken = [...DYNASTY_NAMES];
 
     // Act

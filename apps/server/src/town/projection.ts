@@ -163,7 +163,7 @@ export function projectWorld(
   if (!person) {
     // The token points at a person the world no longer holds: a server bug, not
     // something to paper over with a made-up person.
-    throw new Error(`world ${world.seed} has no person ${personId}`);
+    throw new Error(`world has no person ${personId}`);
   }
 
   return {

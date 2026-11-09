@@ -18,7 +18,7 @@ describe('the order of an hour', () => {
       world.hour,
       actions.map((action) => ({ at: world.hour, action })),
       new Set(),
-      seeded(world.seed + world.hour),
+      seeded(world.hour),
     ).events;
 
   it('keeps a refusal before the message the town writes afterwards', () => {

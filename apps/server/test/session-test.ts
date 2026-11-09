@@ -383,7 +383,7 @@ describe('joining the town', () => {
   it('leaves a town whose humans have all gone to the scheduler', async () => {
     // Arrange: a town of AI people only, waiting to be deleted.
     const harness = await start();
-    await harness.worlds.createTown(TEST_TOWN.name, createWorld(9), new Date());
+    await harness.worlds.createTown(TEST_TOWN.name, createWorld(), new Date());
 
     // Act
     const response = await join(harness);

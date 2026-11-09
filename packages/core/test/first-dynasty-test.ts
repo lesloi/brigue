@@ -40,7 +40,7 @@ describe('the first person', () => {
 
   it('builds the town without a human person', () => {
     // Arrange and act: the town is the AI people and nothing else.
-    const world = createWorld(1);
+    const world = createWorld();
 
     // Assert
     expect(humanPersonOf(world)).toBeUndefined();
@@ -50,7 +50,7 @@ describe('the first person', () => {
 
   it('adds the first person, with the chosen trade, when the first player joins', () => {
     // Act
-    const world = withFirstPerson(createWorld(1), 'baker', IDENTITY);
+    const world = withFirstPerson(createWorld(), 'baker', IDENTITY);
 
     // Assert
     expect(world.people[LECLERC]?.name).toBe(IDENTITY.personName);
@@ -62,7 +62,7 @@ describe('the first person', () => {
 
   it('adds the first person once', () => {
     // Arrange
-    const once = withFirstPerson(createWorld(1), 'weaver', IDENTITY);
+    const once = withFirstPerson(createWorld(), 'weaver', IDENTITY);
 
     // Act
     const twice = withFirstPerson(once, 'baker', { personName: 'Autre Personne' });
@@ -75,7 +75,7 @@ describe('the first person', () => {
 
   it('adds a newcomer to a town that already has a player', () => {
     // Arrange
-    const town = withFirstPerson(createWorld(1), 'weaver', IDENTITY);
+    const town = withFirstPerson(createWorld(), 'weaver', IDENTITY);
 
     // Act
     const two = withNewcomer(town, 'baker', { personName: 'Jean Moreau' });
@@ -91,7 +91,7 @@ describe('the first person', () => {
   it('produces the chosen chain on the first tick', () => {
     for (const trade of TRADES) {
       const chain = TRADE_CHAINS[trade];
-      const { world } = tick(withFirstPerson(createWorld(1), trade, IDENTITY));
+      const { world } = tick(withFirstPerson(createWorld(), trade, IDENTITY));
 
       expect(world.people[LECLERC]?.stock[chain.output]).toBe(4);
       expect(world.people[LECLERC]?.stock[chain.input]).toBe(4);
@@ -99,8 +99,8 @@ describe('the first person', () => {
   });
 
   it('keeps the same starting money and makes a different world per trade', () => {
-    const weaver = withFirstPerson(createWorld(1), 'weaver', IDENTITY);
-    const baker = withFirstPerson(createWorld(1), 'baker', IDENTITY);
+    const weaver = withFirstPerson(createWorld(), 'weaver', IDENTITY);
+    const baker = withFirstPerson(createWorld(), 'baker', IDENTITY);
 
     expect(baker.people[LECLERC]?.treasuryCents).toBe(weaver.people[LECLERC]?.treasuryCents);
     expect(stateHash(baker)).not.toBe(stateHash(weaver));

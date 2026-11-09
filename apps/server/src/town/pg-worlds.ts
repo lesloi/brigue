@@ -25,12 +25,11 @@ interface SettingsRow {
 interface Settings {
   formatVersion: number;
   rulesetVersion: number;
-  seed: number;
   hour: number;
   hourStartedAt: Date;
 }
 
-const SETTINGS_KEYS = ['format_version', 'ruleset_version', 'seed', 'hour', 'hour_started_at'] as const;
+const SETTINGS_KEYS = ['format_version', 'ruleset_version', 'hour', 'hour_started_at', 'world_started_at'] as const;
 
 /**
  * The key of the join lock: one number for every server, so two instances
@@ -369,21 +368,19 @@ async function readSettings(client: PoolClient): Promise<Settings> {
 
   const formatVersion = Number(values.get('format_version'));
   const rulesetVersion = Number(values.get('ruleset_version'));
-  const seed = Number(values.get('seed'));
   const hour = Number(values.get('hour'));
   const hourStartedAt = new Date(values.get('hour_started_at') ?? '');
 
   if (
     !Number.isInteger(formatVersion) ||
     !Number.isInteger(rulesetVersion) ||
-    !Number.isInteger(seed) ||
     !Number.isInteger(hour) ||
     Number.isNaN(hourStartedAt.getTime())
   ) {
     throw new Error('the world settings are not readable');
   }
 
-  return { formatVersion, rulesetVersion, seed, hour, hourStartedAt };
+  return { formatVersion, rulesetVersion, hour, hourStartedAt };
 }
 
 /**
@@ -394,23 +391,17 @@ async function readSettings(client: PoolClient): Promise<Settings> {
 async function ensureSettings(client: PoolClient, world: World, hourStartedAt: Date): Promise<void> {
   await client.query(
     `INSERT INTO settings (key, value)
-     VALUES ('format_version', $1), ('ruleset_version', $2), ('seed', $3), ('hour', $4), ('hour_started_at', $5)
+     VALUES ('format_version', $1), ('ruleset_version', $2), ('hour', $3), ('hour_started_at', $4),
+            ('world_started_at', $4)
      ON CONFLICT (key) DO NOTHING`,
-    [
-      String(world.formatVersion),
-      String(world.rulesetVersion),
-      String(world.seed),
-      String(world.hour),
-      hourStartedAt.toISOString(),
-    ],
+    [String(world.formatVersion), String(world.rulesetVersion), String(world.hour), hourStartedAt.toISOString()],
   );
 }
 
-/** A town joins the world it is founded in: one clock, one seed, one format. */
+/** A town joins the world it is founded in: one clock, one format. */
 function applySettings(world: World, settings: Settings): void {
   world.formatVersion = settings.formatVersion;
   world.rulesetVersion = settings.rulesetVersion;
-  world.seed = settings.seed;
   world.hour = settings.hour;
 }
 
@@ -453,7 +444,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   const world: World = {
     formatVersion: settings.formatVersion,
     rulesetVersion: settings.rulesetVersion,
-    seed: settings.seed,
     hour: settings.hour,
     people: {},
     seats: {} as Record<SeatId, Seat>,

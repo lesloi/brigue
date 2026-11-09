@@ -64,8 +64,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('refuses a second live town with the same name', async () => {
     // Arrange
-    const first = { ...createWorld(11), hour: 5 };
-    const second = { ...createWorld(22), hour: 9 };
+    const first = { ...createWorld(), hour: 5 };
+    const second = { ...createWorld(), hour: 9 };
 
     // Act
     const created = await store.createTown(TEST_TOWN.name, first, START);
@@ -79,7 +79,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('reads workshops back in the order the world hashes them', async () => {
     // Arrange: the world mints provisional ids, and the database names them.
-    const world = createWorld(31);
+    const world = createWorld();
     await store.createTown(TEST_TOWN.name, world, START);
     await withWorld(async (session) => {
       const loaded = session.snapshot.world;
@@ -138,7 +138,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('serialises two writers on the row lock', async () => {
     // Arrange
     const startHour = 5;
-    await store.createTown(TEST_TOWN.name, { ...createWorld(3), hour: startHour }, START);
+    await store.createTown(TEST_TOWN.name, { ...createWorld(), hour: startHour }, START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
     const firstEntered = new Promise<void>((resolve) => {
@@ -360,8 +360,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('keeps two towns apart', async () => {
     // Arrange
-    const a = await store.createTown('A', { ...createWorld(1), seed: 1 }, START);
-    const b = await store.createTown('B', { ...createWorld(2), seed: 2 }, START);
+    const a = await store.createTown('A', createWorld(), START);
+    const b = await store.createTown('B', createWorld(), START);
 
     // Act
     const first = await store.withWorld(async (session) => session.snapshot, a.id);
@@ -372,8 +372,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // clock and seed.
     expect(first.town).toEqual(a);
     expect(second.town).toEqual(b);
-    expect(first.world.seed).toBe(1);
-    expect(second.world.seed).toBe(1);
     expect(second.world.hour).toBe(first.world.hour);
     // Same size, so the older town comes first.
     expect(towns.map((entry) => entry.id)).toEqual([a.id, b.id]);
@@ -408,11 +406,11 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('gives a name that comes back a new id', async () => {
     // Arrange
-    const first = await store.createTown('Amiens', createWorld(1), START);
+    const first = await store.createTown('Amiens', createWorld(), START);
 
     // Act
     await store.withWorld(async (session) => session.clear(), first.id);
-    const second = await store.createTown('Amiens', createWorld(2), START);
+    const second = await store.createTown('Amiens', createWorld(), START);
 
     // Assert: the dead town's name may return, its id may not.
     expect(second.name).toBe('Amiens');
@@ -422,7 +420,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   it('lists the least-filled town first, the oldest on a tie', async () => {
     // Arrange: an older town of four people and a younger one of three.
     const old = await store.createTown('Old', town(9), START);
-    const young = await store.createTown('New', createWorld(8), START);
+    const young = await store.createTown('New', createWorld(), START);
 
     // Act and assert: the emptier town comes first, whatever its age.
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
@@ -430,7 +428,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('drops the journal written before the real-time cut', async () => {
     // Arrange: 120 entries, the first 49 written a day before the cut.
-    await store.createTown(TEST_TOWN.name, createWorld(4), START);
+    await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 120));
     });
@@ -452,7 +450,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('keeps the entry written exactly on the cut', async () => {
     // Arrange
-    await store.createTown(TEST_TOWN.name, createWorld(5), START);
+    await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 120));
     });
@@ -469,7 +467,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('leaves no page behind when the whole journal predates the cut', async () => {
     // Arrange: ten entries, all written before the cut.
-    await store.createTown(TEST_TOWN.name, createWorld(6), START);
+    await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
       await session.save(session.snapshot.world, START, hours(1, 10));
     });

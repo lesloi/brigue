@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
@@ -366,7 +365,7 @@ async function takePlace(
   }
 
   const name = drawTownName();
-  const world = createWorld(randomSeed());
+  const world = createWorld();
   const next = withFirstPerson(world, trade, candidate);
   const town = await context.deps.worlds.createTown(name, next, at);
   // `createTown` writes the rows back into the world: the id the database gave
@@ -465,8 +464,4 @@ function clientAddress(request: IncomingMessage, trustProxy: boolean): string {
   }
 
   return request.socket.remoteAddress ?? 'unknown';
-}
-
-function randomSeed(): number {
-  return randomInt(1, 2_147_483_646);
 }
