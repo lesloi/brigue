@@ -344,7 +344,7 @@ export interface World {
 export const FORMAT_VERSION = 3;
 
 export const RULES = {
-  version: 4,
+  version: 5,
   /**
    * The starting kit: a person must buy its input and pay a few hours of upkeep
    * before its first sale. Every person gets it, the first as much as a later
