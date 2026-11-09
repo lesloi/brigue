@@ -339,9 +339,7 @@ export interface World {
    */
   engagements: Engagement[];
   /** Mints provisional engagement ids until the store assigns the real ones. */
-  engagementSeq: number;
   /** Mints provisional workshop ids until the store assigns the real ones. */
-  workshopSeq: number;
 }
 
 export const FORMAT_VERSION = 2;
@@ -699,7 +697,5 @@ export function createWorld(seed: number): World {
     campaigns: {},
     closedCampaigns: {},
     engagements: [],
-    engagementSeq: 0,
-    workshopSeq: 3,
   };
 }

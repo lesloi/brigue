@@ -60,12 +60,8 @@ CREATE TABLE state (
   rng integer NOT NULL,
   hour integer NOT NULL,
   year integer NOT NULL,
-  -- Provisional ids for the rows the world mints before the database names
-  -- them. They are a cursor, not a key: the real ids are the serials.
-  engagement_seq integer NOT NULL DEFAULT 0,
   -- The scheduler counts owed hours from here, not from a grid.
-  hour_started_at timestamptz NOT NULL,
-  workshop_seq integer NOT NULL DEFAULT 0
+  hour_started_at timestamptz NOT NULL
 );
 
 -- The person is the unit of the world: the purse, the debt, the favour, the

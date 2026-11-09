@@ -521,10 +521,14 @@ function sitesOf(world: World, personId: PersonId, work: SiteWork['work']): numb
   ).length;
 }
 
+/** The next provisional id, above every engagement the town already holds. */
+function nextEngagementId(world: World): number {
+  return world.engagements.reduce((highest, engagement) => Math.max(highest, engagement.id), 0) + 1;
+}
+
 function openSite(world: World, personId: PersonId, work: SiteWork, hours: number): void {
-  world.engagementSeq += 1;
   world.engagements.push({
-    id: world.engagementSeq,
+    id: nextEngagementId(world),
     kind: 'site' as const,
     personId,
     dueAt: world.hour + hours,
@@ -894,9 +898,8 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
         });
         return;
       }
-      world.workshopSeq = (world.workshopSeq ?? highestWorkshopSeq(world)) + 1;
       const workshop = {
-        id: world.workshopSeq,
+        id: highestWorkshopSeq(world) + 1,
         good: TRADE_CHAINS[site.trade].output,
         level: RULES.builtWorkshopLevel,
       };

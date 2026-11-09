@@ -22,8 +22,6 @@ interface StateRow {
   rng: number;
   hour: number;
   year: number;
-  engagement_seq: number;
-  workshop_seq: number;
   hour_started_at: Date | string;
 }
 
@@ -62,20 +60,9 @@ export class PgWorldStore implements WorldStore {
       const { rows } = await client.query<{ id: string }>(`INSERT INTO towns (name) VALUES ($1) RETURNING id`, [name]);
       const id = Number(rows[0]?.id);
       await client.query(
-        `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, engagement_seq, workshop_seq, hour_started_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [
-          id,
-          world.formatVersion,
-          world.rulesetVersion,
-          world.seed,
-          world.rng,
-          world.hour,
-          world.year,
-          world.engagementSeq,
-          world.workshopSeq ?? 0,
-          hourStartedAt,
-        ],
+        `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, hour_started_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, world.formatVersion, world.rulesetVersion, world.seed, world.rng, world.hour, world.year, hourStartedAt],
       );
       // The world is reattributed in place: the join needs the ids the database
       // assigned before it can bind the account and return the session.
@@ -296,9 +283,9 @@ class PgWorldSession implements WorldSession {
   async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
     const ids = await syncWorld(this.client, this.townId, world);
     await this.client.query(
-      `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, workshop_seq = $6, hour_started_at = $7
+      `UPDATE state SET hour = $2, year = $3, rng = $4, hour_started_at = $5
        WHERE town_id = $1`,
-      [this.townId, world.hour, world.year, world.rng, world.engagementSeq, world.workshopSeq ?? 0, hourStartedAt],
+      [this.townId, world.hour, world.year, world.rng, hourStartedAt],
     );
 
     // A queued action keeps the person id it was taken with; when the database
@@ -340,7 +327,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   }
 
   const state = await client.query<StateRow>(
-    `SELECT format_version, ruleset_version, seed, rng, hour, year, engagement_seq, workshop_seq, hour_started_at
+    `SELECT format_version, ruleset_version, seed, rng, hour, year, hour_started_at
      FROM state
      WHERE town_id = $1
      FOR UPDATE`,
@@ -394,12 +381,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     campaigns: {},
     closedCampaigns: {},
     engagements: [],
-    engagementSeq: row.engagement_seq,
-    workshopSeq: row.workshop_seq,
   };
-
-  let highestWorkshop = 0;
-  let highestEngagement = 0;
 
   for (const person of people.rows) {
     const id = Number(person.id);
@@ -425,7 +407,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     const id = Number(workshop.id);
     if (person !== undefined) {
       person.workshops.push({ id, good: workshop.good, level: workshop.level });
-      highestWorkshop = Math.max(highestWorkshop, id);
     }
   }
   for (const person of Object.values(world.people)) {
@@ -457,7 +438,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   for (const engagement of engagements.rows) {
     const id = Number(engagement.id);
     const base = { id, personId: Number(engagement.person_id), dueAt: engagement.due_at };
-    highestEngagement = Math.max(highestEngagement, id);
 
     if (engagement.kind === 'hearing') {
       world.engagements.push({ ...base, kind: 'hearing' });
@@ -493,11 +473,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     const prices = (world.marketHistory[point.good as GoodId] ??= []);
     prices.push(point.price_cents);
   }
-
-  // The counters mint provisional ids above every id the town already holds,
-  // so a new row can never be mistaken for one the database named.
-  world.workshopSeq = Math.max(row.workshop_seq, highestWorkshop);
-  world.engagementSeq = Math.max(row.engagement_seq, highestEngagement);
 
   return {
     town: { id: Number(townRow.id), name: townRow.name },
@@ -794,17 +769,6 @@ async function syncWorld(client: PoolClient, townId: number, world: World): Prom
     await deleteMissing(client, entry.table, entry.key, townId, rows);
   }
 
-  // The meters mint above every id the town now holds, so the next provisional
-  // id is never one the database already gave.
-  world.workshopSeq = highestId(
-    [...Object.values(world.people)].flatMap((person) => person.workshops.map((workshop) => workshop.id)),
-    world.workshopSeq ?? 0,
-  );
-  world.engagementSeq = highestId(
-    world.engagements.map((engagement) => engagement.id),
-    world.engagementSeq,
-  );
-
   return ids;
 }
 
@@ -894,10 +858,6 @@ function remapWorkshops(world: World, mapping: ReadonlyMap<number, number>): voi
 
 function sortPersonWorkshops(person: Person): void {
   person.workshops.sort((left, right) => left.id - right.id);
-}
-
-function highestId(ids: readonly number[], floor: number): number {
-  return ids.reduce((highest, id) => Math.max(highest, id), floor);
 }
 
 async function syncSerialRows(
