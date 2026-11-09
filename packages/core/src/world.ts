@@ -305,10 +305,9 @@ export interface World {
   formatVersion: number;
   /** The ruleset that produced this world. A catch-up across versions is a bug. */
   rulesetVersion: number;
+  /** The world's origin. It identifies the world; it is no generator state. */
   seed: number;
-  rng: number;
   hour: number;
-  year: number;
   people: Record<PersonId, Person>;
   seats: Record<SeatId, Seat>;
   laws: Law[];
@@ -342,7 +341,7 @@ export interface World {
   /** Mints provisional workshop ids until the store assigns the real ones. */
 }
 
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 3;
 
 export const RULES = {
   version: 4,
@@ -366,10 +365,10 @@ export const RULES = {
   siteHours: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
-  priceDriftCents: 30,
   /**
-   * A good's price is pulled by three things every hour: its own random drift,
-   * the town's imbalance on that good, and the gap back to its reference.
+   * A good's price is pulled by two things every hour: the town's imbalance on
+   * that good, and the gap back to its reference. There is no random drift: the
+   * price is the town's trade, not a dice throw.
    *
    * `absorbedUnits` is the town's standing demand at the reference price: the
    * volume it takes every hour whether or not anyone makes the good. Where that
@@ -486,6 +485,11 @@ export const PACING = {
 export const START_YEAR = 1401;
 /** Twenty-four hours make a year, so one real day is one game year. */
 export const HOURS_PER_YEAR = 24;
+
+/** The year a town hour falls in. The calendar is derived, never stored. */
+export function yearOf(hour: number): number {
+  return START_YEAR + Math.floor((hour - 1) / HOURS_PER_YEAR);
+}
 /**
  * The Marché keeps one price per bell: twelve bells make a game year cycling
  * twice a day, and the window is the last day of town life. It is a display
@@ -617,9 +621,7 @@ export function createWorld(seed: number): World {
     formatVersion: FORMAT_VERSION,
     rulesetVersion: RULES.version,
     seed,
-    rng: seed,
     hour: 1,
-    year: START_YEAR,
     people: {
       1: {
         id: 1,

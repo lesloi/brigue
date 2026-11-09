@@ -201,11 +201,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   The rate, how many real hours a year lasts, lives in `PACING`, read by the server, never in the
   world. Revisit if the scheduler proves more fragile than the read path it replaced.
 
-- **One writer per world.** The scheduler and the backstop both write the same town, so two passes
-  could each advance it and lose one of them. The `state` row is locked for the duration
-  (`SELECT … FOR UPDATE`) whichever way the write comes, and that lock is what keeps the two
-  writers apart. An action's id is the row's own sequence, and that id is the order in which
-  actions were received, because insertion order is the only contract there is. The client sends
+- **One writer per world.** The scheduler and the backstop both write the same town, so two
+  passes could each advance it and lose one of them. The world's `hour` row in `settings` is
+  locked for the duration (`SELECT … FOR UPDATE`) whichever way the write comes, and that lock is
+  what keeps the two writers apart — and what serialises a save across every town, since there is
+  one clock for the world. An action's id is the row's own sequence, and that id is the order in
+  which actions were received, because insertion order is the only contract there is. The client
+  sends
   no id: a request replayed after a lost response is a second action, and the town accepts it.
   Applied actions are kept, because the town must stay replayable. The scheduler applies what was
   queued before it advances, an action queued for an instant the town has already played is
@@ -242,9 +244,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new
   `formatVersion`; a world of another format is refused, never guessed. A world with a registered
   migration is converted; one without is not deleted in silence: the reset names what it will
-  destroy and refuses until an operator confirms it. The format in the code is the second: it merges the `dynasties` table into `people`, with no migration,
-  because the towns are test towns and the reset below is how a database crosses; `rulesetVersion`
-  stays where it was, since the rules did not move, only the shape of the world. Two names keep Maison and a later pass must not "fix"
+  destroy and refuses until an operator confirms it. The format in the code is the third: it
+  moves the world's variables into one shared `settings` table, drops the per-town `state` row
+  and the generator cursor, and derives the year from the hour. It follows the second, which
+  merged the `dynasties` table into `people`, with no migration, because the towns are test towns
+  and the reset below is how a database crosses. Two names keep Maison and a later pass must not "fix"
   them: the tab that opens the person's screen, and the residence level of that name, which is a
   building. A database crosses with that reset, run before the
   rollout is approved; `migrate` is not the path, since `schema.sql` is already recorded under its
@@ -272,17 +276,22 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   schema, replayed on an empty database; there is no upgrade path to write, because no world of
   another format is read. A schema change edits that file, and the database crosses with
   `reset --full`, which deletes the towns, the accounts and the book of kings. The format number
-  carries no history: it moved to two with the merge into `people`, and the next schema change may pick
-  another. `migrate` builds an empty database and nothing else; its gate reports the schema missing on
-  a database that predates it, and the reset is the path a deployed database takes.
+  carries no history: it moved to three with the shared clock and settings, and the next schema
+  change may pick another. `migrate` builds an empty database and nothing else; its gate reports
+  the schema missing on a database that predates it, and the reset is the path a deployed
+  database takes.
 
 ## Simulation
 
-- **The core is pure, deterministic and clock-free.** One seed in, one world out: the town is
-  built from the seed, and the first person is added when its player joins with the trade that
-  player chose. Two towns from the same seed can therefore start in different chains, and a seed
-  alone does not rebuild a playable town. A stored world carries the trade in its workshops. A test replays two hundred advances and asserts the same state hash,
-  and another fails if `Math.random` or `Date.now` ever enters `packages/core`. Everything else
+- **The core is pure, deterministic and clock-free.** The caller passes both the instant
+  (`until`) and the random stream (`random`): the core never reads the wall clock or a global
+  random source itself. One seed in, one world out: the town is built from the seed, and the
+  first person is added when its player joins with the trade that player chose. Two towns from
+  the same seed can therefore start in different chains, and a seed alone does not rebuild a
+  playable town. A stored world carries the trade in its workshops. The seed is the world's
+  identity, not a generator cursor: the world has no `rng`, and randomness comes from the caller.
+  A test replays two hundred advances with the same stream and asserts the same state hash, and
+  another fails if `Math.random` or `Date.now` is written inside `packages/core`. Everything else
   depends on this: it is how a bug is reproduced, how a balance change is measured, and why the
   server can catch a world up at all.
 
@@ -345,9 +354,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   sits on its reference. That demand is calibrated to the middle of the town's two states — the
   three AI people alone, and the same town with one player working the chain — so an unworked
   chain sits a little above its reference and a worked chain at it or below: the reference is the
-  centre of the band, not a price a short-handed town rests on. The raw goods are the exception:
-  they are bought at the market, and their price carries no town flow — only chance and the pull
-  home. Buying or dumping wool, grain or wood moves nothing.
+  centre of the band, not a price a short-handed town rests on. There is no random drift: the
+  price moves only by the town's flow and the pull home, so the same trades give the same price.
+  The raw goods join the flow like the others: the wool, grain and wood the workshops buy push
+  their prices up, and selling them pushes them down.
 
 - **Engagements have durations; there are no action points.** A building site takes twelve hours,
   a campaign is a candidacy lodged before the noon bell — its old run is gone, because one that
@@ -461,8 +471,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The towns are the database: tables, not a document.** One database holds several towns, and
   every town table carries its `town_id` — people, seats, workshops, stock, laws, engagements,
-  campaigns and the market are a town itself. One row per town in `state` carries what belongs to
-  no person: the seed, the generator's cursor, the hour and the year; it is what the writer locks.
+  campaigns and the market are a town itself. What belongs to no person and to no town lives in
+  the world's `settings`, one text key/value row per variable: `hour`, `hour_started_at`,
+  `format_version`, `ruleset_version` and `seed`. There is one world, one clock and several
+  towns: every town shares that hour and its year, and the `hour` row is what the writer locks.
+  The store parses the numbers and the instant from the text. The first town writes the settings
+  from the world it is given; a later town reads them, so founding a town cannot reset the clock
+  or the seed. `towns` keeps only `id`, `name` and `created_at`; `year` is derived from `hour`,
+  and there is no per-town state row and no generator cursor.
   The simulation still reads and writes a town whole, but the storage keeps it in rows, so a screen
   can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back
@@ -479,9 +495,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   towns in one database prove too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
-  seed and the generator; published, it would let a client brute-force a young town's seed and
-  simulate its whole future. Two reads with no time passing still agree, because they return the
-  same projection.
+  seed and the whole town; published, it would hand a client the world's identity and its state.
+  Two reads with no time passing still agree, because they return the same projection.
 
 ## Interface
 

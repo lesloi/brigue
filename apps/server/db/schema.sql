@@ -40,8 +40,8 @@ CREATE TABLE kings (
 );
 
 -- Every town table carries its `town_id` and the rows of a town are the town;
--- `state` is the row the writer locks. Every autoincremented id is a global
--- `bigserial`, assigned by the database.
+-- the world's clock and identity live in `settings`, whose `hour` row is what
+-- the writer locks. One world, one clock, several towns.
 
 -- A name may come back after a reset; an id never does, so a dead town's
 -- accounts cannot point at a new one.
@@ -51,17 +51,13 @@ CREATE TABLE towns (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- One row per town: what belongs to no person, and the row the writer locks.
-CREATE TABLE state (
-  town_id bigint PRIMARY KEY REFERENCES towns (id) ON DELETE CASCADE,
-  format_version integer NOT NULL,
-  ruleset_version integer NOT NULL,
-  seed integer NOT NULL,
-  rng integer NOT NULL,
-  hour integer NOT NULL,
-  year integer NOT NULL,
-  -- The scheduler counts owed hours from here, not from a grid.
-  hour_started_at timestamptz NOT NULL
+-- The world's settings: one key/value row each, outside any town. The first
+-- town writes them; a later town reads them, so every town shares one hour, one
+-- seed and one format. The values are text; the store parses the numbers and
+-- the instant. The `hour` row is the writer's lock.
+CREATE TABLE settings (
+  key text PRIMARY KEY,
+  value text NOT NULL
 );
 
 -- The person is the unit of the world: the purse, the debt, the favour, the

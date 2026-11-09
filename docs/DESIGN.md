@@ -150,9 +150,9 @@ A workshop produces into a warehouse; selling is an action, at the price the las
 Six goods, three
 chains: wool into cloth, grain into bread, wood into planks. The town eats bread, builds with
 planks and wears cloth. Holding a good for a better bell is a bet: the price is pushed by what the
-town sold and bought since the last bell, pulled a quarter of the way back to its reference at
-each bell, and jittered by chance. The raw goods are the exception: they are bought at the market, and their price drifts by
-chance and pulls home, never from the town's flow. Dumping a large stock moves the price down for everyone, including the
+town sold and bought since the last bell, and pulled a quarter of the way back to its reference at
+each bell. The raw goods move with the town's flow like the others: the wool, grain and wood the
+workshops buy push their price up, and selling them pushes it down. Dumping a large stock moves the price down for everyone, including the
 dumper's neighbour. The AI people sell their whole stock every hour at the market price: they
 take the price, they do not time it, so the flow stays regular and the price readable. The
 Marché marks the prices that have left their band around the reference, so the flow is visible,
@@ -224,7 +224,8 @@ code: the server assigns seats, and a dormant person keeps their history without
 ## The clock
 
 One real hour is one town hour. Twenty-four hours make a year, and a year is a day: the calendar
-advances a year per day. A mandate lasts a day. A character's thirty playable years last thirty
+advances a year per day. The world has one clock, shared by every town: all towns are at the same
+hour and the same date. A mandate lasts a day. A character's thirty playable years last thirty
 real days.
 
 Engagements have durations, not action points: a building site takes twelve hours, a campaign is

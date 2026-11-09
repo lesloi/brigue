@@ -14,7 +14,7 @@ import {
   type WorldSession,
   type WorldStore,
 } from '../src/town/worlds.ts';
-import { LECLERC, TEST_TOWN, town as playableTown } from './helpers.ts';
+import { LECLERC, seeded, TEST_TOWN, town as playableTown } from './helpers.ts';
 
 const START = new Date('2026-11-05T00:00:00.000Z');
 const HOUR = HOUR_MS;
@@ -43,7 +43,7 @@ async function playersWith(personId = LECLERC, at = START): Promise<MemoryPlayer
 /** One pass of the loop: play what is due, then keep it when an hour was lived. */
 async function pass(store: MemoryWorldStore, now: Date, minHours = 1) {
   return withTown(store, async (session) => {
-    const due = await playDue(session, session.snapshot, now, minHours);
+    const due = await playDue(session, session.snapshot, now, minHours, new Set(), seeded());
 
     if (due.hours > 0) {
       await session.save(due.world, due.hourStartedAt, due.events);
@@ -180,7 +180,7 @@ describe('playDue', () => {
     // Act
     const hashes = await withTown(store, async (session) => {
       const before = stateHash(session.snapshot.world);
-      await playDue(session, session.snapshot, new Date(START.getTime() + 2 * HOUR));
+      await playDue(session, session.snapshot, new Date(START.getTime() + 2 * HOUR), 1, new Set(), seeded());
 
       return { before, after: stateHash(session.snapshot.world) };
     });
@@ -251,6 +251,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -288,6 +289,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -320,6 +322,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -357,6 +360,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -365,9 +369,14 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     scheduler.stop();
 
-    // Assert: both towns lived the hour, each on its own clock.
-    expect((await store.withWorld(async (session) => session.snapshot, a.id)).world.hour).toBe(2);
-    expect((await store.withWorld(async (session) => session.snapshot, b.id)).world.hour).toBe(2);
+    // Assert: both towns lived the hour, sharing the world's one clock, and
+    // both advanced their own data.
+    const aWorld = (await store.withWorld(async (session) => session.snapshot, a.id)).world;
+    const bWorld = (await store.withWorld(async (session) => session.snapshot, b.id)).world;
+    expect(aWorld.hour).toBe(2);
+    expect(bWorld.hour).toBe(2);
+    expect(aWorld.marketFlow).not.toEqual({});
+    expect(bWorld.marketFlow).not.toEqual({});
   });
 
   it('keeps playing the other towns when one fails', async () => {
@@ -384,6 +393,7 @@ describe('startScheduler', () => {
     const broken: WorldStore = {
       createTown: (name, world, hourStartedAt) => real.createTown(name, world, hourStartedAt),
       listTowns: () => real.listTowns(),
+      readClock: () => real.readClock(),
       withWorld: (run, townId) =>
         townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
@@ -400,6 +410,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -407,10 +418,14 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     scheduler.stop();
 
-    // Assert: the failure is named, and the sound town still moves.
+    // Assert: the failure is named, and the sound town still moves. The failed
+    // town shares the world's clock but its own data never advanced.
     expect(logs.some((line) => line.includes('town.advance_failed') && line.includes(String(bad.id)))).toBe(true);
-    expect((await real.withWorld(async (session) => session.snapshot, good.id)).world.hour).toBe(2);
-    expect((await real.withWorld(async (session) => session.snapshot, bad.id)).world.hour).toBe(1);
+    const goodWorld = (await real.withWorld(async (session) => session.snapshot, good.id)).world;
+    const badWorld = (await real.withWorld(async (session) => session.snapshot, bad.id)).world;
+    expect(goodWorld.hour).toBe(2);
+    expect(goodWorld.marketFlow).not.toEqual({});
+    expect(badWorld.marketFlow).toEqual({});
   });
 
   it('erases an identity whose week is over, and the town with it', async () => {
@@ -426,6 +441,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger(() => {}),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -457,6 +473,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger(() => {}),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -493,6 +510,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -515,6 +533,7 @@ describe('startScheduler', () => {
       players: new MemoryPlayerStore(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -535,6 +554,7 @@ describe('startScheduler', () => {
     const store: WorldStore = {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
+      readClock: () => real.readClock(),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
@@ -554,6 +574,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger(() => {}),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -574,6 +595,7 @@ describe('startScheduler', () => {
     const guarded: WorldStore = {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
+      readClock: () => real.readClock(),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
@@ -588,6 +610,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -610,6 +633,7 @@ describe('startScheduler', () => {
     const flaky: WorldStore = {
       createTown: (name, world, hourStartedAt) => real.createTown(name, world, hourStartedAt),
       listTowns: () => real.listTowns(),
+      readClock: () => real.readClock(),
       withWorld: (run, townId) => {
         attempts += 1;
 
@@ -629,6 +653,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 

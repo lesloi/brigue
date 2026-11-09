@@ -48,6 +48,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await pool.query('DELETE FROM players WHERE token_hash = ANY($1)', [[CLEARED_TOKEN, 'a'.repeat(64)]]);
     // The mail has no town column, so the cascade does not reach it.
     await pool.query('TRUNCATE messages RESTART IDENTITY');
+    // The settings belong to the world, not the town: truncating the towns does
+    // not take them, and a stale seed would leak into the next case.
+    await pool.query('TRUNCATE settings');
     await pool.query('TRUNCATE towns RESTART IDENTITY CASCADE');
   }
 
@@ -106,9 +109,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
        FROM information_schema.columns
        WHERE table_schema = 'public' AND column_name = 'town_id'`,
     );
-    // The town row, the locked header, and the append-only queue and journal are
-    // outside the snapshot the writer replaces.
-    const outside = new Set(['towns', 'state', 'events', 'actions']);
+    // The town row, the append-only queue and journal are outside the snapshot
+    // the writer replaces; the world's settings carry no town_id at all.
+    const outside = new Set(['towns', 'events', 'actions']);
 
     // Act
     const written = TOWN_TABLES.map((entry) => entry.table).sort();
@@ -224,7 +227,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const world: World = {
       ...town(2_147_483_646),
       hour: 7,
-      rng: 1_234_567_890,
       market: { cloth: 1301, wool: 377, grain: 259, bread: 521, wood: 301, planks: 979 },
     };
     await store.createTown(TEST_TOWN.name, world, START);
@@ -332,8 +334,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Act
     await withWorld(async (session) => session.clear());
 
-    // Assert: the town is gone whole, the accounts and the book stay.
-    const state = await pool.query('SELECT count(*)::int AS count FROM state');
+    // Assert: the town is gone whole, the accounts, the book and the world's
+    // settings stay.
+    const settings = await pool.query('SELECT count(*)::int AS count FROM settings');
     const people = await pool.query('SELECT count(*)::int AS count FROM people');
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
     const messages = await pool.query('SELECT count(*)::int AS count FROM messages');
@@ -344,7 +347,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     ]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
-    expect(state.rows[0]?.count).toBe(0);
+    expect(settings.rows[0]?.count).toBe(5);
     expect(people.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
     // The mail belongs to the account, so it outlives the town it was written in.
@@ -365,11 +368,13 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const second = await store.withWorld(async (session) => session.snapshot, b.id);
     const towns = await store.listTowns();
 
-    // Assert: each town reads its own state and name.
+    // Assert: each town reads its own name and people, and the one world's
+    // clock and seed.
     expect(first.town).toEqual(a);
     expect(second.town).toEqual(b);
     expect(first.world.seed).toBe(1);
-    expect(second.world.seed).toBe(2);
+    expect(second.world.seed).toBe(1);
+    expect(second.world.hour).toBe(first.world.hour);
     // Same size, so the older town comes first.
     expect(towns.map((entry) => entry.id)).toEqual([a.id, b.id]);
   });

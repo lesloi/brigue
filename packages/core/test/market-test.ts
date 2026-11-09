@@ -23,7 +23,7 @@ function playPeriod(world: World, actions: Action[] = [], dormant: ReadonlySet<n
   return playHalfDay(world, actions, dormant).world;
 }
 
-/** The cloth price the bell sets for a half-day flow, drift aside. */
+/** The cloth price the bell sets for a half-day flow. */
 function pricedCloth(flowUnits: number): number {
   const hours = HOURS_PER_YEAR / 2;
 
@@ -33,7 +33,6 @@ function pricedCloth(flowUnits: number): number {
     absorbedUnits: RULES.market.cloth.absorbedUnits * hours,
     scaleUnits: RULES.market.cloth.scaleUnits * hours,
     flowUnits,
-    driftCents: 0,
     pressureDivisor: RULES.pricePressureDivisor,
     reversionDivisor: RULES.priceReversionDivisor,
     floorCents: RULES.priceFloorCents,
@@ -47,7 +46,6 @@ describe('nextPriceCents', () => {
     referenceCents: 1240,
     absorbedUnits: 10,
     scaleUnits: 10,
-    driftCents: 0,
     pressureDivisor: RULES.pricePressureDivisor,
     reversionDivisor: RULES.priceReversionDivisor,
     floorCents: RULES.priceFloorCents,
@@ -100,10 +98,9 @@ describe('the market of a hour', () => {
     // Arrange: a fresh world has no hour behind it, so nothing has been traded.
     const { world } = playWeek(town(SEED));
 
-    // Assert: only the hour's own drift moved the prices.
+    // Assert: with no flow and no drift, every price sits on its reference.
     for (const good of GOODS) {
-      const drift = world.market[good] - RULES.market[good].referenceCents;
-      expect(Math.abs(drift)).toBeLessThanOrEqual(RULES.priceDriftCents);
+      expect(world.market[good]).toBe(RULES.market[good].referenceCents);
     }
   });
 
@@ -132,8 +129,8 @@ describe('the market of a hour', () => {
     // Act
     const { world: after } = playWeek(world, [{ type: 'market.sell', personId: LECLERC, good: 'cloth', units: 20 }]);
 
-    // Assert: the price only drifted; the flow is stored for the next hour.
-    expect(Math.abs(after.market.cloth - RULES.market.cloth.referenceCents)).toBeLessThanOrEqual(RULES.priceDriftCents);
+    // Assert: the price holds; the flow is stored for the next hour.
+    expect(after.market.cloth).toBe(RULES.market.cloth.referenceCents);
     expect(after.marketFlow.cloth).toBe(26);
   });
 
@@ -188,7 +185,6 @@ describe('the market of a hour', () => {
       referenceCents: RULES.market.cloth.referenceCents,
       absorbedUnits: RULES.market.cloth.absorbedUnits * hours,
       scaleUnits: RULES.market.cloth.scaleUnits * hours,
-      driftCents: 0,
       pressureDivisor: RULES.pricePressureDivisor,
       reversionDivisor: RULES.priceReversionDivisor,
       floorCents: RULES.priceFloorCents,
@@ -242,12 +238,10 @@ describe('the prices of a month', () => {
     });
   });
 
-  it('lets the badge mark both sides of the reference in a normal month', () => {
+  it('lets a worked chain sit below its reference and an unworked chain above', () => {
     // Arrange: the same town, played as a standing order — the player sells the
     // bread the workshop made and buys the grain it needs, every hour.
     let world = town(SEED, 'baker');
-    const cheap = new Set<string>();
-    const dear = new Set<string>();
     const refusals: Event[] = [];
     const breadPrices: number[] = [];
 
@@ -269,19 +263,8 @@ describe('the prices of a month', () => {
       const result = tick(world, actions);
       world = result.world;
       refusals.push(...result.events.filter((event) => event.type === 'action.refused' && event.personId === LECLERC));
-      if (hour % halfDay !== 0) {
-        continue;
-      }
-
-      breadPrices.push(world.market.bread);
-      for (const good of finishedGoods) {
-        const reference = RULES.market[good].referenceCents;
-        if (world.market[good] * 100 <= reference * 90) {
-          cheap.add(good);
-        }
-        if (world.market[good] * 100 >= reference * 110) {
-          dear.add(good);
-        }
+      if (hour % halfDay === 0) {
+        breadPrices.push(world.market.bread);
       }
     }
 
@@ -289,14 +272,13 @@ describe('the prices of a month', () => {
     // player actually faced.
     expect(refusals).toEqual([]);
 
-    // The bread the player sold glutted its chain, while a chain nobody worked
-    // stayed dear: both edges of the badge fire in the same month. The worked
-    // chain also sits at or below its reference, as the decision says.
+    // The bread the player sold glutted its chain: its price sits below the
+    // reference. A finished good nobody works stays above its own.
     const breadReference = RULES.market.bread.referenceCents;
     const breadSum = breadPrices.reduce((total, price) => total + price, 0);
-    expect(breadSum * 100).toBeLessThanOrEqual(breadReference * 100 * breadPrices.length);
-    expect(cheap.size).toBeGreaterThan(0);
-    expect(dear.size).toBeGreaterThan(0);
+    expect(breadSum).toBeLessThan(breadReference * breadPrices.length);
+    const dear = finishedGoods.filter((good) => world.market[good] > RULES.market[good].referenceCents);
+    expect(dear.length).toBeGreaterThan(0);
   });
 });
 

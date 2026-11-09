@@ -3,15 +3,34 @@ import type { Action, Event, PersonIdentity, Trade, World } from '@brigue/core';
 
 import type { TownInfo } from '../src/town/worlds.ts';
 
+const MINSTD_MODULUS = 2147483647;
+
+/** A seeded stand-in for the server's `Math.random`, so a replay is exact. */
+export function seeded(seed = 1): () => number {
+  let state = ((seed % MINSTD_MODULUS) + MINSTD_MODULUS) % MINSTD_MODULUS || 1;
+
+  return () => {
+    state = (state * 48271) % MINSTD_MODULUS;
+
+    return state / MINSTD_MODULUS;
+  };
+}
+
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
  * placed on the hour being stepped.
  */
-export function tick(world: World, actions: readonly Action[] = []): { world: World; events: Event[] } {
+export function tick(
+  world: World,
+  actions: readonly Action[] = [],
+  random: () => number = seeded(world.seed + world.hour),
+): { world: World; events: Event[] } {
   return advance(
     world,
     world.hour,
     actions.map((action) => ({ at: world.hour, action })),
+    new Set(),
+    random,
   );
 }
 

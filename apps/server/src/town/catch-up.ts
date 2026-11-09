@@ -11,6 +11,8 @@ export interface TownAccess {
   players: PlayerStore;
   worlds: WorldStore;
   logger: Logger;
+  /** The world's random stream; the server passes `Math.random`, a test a seed. */
+  random?: () => number;
 }
 
 export type TownOutcome =
@@ -65,6 +67,7 @@ export function catchUpTown(
       at,
       2,
       presence.dormant,
+      access.random ?? Math.random,
     );
 
     if (due.hours > 0) {
@@ -124,6 +127,7 @@ export function advanceTown(
       forced,
       1,
       awake,
+      access.random ?? Math.random,
     );
     // The hour was simulated, not lived. Put the next natural hour an hour
     // from the real now, instead of stacking a backlog.

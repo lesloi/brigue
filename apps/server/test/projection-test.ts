@@ -5,9 +5,9 @@ import {
   HOURS_PER_YEAR,
   NAME_PRICE,
   RULES,
-  START_YEAR,
   stockCapacityUnits,
   stockUnits,
+  yearOf,
   type World,
 } from '@brigue/core';
 
@@ -39,8 +39,8 @@ describe('the projection calendar', () => {
     // Assert
     expect(projection.hour).toBe(world.hour);
     expect(projection.hour).toBe(HOURS_PER_YEAR + 1);
-    expect(projection.year).toBe(world.year);
-    expect(projection.year).toBe(START_YEAR + 1);
+    expect(projection.year).toBe(yearOf(world.hour));
+    expect(projection.year).toBe(1402);
   });
 
   it('names the town it was read from', () => {

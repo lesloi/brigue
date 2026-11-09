@@ -293,6 +293,7 @@ describe('joining the town', () => {
     const worlds: WorldStore = {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
+      readClock: () => real.readClock(),
       withWorld: (run, townId) => {
         // Gone, not failing: the next join will not see it either.
         if (vanish && townId === split.id) {

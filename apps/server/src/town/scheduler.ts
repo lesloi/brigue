@@ -7,6 +7,7 @@ import {
   HOUR_MS,
   UnknownWorldError,
   sessionWorld,
+  type Clock,
   type TownInfo,
   type WorldSession,
   type WorldStore,
@@ -41,14 +42,17 @@ export interface Source {
  * plays from the first unplayed hour, the reader only wakes the town when it is
  * more than an hour behind — that is, when the scheduler is down.
  *
+ * `random` is the world's stream, injected so a test replays the same town.
+ *
  * Pure: the caller decides whether to save the result.
  */
 export async function playDue(
   session: WorldSession,
   source: Source,
   now: Date,
-  minHours = 1,
-  dormant: ReadonlySet<number> = new Set(),
+  minHours: number,
+  dormant: ReadonlySet<number>,
+  random: () => number,
 ): Promise<Due> {
   const elapsed = Math.floor((now.getTime() - source.hourStartedAt.getTime()) / HOUR_MS);
 
@@ -65,6 +69,7 @@ export async function playDue(
     until,
     actions.map((stored) => ({ at: stored.playsAt, action: stored.action })),
     dormant,
+    random,
   );
 
   // The anchor moves by every elapsed hour, played or skipped, so the town's
@@ -85,6 +90,8 @@ export interface SchedulerOptions {
   players: PlayerStore;
   logger: Logger;
   now: () => Date;
+  /** The world's random stream. A test passes a seeded one to replay a pass. */
+  random?: () => number;
   /** How often the loop looks at the clock. A minute is enough for an hour's step. */
   everyMs?: number;
 }
@@ -93,10 +100,12 @@ export interface SchedulerOptions {
  * The town moves without a reader. The loop looks at the clock, and the lock in
  * the store makes two passes on the same town harmless: the second finds nothing
  * due and writes nothing. Every town is played on its own: a town that fails
- * must not freeze the others.
+ * must not freeze the others. The target hour is read once per pass, from the
+ * world's one clock, so every town advances to the same instant.
  */
 export function startScheduler(options: SchedulerOptions): { stop(): void } {
   const everyMs = options.everyMs ?? 60_000;
+  const random = options.random ?? Math.random;
   let busy = false;
 
   const pass = async (): Promise<void> => {
@@ -114,9 +123,19 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
       await eraseUnboundAccounts(options.players, at, options.logger);
 
       const towns = await options.store.listTowns();
+      if (towns.length === 0) {
+        return;
+      }
+
+      // One clock, one target: read it before any town advances, so a save in
+      // the middle of the pass cannot move the hour under the towns behind it.
+      const clock = await options.store.readClock();
+      if (clock === null) {
+        throw new Error('the world has no settings');
+      }
 
       for (const town of towns) {
-        await playTown(town, at);
+        await playTown(town, at, clock);
       }
     } catch (error) {
       // The list itself is unreachable: the database is down, and every town
@@ -127,7 +146,7 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
     }
   };
 
-  async function playTown(town: TownInfo, at: Date): Promise<void> {
+  async function playTown(town: TownInfo, at: Date, clock: Clock): Promise<void> {
     try {
       const outcome = await options.store.withWorld(async (session) => {
         const world = sessionWorld(session);
@@ -165,12 +184,16 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           return { expired, hour: null };
         }
 
+        // Every town starts the pass at the shared clock, not at the hour the
+        // previous town's save moved it to: the hour in the rows is the same
+        // for every town, and the data behind it is the town's own.
         const due = await playDue(
           session,
-          { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
+          { world: { ...presence.world, hour: clock.hour }, hourStartedAt: clock.hourStartedAt },
           at,
           1,
           presence.dormant,
+          random,
         );
 
         if (due.hours > 0 || presence.deletedPersonIds.length > 0 || persons.size > 0) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { advance, stockCapacityUnits, type Action, type World } from '../src/index.ts';
-import { LECLERC, town } from './helpers.ts';
+import { LECLERC, seeded, town } from './helpers.ts';
 
 const SEED = 20261109;
 
@@ -17,6 +17,8 @@ describe('the order of an hour', () => {
       world,
       world.hour,
       actions.map((action) => ({ at: world.hour, action })),
+      new Set(),
+      seeded(world.seed + world.hour),
     ).events;
 
   it('keeps a refusal before the message the town writes afterwards', () => {

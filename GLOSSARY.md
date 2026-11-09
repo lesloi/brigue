@@ -18,7 +18,8 @@ French in the data and in the interface, and the English here is only how we tal
 - **Ville** — the town, Saint-Aubin. Twenty people at most, and the lowest tier of government.
 - **Comté** — the county: several towns, one council, one comte. Above the town.
 - **Royaume** — the kingdom: several counties, one council, one king. The highest tier.
-- **Heure** — the clock. One real hour is half a town month; twenty-four hours make a year, and a
+- **Heure** — the clock. One world has one clock, shared by every town: one real hour is half a
+  town month; twenty-four hours make a year, and a
   year is a day. A duration is said in hours when planning, in months when the town speaks.
 - **Mois** — two real hours; twelve months make a year.
 - **An** — twenty-four real hours, one day. The calendar advances a year per day.

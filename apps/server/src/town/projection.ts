@@ -14,6 +14,7 @@ import {
   workshopCapacity,
   workshopCap,
   workshopLevelCap,
+  yearOf,
   type Engagement,
   type GoodId,
   type Law,
@@ -148,8 +149,8 @@ export interface WorldProjection {
 
 /**
  * The client renders, it decides nothing: it gets its own person in full and the
- * rest of the town at the detail the town itself would show. The seed, the
- * generator and other people's treasuries never leave the server.
+ * rest of the town at the detail the town itself would show. The seed and other
+ * people's treasuries never leave the server.
  */
 export function projectWorld(
   town: TownInfo,
@@ -167,7 +168,7 @@ export function projectWorld(
 
   return {
     hour: world.hour,
-    year: world.year,
+    year: yearOf(world.hour),
     calendar: calendarOf(world, hourStartedAt),
     person: ownPerson(world, person, familyName),
     town: {

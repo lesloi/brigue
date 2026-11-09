@@ -6,8 +6,8 @@ mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 
 ## Architecture
 
-- `packages/core`: the whole simulation. Pure TypeScript: no I/O, no wall clock, no global
-  random. One seed in, one world out.
+- `packages/core`: the whole simulation. Pure TypeScript: no I/O, no wall clock read, no
+  global random read. One seed in, one world out.
 - `apps/server`: Node, holds the world in Postgres, serves the API, catches the
   world up when a player asks for it.
 - `apps/web`: a Vite PWA, mobile first. It renders the projection and the events, and sends
@@ -16,9 +16,11 @@ mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 
 By default:
 
-- `advance(world, until, actions)` returns a new world and the events up to that instant. It never
-  mutates the world it is given, and the core never reads the clock or `Math.random`; a test
-  guards both.
+- `advance(world, until, actions, dormant, random)` returns a new world and the events up to
+  that instant. It never mutates the world it is given. The core reads neither the wall clock
+  nor a global random source itself: the instant and the random stream are passed in by the
+  caller. A test guards that no `Date` call and no `Math.random` is written inside
+  `packages/core`; randomness is still allowed, as an argument.
 - Money is integer cents. There is no float in the simulation, and no amount is ever a string.
 - The core never imports from `apps/*`. It is the one part that must stay replayable without a
   server, a database or a browser.

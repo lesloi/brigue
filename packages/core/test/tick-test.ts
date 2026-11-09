@@ -3,16 +3,15 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
-  advanceRng,
   canonicalJson,
   FORMAT_VERSION,
+  HOURS_PER_YEAR,
   RULES,
-  START_YEAR,
   stateHash,
   takeSeat,
   visibleTo,
-  HOURS_PER_YEAR,
   WorldVersionError,
+  yearOf,
 } from '../src/index.ts';
 import type { Action, Event, World } from '../src/index.ts';
 import { CARON, FOURNIER, LECLERC, tick, town } from './helpers.ts';
@@ -160,11 +159,11 @@ describe('the simulation core', () => {
     // Act: the twenty-fourth tick closes it.
     const after = tick(almost).world;
 
-    // Assert
+    // Assert: the year is a reading of the hour, not a field of the world.
     expect(almost.hour).toBe(HOURS_PER_YEAR);
-    expect(almost.year).toBe(START_YEAR);
+    expect(yearOf(almost.hour)).toBe(1401);
     expect(after.hour).toBe(HOURS_PER_YEAR + 1);
-    expect(after.year).toBe(START_YEAR + 1);
+    expect(yearOf(after.hour)).toBe(1402);
   });
 
   it('advances a living person one year per twenty-four ticks', () => {
@@ -464,12 +463,6 @@ describe('the simulation core', () => {
   });
 });
 
-describe('the generator', () => {
-  it('escapes the zero fixed point', () => {
-    expect(advanceRng(0)).toBeGreaterThan(0);
-  });
-});
-
 describe('canonical json', () => {
   it('sorts keys and drops whitespace', () => {
     expect(canonicalJson({ b: 1, a: [2, { d: 3, c: 4 }] })).toBe('{"a":[2,{"c":4,"d":3}],"b":1}');
@@ -477,7 +470,7 @@ describe('canonical json', () => {
 });
 
 describe('the core', () => {
-  it('stays pure: no wall clock, no global rng, no import from an app', () => {
+  it('keeps the wall clock and the global random source out of its source', () => {
     const sourceDir = join(import.meta.dirname, '..', 'src');
     const offenders = readdirSync(sourceDir)
       .filter((file) => file.endsWith('.ts'))

@@ -1,20 +1,41 @@
 import { advance, createWorld, withFirstPerson } from '../src/index.ts';
 import type { Action, Event, PersonIdentity, Trade, World } from '../src/index.ts';
 
+const MINSTD_MODULUS = 2147483647;
+
+/**
+ * A seeded stand-in for the random source the server passes to `advance`.
+ * MINSTD, the generator the old world cursor used: 48271 × (2^31 - 1) stays
+ * below 2^53, so the arithmetic is exact. Tests replay the same town when the
+ * seed is the same.
+ */
+export function seeded(seed = 1): () => number {
+  let state = ((seed % MINSTD_MODULUS) + MINSTD_MODULUS) % MINSTD_MODULUS || 1;
+
+  return () => {
+    state = (state * 48271) % MINSTD_MODULUS;
+
+    return state / MINSTD_MODULUS;
+  };
+}
+
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
- * placed on the hour being stepped.
+ * placed on the hour being stepped. The stream is seeded from the world and the
+ * hour, so a test replaying the same town draws the same values.
  */
 export function tick(
   world: World,
   actions: readonly Action[] = [],
   dormant: ReadonlySet<number> = new Set(),
+  random: () => number = seeded(world.seed + world.hour),
 ): { world: World; events: Event[] } {
   return advance(
     world,
     world.hour,
     actions.map((action) => ({ at: world.hour, action })),
     dormant,
+    random,
   );
 }
 
@@ -23,8 +44,9 @@ export function playUntil(
   world: World,
   hour: number,
   dormant: ReadonlySet<number> = new Set(),
+  random: () => number = seeded(world.seed + world.hour),
 ): { world: World; events: Event[] } {
-  return advance(world, hour, [], dormant);
+  return advance(world, hour, [], dormant, random);
 }
 
 /** The next bell: noon or midnight, whichever comes first. */

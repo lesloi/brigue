@@ -60,11 +60,11 @@ describe('the town store', () => {
     const a = await store.withWorld(async (session) => session.snapshot, first.id);
     const b = await store.withWorld(async (session) => session.snapshot, second.id);
 
-    // Assert: names and states do not mix.
+    // Assert: names do not mix, and both towns share the world's seed.
     expect(a.town).toEqual(first);
     expect(b.town).toEqual(second);
     expect(a.world.seed).toBe(1);
-    expect(b.world.seed).toBe(2);
+    expect(b.world.seed).toBe(1);
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([first.id, second.id]);
 
     // Act: the first town goes, the second stays.

@@ -18,7 +18,7 @@ import {
   type Event,
   type World,
 } from '../src/index.ts';
-import { CARON, LECLERC, TEST_FIRST_DYNASTY, tick, town } from './helpers.ts';
+import { CARON, LECLERC, seeded, TEST_FIRST_DYNASTY, tick, town } from './helpers.ts';
 
 const SEED = 20261107;
 
@@ -36,7 +36,7 @@ function play(
     }
   }
 
-  return advance(world, until, placed, dormant);
+  return advance(world, until, placed, dormant, seeded(world.seed + world.hour));
 }
 
 function leased(world: World) {

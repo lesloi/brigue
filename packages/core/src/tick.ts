@@ -1,4 +1,3 @@
-import { drawBelow } from './prng.ts';
 import type { Action, Event, EventDraft, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
@@ -11,7 +10,6 @@ import {
   RULES,
   seatHolder,
   SEATS,
-  START_YEAR,
   stockCapacityUnits,
   stockUnits,
   takeSeat,
@@ -67,12 +65,17 @@ export class WorldVersionError extends Error {
  * `dormant` is the set of people the server found silent. It is an argument
  * and not a field of the world: silence is a fact about players, which the core
  * never reads, and the same town replays the same way whatever the clock says.
+ *
+ * `random` is injected for the same reason: the core never reads a global random
+ * source itself. The server passes `Math.random`, a replay passes a seeded
+ * generator, and the same world plus the same stream gives the same town.
  */
 export function advance(
   world: World,
   until: number,
-  actions: readonly PlacedAction[] = [],
-  dormant: ReadonlySet<PersonId> = new Set(),
+  actions: readonly PlacedAction[],
+  dormant: ReadonlySet<PersonId>,
+  random: () => number,
 ): TickResult {
   if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
     throw new WorldVersionError(world);
@@ -94,7 +97,7 @@ export function advance(
   while (next.hour <= until) {
     const at = next.hour;
     const drafts: EventDraft[] = [];
-    step(next, byHour.get(at) ?? [], drafts, dormant);
+    step(next, byHour.get(at) ?? [], drafts, dormant, random);
     for (const draft of drafts) {
       events.push({ ...draft, at });
     }
@@ -110,7 +113,13 @@ export interface PlacedAction {
 }
 
 /** One hour of the town. Mutates `next`, which `advance` owns. */
-function step(next: World, actions: readonly Action[], events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
+function step(
+  next: World,
+  actions: readonly Action[],
+  events: EventDraft[],
+  dormant: ReadonlySet<PersonId>,
+  random: () => number,
+): void {
   // The hour's own trade, good by good: sold minus bought. It is written on the
   // world once the hour is over, and prices the next bell.
   const flow = Object.fromEntries(GOODS.map((good) => [good, 0])) as Record<GoodId, number>;
@@ -156,7 +165,7 @@ function step(next: World, actions: readonly Action[], events: EventDraft[], dor
   // At the start of the year, before the noon bell closes the candidacies, an
   // AI person without a seat looks for a vacant one.
   if (next.hour % HOURS_PER_YEAR === 1) {
-    aiPeopleCampaign(next, town, dormant);
+    aiPeopleCampaign(next, town, dormant, random);
   }
 
   const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
@@ -181,7 +190,7 @@ function step(next: World, actions: readonly Action[], events: EventDraft[], dor
   // The scrutiny closes the year: every seat is up, once a day, and everyone
   // present ages a year.
   if (next.hour % HOURS_PER_YEAR === 0) {
-    holdScrutiny(next, town, dormant);
+    holdScrutiny(next, town, dormant, random);
   }
 
   // The hour reads as it was written: what the person asked and got, then what
@@ -189,7 +198,6 @@ function step(next: World, actions: readonly Action[], events: EventDraft[], dor
   events.push(...town);
 
   next.hour += 1;
-  next.year = START_YEAR + Math.floor((next.hour - 1) / HOURS_PER_YEAR);
 }
 
 function isKnownAction(value: unknown): value is Action {
@@ -569,12 +577,9 @@ export interface PriceInput {
   scaleUnits: number;
   /**
    * Net units the town put on the market last hour: sold minus bought.
-   * Undefined when the world has no hour behind it, or none for that good: the
-   * market then has no imbalance to price.
+   * Undefined when the good has no flow stored, which the rule reads as nil.
    */
   flowUnits?: number;
-  /** This hour's random drift, already drawn. */
-  driftCents: number;
   /** The imbalance, in scales, that moves the price by a tenth of the reference. */
   pressureDivisor: number;
   /** How many hours the gap back to the reference takes to close. */
@@ -600,7 +605,7 @@ export function nextPriceCents(input: PriceInput): number {
   const pressure = -Math.trunc((imbalance * input.referenceCents) / (input.pressureDivisor * scale));
   const pull = Math.trunc((input.referenceCents - input.priceCents) / input.reversionDivisor);
 
-  return clamp(input.priceCents + input.driftCents + pressure + pull, input.floorCents, input.ceilCents);
+  return clamp(input.priceCents + pressure + pull, input.floorCents, input.ceilCents);
 }
 
 /** The people a server plays, in id order, so a replay is stable. */
@@ -667,20 +672,13 @@ function driftPrices(world: World): void {
   const hours = HOURS_PER_YEAR / 2;
 
   for (const good of GOODS) {
-    const [rng, roll] = drawBelow(world.rng, RULES.priceDriftCents * 2 + 1);
-    world.rng = rng;
-
     const before = world.market[good];
-    // The raw goods are bought at the market: their price is not moved by the
-    // town's flow, only by chance and the pull home.
-    const raw = RULES.recipes[good] === null;
     const after = nextPriceCents({
       priceCents: before,
       referenceCents: RULES.market[good].referenceCents,
       absorbedUnits: RULES.market[good].absorbedUnits * hours,
       scaleUnits: RULES.market[good].scaleUnits * hours,
-      flowUnits: raw ? undefined : world.marketFlow[good],
-      driftCents: roll - RULES.priceDriftCents,
+      flowUnits: world.marketFlow[good],
       pressureDivisor: RULES.pricePressureDivisor,
       reversionDivisor: RULES.priceReversionDivisor,
       floorCents: RULES.priceFloorCents,
@@ -969,7 +967,7 @@ function highestWorkshopSeq(world: World): number {
   return highest;
 }
 
-function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
+function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>, random: () => number): void {
   // Age belongs to the calendar: every living person takes a year at the
   // scrutiny, whatever they did with it. The death roll is #7.
   for (const person of Object.values(world.people)) {
@@ -984,7 +982,7 @@ function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<P
   // every seat leaves one vacant rather than electing the same person twice.
   const electedPersonIds = new Set<PersonId>();
   for (const seatId of SEATS) {
-    contestSeat(world, seatId, elections, electedPersonIds, dormant);
+    contestSeat(world, seatId, elections, electedPersonIds, dormant, random);
   }
 
   events.push(...elections);
@@ -1003,7 +1001,12 @@ function countsAtFor(world: World): number {
  * tries a random vacant seat. A seated AI is the incumbent and defends it; the
  * climb waits for #55.
  */
-function aiPeopleCampaign(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
+function aiPeopleCampaign(
+  world: World,
+  events: EventDraft[],
+  dormant: ReadonlySet<PersonId>,
+  random: () => number,
+): void {
   const seated = new Set<PersonId>();
   for (const seatId of SEATS) {
     const person = seatHolder(world, seatId);
@@ -1022,9 +1025,7 @@ function aiPeopleCampaign(world: World, events: EventDraft[], dormant: ReadonlyS
       continue;
     }
 
-    const [rng, roll] = drawBelow(world.rng, vacant.length);
-    world.rng = rng;
-    const seatId = vacant[roll] as SeatId;
+    const seatId = vacant[Math.floor(random() * vacant.length)] as SeatId;
 
     person.favour -= RULES.campaignFavourCost;
     const seat = (world.campaigns[seatId] ??= {});
@@ -1047,6 +1048,7 @@ function contestSeat(
   events: EventDraft[],
   electedPersonIds: Set<PersonId>,
   dormant: ReadonlySet<PersonId>,
+  random: () => number,
 ): void {
   const campaigns = world.closedCampaigns[seatId] ?? {};
   const incumbent = seatHolder(world, seatId);
@@ -1086,9 +1088,7 @@ function contestSeat(
 
   const votes: Record<PersonId, number> = {};
   for (const personId of candidateIds) {
-    const [rng, roll] = drawBelow(world.rng, 5);
-    world.rng = rng;
-    votes[personId] = roll + 1 + (campaigns[personId] ?? 0);
+    votes[personId] = 1 + Math.floor(random() * 5) + (campaigns[personId] ?? 0);
   }
 
   // Highest vote wins; a tie goes to the person that comes first by id, so the

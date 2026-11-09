@@ -10,7 +10,7 @@ import { playDue } from '../src/town/scheduler.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
 import { issueToken } from '../src/identity/session.ts';
 import { MemoryWorldStore } from '../src/town/worlds.ts';
-import { CARON, FOURNIER, LECLERC, TEST_TOWN, town } from './helpers.ts';
+import { CARON, FOURNIER, LECLERC, seeded, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
@@ -109,7 +109,7 @@ async function start(
         const accounts = new Map(
           players.flatMap((player) => (player.personId === null ? [] : [[player.personId, player.playerId] as const])),
         );
-        const due = await playDue(session, session.snapshot, new Date(clock.now));
+        const due = await playDue(session, session.snapshot, new Date(clock.now), 1, new Set(), seeded());
         if (due.hours > 0) {
           await session.save(due.world, due.hourStartedAt, due.events, accounts);
         }

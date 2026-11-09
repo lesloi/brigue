@@ -54,9 +54,9 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       [playerId, CROWNED_AT],
     );
     await pool.query(
-      `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, hour_started_at)
-       VALUES ($1, 2, 4, 7, 7, 1, 1, now())`,
-      [townId],
+      `INSERT INTO settings (key, value)
+       VALUES ('format_version', '3'), ('ruleset_version', '4'), ('seed', '7'), ('hour', '1'),
+              ('hour_started_at', now())`,
     );
 
     return { tokenHash, townId, playerId };
@@ -71,7 +71,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
 
     // Assert: the town is gone, the account keeps its identity and its dates,
     // and the dynasty is the only thing it lost.
-    const state = await pool.query('SELECT count(*)::int AS count FROM state');
+    const settings = await pool.query('SELECT count(*)::int AS count FROM settings');
     const people = await pool.query('SELECT count(*)::int AS count FROM people');
     const players = await pool.query<{
       token_hash: string;
@@ -86,7 +86,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
 
-    expect(state.rows[0]?.count).toBe(0);
+    expect(settings.rows[0]?.count).toBe(0);
     expect(people.rows[0]?.count).toBe(0);
     expect(players.rows).toHaveLength(1);
     expect(players.rows[0]).toMatchObject({

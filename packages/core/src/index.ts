@@ -11,7 +11,6 @@ export {
   sanitizeName,
   type NameRefusal,
 } from './names.ts';
-export { advanceRng, drawBelow, MINSTD_MODULUS } from './prng.ts';
 export {
   advance,
   nextPriceCents,
@@ -59,6 +58,7 @@ export {
   workshopCapacity,
   workshopLevelCap,
   WORKSHOP_CAPACITY_UNITS,
+  yearOf,
   type Engagement,
   type EngagementKind,
   type PersonIdentity,
