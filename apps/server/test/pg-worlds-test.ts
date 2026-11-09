@@ -14,7 +14,7 @@ import {
 } from '@brigue/core';
 
 import { applySchema } from '../src/db/migrations.ts';
-import { PgWorldStore } from '../src/town/pg-worlds.ts';
+import { PgWorldStore, TOWN_TABLES } from '../src/town/pg-worlds.ts';
 import {
   DuplicateActionError,
   NameInUseError,
@@ -114,6 +114,29 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert: the canonical order, the one the array is hashed in.
     expect(world.dynasties.caron.workshops.map((workshop) => workshop.id)).toEqual(['workshop-10', 'workshop-9']);
+  });
+
+  it('writes and clears every town table', async () => {
+    // Arrange: every table the schema scopes to a town.
+    const { rows } = await pool.query<{ table_name: string }>(
+      `SELECT table_name
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND column_name = 'town_id'`,
+    );
+    // The town row, the locked header, and the append-only queue and journal are
+    // outside the snapshot the writer replaces.
+    const outside = new Set(['towns', 'state', 'events', 'actions']);
+
+    // Act
+    const written = TOWN_TABLES.map((entry) => entry.table).sort();
+
+    // Assert: a table added to the schema cannot be forgotten by the writer.
+    expect(
+      rows
+        .map((row) => row.table_name)
+        .filter((name) => !outside.has(name))
+        .sort(),
+    ).toEqual(written);
   });
 
   it('refuses a world it does not hold', async () => {

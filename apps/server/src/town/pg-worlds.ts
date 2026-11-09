@@ -549,144 +549,183 @@ function siteOf(
 
 /**
  * The town is small and written whole, so a save clears the tables and writes
- * them again: a dynasty that disappeared, or a stock that fell to zero, cannot
+ * them again: a person that disappeared, or a stock that fell to zero, cannot
  * leave a row behind the way an upsert would.
+ *
+ * One descriptor per table, in the order the foreign keys require: the clear and
+ * the write both read this list, so a table cannot be deleted and forgotten on
+ * the way back. A row names its columns, so a value cannot land in the wrong one
+ * by position.
  */
+interface TownTable {
+  readonly table: string;
+  readonly columns: readonly string[];
+  rows(world: World, townId: number): ReadonlyArray<Record<string, unknown>>;
+}
+
+const byId = <T extends { id: string }>(left: T, right: T): number => left.id.localeCompare(right.id);
+
+export const TOWN_TABLES: readonly TownTable[] = [
+  {
+    table: 'dynasties',
+    columns: ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige'],
+    rows: (world, townId) =>
+      Object.values(world.dynasties)
+        .sort(byId)
+        .map((dynasty) => ({
+          town_id: townId,
+          id: dynasty.id,
+          name: dynasty.name,
+          controller: dynasty.controller,
+          treasury_cents: dynasty.treasuryCents,
+          debt_cents: dynasty.debtCents,
+          favour: dynasty.favour,
+          prestige: dynasty.prestige,
+        })),
+  },
+  {
+    table: 'people',
+    columns: ['town_id', 'id', 'dynasty_id', 'name', 'age', 'title', 'residence_level', 'alive'],
+    rows: (world, townId) =>
+      Object.values(world.people)
+        .sort(byId)
+        .map((person) => ({
+          town_id: townId,
+          id: person.id,
+          dynasty_id: person.dynastyId,
+          name: person.name,
+          age: person.age,
+          title: titleOf(person),
+          residence_level: residenceOf(person),
+          alive: person.alive,
+        })),
+  },
+  {
+    table: 'workshops',
+    columns: ['town_id', 'dynasty_id', 'id', 'good', 'level'],
+    rows: (world, townId) =>
+      Object.values(world.dynasties)
+        .sort(byId)
+        .flatMap((dynasty) =>
+          dynasty.workshops.map((workshop) => ({
+            town_id: townId,
+            dynasty_id: dynasty.id,
+            id: workshop.id,
+            good: workshop.good,
+            level: workshop.level,
+          })),
+        ),
+  },
+  {
+    table: 'stock',
+    columns: ['town_id', 'dynasty_id', 'good', 'units'],
+    rows: (world, townId) =>
+      Object.values(world.dynasties)
+        .sort(byId)
+        .flatMap((dynasty) =>
+          Object.entries(dynasty.stock).map(([good, units]) => ({
+            town_id: townId,
+            dynasty_id: dynasty.id,
+            good,
+            units: units ?? 0,
+          })),
+        ),
+  },
+  {
+    table: 'seats',
+    columns: ['town_id', 'seat_id', 'person_id'],
+    rows: (world, townId) =>
+      Object.entries(world.seats).map(([seatId, seat]) => ({
+        town_id: townId,
+        seat_id: seatId,
+        person_id: seat.personId,
+      })),
+  },
+  {
+    table: 'laws',
+    columns: ['town_id', 'id', 'position', 'title', 'sponsor_dynasty_id', 'enacted_at'],
+    rows: (world, townId) =>
+      world.laws.map((law, position) => ({
+        town_id: townId,
+        id: law.id,
+        position,
+        title: law.title,
+        sponsor_dynasty_id: law.sponsorDynastyId,
+        enacted_at: law.enactedAt,
+      })),
+  },
+  {
+    table: 'engagements',
+    columns: ['town_id', 'id', 'kind', 'dynasty_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
+    rows: (world, townId) =>
+      world.engagements.map((engagement, position) => ({
+        town_id: townId,
+        id: engagement.id,
+        kind: engagement.kind,
+        dynasty_id: engagement.dynastyId,
+        due_at: engagement.dueAt,
+        work: engagement.kind === 'site' ? engagement.work : null,
+        trade: engagement.kind === 'site' && engagement.work === 'build' ? engagement.trade : null,
+        workshop_id: engagement.kind === 'site' && engagement.work === 'upgrade' ? engagement.workshopId : null,
+        position,
+      })),
+  },
+  {
+    table: 'campaigns',
+    columns: ['town_id', 'seat_id', 'dynasty_id', 'closed', 'votes'],
+    rows: (world, townId) =>
+      [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)].map((row) => ({
+        town_id: townId,
+        ...row,
+      })),
+  },
+  {
+    table: 'market',
+    columns: ['town_id', 'good', 'price_cents', 'flow_units'],
+    rows: (world, townId) =>
+      Object.entries(world.market).map(([good, price]) => ({
+        town_id: townId,
+        good,
+        price_cents: price,
+        flow_units: world.marketFlow[good as GoodId] ?? 0,
+      })),
+  },
+  {
+    table: 'market_history',
+    columns: ['town_id', 'good', 'position', 'price_cents'],
+    rows: (world, townId) =>
+      Object.entries(world.marketHistory ?? {}).flatMap(([good, prices]) =>
+        (prices ?? []).map((price, position) => ({ town_id: townId, good, position, price_cents: price })),
+      ),
+  },
+];
+
 async function clearWorld(client: PoolClient, townId: number): Promise<void> {
   // One statement per table: a parameterised query is sent with the extended
-  // protocol, which refuses several commands at once.
-  await client.query('DELETE FROM seats WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM laws WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM engagements WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM campaigns WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM stock WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM workshops WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM people WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM market_history WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM market WHERE town_id = $1', [townId]);
-  await client.query('DELETE FROM dynasties WHERE town_id = $1', [townId]);
+  // protocol, which refuses several commands at once. Children first, so the
+  // delete never leans on the cascade.
+  for (const entry of [...TOWN_TABLES].reverse()) {
+    await client.query(`DELETE FROM ${entry.table} WHERE town_id = $1`, [townId]);
+  }
 }
 
 async function writeWorld(client: PoolClient, townId: number, world: World): Promise<void> {
-  const dynasties = Object.values(world.dynasties).sort((left, right) => left.id.localeCompare(right.id));
-
-  await insertRows(
-    client,
-    'dynasties',
-    ['town_id', 'id', 'name', 'controller', 'treasury_cents', 'debt_cents', 'favour', 'prestige'],
-    dynasties.map((dynasty) => [
-      townId,
-      dynasty.id,
-      dynasty.name,
-      dynasty.controller,
-      dynasty.treasuryCents,
-      dynasty.debtCents,
-      dynasty.favour,
-      dynasty.prestige,
-    ]),
-  );
-
-  const people = Object.values(world.people).sort((left, right) => left.id.localeCompare(right.id));
-  await insertRows(
-    client,
-    'people',
-    ['town_id', 'id', 'dynasty_id', 'name', 'age', 'title', 'residence_level', 'alive'],
-    people.map((person) => [
-      townId,
-      person.id,
-      person.dynastyId,
-      person.name,
-      person.age,
-      titleOf(person),
-      residenceOf(person),
-      person.alive,
-    ]),
-  );
-
-  await insertRows(
-    client,
-    'workshops',
-    ['town_id', 'dynasty_id', 'id', 'good', 'level'],
-    dynasties.flatMap((dynasty) =>
-      dynasty.workshops.map((workshop) => [townId, dynasty.id, workshop.id, workshop.good, workshop.level]),
-    ),
-  );
-
-  await insertRows(
-    client,
-    'stock',
-    ['town_id', 'dynasty_id', 'good', 'units'],
-    dynasties.flatMap((dynasty) =>
-      Object.entries(dynasty.stock).map(([good, units]) => [townId, dynasty.id, good, units ?? 0]),
-    ),
-  );
-
-  await insertRows(
-    client,
-    'seats',
-    ['town_id', 'seat_id', 'person_id'],
-    Object.entries(world.seats).map(([seatId, seat]) => [townId, seatId, seat.personId]),
-  );
-
-  await insertRows(
-    client,
-    'laws',
-    ['town_id', 'id', 'position', 'title', 'sponsor_dynasty_id', 'enacted_at'],
-    world.laws.map((law, position) => [townId, law.id, position, law.title, law.sponsorDynastyId, law.enactedAt]),
-  );
-
-  await insertRows(
-    client,
-    'engagements',
-    ['town_id', 'id', 'kind', 'dynasty_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
-    world.engagements.map((engagement, position) => [
-      townId,
-      engagement.id,
-      engagement.kind,
-      engagement.dynastyId,
-      engagement.dueAt,
-      engagement.kind === 'site' ? engagement.work : null,
-      engagement.kind === 'site' && engagement.work === 'build' ? engagement.trade : null,
-      engagement.kind === 'site' && engagement.work === 'upgrade' ? engagement.workshopId : null,
-      position,
-    ]),
-  );
-
-  await insertRows(
-    client,
-    'campaigns',
-    ['town_id', 'seat_id', 'dynasty_id', 'closed', 'votes'],
-    [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)].map((row) => [
-      townId,
-      ...row,
-    ]),
-  );
-
-  await insertRows(
-    client,
-    'market',
-    ['town_id', 'good', 'price_cents', 'flow_units'],
-    Object.entries(world.market).map(([good, price]) => [townId, good, price, world.marketFlow[good as GoodId] ?? 0]),
-  );
-
-  await insertRows(
-    client,
-    'market_history',
-    ['town_id', 'good', 'position', 'price_cents'],
-    Object.entries(world.marketHistory ?? {}).flatMap(([good, prices]) =>
-      (prices ?? []).map((price, position) => [townId, good, position, price]),
-    ),
-  );
+  for (const entry of TOWN_TABLES) {
+    await insertRows(client, entry.table, entry.columns, entry.rows(world, townId));
+  }
 }
 
-function campaignRows(campaigns: World['campaigns'], closed: boolean): [string, string, boolean, number][] {
+function campaignRows(
+  campaigns: World['campaigns'],
+  closed: boolean,
+): Array<{ seat_id: string; dynasty_id: string; closed: boolean; votes: number }> {
   return Object.entries(campaigns).flatMap(([seatId, byDynasty]) =>
-    Object.entries(byDynasty ?? {}).map(([dynastyId, votes]): [string, string, boolean, number] => [
-      seatId,
-      dynastyId,
+    Object.entries(byDynasty ?? {}).map(([dynastyId, votes]) => ({
+      seat_id: seatId,
+      dynasty_id: dynastyId,
       closed,
       votes,
-    ]),
+    })),
   );
 }
 
@@ -702,7 +741,7 @@ async function appendChronicle(client: PoolClient, townId: number, events: Event
     events.map((event) => {
       const { audience, at, type, ...body } = event;
 
-      return [townId, at, audience, type, json(body)];
+      return { town_id: townId, at, audience, type, payload: json(body) };
     }),
   );
 }
@@ -720,7 +759,7 @@ async function appendMessages(client: PoolClient, townId: number, events: Event[
       // The caller kept only the dynasty-addressed events.
       const dynastyId = typeof event.audience === 'object' ? event.audience.dynastyId : '';
 
-      return [dynastyId, event.type, json(messageBody(event))];
+      return { dynasty_id: dynastyId, type: event.type, payload: json(messageBody(event)) };
     }),
   );
 }
@@ -735,15 +774,27 @@ function messageBody(event: Event): Record<string, unknown> {
   return body;
 }
 
-async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {
+async function insertRows(
+  client: PoolClient,
+  table: string,
+  columns: readonly string[],
+  rows: ReadonlyArray<Record<string, unknown>>,
+): Promise<void> {
   if (rows.length === 0) {
     return;
   }
 
   const values: unknown[] = [];
   const tuples = rows.map((row) => {
-    const marks = row.map((value) => {
-      values.push(value);
+    // A row names its columns; a missing or extra one is a bug in the writer,
+    // not in the data, and must not reach the table.
+    if (Object.keys(row).length !== columns.length || !columns.every((column) => Object.hasOwn(row, column))) {
+      throw new Error(`${table}: a row does not match its columns`);
+    }
+
+    const marks = columns.map((column) => {
+      values.push(row[column]);
+
       return `$${values.length}`;
     });
 
