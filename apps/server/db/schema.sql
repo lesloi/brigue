@@ -5,18 +5,6 @@
 -- A schema change edits this file; a database crosses with `reset --full`, which
 -- rebuilds it from here. There is no upgrade path, because no world of another
 -- format is read. `migrate` builds an empty database and nothing else.
---
--- Every town table carries its `town_id` and the rows of a town are the town;
--- `state` is the row the writer locks. Every autoincremented id is a global
--- `bigserial`, assigned by the database.
-
--- A name may come back after a reset; an id never does, so a dead town's
--- accounts cannot point at a new one.
-CREATE TABLE towns (
-  id bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
 
 -- An account, outside the town: the town is replayed, a login is not a game
 -- rule. The name is the human family name; the person the account plays points
@@ -36,6 +24,18 @@ CREATE TABLE players (
 -- A family name is unique across the whole server: it is the name a player is
 -- known by in every town, and the book of kings keeps it.
 CREATE UNIQUE INDEX players_family_name ON players (lower(name));
+
+-- Every town table carries its `town_id` and the rows of a town are the town;
+-- `state` is the row the writer locks. Every autoincremented id is a global
+-- `bigserial`, assigned by the database.
+
+-- A name may come back after a reset; an id never does, so a dead town's
+-- accounts cannot point at a new one.
+CREATE TABLE towns (
+  id bigserial PRIMARY KEY,
+  name text NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
 
 -- One row per town: what belongs to no person, and the row the writer locks.
 CREATE TABLE state (
