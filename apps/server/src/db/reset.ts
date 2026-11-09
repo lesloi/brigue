@@ -22,9 +22,8 @@ export interface ResetReport {
 }
 
 interface SurvivingKing {
-  player_id: number;
+  player_id: number | null;
   dynasty_name: string;
-  person_name: string;
   crowned_at: Date;
   elapsed_hours: number;
 }
@@ -68,8 +67,8 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'kings',
-        ['player_id', 'dynasty_name', 'person_name', 'crowned_at', 'elapsed_hours'],
-        kings.map((king) => [king.player_id, king.dynasty_name, king.person_name, king.crowned_at, king.elapsed_hours]),
+        ['player_id', 'dynasty_name', 'crowned_at', 'elapsed_hours'],
+        kings.map((king) => [king.player_id, king.dynasty_name, king.crowned_at, king.elapsed_hours]),
       );
 
       // The account keeps its id and its dates; the dynasty does not cross.
@@ -92,7 +91,7 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       // be handed to a new account. A king outlives its account, so the book
       // may hold the highest id of all. The next account takes max + 1.
       const maxPlayerId = [
-        ...kings.map((king) => king.player_id),
+        ...kings.map((king) => king.player_id ?? 0),
         ...accounts.map((account) => account.player_id),
       ].reduce((max, id) => Math.max(max, id), 0);
       if (maxPlayerId > 0) {
@@ -158,17 +157,15 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   }
 
   const { rows } = await client.query<{
-    player_id: string;
+    player_id: string | null;
     dynasty_name: string;
-    person_name: string;
     crowned_at: Date;
     elapsed_hours: number;
-  }>(`SELECT player_id, ${nameColumn} AS dynasty_name, person_name, crowned_at, elapsed_hours FROM kings`);
+  }>(`SELECT player_id, ${nameColumn} AS dynasty_name, crowned_at, elapsed_hours FROM kings`);
 
   return rows.map((row) => ({
-    player_id: Number(row.player_id),
+    player_id: row.player_id === null ? null : Number(row.player_id),
     dynasty_name: row.dynasty_name,
-    person_name: row.person_name,
     crowned_at: row.crowned_at,
     elapsed_hours: row.elapsed_hours,
   }));

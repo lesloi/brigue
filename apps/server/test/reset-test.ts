@@ -44,8 +44,8 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const playerId = Number(playerRows[0]?.player_id);
     await pool.query(
-      `INSERT INTO kings (player_id, dynasty_name, person_name, crowned_at, elapsed_hours)
-       VALUES ($1, 'Leclerc', 'Aubin', $2, 12)`,
+      `INSERT INTO kings (player_id, dynasty_name, crowned_at, elapsed_hours)
+       VALUES ($1, 'Leclerc', $2, 12)`,
       [playerId, CROWNED_AT],
     );
     await pool.query(

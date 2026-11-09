@@ -239,13 +239,13 @@ CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, seq);
 -- means nothing once the town is gone. No foreign key to `players`, because the
 -- book outlives the account.
 CREATE TABLE kings (
-  player_id bigint NOT NULL,
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  -- Null when the account that wore the crown is gone: the book outlives it.
+  player_id bigint,
   dynasty_name text NOT NULL,
-  person_name text NOT NULL,
   crowned_at timestamptz NOT NULL,
   -- The town's age at the crowning, in hours from the first hour of the world.
-  elapsed_hours integer NOT NULL,
-  PRIMARY KEY (player_id, crowned_at)
+  elapsed_hours integer NOT NULL
 );
 
 -- Not folded here, because it belongs to the runner and not to the town:

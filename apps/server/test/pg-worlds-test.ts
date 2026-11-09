@@ -346,8 +346,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       [tokenHash],
     );
     await pool.query(
-      `INSERT INTO kings (player_id, dynasty_name, person_name, crowned_at, elapsed_hours)
-       VALUES ($1, 'Leclerc', 'Aubin', now(), 12)`,
+      `INSERT INTO kings (player_id, dynasty_name, crowned_at, elapsed_hours)
+       VALUES ($1, 'Leclerc', now(), 12)`,
       [Number(playerRows[0]?.player_id)],
     );
 

@@ -468,7 +468,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   in rows, so a screen can read the market alone and the book of kings is a query. A format change
   is a migration across those tables; a reset is a wipe of them. Deleting a town cascades its
   tables; the accounts and the book of kings outlive it. What a sealed season keeps is the book:
-  the seal writes the crowned player, the dynasty, the person, the instant and the time it took; the
+  the seal writes the crowned player, the dynasty, the instant and the time it took; the
   town itself is dropped, and only a full reset deletes the book.
   The accounts outlive a season's seal, which takes the dynasty and keeps the account; an ordinary
   reset does the same, and the first visit after it asks for a trade. Revisit if the book must
