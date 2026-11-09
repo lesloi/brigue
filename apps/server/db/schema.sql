@@ -25,6 +25,20 @@ CREATE TABLE players (
 -- known by in every town, and the book of kings keeps it.
 CREATE UNIQUE INDEX players_family_name ON players (lower(name));
 
+-- The only record that crosses a reset, and a full reset deletes it too. Keyed
+-- by the player and the instant: the crown follows the player, and a town's hour
+-- means nothing once the town is gone. No foreign key to `players`, because the
+-- book outlives the account.
+CREATE TABLE kings (
+  id bigserial PRIMARY KEY,
+  -- Null when the account that wore the crown is gone: the book outlives it.
+  player_id bigint,
+  dynasty_name text NOT NULL,
+  crowned_at timestamptz NOT NULL,
+  -- The town's age at the crowning, in hours from the first hour of the world.
+  elapsed_hours integer NOT NULL
+);
+
 -- Every town table carries its `town_id` and the rows of a town are the town;
 -- `state` is the row the writer locks. Every autoincremented id is a global
 -- `bigserial`, assigned by the database.
@@ -212,20 +226,6 @@ CREATE TABLE actions (
 );
 
 CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, id);
-
--- The only record that crosses a reset, and a full reset deletes it too. Keyed
--- by the player and the instant: the crown follows the player, and a town's hour
--- means nothing once the town is gone. No foreign key to `players`, because the
--- book outlives the account.
-CREATE TABLE kings (
-  id bigserial PRIMARY KEY,
-  -- Null when the account that wore the crown is gone: the book outlives it.
-  player_id bigint,
-  dynasty_name text NOT NULL,
-  crowned_at timestamptz NOT NULL,
-  -- The town's age at the crowning, in hours from the first hour of the world.
-  elapsed_hours integer NOT NULL
-);
 
 -- Not folded here, because it belongs to the runner and not to the town:
 -- `schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL
