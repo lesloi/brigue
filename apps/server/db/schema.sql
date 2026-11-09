@@ -12,7 +12,7 @@
 -- A name may come back after a reset; an id never does, so a dead town's
 -- accounts cannot point at a new one.
 CREATE TABLE towns (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   name text NOT NULL UNIQUE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -23,7 +23,7 @@ CREATE TABLE towns (
 -- here: it is the dynasty's, and the dynasty is looked up.
 CREATE TABLE players (
   token_hash text PRIMARY KEY,
-  player_id bigint GENERATED ALWAYS AS IDENTITY UNIQUE,
+  player_id bigserial UNIQUE,
   dynasty_id text,
   created_at timestamptz NOT NULL DEFAULT now(),
   -- The last visit. Dormancy and the thirty-day deletion are measured from it.
@@ -184,7 +184,7 @@ CREATE TABLE market_history (
 -- `recorded_at` is when the row was written, and the purge keeps seven real days
 -- of it.
 CREATE TABLE events (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   at integer NOT NULL,
   audience text NOT NULL,
@@ -201,7 +201,7 @@ CREATE INDEX events_town_recorded_at ON events (town_id, recorded_at);
 -- server and an AI one has no mailbox, so the id alone names the box; the writer
 -- deletes a town's mail with the town.
 CREATE TABLE messages (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   dynasty_id text NOT NULL,
   -- A notice carries its kind and the fields of its sentence; prose carries
   -- neither and puts its text in `body`.
@@ -219,7 +219,7 @@ CREATE TABLE messages (
 -- The row's own id is the order the actions arrived in, because two clocks never
 -- agree. A client that sends the same order twice sends two actions.
 CREATE TABLE actions (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   dynasty_id text NOT NULL,
   plays_at integer NOT NULL,
@@ -234,7 +234,7 @@ CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, id);
 -- means nothing once the town is gone. No foreign key to `players`, because the
 -- book outlives the account.
 CREATE TABLE kings (
-  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  id bigserial PRIMARY KEY,
   -- Null when the account that wore the crown is gone: the book outlives it.
   player_id bigint,
   dynasty_name text NOT NULL,

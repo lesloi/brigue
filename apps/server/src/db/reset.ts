@@ -84,7 +84,6 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
           account.last_seen_at,
           account.delete_after,
         ]),
-        true,
       );
 
       // The rebuilt players sequence starts at one; the carried ids must not
@@ -228,13 +227,7 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
   }));
 }
 
-async function insertRows(
-  client: PoolClient,
-  table: string,
-  columns: string[],
-  rows: unknown[][],
-  overriding = false,
-): Promise<void> {
+async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {
   if (rows.length === 0) {
     return;
   }
@@ -250,11 +243,7 @@ async function insertRows(
     return `(${marks.join(', ')})`;
   });
 
-  // A carried identity keeps the id it had, which an identity column refuses
-  // unless the insert overrides it.
-  const clause = overriding ? 'OVERRIDING SYSTEM VALUE ' : '';
-
-  await client.query(`INSERT INTO ${table} (${columns.join(', ')}) ${clause}VALUES ${tuples.join(', ')}`, values);
+  await client.query(`INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}`, values);
 }
 
 export interface TablePreview {
