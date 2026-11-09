@@ -5,7 +5,7 @@ import { issueToken } from '../src/identity/session.ts';
 import { createLogger } from '../src/logger.ts';
 import { advanceTown } from '../src/town/catch-up.ts';
 import { MemoryWorldStore } from '../src/town/worlds.ts';
-import { TEST_FIRST_DYNASTY, TEST_TOWN, town } from './helpers.ts';
+import { LECLERC, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-11-05T00:00:00.000Z');
 
@@ -16,13 +16,14 @@ describe('advanceTown', () => {
     const worlds = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
     await worlds.createTown(TEST_TOWN.name, town(20261105), START);
-    await issueToken(players, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, START);
+    const { player } = await issueToken(players, 'Leclerc', START);
+    await players.rebind(player.tokenHash, TEST_TOWN.id, LECLERC, START);
     const access = { players, worlds, logger: createLogger(() => {}) };
     const at = new Date(START.getTime() + 1_000);
     const savedAt = new Date(START.getTime() + 1_042);
 
     // Act
-    const outcome = await advanceTown(access, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, at, () => savedAt.getTime());
+    const outcome = await advanceTown(access, TEST_TOWN.id, LECLERC, player.playerId, at, () => savedAt.getTime());
 
     // Assert: both the result and the stored town carry the post-advance read.
     expect(outcome.kind).toBe('caught');

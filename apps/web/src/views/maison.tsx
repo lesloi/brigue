@@ -11,11 +11,11 @@ import {
   tradeName,
   workshopName,
 } from '../format.ts';
-import { DynastyScene } from '../dynasty-scene.tsx';
+import { PersonScene } from '../dynasty-scene.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 import { pendingHourText } from '../pending.ts';
 import { DevBar } from './devbar.tsx';
-import { DynastyBar } from './dynastybar.tsx';
+import { PersonBar } from './dynastybar.tsx';
 
 interface MaisonProps {
   data: WorldResponse;
@@ -25,8 +25,8 @@ interface MaisonProps {
   busy: string | null;
   renameError: string | null;
   onBuild(trade: Trade): void;
-  onDestroy(workshopId: string): void;
-  onUpgrade(workshopId: string): void;
+  onDestroy(workshopId: number): void;
+  onUpgrade(workshopId: number): void;
   onBuyTitle(): void;
   onUpgradeResidence(): void;
   onRename(name: string): void;
@@ -37,10 +37,10 @@ interface MaisonProps {
 const TRADE_CHOICES = [...TRADES].sort((left, right) => tradeName(left).localeCompare(tradeName(right), 'fr'));
 
 /**
- * The Maison screen: what the dynasty is — its name, its title, its residence —
- * and what it holds — its workshops. Every figure comes from the projection,
- * including the price of the next step and whether the door is open: the screen
- * shows the gate and asks; it never decides whether the dynasty may pass.
+ * The Maison screen: who the person is — their name, their title, their
+ * residence — and what they hold — their workshops. Every figure comes from the
+ * projection, including the price of the next step and whether the door is open:
+ * the screen shows the gate and asks; it never decides whether the person may pass.
  */
 export function Maison({
   data,
@@ -59,29 +59,29 @@ export function Maison({
   onAdvance,
 }: MaisonProps) {
   const { world } = data;
-  const dynasty = world.dynasty;
-  const ladder = dynasty.ladder;
-  const [name, setName] = useState(dynasty.name);
+  const person = world.person;
+  const ladder = person.ladder;
+  const [name, setName] = useState(person.name);
   const [choosing, setChoosing] = useState(false);
   // A workshop's works lock the builders; the remise of a title does not, it is
   // the town's own door. A second degree waits only on the first being
   // delivered, which is what `titleQueued` and the site of a title say.
-  const building = dynasty.sites.some((site) => site.work !== 'title');
+  const building = person.sites.some((site) => site.work !== 'title');
   // The queued purchases wait for their order to play: the next degree is
   // already bought as far as this hour is concerned.
-  const titleQueued = pending.some((action) => action.type === 'dynasty.buy_title');
-  const residenceQueued = pending.some((action) => action.type === 'dynasty.upgrade_residence');
-  const renameQueued = name.trim() !== dynasty.name;
+  const titleQueued = pending.some((action) => action.type === 'person.buy_title');
+  const residenceQueued = pending.some((action) => action.type === 'person.upgrade_residence');
+  const renameQueued = name.trim() !== person.name;
 
   return (
     <main class="screen">
-      <section class="hero hero-dynasty" aria-label={dynasty.name}>
-        <DynastyScene residenceLevel={dynasty.residenceLevel} />
+      <section class="hero hero-dynasty" aria-label={person.name}>
+        <PersonScene residenceLevel={person.residenceLevel} />
         <div class="scrim"></div>
         <div class="id">
           <Seal />
           <div>
-            <div class="nm">Dynastie {dynasty.name}</div>
+            <div class="nm">Dynastie {person.name}</div>
             <div class="pl">
               {world.town.name} &middot; an {world.year}
             </div>
@@ -92,23 +92,25 @@ export function Maison({
         </div>
         <div class="cap">
           <div>
-            <div class="sub">{titleName(dynasty.title)}</div>
+            <div class="sub">
+              {titleName(person.title)} &middot; {person.personName}
+            </div>
             <h1>{ladder.residence}</h1>
           </div>
           <div class="cap-right">
-            {dynasty.workshops.length} atelier{dynasty.workshops.length > 1 ? 's' : ''}
+            {person.workshops.length} atelier{person.workshops.length > 1 ? 's' : ''}
           </div>
         </div>
       </section>
 
-      <DynastyBar data={data} mode="dynasty" pending={pending} />
+      <PersonBar data={data} mode="person" pending={pending} />
 
       {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
         <section class="sec" aria-labelledby="maison-title">
           <div class="h">
-            <b id="maison-title">Dynastie {dynasty.name}</b>
+            <b id="maison-title">Dynastie {person.name}</b>
           </div>
           <div class="card">
             <form
@@ -120,9 +122,9 @@ export function Maison({
                 }
               }}
             >
-              <label for="dynasty-name">Nom de la dynastie</label>
+              <label for="family-name">Nom de la dynastie</label>
               <input
-                id="dynasty-name"
+                id="family-name"
                 name="name"
                 autocomplete="off"
                 maxLength={24}
@@ -131,7 +133,7 @@ export function Maison({
               />
               <button class="btn outline" type="submit" disabled={!renameQueued || busy === 'rename'}>
                 <span class="btn-label">
-                  Renommer <Price cents={dynasty.rename.priceCents} />
+                  Renommer <Price cents={person.rename.priceCents} />
                 </span>
               </button>
             </form>
@@ -150,7 +152,7 @@ export function Maison({
                   <p>
                     {titleHint(
                       titleQueued || building,
-                      dynasty.sites.some((site) => site.work === 'title'),
+                      person.sites.some((site) => site.work === 'title'),
                     )}
                   </p>
                 </div>
@@ -163,7 +165,7 @@ export function Maison({
                     titleQueued ||
                     !ladder.nextTitle ||
                     busy === 'title' ||
-                    dynasty.treasuryCents < ladder.nextTitle.priceCents
+                    person.treasuryCents < ladder.nextTitle.priceCents
                   }
                   onClick={onBuyTitle}
                 >
@@ -194,7 +196,7 @@ export function Maison({
                     residenceQueued ||
                     !ladder.nextResidence.opened ||
                     busy === 'residence' ||
-                    dynasty.treasuryCents < ladder.nextResidence.priceCents
+                    person.treasuryCents < ladder.nextResidence.priceCents
                   }
                   onClick={onUpgradeResidence}
                 >
@@ -211,23 +213,23 @@ export function Maison({
           <div class="h">
             <b id="ateliers-title">Ateliers</b>
             <span>
-              {dynasty.workshops.length} / {formatCount(ladder.workshops)}
+              {person.workshops.length} / {formatCount(ladder.workshops)}
             </span>
           </div>
           <div class="card">
-            {dynasty.workshops.map((workshop) => (
+            {person.workshops.map((workshop) => (
               <WorkshopLine
                 key={workshop.id}
                 workshop={workshop}
                 busy={busy}
                 building={building}
-                last={dynasty.workshops.length <= 1}
+                last={person.workshops.length <= 1}
                 onUpgrade={onUpgrade}
                 onDestroy={onDestroy}
               />
             ))}
           </div>
-          {dynasty.build.room > 0 && choosing ? (
+          {person.build.room > 0 && choosing ? (
             <div class="card trade-list">
               {TRADE_CHOICES.map((trade) => (
                 <button
@@ -245,7 +247,7 @@ export function Maison({
                 </button>
               ))}
             </div>
-          ) : dynasty.build.room > 0 ? (
+          ) : person.build.room > 0 ? (
             <button
               class="btn outline wide"
               type="button"
@@ -253,7 +255,7 @@ export function Maison({
               onClick={() => setChoosing(true)}
             >
               <span class="btn-label">
-                Bâtir un atelier <Price cents={dynasty.build.priceCents} /> · {formatCount(dynasty.build.hours)} h
+                Bâtir un atelier <Price cents={person.build.priceCents} /> · {formatCount(person.build.hours)} h
               </span>
             </button>
           ) : null}
@@ -311,10 +313,7 @@ function titleHint(queued: boolean, delivering: boolean): string {
  * What holds the next residence level, or how long it takes: a door the title
  * has not opened yet, or the hours the upgrade costs.
  */
-function residenceHint(
-  ladder: WorldResponse['world']['dynasty']['ladder'],
-  nameOf: (title: TitleId) => string,
-): string {
+function residenceHint(ladder: WorldResponse['world']['person']['ladder'], nameOf: (title: TitleId) => string): string {
   const next = ladder.nextResidence;
 
   if (next === null) {
@@ -349,8 +348,8 @@ function WorkshopLine({
   busy: string | null;
   building: boolean;
   last: boolean;
-  onUpgrade(workshopId: string): void;
-  onDestroy(workshopId: string): void;
+  onUpgrade(workshopId: number): void;
+  onDestroy(workshopId: number): void;
 }) {
   return (
     <div class="row">

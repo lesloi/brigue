@@ -13,22 +13,22 @@ import {
   readPending,
   readSession,
   readWorld,
-  renameDynasty,
+  renameFamily,
   requestDeletion,
   resumeTown,
   sendAction,
   type ActionIntent,
-  type DynastyCandidate,
+  type PersonCandidate,
   type PendingActionView,
   type TradeIntent,
   type WorldResponse,
 } from './api.ts';
 import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
-import { ClosingDynasty, DeleteAccountDialog } from './views/account.tsx';
+import { ClosingPerson, DeleteAccountDialog } from './views/account.tsx';
 import { Courrier } from './views/courrier.tsx';
 import { Create } from './views/create.tsx';
-import { Failure, LostDynasty, TokenDialog } from './views/gate.tsx';
+import { Failure, LostPerson, TokenDialog } from './views/gate.tsx';
 import { Greffe } from './views/greffe.tsx';
 import { Maison } from './views/maison.tsx';
 import { Marche } from './views/marche.tsx';
@@ -62,13 +62,13 @@ export function App() {
   const [joinTaken, setJoinTaken] = useState(false);
   // The identity the creation screen prefills: drawn by the server, written
   // nowhere until the join.
-  const [candidate, setCandidate] = useState<DynastyCandidate | null>(null);
+  const [candidate, setCandidate] = useState<PersonCandidate | null>(null);
   const [candidateError, setCandidateError] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string | null>(null);
-  const [dynastyBusy, setDynastyBusy] = useState<string | null>(null);
+  const [personBusy, setPersonBusy] = useState<string | null>(null);
   const [renameError, setRenameError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -144,7 +144,7 @@ export function App() {
       }
       // The token survived the reset, the dynasty did not: the trade gives it
       // one back.
-      if (session.dynastyId === null) {
+      if (session.personId === null) {
         setView({ kind: 'create', lost: true });
         void readSuggestedCandidate();
         return;
@@ -160,22 +160,25 @@ export function App() {
     }
   }
 
-  async function createDynasty(trade: Trade, name: string): Promise<void> {
+  async function createPerson(trade: Trade, name: string): Promise<void> {
     setJoining(true);
     setJoinError(null);
     setJoinTaken(false);
 
     try {
-      // The id is the candidate's when one was drawn; without it the server
-      // mints a dynasty of its own, under the name the player kept.
-      const joined = await joinTown(trade, name, candidate?.id);
+      // The server mints the person and names it with the family name the
+      // player kept.
+      const joined = await joinTown(trade, name);
       // A returning account keeps its token: there is nothing new to show.
       if (joined.token !== undefined) {
         pendingToken.current = joined.token;
       }
       await load();
     } catch (error) {
-      if (error instanceof ApiError && (error.code === 'deletion_pending' || error.code === 'dynasty_lost')) {
+      if (
+        error instanceof ApiError &&
+        (error.code === 'deletion_pending' || error.code === 'dynasty_lost' || error.code === 'person_lost')
+      ) {
         // The account moved while the screen was open: the session knows
         // which screen it belongs to now.
         await boot();
@@ -187,7 +190,7 @@ export function App() {
         setJoinError(null);
         return;
       }
-      if (error instanceof ApiError && error.code === 'no_free_dynasty') {
+      if (error instanceof ApiError && (error.code === 'no_free_dynasty' || error.code === 'no_free_person')) {
         // A half-completed join already set the cookie, or a fast second tap
         // raced the first: recover the session before asking for a token.
         try {
@@ -196,7 +199,7 @@ export function App() {
           if (session !== null) {
             if (session.deletionAfter !== null) {
               setView({ kind: 'closing', after: session.deletionAfter });
-            } else if (session.dynastyId === null) {
+            } else if (session.personId === null) {
               setView({ kind: 'create', lost: true });
               void readSuggestedCandidate();
             } else {
@@ -313,7 +316,10 @@ export function App() {
     try {
       await load();
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.code === 'dynasty_lost')) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.code === 'dynasty_lost' || error.code === 'person_lost')
+      ) {
         void boot();
         return;
       }
@@ -353,12 +359,12 @@ export function App() {
   }
 
   /** The ladder's actions share one queue with the market: same hour, same read. */
-  async function dynastyAction(busy: string, intent: ActionIntent, said: string): Promise<void> {
+  async function personAction(busy: string, intent: ActionIntent, said: string): Promise<void> {
     if (view.kind !== 'world') {
       return;
     }
 
-    setDynastyBusy(busy);
+    setPersonBusy(busy);
     try {
       await sendAction(view.data.world.hour, intent);
       await readPending().then(setPending, () => setPending([]));
@@ -371,17 +377,17 @@ export function App() {
         showToast(actionMessageFor(error), true);
       }
     } finally {
-      setDynastyBusy(null);
+      setPersonBusy(null);
     }
   }
 
   /** The name is identity, not a trade: it applies at once, and re-reads the town. */
   async function rename(name: string): Promise<void> {
-    setDynastyBusy('rename');
+    setPersonBusy('rename');
     setRenameError(null);
 
     try {
-      await renameDynasty(name);
+      await renameFamily(name);
       await load();
       showToast(`La dynastie s'appelle désormais ${name}.`);
     } catch (error) {
@@ -391,7 +397,7 @@ export function App() {
           : readMessageFor(error),
       );
     } finally {
-      setDynastyBusy(null);
+      setPersonBusy(null);
     }
   }
 
@@ -454,7 +460,10 @@ export function App() {
       await readPending().then(setPending, () => setPending([]));
       showToast(`Heure ${data.world.hour}, comme si une heure était passée.`);
     } catch (error) {
-      if (error instanceof ApiError && (error.status === 401 || error.code === 'dynasty_lost')) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.code === 'dynasty_lost' || error.code === 'person_lost')
+      ) {
         void boot();
         return;
       }
@@ -476,7 +485,7 @@ export function App() {
         return;
       }
       // A token a reset left without a dynasty: the trade gives it one back.
-      if (session.dynastyId === null) {
+      if (session.personId === null) {
         setView({ kind: 'create', lost: true });
         void readSuggestedCandidate();
         return;
@@ -564,7 +573,7 @@ export function App() {
           candidateError={candidateError}
           resuming={resuming}
           resumeError={lostError}
-          onChoose={(trade, name) => void createDynasty(trade, name)}
+          onChoose={(trade, name) => void createPerson(trade, name)}
           onResume={(token) => void resume(token)}
           onReread={() => void readSuggestedCandidate()}
         />
@@ -595,28 +604,28 @@ export function App() {
               advancing={advancing}
               pending={pending}
               cancelling={cancelling}
-              busy={dynastyBusy}
+              busy={personBusy}
               renameError={renameError}
               onBuild={(trade) =>
-                void dynastyAction('build', { type: 'workshop.build', trade }, `Construction d'un atelier de ${trade}`)
+                void personAction('build', { type: 'workshop.build', trade }, `Construction d'un atelier de ${trade}`)
               }
               onDestroy={(workshopId) =>
-                void dynastyAction(
+                void personAction(
                   `destroy-${workshopId}`,
                   { type: 'workshop.destroy', workshopId },
                   "Démolition d'un atelier",
                 )
               }
               onUpgrade={(workshopId) =>
-                void dynastyAction(
+                void personAction(
                   `upgrade-${workshopId}`,
                   { type: 'workshop.upgrade', workshopId },
                   "Agrandissement d'un atelier",
                 )
               }
-              onBuyTitle={() => void dynastyAction('title', { type: 'dynasty.buy_title' }, "Achat d'un titre")}
+              onBuyTitle={() => void personAction('title', { type: 'person.buy_title' }, "Achat d'un titre")}
               onUpgradeResidence={() =>
-                void dynastyAction('residence', { type: 'dynasty.upgrade_residence' }, 'Élévation de la résidence')
+                void personAction('residence', { type: 'person.upgrade_residence' }, 'Élévation de la résidence')
               }
               onRename={(name) => void rename(name)}
               onCancel={(id) => void cancel(id)}
@@ -636,9 +645,9 @@ export function App() {
           <Nav tab={tab} unread={view.data.unreadMessages} onSelect={selectTab} />
         </div>
       ) : view.kind === 'closing' ? (
-        <ClosingDynasty after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />
+        <ClosingPerson after={view.after} busy={restoring} error={restoreError} onRestore={() => void restore()} />
       ) : view.kind === 'lost' ? (
-        <LostDynasty busy={resuming} error={lostError} onResume={(candidate) => void resume(candidate)} />
+        <LostPerson busy={resuming} error={lostError} onResume={(candidate) => void resume(candidate)} />
       ) : (
         <Failure title={view.title} message={view.message} onRetry={() => void boot()} />
       )}

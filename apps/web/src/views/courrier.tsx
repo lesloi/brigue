@@ -5,10 +5,10 @@ import { eventLine, type EventLine } from '../events.ts';
 import { formatCount } from '../format.ts';
 import { Seal } from '../icons.tsx';
 import { Modal } from './modal.tsx';
-import { dynastyName } from './ville.tsx';
+import { personName } from './ville.tsx';
 
 /**
- * The Courrier is the dynasty's own mailbox: refusals, works done or lost, its
+ * The Courrier is the person's own mailbox: refusals, works done or lost, its
  * debts, its candidacies. A message is unread until the player opens it, so the
  * list carries a « Lu » action per unread line, and the detail the delete.
  */
@@ -22,7 +22,7 @@ export function Courrier({
   onDelete(id: number): void;
 }) {
   const { messages, world } = data;
-  const nameOf = dynastyName(world);
+  const nameOf = personName(world);
   const [opened, setOpened] = useState<MessageView | null>(null);
 
   // The server hands the page in time order; an inbox reads newest first.
@@ -67,12 +67,12 @@ export function Courrier({
               <div class="row empty">
                 <div class="nm">
                   <b>Aucun message</b>
-                  <p>La dynastie n'a rien à se faire dire.</p>
+                  <p>La personne n'a rien à se faire dire.</p>
                 </div>
               </div>
             ) : (
               newestFirst.map((message) => {
-                const line = eventLine(message.event, world.dynasty.id, nameOf);
+                const line = eventLine(message.event, world.person.id, nameOf);
 
                 return (
                   <div class={`ev${message.read ? '' : ' unread'}`} key={message.id}>
@@ -100,7 +100,7 @@ export function Courrier({
 
       {opened !== null ? (
         <MessageDialog
-          line={eventLine(opened.event, world.dynasty.id, nameOf)}
+          line={eventLine(opened.event, world.person.id, nameOf)}
           onClose={() => setOpened(null)}
           onDelete={() => {
             onDelete(opened.id);

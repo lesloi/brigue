@@ -21,7 +21,7 @@ describe('the token', () => {
 
   it('is stored as a hash, never as itself', async () => {
     const store = new MemoryPlayerStore();
-    const { token } = await issueToken(store, 1, 'leclerc');
+    const { token } = await issueToken(store, 'Leclerc');
 
     expect(await store.findByTokenHash(token)).toBeNull();
     expect(await store.findByTokenHash(hashToken(token))).not.toBeNull();
@@ -31,7 +31,7 @@ describe('the token', () => {
 describe('the binding', () => {
   it('assigns the account a stable id and reads it back', async () => {
     const store = new MemoryPlayerStore();
-    const { player } = await issueToken(store, 1, 'leclerc');
+    const { player } = await issueToken(store, 'Leclerc');
 
     expect(typeof player.playerId).toBe('number');
     expect((await store.findByTokenHash(player.tokenHash))?.playerId).toBe(player.playerId);
@@ -42,7 +42,7 @@ describe('the binding', () => {
     const store = new MemoryPlayerStore();
     const at = new Date('2026-10-31T12:00:00Z');
     const later = new Date('2026-11-01T12:00:00Z');
-    const { player } = await issueToken(store, 1, 'leclerc', at);
+    const { player } = await issueToken(store, 'Leclerc', at);
 
     // Act
     await store.touch(player.tokenHash, later);
@@ -52,46 +52,51 @@ describe('the binding', () => {
     expect((await store.findByTokenHash(player.tokenHash))?.lastSeenAt).toEqual(later);
   });
 
-  it('opens exactly one dynasty', async () => {
+  it('opens exactly one person', async () => {
     const store = new MemoryPlayerStore();
-    const leclerc = await issueToken(store, 1, 'leclerc');
-    const caron = await issueToken(store, 1, 'caron');
+    const leclerc = await issueToken(store, 'Leclerc');
+    const caron = await issueToken(store, 'Caron');
+    await store.rebind(leclerc.player.tokenHash, 1, 901, new Date());
+    await store.rebind(caron.player.tokenHash, 1, 902, new Date());
 
-    expect(await authenticate(store, leclerc.token)).toMatchObject({ townId: 1, dynastyId: 'leclerc' });
-    expect(await authenticate(store, caron.token)).toMatchObject({ townId: 1, dynastyId: 'caron' });
+    expect(await authenticate(store, leclerc.token)).toMatchObject({ townId: 1, personId: 901 });
+    expect(await authenticate(store, caron.token)).toMatchObject({ townId: 1, personId: 902 });
   });
 
   it.each([undefined, '', 'bgk_', 'not-a-token', `bgk_${'x'.repeat(43)}`])('refuses %j', async (token) => {
     const store = new MemoryPlayerStore();
-    await issueToken(store, 1, 'leclerc');
+    await issueToken(store, 'Leclerc');
 
     expect(await authenticate(store, token)).toBeNull();
   });
 
   it('refuses a token whose account is gone', async () => {
     const store = new MemoryPlayerStore();
-    const { token } = await issueToken(store, 1, 'leclerc');
+    const { token, player } = await issueToken(store, 'Leclerc');
+    await store.rebind(player.tokenHash, 1, 901, new Date());
 
-    await store.deleteDynasty('leclerc');
+    await store.deletePerson(901);
 
     expect(await authenticate(store, token)).toBeNull();
   });
 
-  it('holds one live token per dynasty, and allows a new one once the account is gone', async () => {
+  it('holds one live token per person, and allows a new one once the account is gone', async () => {
     const store = new MemoryPlayerStore();
-    await issueToken(store, 1, 'leclerc');
+    const first = await issueToken(store, 'Leclerc');
+    await store.rebind(first.player.tokenHash, 1, 901, new Date());
+    const second = await issueToken(store, 'Caron');
 
-    await expect(issueToken(store, 1, 'leclerc')).rejects.toThrow();
-    await store.deleteDynasty('leclerc');
+    await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).rejects.toThrow();
+    await store.deletePerson(901);
 
-    await expect(issueToken(store, 1, 'leclerc')).resolves.toBeDefined();
+    await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).resolves.toBeDefined();
   });
 
   it('keeps the binding outside the world it names', async () => {
     const store = new MemoryPlayerStore();
-    const { player } = await issueToken(store, 2, 'herse');
+    const { player } = await issueToken(store, 'Herse');
 
     expect(player).not.toHaveProperty('world');
-    expect(player).toMatchObject({ townId: 2, dynastyId: 'herse' });
+    expect(player).toMatchObject({ townId: null, personId: null, name: 'Herse' });
   });
 });

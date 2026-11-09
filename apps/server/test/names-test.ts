@@ -1,9 +1,9 @@
 import { createWorld, DYNASTY_NAMES, isValidName, nameKey, type World } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
-import { drawDynastyIdentity, drawTownName, PERSON_NAMES, suggestDynastyName, TOWN_NAMES } from '../src/town/names.ts';
+import { drawPersonIdentity, drawTownName, PERSON_NAMES, suggestFamilyName, TOWN_NAMES } from '../src/town/names.ts';
 
-describe('the suggested dynasty name', () => {
+describe('the suggested family name', () => {
   it('draws a name from the pool, and an opaque id that carries nothing of it', () => {
     // Arrange
     const world = createWorld(1);
@@ -11,12 +11,12 @@ describe('the suggested dynasty name', () => {
 
     // Act and assert: a hundred draws are free, and no two ids are the same.
     for (let draw = 0; draw < 100; draw += 1) {
-      const name = suggestDynastyName(names);
-      const identity = drawDynastyIdentity(name);
+      const name = suggestFamilyName(names);
+      const identity = drawPersonIdentity(name);
 
       expect(DYNASTY_NAMES).toContain(name);
-      expect(identity.dynastyName).toBe(name);
-      expect(identity.id).toMatch(/^dynasty-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(identity.familyName).toBe(name);
+      expect(identity.id).toMatch(/^person-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
       expect(identity.id).not.toContain(nameKey(name));
       expect(isValidName(name)).toBe(true);
       expect(PERSON_NAMES.some((firstName) => identity.personName.startsWith(`${firstName} `))).toBe(true);
@@ -24,7 +24,7 @@ describe('the suggested dynasty name', () => {
     }
   });
 
-  it('never draws a name the town or another human dynasty already carries, and keeps trying past a taken draw', () => {
+  it('never draws a name the town or another human account already carries, and keeps trying past a taken draw', () => {
     // Arrange: a town whose free names are few, and the pool as it is.
     const elsewhere = new Set([nameKey('Leclerc'), nameKey('Moreau')]);
     const drawn = new Map<string, number>();
@@ -35,7 +35,7 @@ describe('the suggested dynasty name', () => {
 
     // Act
     for (let draw = 0; draw < 200; draw += 1) {
-      const name = suggestDynastyName(['Caron', 'Cáron', 'Fournier'], elsewhere);
+      const name = suggestFamilyName(['Caron', 'Cáron', 'Fournier'], elsewhere);
       drawn.set(name, (drawn.get(name) ?? 0) + 1);
     }
 
@@ -50,7 +50,7 @@ describe('the suggested dynasty name', () => {
     const taken = [...DYNASTY_NAMES];
 
     // Act
-    const name = suggestDynastyName(taken);
+    const name = suggestFamilyName(taken);
 
     // Assert: the pool is a suggestion, never a limit.
     expect(name).toBe('');
@@ -68,6 +68,7 @@ describe('the town name', () => {
   });
 });
 
+/** The family names the AI people of the opening town carry. */
 function namesOf(world: World): string[] {
-  return Object.values(world.dynasties).map((dynasty) => dynasty.name);
+  return Object.values(world.people).map((person) => person.name.split(' ').at(-1) ?? person.name);
 }

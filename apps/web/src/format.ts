@@ -138,15 +138,15 @@ export function pendingActionText(action: PendingActionView): string {
       return "Démolition d'un atelier";
     case 'workshop.upgrade':
       return "Agrandissement d'un atelier";
-    case 'dynasty.buy_title':
+    case 'person.buy_title':
       return action.title === undefined ? "Achat d'un titre" : `Achat du titre de ${titleName(action.title)}`;
-    case 'dynasty.upgrade_residence':
+    case 'person.upgrade_residence':
       return 'Élévation de la résidence';
   }
 }
 
 /** A site under way, said in the same voice as the queue. */
-export function siteWorkText(site: ProjectedSite, workshopNameOf: (id: string) => string): string {
+export function siteWorkText(site: ProjectedSite, workshopNameOf: (id: number) => string): string {
   switch (site.work) {
     case 'build':
       return site.trade === null ? 'Construction' : `Construction d'un atelier de ${tradeName(site.trade)}`;
@@ -178,10 +178,10 @@ export function refusalText(reason: RefusalReason): string {
   switch (reason) {
     case 'unknown_action':
       return 'action inconnue';
-    case 'unknown_dynasty':
-      return 'dynastie inconnue';
-    case 'dormant_dynasty':
-      return 'dynastie dormante';
+    case 'unknown_person':
+      return 'personne inconnue';
+    case 'dormant_person':
+      return 'personne dormante';
     case 'unknown_seat':
       return 'charge inconnue';
     case 'unknown_good':
@@ -241,11 +241,13 @@ export function actionErrorText(code: string | null): string {
     case 'world_version':
       return "Cette ville n'est plus compatible avec le serveur.";
     case 'no_free_dynasty':
+    case 'no_free_person':
       return "Cette ville n'a plus de dynastie libre.";
     case 'deletion_pending':
       // The account is what the server has scheduled, and it outlives the dynasty.
       return 'Ce compte est en cours de suppression.';
     case 'dynasty_lost':
+    case 'person_lost':
       return "Ta dynastie n'existe plus : choisis un métier pour revenir.";
     case 'name_required':
       return 'Écris le nom de ta dynastie pour revenir.';
@@ -268,6 +270,7 @@ export function readErrorText(code: string | null): string {
     case 'not_found':
       return "Le serveur n'a pas trouvé cette ville.";
     case 'dynasty_lost':
+    case 'person_lost':
       return "Ta dynastie n'existe plus : choisis un métier pour revenir.";
     case 'name_required':
       return 'Écris le nom de ta dynastie pour revenir.';

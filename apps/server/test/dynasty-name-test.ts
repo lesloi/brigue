@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createWorld, NAME_PRICE, nameKey, RULES, type Dynasty, type World } from '@brigue/core';
+import { createWorld, NAME_PRICE, nameKey, RULES, type World } from '@brigue/core';
 
 import { createApp } from '../src/http/app.ts';
 import { SESSION_COOKIE } from '../src/http/cookies.ts';
@@ -9,7 +9,7 @@ import { issueToken } from '../src/identity/session.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
 import { createLogger } from '../src/logger.ts';
 import { MemoryWorldStore } from '../src/town/worlds.ts';
-import { TEST_TOWN, town } from './helpers.ts';
+import { FOURNIER, LECLERC, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-11-07T08:00:00.000Z').getTime();
 
@@ -66,15 +66,21 @@ async function start(world?: World): Promise<Harness> {
   };
 }
 
-/** A town with no free place: the human dynasty no account may take is replaced. */
+/** A town at the cap, so the next join founds another one. */
 function fullTown(seed = 7): World {
   const world = town(seed);
-  world.dynasties.leclerc!.name = 'Divers';
-  for (let index = 0; index < 20 - Object.keys(world.dynasties).length; index += 1) {
-    world.dynasties[`human-${index}`] = {
-      ...(world.dynasties.leclerc as Dynasty),
-      id: `human-${index}`,
-      name: `Divers ${index}`,
+  const template = world.people[FOURNIER]!;
+  for (let id = 1; id <= 20; id += 1) {
+    if (world.people[id] !== undefined) {
+      continue;
+    }
+    world.people[id] = {
+      ...structuredClone(template),
+      id,
+      ia: true,
+      name: `IA ${id}`,
+      workshops: [{ id, good: 'grain', level: 1 }],
+      stock: {},
     };
   }
 
@@ -94,46 +100,47 @@ describe('the candidate a creation prefills', () => {
     const response = await fetch(`${harness.url}/api/dynasty/name`);
 
     // Assert: a name and an id nothing carries, and no town was made.
-    const body = (await response.json()) as { id: string; dynastyName: string; personName: string };
+    const body = (await response.json()) as { id: string; familyName: string; personName: string };
     expect(response.status).toBe(200);
-    expect(body.dynastyName).not.toBe('');
-    expect(body.id).toMatch(/^dynasty-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(body.personName.endsWith(body.dynastyName)).toBe(true);
+    expect(body.familyName).not.toBe('');
+    expect(body.id).toMatch(/^person-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(body.personName.endsWith(body.familyName)).toBe(true);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
     expect(await harness.worlds.listTowns()).toEqual([]);
   });
 
-  it('keeps the id of the candidate the screen sent, and the name the player kept', async () => {
+  it('keeps the name the player kept, and the person id comes from the town', async () => {
     // Arrange: the screen asks with a name of its own.
     const harness = await start();
-    const id = 'dynasty-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11';
+    const id = 'person-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11';
 
     // Act: the name travels with the candidate, the way the screen sends it.
     const response = await harness.join({ trade: 'weaver', candidate: { id }, name: '  Moreau ' });
-    const joined = (await response.json()) as { townId: number; dynastyId: string };
+    const joined = (await response.json()) as { townId: number; personId: number };
 
     // Assert
     expect(response.status).toBe(201);
-    expect(joined.dynastyId).toBe(id);
     const world = await worldOf(harness, joined.townId);
-    expect(world.dynasties[id]?.name).toBe('Moreau');
-    expect(Object.values(world.people).find((person) => person.dynastyId === id)?.name).toMatch(/ Moreau$/);
+    expect(world.people[joined.personId]?.ia).toBe(false);
+    expect(world.people[joined.personId]?.name).toMatch(/ Moreau$/);
+    expect((await harness.store.listByTown(joined.townId))[0]?.name).toBe('Moreau');
   });
 
-  it('founds the dynasty under the name the player kept, with an id that is not its name', async () => {
+  it('founds the family under the name the player kept, with an id that is not its name', async () => {
     // Arrange
     const harness = await start();
 
     // Act
     const response = await harness.join({ trade: 'weaver', name: 'Moreau' });
-    const joined = (await response.json()) as { token: string; townId: number; dynastyId: string };
+    const joined = (await response.json()) as { token: string; townId: number; personId: number };
 
     // Assert
     expect(response.status).toBe(201);
-    const dynasty = (await worldOf(harness, joined.townId)).dynasties[joined.dynastyId];
-    expect(dynasty?.name).toBe('Moreau');
-    expect(dynasty?.controller).toBe('human');
-    expect(nameKey(dynasty?.id ?? '')).not.toContain('moreau');
+    const person = (await worldOf(harness, joined.townId)).people[joined.personId];
+    expect(person?.name).toMatch(/ Moreau$/);
+    expect(person?.ia).toBe(false);
+    expect(nameKey(String(person?.id))).not.toContain('moreau');
+    expect((await harness.store.listByTown(joined.townId))[0]?.name).toBe('Moreau');
   });
 
   it('gives a newcomer the same town, and the name it kept', async () => {
@@ -143,39 +150,34 @@ describe('the candidate a creation prefills', () => {
 
     // Act
     const response = await harness.join({ trade: 'baker', name: 'Olivier' });
-    const second = (await response.json()) as { townId: number; dynastyId: string };
+    const second = (await response.json()) as { townId: number; personId: number };
 
     // Assert
     const world = await worldOf(harness, first.townId);
     expect(second.townId).toBe(first.townId);
-    expect(world.dynasties[second.dynastyId]?.name).toBe('Olivier');
-    expect(world.dynasties[second.dynastyId]?.controller).toBe('human');
+    expect(world.people[second.personId]?.name).toMatch(/ Olivier$/);
+    expect(world.people[second.personId]?.ia).toBe(false);
   });
 
   it('applies the name kept to the place that waits for a human, for nothing', async () => {
-    // Arrange: a town built without its first dynasty, so a free place waits.
+    // Arrange: a town built without its first person, so a free place waits.
     const harness = await start(createWorld(7));
 
     // Act
     const response = await harness.join({ trade: 'weaver', name: 'Moreau' });
-    const joined = (await response.json()) as { townId: number; dynastyId: string };
+    const joined = (await response.json()) as { townId: number; personId: number };
 
-    // Assert: the waiting dynasty, its trade, the name kept and no price.
+    // Assert: the waiting town or a fresh one, the trade, the name kept and no price.
     const world = await worldOf(harness, joined.townId);
     expect(response.status).toBe(201);
-    expect(world.dynasties[joined.dynastyId]?.name).toBe('Moreau');
-    expect(Object.values(world.people).find((person) => person.dynastyId === joined.dynastyId)?.treasuryCents).toBe(
-      RULES.startingPurseCents,
-    );
-    expect(Object.values(world.people).find((person) => person.dynastyId === joined.dynastyId)?.name).toMatch(
-      / Moreau$/,
-    );
+    expect(world.people[joined.personId]?.name).toMatch(/ Moreau$/);
+    expect(world.people[joined.personId]?.treasuryCents).toBe(RULES.startingPurseCents);
   });
 });
 
 describe('the name a creation keeps', () => {
-  it('refuses a name a dynasty of the town carries, whatever its case', async () => {
-    // Arrange: a town whose AI dynasty is Caron.
+  it('refuses a name a person of the town is known by, whatever its case', async () => {
+    // Arrange: a town whose AI family is Caron.
     const harness = await start(town(7));
 
     // Act
@@ -187,12 +189,12 @@ describe('the name a creation keeps', () => {
     expect(mixed.status).toBe(409);
     expect(await mixed.json()).toEqual({ error: 'name_taken' });
     const world = await worldOf(harness, 1);
-    expect(world.dynasties.leclerc?.name).toBe('Leclerc');
+    expect(world.people[LECLERC]?.name).toBe('Colin Leclerc');
   });
 
-  it('refuses a name a human dynasty of another town carries, whatever its case', async () => {
-    // Arrange: a settled town with a human Moreau, and a full town, so the
-    // next join founds a town of its own.
+  it('refuses a name an account of another town carries, whatever its case', async () => {
+    // Arrange: a settled full town, and a second, emptier one, so the next join
+    // lands in the second.
     const harness = await start(fullTown());
     await harness.worlds.createTown(TEST_TOWN.name, town(9), new Date(START));
     const joined = (await (await harness.join({ trade: 'weaver', name: 'Moreau' })).json()) as { townId: number };
@@ -207,8 +209,8 @@ describe('the name a creation keeps', () => {
     expect(await harness.worlds.listTowns()).toHaveLength(2);
   });
 
-  it('refuses an AI name even where no AI dynasty carries it', async () => {
-    // Arrange: a town whose three AI dynasties were renamed, so only the rule is left.
+  it('refuses an AI name even where no AI person carries it', async () => {
+    // Arrange: a town where the AI family names are not the suggestion's.
     const harness = await start();
     await harness.join({ trade: 'weaver', name: 'Moreau' });
 
@@ -232,7 +234,8 @@ describe('the name a creation keeps', () => {
     // Assert: a name is letters and digits; an empty one keeps the suggestion.
     expect([accented.status, spaced.status]).toEqual([400, 400]);
     expect(empty.status).toBe(201);
-    expect((await worldOf(harness, 1)).dynasties.leclerc?.name).not.toBe('');
+    const drawn = (await empty.json()) as { townId: number; personId: number };
+    expect((await worldOf(harness, drawn.townId)).people[drawn.personId]?.name).not.toBe('');
   });
 
   it('refuses a poisoned or an over-long name, and founds nothing', async () => {
@@ -260,19 +263,21 @@ describe('the name a creation keeps', () => {
 
     // Assert: the old client still joins, under a name the server drew.
     expect(without.status).toBe(201);
-    const drawn = (await without.json()) as { townId: number; dynastyId: string };
+    const drawn = (await without.json()) as { townId: number; personId: number };
     const world = await worldOf(harness, drawn.townId);
-    expect(world.dynasties[drawn.dynastyId]?.name).not.toBe('');
-    expect(prompt.has(world.dynasties[drawn.dynastyId]?.name ?? '')).toBe(false);
+    const family = world.people[drawn.personId]?.name.split(' ').at(-1) ?? '';
+    expect(family).not.toBe('');
+    expect(prompt.has(family)).toBe(false);
   });
 });
 
 describe('the rename route', () => {
   async function seated(): Promise<{ harness: Harness; token: string }> {
     const harness = await start(town(7));
-    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc', new Date(START));
+    const { token, player } = await issueToken(harness.store, 'Leclerc', new Date(START));
+    await harness.store.rebind(player.tokenHash, TEST_TOWN.id, LECLERC, new Date(START));
     const world = await worldOf(harness, TEST_TOWN.id);
-    world.people['person-leclerc'].treasuryCents = 100_000;
+    world.people[LECLERC]!.treasuryCents = 100_000;
     await harness.worlds.withWorld((session) => session.save(world, session.snapshot.hourStartedAt, []), TEST_TOWN.id);
 
     return { harness, token };
@@ -296,43 +301,41 @@ describe('the rename route', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ name: 'Moreau' });
     const after = await worldOf(harness, TEST_TOWN.id);
-    expect(after.dynasties.leclerc?.id).toBe('leclerc');
-    expect(after.dynasties.leclerc?.name).toBe('Moreau');
-    expect(after.people['person-leclerc']?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
-    expect(after.people['person-leclerc']?.name).toBe('Colin Moreau');
+    expect(after.people[LECLERC]?.treasuryCents).toBe(100_000 - NAME_PRICE.renameCents);
+    expect(after.people[LECLERC]?.name).toBe('Colin Moreau');
+    expect((await harness.store.listByTown(TEST_TOWN.id))[0]?.name).toBe('Moreau');
   });
 
-  it('refuses a rename from a dynasty the silence has already deleted', async () => {
+  it('refuses a rename from a person the silence has already deleted', async () => {
     // Arrange: a live token whose last visit is past the deletion threshold, so
-    // the next read removes the dynasty. The rename must not slip in first.
+    // the next read removes the person. The rename must not slip in first.
     const harness = await start(town(7));
     const month = 31 * 24 * 60 * 60 * 1000;
-    const { token } = await issueToken(harness.store, TEST_TOWN.id, 'leclerc', new Date(START - month));
+    const { token, player } = await issueToken(harness.store, 'Leclerc', new Date(START - month));
+    await harness.store.rebind(player.tokenHash, TEST_TOWN.id, LECLERC, new Date(START - month));
 
     // Act
     const response = await put(harness, token, 'Moreau');
 
     // Assert
     expect(response.status).toBe(404);
-    expect(await response.json()).toEqual({ error: 'unknown_dynasty' });
+    expect(await response.json()).toEqual({ error: 'unknown_person' });
   });
 
-  it('refuses a name taken in the town or by a human dynasty elsewhere, whatever its case', async () => {
-    // Arrange: another town whose human dynasty is Moreau.
+  it('refuses a name taken in the town or by an account elsewhere, whatever its case', async () => {
+    // Arrange: another account whose family is Moreau.
     const { harness, token } = await seated();
-    const elsewhere = town(9);
-    elsewhere.dynasties.leclerc!.name = 'Moreau';
-    await harness.worlds.createTown('Arras', elsewhere, new Date(START));
+    await issueToken(harness.store, 'Moreau', new Date(START));
 
     // Act
     const inTown = await put(harness, token, 'cAron');
     const away = await put(harness, token, 'MOREau');
 
-    // Assert: one answer for one rule, and the dynasty unchanged.
+    // Assert: one answer for one rule, and the person unchanged.
     expect(inTown.status).toBe(409);
     expect(away.status).toBe(409);
     expect(await away.json()).toEqual({ error: 'name_taken' });
-    expect((await worldOf(harness, TEST_TOWN.id)).dynasties.leclerc?.name).toBe('Leclerc');
+    expect((await worldOf(harness, TEST_TOWN.id)).people[LECLERC]?.name).toBe('Colin Leclerc');
   });
 
   it('refuses an empty, a poisoned or an over-long name', async () => {
@@ -347,7 +350,7 @@ describe('the rename route', () => {
 
     // Assert
     expect([empty.status, poisoned.status, long.status, number.status]).toEqual([400, 400, 400, 400]);
-    expect((await worldOf(harness, TEST_TOWN.id)).dynasties.leclerc?.name).toBe('Leclerc');
+    expect((await worldOf(harness, TEST_TOWN.id)).people[LECLERC]?.name).toBe('Colin Leclerc');
   });
 
   it('gives the Maison screen a free name with its price', async () => {
@@ -358,9 +361,9 @@ describe('the rename route', () => {
     const response = await fetch(`${harness.url}/api/dynasty/name`, { headers: { Cookie: harness.cookie(token) } });
 
     // Assert
-    const body = (await response.json()) as { id: string; dynastyName: string };
+    const body = (await response.json()) as { id: string; familyName: string };
     expect(response.status).toBe(200);
-    expect(body.dynastyName).not.toBe('');
-    expect(body.id).toMatch(/^dynasty-/);
+    expect(body.familyName).not.toBe('');
+    expect(body.id).toMatch(/^person-/);
   });
 });

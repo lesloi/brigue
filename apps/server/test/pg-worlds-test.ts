@@ -42,23 +42,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // deleted before the accounts it names, and both are scoped to this fixture
     // so the parallel account test keeps its own rows.
     await pool.query(
-      `DELETE FROM kings
-       WHERE player_id IN (
-         SELECT p.player_id FROM players p
-         JOIN dynasties d ON d.id = p.dynasty_id
-         WHERE d.town_id = $1
-       )`,
-      [TEST_TOWN.id],
+      'DELETE FROM kings WHERE player_id IN (SELECT player_id FROM players WHERE token_hash = ANY($1))',
+      [[CLEARED_TOKEN, 'a'.repeat(64)]],
     );
-    await pool.query(`DELETE FROM players p USING dynasties d WHERE d.id = p.dynasty_id AND d.town_id = $1`, [
-      TEST_TOWN.id,
-    ]);
-    // An account whose town was cleared names no dynasty any more, so the join
-    // above cannot reach it, nor the king it named; its token is what scopes it.
-    await pool.query('DELETE FROM kings WHERE player_id IN (SELECT player_id FROM players WHERE token_hash = $1)', [
-      CLEARED_TOKEN,
-    ]);
-    await pool.query('DELETE FROM players WHERE token_hash = $1', [CLEARED_TOKEN]);
+    await pool.query('DELETE FROM players WHERE token_hash = ANY($1)', [[CLEARED_TOKEN, 'a'.repeat(64)]]);
     // The mail has no town column, so the cascade does not reach it.
     await pool.query('TRUNCATE messages RESTART IDENTITY');
     await pool.query('TRUNCATE towns RESTART IDENTITY CASCADE');
@@ -88,24 +75,28 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   it('reads workshops back in the order the world hashes them', async () => {
-    // Arrange: ids whose byte order is not their creation order, since the row
-    // no longer carries a position.
-    await store.createTown(TEST_TOWN.name, createWorld(31), START);
+    // Arrange: the world mints provisional ids, and the database names them.
+    const world = createWorld(31);
+    await store.createTown(TEST_TOWN.name, world, START);
     await withWorld(async (session) => {
-      const world = session.snapshot.world;
-      world.dynasties.caron.workshops = [
-        { id: 'workshop-9', good: 'cloth', level: 1 },
-        { id: 'workshop-10', good: 'cloth', level: 1 },
+      const loaded = session.snapshot.world;
+      const ai = Object.values(loaded.people).find((person) => person.ia)!;
+      ai.workshops = [
+        { id: 9, good: 'cloth', level: 1 },
+        { id: 10, good: 'cloth', level: 1 },
       ];
-      sortWorkshops(world.dynasties.caron);
-      await session.save(world, START, []);
+      sortWorkshops(ai);
+      await session.save(loaded, START, []);
     });
 
     // Act
-    const world = await withWorld(async (session) => session.snapshot.world);
+    const read = await withWorld(async (session) => session.snapshot.world);
 
     // Assert: the canonical order, the one the array is hashed in.
-    expect(world.dynasties.caron.workshops.map((workshop) => workshop.id)).toEqual(['workshop-10', 'workshop-9']);
+    const ai = Object.values(read.people).find((person) => person.ia)!;
+    const ids = ai.workshops.map((workshop) => workshop.id);
+    expect(ids).toEqual([...ids].sort((left, right) => left - right));
+    expect(new Set(ids).size).toBe(2);
   });
 
   it('writes and clears every town table', async () => {
@@ -181,11 +172,13 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('gives each action its own id, in the order it arrived', async () => {
     // Arrange
-    await store.createTown(TEST_TOWN.name, createWorld(4), START);
+    const world = town(4);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
 
     // Act
-    const first = await withWorld(async (session) => session.append(storedAction(1, buy(2))));
-    const second = await withWorld(async (session) => session.append(storedAction(1, buy(3))));
+    const first = await withWorld(async (session) => session.append(storedAction(personId, 1, buy(personId, 2))));
+    const second = await withWorld(async (session) => session.append(storedAction(personId, 1, buy(personId, 3))));
 
     // Assert
     expect(second.id).toBe(first.id + 1);
@@ -194,10 +187,12 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('returns a hour actions in the order they were received', async () => {
     // Arrange: the row id is the arrival order, so two of the same hour keep it.
-    await store.createTown(TEST_TOWN.name, createWorld(5), START);
-    const first = await withWorld(async (session) => session.append(storedAction(1, buy(1))));
-    const second = await withWorld(async (session) => session.append(storedAction(1, buy(2))));
-    await withWorld(async (session) => session.append(storedAction(2, buy(3))));
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+    const first = await withWorld(async (session) => session.append(storedAction(personId, 1, buy(personId, 1))));
+    const second = await withWorld(async (session) => session.append(storedAction(personId, 1, buy(personId, 2))));
+    await withWorld(async (session) => session.append(storedAction(personId, 2, buy(personId, 3))));
 
     // Act
     const queued = await withWorld(async (session) => session.actionsBetween(1, 1));
@@ -209,8 +204,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('erases a cancelled action', async () => {
     // Arrange
-    await store.createTown(TEST_TOWN.name, createWorld(6), START);
-    const action = await withWorld(async (session) => session.append(storedAction(1, buy(2))));
+    const world = town(6);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+    const action = await withWorld(async (session) => session.append(storedAction(personId, 1, buy(personId, 2))));
     await withWorld(async (session) => session.cancel(action.id));
 
     // Act
@@ -230,24 +227,27 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       rng: 1_234_567_890,
       market: { cloth: 1301, wool: 377, grain: 259, bread: 521, wood: 301, planks: 979 },
     };
+    await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const ai = Object.values(world.people).find((person) => person.ia)!;
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     const chronicle: Event = {
       type: 'council.election_held',
       audience: 'town',
       at: 7,
       seatId: 'maire',
-      winnerDynastyId: 'caron',
-      votes: { leclerc: 1, caron: 2 },
+      winnerPersonId: ai.id,
+      votes: { [human.id]: 1, [ai.id]: 2 },
     };
     const mail: Event = {
       type: 'workshop.built',
-      audience: { dynastyId: 'leclerc' },
+      audience: { personId: human.id },
       at: 7,
-      dynastyId: 'leclerc',
-      workshopId: 'workshop-2',
+      personId: human.id,
+      workshopId: 4,
       trade: 'baker',
     };
     const hourStartedAt = new Date(START.getTime() + 42_000);
-    await store.createTown(TEST_TOWN.name, world, START);
 
     // Act
     await withWorld(async (session) => {
@@ -256,7 +256,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const read = await withWorld(async (session) => ({
       snapshot: session.snapshot,
       chronicle: await session.recentChronicle(50),
-      mail: await session.recentMessages(50, 'leclerc'),
+      mail: await session.recentMessages(50, playerId),
     }));
 
     // Assert: the town sees the election, the weaver sees the workshop, and no
@@ -265,7 +265,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
     expect(read.chronicle).toEqual([chronicle]);
     // A message keeps no town hour: it comes back with `at` at zero.
-    expect(read.mail.messages).toEqual([{ id: 1, read: false, event: { ...mail, at: 0 } }]);
+    expect(read.mail.messages).toEqual([{ id: 1, read: false, event: { ...mail, at: 0, audience: { personId: 0 } } }]);
     expect(read.mail.unread).toBe(1);
   });
 
@@ -273,11 +273,13 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: four private lines for the weaver, read two at a time.
     const world = town(3);
     await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     const mail: Event[] = [1, 2, 3, 4].map((at) => ({
-      type: 'dynasty.debt_repaid',
-      audience: { dynastyId: 'leclerc' },
+      type: 'person.debt_repaid',
+      audience: { personId: human.id },
       at,
-      dynastyId: 'leclerc',
+      personId: human.id,
       amountCents: at * 120,
     }));
 
@@ -285,11 +287,11 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await withWorld(async (session) => {
       await session.save(world, START, mail);
     });
-    const page = await withWorld(async (session) => session.recentMessages(2, 'leclerc'));
+    const page = await withWorld(async (session) => session.recentMessages(2, playerId));
 
     // Assert: the last two entries, in time order, and the badge counts the page.
     expect(
-      page.messages.map((message) => (message.event.type === 'dynasty.debt_repaid' ? message.event.amountCents : -1)),
+      page.messages.map((message) => (message.event.type === 'person.debt_repaid' ? message.event.amountCents : -1)),
     ).toEqual([360, 480]);
     expect(page.unread).toBe(2);
   });
@@ -299,35 +301,32 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // lives outside it.
     const world = { ...town(8), hour: 5 };
     await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, CLEARED_TOKEN);
     await withWorld(async (session) => {
-      await session.append(storedAction(5, buy(2)));
+      await session.append(storedAction(human.id, 5, buy(human.id, 2)));
       await session.save(world, START, [
         {
           type: 'council.election_held',
           audience: 'town',
           at: 5,
           seatId: 'maire',
-          winnerDynastyId: null,
+          winnerPersonId: null,
           votes: {},
         },
         {
-          type: 'dynasty.debt_repaid',
-          audience: { dynastyId: 'leclerc' },
+          type: 'person.debt_repaid',
+          audience: { personId: human.id },
           at: 5,
-          dynastyId: 'leclerc',
+          personId: human.id,
           amountCents: 120,
         },
       ]);
     });
-    const tokenHash = CLEARED_TOKEN;
-    const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, dynasty_id) VALUES ($1, 'leclerc') RETURNING player_id`,
-      [tokenHash],
-    );
     await pool.query(
       `INSERT INTO kings (player_id, dynasty_name, crowned_at, elapsed_hours)
        VALUES ($1, 'Leclerc', now(), 12)`,
-      [Number(playerRows[0]?.player_id)],
+      [playerId],
     );
 
     // Act
@@ -335,17 +334,18 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert: the town is gone whole, the accounts and the book stay.
     const state = await pool.query('SELECT count(*)::int AS count FROM state');
-    const dynasties = await pool.query('SELECT count(*)::int AS count FROM dynasties');
+    const people = await pool.query('SELECT count(*)::int AS count FROM people');
     const events = await pool.query('SELECT count(*)::int AS count FROM events');
     const messages = await pool.query('SELECT count(*)::int AS count FROM messages');
     const actions = await pool.query('SELECT count(*)::int AS count FROM actions');
-    // The account survives the cleared town; the town it named does not, so it
-    // is found by its token and not by a join.
-    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE token_hash = $1', [tokenHash]);
+    // The account survives the cleared town.
+    const players = await pool.query('SELECT count(*)::int AS count FROM players WHERE token_hash = $1', [
+      CLEARED_TOKEN,
+    ]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
     expect(state.rows[0]?.count).toBe(0);
-    expect(dynasties.rows[0]?.count).toBe(0);
+    expect(people.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
     // The mail belongs to the account, so it outlives the town it was written in.
     expect(messages.rows[0]?.count).toBe(1);
@@ -415,7 +415,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   it('lists the least-filled town first, the oldest on a tie', async () => {
-    // Arrange: an older town of four dynasties and a younger one of three.
+    // Arrange: an older town of four people and a younger one of three.
     const old = await store.createTown('Old', town(9), START);
     const young = await store.createTown('New', createWorld(8), START);
 
@@ -484,16 +484,19 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('prunes the mail on its own cut, which outlives the chronicle', async () => {
     // Arrange: 120 messages, the first 49 written a day before the mail cut.
-    await store.createTown(TEST_TOWN.name, town(4), START);
+    const world = town(4);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     await withWorld(async (session) => {
       await session.save(
-        session.snapshot.world,
+        world,
         START,
         Array.from({ length: 120 }, (_, index): Event => ({
-          type: 'dynasty.debt_repaid',
-          audience: { dynastyId: 'leclerc' },
+          type: 'person.debt_repaid',
+          audience: { personId: human.id },
           at: index + 1,
-          dynastyId: 'leclerc',
+          personId: human.id,
           amountCents: index + 1,
         })),
       );
@@ -504,9 +507,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await store.pruneJournal(TEST_TOWN.id, new Date('2010-01-08T00:00:00.000Z'), new Date('2000-01-08T00:00:00.000Z'));
 
     // Assert: the mail keeps the 71 recent lines, whatever the chronicle cut says.
-    const page = await withWorld(async (session) => session.recentMessages(120, 'leclerc'));
+    const page = await withWorld(async (session) => session.recentMessages(120, playerId));
     expect(
-      page.messages.map((message) => (message.event.type === 'dynasty.debt_repaid' ? message.event.amountCents : -1)),
+      page.messages.map((message) => (message.event.type === 'person.debt_repaid' ? message.event.amountCents : -1)),
     ).toEqual(range(50, 120));
     const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
     expect(rows.rows[0]?.count).toBe(71);
@@ -514,33 +517,36 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('marks one message read without locking the town, and only its own', async () => {
     // Arrange: three unread messages for the weaver.
-    await store.createTown(TEST_TOWN.name, town(5), START);
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     await withWorld(async (session) => {
       await session.save(
-        session.snapshot.world,
+        world,
         START,
         Array.from({ length: 3 }, (_, index): Event => ({
-          type: 'dynasty.debt_repaid',
-          audience: { dynastyId: 'leclerc' },
+          type: 'person.debt_repaid',
+          audience: { personId: human.id },
           at: index + 1,
-          dynastyId: 'leclerc',
+          personId: human.id,
           amountCents: 120,
         })),
       );
     });
-    const before = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const before = await withWorld(async (session) => session.recentMessages(50, playerId));
     const target = before.messages[0];
     expect(target).toBeDefined();
     expect(before.unread).toBe(3);
 
-    // Act: another dynasty names the id, then the owner does.
-    const foreign = await store.markMessageRead(target?.id ?? 0, 'caron');
-    const own = await store.markMessageRead(target?.id ?? 0, 'leclerc');
+    // Act: another account names the id, then the owner does.
+    const foreign = await store.markMessageRead(target?.id ?? 0, playerId + 1);
+    const own = await store.markMessageRead(target?.id ?? 0, playerId);
 
     // Assert: the foreign call reads nothing, the owner's line only.
     expect(foreign).toEqual({ read: false, unread: 0 });
     expect(own).toEqual({ read: true, unread: 2 });
-    const after = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const after = await withWorld(async (session) => session.recentMessages(50, playerId));
     const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
     expect(after.unread).toBe(2);
     expect(after.messages).toHaveLength(3);
@@ -550,33 +556,36 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('deletes one message and only its own', async () => {
     // Arrange: two messages for the weaver.
-    await store.createTown(TEST_TOWN.name, town(5), START);
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     await withWorld(async (session) => {
       await session.save(
-        session.snapshot.world,
+        world,
         START,
         [1, 2].map((at): Event => ({
-          type: 'dynasty.debt_repaid',
-          audience: { dynastyId: 'leclerc' },
+          type: 'person.debt_repaid',
+          audience: { personId: human.id },
           at,
-          dynastyId: 'leclerc',
+          personId: human.id,
           amountCents: at * 120,
         })),
       );
     });
-    const page = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const page = await withWorld(async (session) => session.recentMessages(50, playerId));
     const target = page.messages[0];
     expect(target).toBeDefined();
 
-    // Act: another dynasty names the id, then the owner does.
-    const foreign = await store.deleteMessage(target?.id ?? 0, 'caron');
-    const own = await store.deleteMessage(target?.id ?? 0, 'leclerc');
+    // Act: another account names the id, then the owner does.
+    const foreign = await store.deleteMessage(target?.id ?? 0, playerId + 1);
+    const own = await store.deleteMessage(target?.id ?? 0, playerId);
 
     // Assert: the foreign call is a no-op (and answers the foreigner's own
     // badge, which is empty); the owner's removes the row.
     expect(foreign).toEqual({ deleted: false, unread: 0 });
     expect(own).toEqual({ deleted: true, unread: 1 });
-    const after = await withWorld(async (session) => session.recentMessages(50, 'leclerc'));
+    const after = await withWorld(async (session) => session.recentMessages(50, playerId));
     const rows = await pool.query('SELECT count(*)::int AS count FROM messages');
     expect(after.messages).toHaveLength(1);
     expect(after.unread).toBe(1);
@@ -585,25 +594,29 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
   it('writes prose and notices into the box', async () => {
     // Arrange: a notice already lives in the box, and a letter would next to it.
-    await store.createTown(TEST_TOWN.name, town(5), START);
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const human = humanPerson(world);
+    const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     const insert = (columns: string, values: unknown[] = []) =>
       pool.query(
-        `INSERT INTO messages (dynasty_id${columns}) VALUES ($1${values.map((_, index) => `, $${index + 2}`).join('')})`,
-        ['leclerc', ...values],
+        `INSERT INTO messages (player_id${columns}) VALUES ($1${values.map((_, index) => `, $${index + 2}`).join('')})`,
+        [playerId, ...values],
       );
 
     // Act and assert: prose carries a body and may name its author, a notice
     // carries its type and its payload. The table holds both shapes and refuses
     // neither: the writer is what keeps them apart.
-    await expect(insert(', body, author_dynasty_id', ['Bonjour', 'dynasty-writer'])).resolves.toBeDefined();
+    await expect(insert(', body, author_player_id', ['Bonjour', playerId + 1])).resolves.toBeDefined();
     await expect(insert(', type, payload', ['title_open', '{}'])).resolves.toBeDefined();
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {
     // Arrange
-    const world = { ...createWorld(6), hour: 3 };
+    const world = { ...town(6), hour: 3 };
     await store.createTown(TEST_TOWN.name, world, START);
-    const action = storedAction(3, buy(1));
+    const personId = humanPerson(world).id;
+    const action = storedAction(personId, 3, buy(personId, 1));
     let actionId = 0;
 
     // Act: a catch-up that refuses the world version, after writing both tables.
@@ -622,14 +635,31 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     expect(after.snapshot.world).toEqual(world);
     expect(after.action).toBeNull();
   });
+
+  /** The first human person of a world the store has reattributed. */
+  function humanPerson(world: World) {
+    return Object.values(world.people).find((person) => !person.ia)!;
+  }
+
+  /** Inserts an account and points the person at it, as a join does. */
+  async function bindAccount(townId: number, personId: number, tokenHash: string): Promise<number> {
+    const { rows } = await pool.query<{ player_id: string }>(
+      `INSERT INTO players (token_hash, name) VALUES ($1, $2) RETURNING player_id`,
+      [tokenHash, `H${tokenHash.slice(0, 8)}`],
+    );
+    const playerId = Number(rows[0]?.player_id);
+    await pool.query('UPDATE people SET player_id = $2 WHERE id = $1 AND town_id = $3', [personId, playerId, townId]);
+
+    return playerId;
+  }
 });
 
 function oneHourLater(world: World): World {
   return { ...world, hour: world.hour + 1 };
 }
 
-function buy(units: number): Action {
-  return { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units };
+function buy(personId: number, units: number): Action {
+  return { type: 'market.buy', personId, good: 'wool', units };
 }
 
 /** One chronicle line per hour, so a cut has a visible order to work on. */
@@ -639,7 +669,7 @@ function priceAt(hour: number): Event {
     audience: 'town',
     at: hour,
     seatId: 'maire',
-    winnerDynastyId: null,
+    winnerPersonId: null,
     votes: {},
   };
 }
@@ -652,8 +682,8 @@ function range(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, index) => from + index);
 }
 
-function storedAction(hour: number, action: Action): NewStoredAction {
-  return { dynastyId: 'leclerc', playsAt: hour, action, receivedAt: new Date(START) };
+function storedAction(personId: number, hour: number, action: Action): NewStoredAction {
+  return { personId, playsAt: hour, action, receivedAt: new Date(START) };
 }
 
 function delay(ms: number): Promise<void> {

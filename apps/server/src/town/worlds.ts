@@ -21,8 +21,8 @@ export interface TownInfo {
 
 /** An action as the store receives it: the id is the row's own. */
 export interface NewStoredAction {
-  /** Always the authenticated player's dynasty, never whatever the request body said. */
-  dynastyId: string;
+  /** Always the authenticated person, never whatever the request body said. */
+  personId: number;
   /** The town hour the action plays on. */
   playsAt: number;
   action: Action;
@@ -53,7 +53,7 @@ export interface MessageView {
   event: Event;
 }
 
-/** One page of a dynasty's private mail, and what the badge counts. */
+/** One page of an account's private mail, and what the badge counts. */
 export interface MessagePage {
   /**
    * In the order they happened. Their `at` is 0: a message carries no town
@@ -69,8 +69,8 @@ export interface WorldSession {
   readonly snapshot: WorldSnapshot;
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
   actionsBetween(from: number, to: number): Promise<StoredAction[]>;
-  /** The newest private messages of a dynasty, in the order they happened. */
-  recentMessages(limit: number, dynastyId: string): Promise<MessagePage>;
+  /** The newest private messages of an account, in the order they happened. */
+  recentMessages(limit: number, playerId: number): Promise<MessagePage>;
   /** The newest public chronicle lines, in the order they happened. */
   recentChronicle(limit: number): Promise<Event[]>;
   findAction(id: number): Promise<StoredAction | null>;
@@ -78,19 +78,23 @@ export interface WorldSession {
   append(action: NewStoredAction): Promise<StoredAction>;
   /** Erases an unplayed action; it is never handed to the advance. */
   cancel(id: number): Promise<void>;
-  /** Erases every action of a dynasty, for an identity that goes. */
-  cancelDynasty(dynastyId: string): Promise<void>;
-  /** Writes the whole town and appends the events of the span. */
-  save(world: World, hourStartedAt: Date, events: Event[]): Promise<void>;
+  /** Erases every action of a person, for an identity that goes. */
+  cancelPerson(personId: number): Promise<void>;
   /**
-   * Deletes the town — its state, dynasties, people, actions and journal — and
-   * leaves the players and the sealed seasons. The next join founds a new one.
+   * Writes the whole town and appends the events of the span. `accounts` maps a
+   * person to the account that reads its mail; a person absent from it is an AI
+   * and has no mailbox.
+   */
+  save(world: World, hourStartedAt: Date, events: Event[], accounts?: ReadonlyMap<number, number>): Promise<void>;
+  /**
+   * Deletes the town — its state, people, actions and journal — and leaves the
+   * accounts and the sealed seasons. The next join founds a new one.
    */
   clear(): Promise<void>;
 }
 
 /**
- * The loaded town must be the format and ruleset this code plays: wake no dynasty
+ * The loaded town must be the format and ruleset this code plays: wake no person
  * and erase no account before the world is known readable.
  */
 export function sessionWorld(session: WorldSession): World {
@@ -131,21 +135,15 @@ export interface WorldStore {
    */
   pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void>;
   /**
-   * Marks one message of a dynasty as read, without locking the town: the flag
+   * Marks one message of an account as read, without locking the town: the flag
    * feeds the badge and no rule. A message of another box is left alone.
    */
-  markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }>;
+  markMessageRead(id: number, playerId: number): Promise<{ read: boolean; unread: number }>;
   /**
-   * Deletes one message of a dynasty. No trash: the row goes, and the badge's
+   * Deletes one message of an account. No trash: the row goes, and the badge's
    * new count comes back with the answer.
    */
-  deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }>;
-  /**
-   * The keys of every human dynasty's name, the whole server over: the global
-   * ranking reads human dynasties by name, so no two of them may share one. An AI
-   * dynasty is not here — it carries the same names in every town.
-   */
-  listHumanNames(): Promise<string[]>;
+  deleteMessage(id: number, playerId: number): Promise<{ deleted: boolean; unread: number }>;
   close(): Promise<void>;
 }
 
@@ -157,13 +155,13 @@ export class UnknownWorldError extends Error {
 }
 
 /**
- * A human dynasty of the server already carries the name a write tried to give
- * one. The store refuses it whole, so no town is half written; the routes
- * answer the same 409 a rename answers, and a retry reads the dynasties again.
+ * An account of the server already carries the family name a write tried to
+ * give one. The store refuses it whole, so no town is half written; the routes
+ * answer the same 409 a rename answers, and a retry reads the accounts again.
  */
 export class NameInUseError extends Error {
   constructor() {
-    super('a human dynasty of the server already carries this name');
+    super('an account of the server already carries this family name');
     this.name = 'NameInUseError';
   }
 }
@@ -173,7 +171,7 @@ interface MemoryWorld {
   actions: StoredAction[];
   nextActionId: number;
   chronicle: { id: number; event: Event; recordedAt: Date }[];
-  messages: { id: number; dynastyId: string; event: Event; recordedAt: Date; read: boolean }[];
+  messages: { id: number; playerId: number; event: Event; recordedAt: Date; read: boolean }[];
   nextEventId: number;
   nextMessageId: number;
 }
@@ -221,17 +219,9 @@ export class MemoryWorldStore implements WorldStore {
     return [...this.towns.values()]
       .sort(
         (left, right) =>
-          Object.keys(left.snapshot.world.dynasties).length - Object.keys(right.snapshot.world.dynasties).length,
+          Object.keys(left.snapshot.world.people).length - Object.keys(right.snapshot.world.people).length,
       )
       .map((stored) => ({ ...stored.snapshot.town }));
-  }
-
-  async listHumanNames(): Promise<string[]> {
-    return [...this.towns.values()].flatMap((stored) =>
-      Object.values(stored.snapshot.world.dynasties)
-        .filter((dynasty) => dynasty.controller === 'human')
-        .map((dynasty) => dynasty.name),
-    );
   }
 
   async pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void> {
@@ -244,37 +234,37 @@ export class MemoryWorldStore implements WorldStore {
     stored.messages = stored.messages.filter((entry) => entry.recordedAt >= messagesBefore);
   }
 
-  async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
+  async deleteMessage(id: number, playerId: number): Promise<{ deleted: boolean; unread: number }> {
     let deleted = false;
     let unread = 0;
 
     for (const stored of this.towns.values()) {
-      const index = stored.messages.findIndex((entry) => entry.id === id && entry.dynastyId === dynastyId);
+      const index = stored.messages.findIndex((entry) => entry.id === id && entry.playerId === playerId);
 
       if (index >= 0) {
         stored.messages.splice(index, 1);
         deleted = true;
       }
 
-      unread += stored.messages.filter((entry) => entry.dynastyId === dynastyId && !entry.read).length;
+      unread += stored.messages.filter((entry) => entry.playerId === playerId && !entry.read).length;
     }
 
     return { deleted, unread: Math.min(unread, JOURNAL_PAGE) };
   }
 
-  async markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }> {
+  async markMessageRead(id: number, playerId: number): Promise<{ read: boolean; unread: number }> {
     let read = false;
     let unread = 0;
 
-    // The box is addressed by its dynasty alone, so every town is a candidate
+    // The box is addressed by its account alone, so every town is a candidate
     // for where it lives.
     for (const stored of this.towns.values()) {
       for (const entry of stored.messages) {
-        if (entry.id === id && entry.dynastyId === dynastyId) {
+        if (entry.id === id && entry.playerId === playerId) {
           entry.read = true;
           read = true;
         }
-        if (entry.dynastyId === dynastyId && !entry.read) {
+        if (entry.playerId === playerId && !entry.read) {
           unread += 1;
         }
       }
@@ -333,8 +323,8 @@ export class MemoryWorldStore implements WorldStore {
           .filter((action) => action.playsAt >= from && action.playsAt <= to)
           .sort((left, right) => left.playsAt - right.playsAt || left.id - right.id)
           .map((action) => structuredClone(action)),
-      recentMessages: async (limit, dynastyId) => {
-        const own = stored.messages.filter((entry) => entry.dynastyId === dynastyId);
+      recentMessages: async (limit, playerId) => {
+        const own = stored.messages.filter((entry) => entry.playerId === playerId);
 
         return {
           messages: own
@@ -364,10 +354,10 @@ export class MemoryWorldStore implements WorldStore {
       cancel: async (id) => {
         stored.actions = stored.actions.filter((action) => action.id !== id);
       },
-      cancelDynasty: async (dynastyId) => {
-        stored.actions = stored.actions.filter((action) => action.dynastyId !== dynastyId);
+      cancelPerson: async (personId) => {
+        stored.actions = stored.actions.filter((action) => action.personId !== personId);
       },
-      save: async (world, hourStartedAt, events) => {
+      save: async (world, hourStartedAt, events, accounts = new Map()) => {
         stored.snapshot = {
           town: stored.snapshot.town,
           world: structuredClone(world),
@@ -378,12 +368,12 @@ export class MemoryWorldStore implements WorldStore {
             stored.chronicle.push({ id: stored.nextEventId, event: structuredClone(event), recordedAt: this.now() });
             stored.nextEventId += 1;
           } else if (typeof event.audience === 'object') {
-            const reader = world.dynasties[event.audience.dynastyId];
-            // An AI dynasty has no mailbox: the line is written for nobody.
-            if (reader?.controller === 'human') {
+            const playerId = accounts.get(event.audience.personId);
+            // An AI person has no mailbox: the line is written for nobody.
+            if (playerId !== undefined) {
               stored.messages.push({
                 id: stored.nextMessageId,
-                dynastyId: event.audience.dynastyId,
+                playerId,
                 event: { ...structuredClone(event), at: 0 },
                 recordedAt: this.now(),
                 read: false,

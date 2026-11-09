@@ -1,6 +1,6 @@
 import { randomInt, randomUUID } from 'node:crypto';
 
-import { DYNASTY_NAMES, nameKey, type DynastyIdentity } from '@brigue/core';
+import { DYNASTY_NAMES, nameKey } from '@brigue/core';
 
 /**
  * The places a town can take. A name may come back; the id is assigned by the
@@ -63,15 +63,15 @@ export const PERSON_NAMES = [
 const SUGGESTION_DRAWS = 4;
 
 /**
- * The name the creation screen offers, drawn from the pool and from nothing
- * else. It is a suggestion, not a rule: the player rewrites it or keeps it, and
- * the check of what is kept happens when the dynasty is made.
+ * The family name the creation screen offers, drawn from the pool and from
+ * nothing else. It is a suggestion, not a rule: the player rewrites it or keeps
+ * it, and the check of what is kept happens when the account is made.
  *
  * The pool moves no generator: the world's own stream is what a tick draws
  * from, and a suggestion is the screen's business, so several draws are made
  * until one is free, then the caller writes its own.
  */
-export function suggestDynastyName(worldNames: Iterable<string>, elsewhere: ReadonlySet<string> = new Set()): string {
+export function suggestFamilyName(worldNames: Iterable<string>, elsewhere: ReadonlySet<string> = new Set()): string {
   const taken = new Set(Array.from(worldNames, (name) => nameKey(name)));
   let drawn: string | undefined;
 
@@ -88,17 +88,21 @@ export function suggestDynastyName(worldNames: Iterable<string>, elsewhere: Read
 }
 
 /**
- * The identity a dynasty is made with: an opaque id — a token, an action and an
- * event keep pointing at it, and nothing derives it from the name — the name
- * suggested to the player, and a first name for the person of the dynasty.
+ * The identity a join is made with: an opaque id — a retried join keeps it, and
+ * nothing derives it from the name — the family name suggested to the player,
+ * and a full name for the person of the account.
  */
-export function drawDynastyIdentity(suggestedName: string): DynastyIdentity {
+export function drawPersonIdentity(suggestedFamily: string): {
+  id: string;
+  familyName: string;
+  personName: string;
+} {
   const firstName = PERSON_NAMES[randomInt(PERSON_NAMES.length)];
 
   return {
-    id: `dynasty-${randomUUID()}`,
-    dynastyName: suggestedName,
-    personName: `${firstName} ${suggestedName}`.trim(),
+    id: `person-${randomUUID()}`,
+    familyName: suggestedFamily,
+    personName: `${firstName} ${suggestedFamily}`.trim(),
   };
 }
 

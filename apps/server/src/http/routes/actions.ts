@@ -4,7 +4,7 @@ import {
   GOODS,
   nextTitle,
   SEATS,
-  dynastyTitle,
+  titleOf,
   TRADES,
   type Action,
   type GoodId,
@@ -23,16 +23,16 @@ import { readBody, sendJson } from '../respond.ts';
  */
 const QUEUE_AHEAD_HOURS = 1;
 
-/** An action as the client may send it: the dynasty always comes from the session. */
+/** An action as the client may send it: the person always comes from the session. */
 type ActionIntent =
   | { type: 'market.buy'; good: GoodId; units: number }
   | { type: 'market.sell'; good: GoodId; units: number }
   | { type: 'council.campaign'; seatId: SeatId }
   | { type: 'workshop.build'; trade: Trade }
-  | { type: 'workshop.destroy'; workshopId: string }
-  | { type: 'workshop.upgrade'; workshopId: string }
-  | { type: 'dynasty.buy_title' }
-  | { type: 'dynasty.upgrade_residence' };
+  | { type: 'workshop.destroy'; workshopId: number }
+  | { type: 'workshop.upgrade'; workshopId: number }
+  | { type: 'person.buy_title' }
+  | { type: 'person.upgrade_residence' };
 
 type ActionSubmission = { ok: true; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
 
@@ -68,7 +68,7 @@ export async function listActions(
 
     queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
 
-    return queued.filter((action) => action.dynastyId === bound.dynastyId);
+    return queued.filter((action) => action.personId === bound.personId);
   }, bound.townId);
 
   sendJson(response, 200, { actions: actions.map(pendingView) });
@@ -108,8 +108,8 @@ export async function cancelAction(
     sessionWorld(session);
 
     const stored = await session.findAction(actionId);
-    // Another dynasty's action is indistinguishable from an unknown one.
-    if (stored === null || stored.dynastyId !== bound.dynastyId) {
+    // Another person's action is indistinguishable from an unknown one.
+    if (stored === null || stored.personId !== bound.personId) {
       return { kind: 'unknown' as const };
     }
     if (stored.playsAt < world.hour) {
@@ -180,7 +180,7 @@ export async function appendAction(
     sessionWorld(session);
     const { world, hourStartedAt } = session.snapshot;
 
-    // The action names a hour, not a dynasty: the dynasty is the session's.
+    // The action names a hour, not a person: the person is the session's.
     // A hour that already ticked can never be replayed, and the town clock
     // is the upper bound for a hour that has not begun yet.
     const currentHour = currentHourOf(world, hourStartedAt, at);
@@ -191,15 +191,16 @@ export async function appendAction(
     if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
       return { kind: 'future' as const, currentHour };
     }
+    const person = world.people[bound.personId];
     const toStore: NewStoredAction = {
-      dynastyId: bound.dynastyId,
+      personId: bound.personId,
       playsAt: submission.hour,
-      action: withDynasty(submission.intent, bound.dynastyId),
+      action: withPerson(submission.intent, bound.personId),
       receivedAt: at,
-      // The degree is named when the order is taken, from the dynasty as it is
-      // then, so no later purchase changes what this line says.
-      ...(submission.intent.type === 'dynasty.buy_title'
-        ? { title: nextTitle(dynastyTitle(world, bound.dynastyId)) }
+      // The degree is named when the order is taken, from the person as they
+      // are then, so no later purchase changes what this line says.
+      ...(submission.intent.type === 'person.buy_title' && person !== undefined
+        ? { title: nextTitle(titleOf(person)) }
         : {}),
     };
     const stored = await session.append(toStore);
@@ -217,14 +218,14 @@ export async function appendAction(
     case 'appended':
       context.deps.logger.info('action.appended', {
         townId: bound.townId,
-        dynastyId: bound.dynastyId,
+        personId: bound.personId,
         hour: outcome.stored.playsAt,
         action: outcome.stored.action.type,
       });
       sendJson(response, 201, {
         id: outcome.stored.id,
         hour: outcome.stored.playsAt,
-        dynastyId: outcome.stored.dynastyId,
+        personId: outcome.stored.personId,
       });
   }
 }
@@ -241,7 +242,7 @@ function pendingView(stored: StoredAction): Record<string, unknown> {
       : {}),
     ...(action.type === 'council.campaign' ? { seatId: action.seatId } : {}),
     ...(action.type === 'workshop.build' ? { trade: action.trade } : {}),
-    ...(action.type === 'dynasty.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
+    ...(action.type === 'person.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
     ...(action.type === 'workshop.destroy' || action.type === 'workshop.upgrade'
       ? { workshopId: action.workshopId }
       : {}),
@@ -323,19 +324,19 @@ function parseActionSubmission(body: unknown): ActionSubmission {
     case 'workshop.destroy':
     case 'workshop.upgrade': {
       const { workshopId } = action;
-      if (typeof workshopId !== 'string' || workshopId.length === 0) {
+      if (!Number.isInteger(workshopId) || (workshopId as number) <= 0) {
         return invalid();
       }
 
       return {
         ok: true,
         hour: hour as number,
-        intent: { type: action.type, workshopId },
+        intent: { type: action.type, workshopId: workshopId as number },
       };
     }
 
-    case 'dynasty.buy_title':
-    case 'dynasty.upgrade_residence':
+    case 'person.buy_title':
+    case 'person.upgrade_residence':
       return { ok: true, hour: hour as number, intent: { type: action.type } };
 
     default:
@@ -344,11 +345,11 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 }
 
 /**
- * The only place a client-supplied action meets a dynasty: the dynasty is written
- * last, so a `dynastyId` smuggled into the body never survives into the world.
+ * The only place a client-supplied action meets a person: the person is written
+ * last, so a `personId` smuggled into the body never survives into the world.
  */
-function withDynasty(intent: ActionIntent, dynastyId: string): Action {
-  return { ...intent, dynastyId };
+function withPerson(intent: ActionIntent, personId: number): Action {
+  return { ...intent, personId };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

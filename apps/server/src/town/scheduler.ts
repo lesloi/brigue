@@ -1,8 +1,8 @@
-import { advance, humanDynastyOf, PACING, type Event, type World } from '@brigue/core';
+import { advance, humanPersonOf, PACING, type Event, type World } from '@brigue/core';
 
 import type { Logger } from '../logger.ts';
 import type { Player, PlayerStore } from '../identity/players.ts';
-import { applyPresence, removeDynasty } from './presence.ts';
+import { applyPresence, removePerson } from './presence.ts';
 import {
   HOUR_MS,
   UnknownWorldError,
@@ -48,7 +48,7 @@ export async function playDue(
   source: Source,
   now: Date,
   minHours = 1,
-  dormant: ReadonlySet<string> = new Set(),
+  dormant: ReadonlySet<number> = new Set(),
 ): Promise<Due> {
   const elapsed = Math.floor((now.getTime() - source.hourStartedAt.getTime()) / HOUR_MS);
 
@@ -136,26 +136,30 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         // town whose last human has gone expires even if nobody comes back.
         const players = await options.players.listByTown(town.id);
         const presence = applyPresence(world, players, at.getTime());
+        const accounts = accountsOf(players);
 
-        for (const dynastyId of presence.deletedDynastyIds) {
-          await options.players.deleteDynasty(dynastyId);
-          options.logger.warn('world.dynasty_deleted', { townId: town.id, dynastyId });
+        for (const personId of presence.deletedPersonIds) {
+          await options.players.deletePerson(personId);
+          options.logger.warn('world.person_deleted', { townId: town.id, personId });
         }
 
-        // The identities whose week is over go before the hour plays: a dynasty
+        // The identities whose week is over go before the hour plays: a person
         // being erased must not act again.
         const expired = players.filter(
-          (player): player is Player & { dynastyId: string } =>
-            player.dynastyId !== null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
+          (player): player is Player & { personId: number } =>
+            player.personId !== null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime(),
         );
-        const dynasties = new Set(expired.map((player) => player.dynastyId));
+        const persons = new Set(expired.map((player) => player.personId));
 
-        for (const dynastyId of dynasties) {
-          removeDynasty(presence.world, dynastyId);
-          await session.cancelDynasty(dynastyId);
+        for (const personId of persons) {
+          removePerson(presence.world, personId);
+          await session.cancelPerson(personId);
+          // The person row still exists here: erase the account before the
+          // save removes the row it is found through.
+          await options.players.deletePerson(personId);
         }
 
-        if (humanDynastyOf(presence.world) === undefined) {
+        if (humanPersonOf(presence.world) === undefined) {
           await session.clear();
           options.logger.info('town.deleted', { townId: town.id });
           return { expired, hour: null };
@@ -169,8 +173,8 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
           presence.dormant,
         );
 
-        if (due.hours > 0 || presence.deletedDynastyIds.length > 0 || dynasties.size > 0) {
-          await session.save(due.world, due.hourStartedAt, due.events);
+        if (due.hours > 0 || presence.deletedPersonIds.length > 0 || persons.size > 0) {
+          await session.save(due.world, due.hourStartedAt, due.events, accounts);
         }
         if (due.skipped > 0) {
           options.logger.warn('town.catch_up_capped', { townId: town.id, skipped: due.skipped });
@@ -182,11 +186,8 @@ export function startScheduler(options: SchedulerOptions): { stop(): void } {
         return { expired, hour: due.world.hour };
       }, town.id);
 
-      // The rows go once the world has committed: a failed save leaves the
-      // identity whole, and the next pass tries again.
-      for (const dynastyId of new Set(outcome.expired.map((player) => player.dynastyId))) {
-        await options.players.deleteDynasty(dynastyId);
-        options.logger.info('player.deleted', { townId: town.id, dynastyId });
+      for (const personId of new Set(outcome.expired.map((player) => player.personId))) {
+        options.logger.info('player.deleted', { townId: town.id, personId });
       }
 
       // The chronicle keeps the last seven real days and the mail thirty: what
@@ -252,6 +253,19 @@ async function eraseUnboundAccounts(players: PlayerStore, at: Date, logger: Logg
       detail: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+/** The account that reads each person's mail, for the store's message writer. */
+export function accountsOf(players: readonly Player[]): Map<number, number> {
+  const accounts = new Map<number, number>();
+
+  for (const player of players) {
+    if (player.personId !== null) {
+      accounts.set(player.personId, player.playerId);
+    }
+  }
+
+  return accounts;
 }
 
 function failure(logger: Logger, townId: number | undefined, error: unknown): void {

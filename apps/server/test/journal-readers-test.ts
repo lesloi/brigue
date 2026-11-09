@@ -3,22 +3,26 @@ import { describe, expect, it } from 'vitest';
 import type { Event } from '@brigue/core';
 
 import { JOURNAL_PAGE, MemoryWorldStore, type WorldSession } from '../src/town/worlds.ts';
-import { town } from './helpers.ts';
+import { LECLERC, town } from './helpers.ts';
+
+const PLAYER = 900_001;
+const OTHER_PLAYER = 900_002;
+const ACCOUNTS = new Map([[LECLERC, PLAYER]]);
 
 const chronicleAt = (at: number): Event => ({
   at,
   type: 'council.election_held',
   audience: 'town',
   seatId: 'maire',
-  winnerDynastyId: null,
+  winnerPersonId: null,
   votes: {},
 });
 
-const mailAt = (at: number, dynastyId = 'leclerc'): Event => ({
+const mailAt = (at: number, personId: number = LECLERC): Event => ({
   at,
-  type: 'dynasty.debt_repaid',
-  audience: { dynastyId },
-  dynastyId,
+  type: 'person.debt_repaid',
+  audience: { personId },
+  personId,
   // The payload carries the hour, since a stored message keeps no `at`.
   amountCents: at,
 });
@@ -43,19 +47,19 @@ describe('the journal of a town with two readers', () => {
     };
   }
 
-  it('puts the town’s line in the chronicle and a dynasty’s in its mailbox', async () => {
+  it('puts the town’s line in the chronicle and a person’s in its mailbox', async () => {
     // Arrange: one election and one private debt line.
     const { session } = await stored();
-    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [chronicleAt(1), mailAt(2)]);
+    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [chronicleAt(1), mailAt(2)], ACCOUNTS);
 
     // Act
     const chronicle = await session.recentChronicle(JOURNAL_PAGE);
-    const leclerc = await session.recentMessages(JOURNAL_PAGE, 'leclerc');
-    const caron = await session.recentMessages(JOURNAL_PAGE, 'caron');
+    const leclerc = await session.recentMessages(JOURNAL_PAGE, PLAYER);
+    const caron = await session.recentMessages(JOURNAL_PAGE, OTHER_PLAYER);
 
     // Assert: the private line is in its own box only.
     expect(chronicle.map((event) => event.type)).toEqual(['council.election_held']);
-    expect(leclerc.messages.map((message) => message.event.type)).toEqual(['dynasty.debt_repaid']);
+    expect(leclerc.messages.map((message) => message.event.type)).toEqual(['person.debt_repaid']);
     expect(caron.messages).toEqual([]);
   });
 
@@ -88,11 +92,12 @@ describe('the journal of a town with two readers', () => {
         session.snapshot.world,
         session.snapshot.hourStartedAt,
         Array.from({ length: JOURNAL_PAGE + 5 }, (_, index) => mailAt(index + 1)),
+        ACCOUNTS,
       );
     }, info.id);
 
     // Act
-    const page = await store.withWorld(async (session) => session.recentMessages(JOURNAL_PAGE, 'leclerc'), info.id);
+    const page = await store.withWorld(async (session) => session.recentMessages(JOURNAL_PAGE, PLAYER), info.id);
 
     // Assert: the page reads in time, the five oldest fall out of it, and the
     // badge counts the page it can open.

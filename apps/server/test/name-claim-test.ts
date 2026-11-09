@@ -9,10 +9,10 @@ describe('what a join claims', () => {
     expect(
       readClaim({
         trade: 'weaver',
-        candidate: { id: 'dynasty-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11' },
+        candidate: { id: 'person-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11' },
         name: ' Moreau ',
       }),
-    ).toEqual({ kind: 'claimed', id: 'dynasty-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11', name: 'Moreau' });
+    ).toEqual({ kind: 'claimed', id: 'person-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11', name: 'Moreau' });
   });
 
   it('reads a body that cannot be a name as poisoned', () => {
@@ -24,7 +24,7 @@ describe('what a join claims', () => {
 
   it('keeps the id of the candidate and judges the name it carries', () => {
     // Arrange
-    const id = 'dynasty-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11';
+    const id = 'person-0b7c2f0e-2a51-4b4f-9a0e-3b8f0f5f5c11';
 
     // Act
     const kept = settledCandidate({ id, name: 'Moreau' }, []);
@@ -32,7 +32,7 @@ describe('what a join claims', () => {
 
     // Assert: the cut with the id, and nothing for a name the rule refuses.
     expect(kept?.id).toBe(id);
-    expect(kept?.dynastyName).toBe('Moreau');
+    expect(kept?.familyName).toBe('Moreau');
     expect(refused).toBeNull();
   });
 });

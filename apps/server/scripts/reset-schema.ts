@@ -3,11 +3,11 @@ import { previewReset, resetDatabase, type ResetPreview } from '../src/db/reset.
 
 /**
  * The schema reset, for the one deployment that changes the shape of the
- * database. It destroys the town — its dynasties, its actions, its journal — and
+ * database. It destroys the town — its people, its actions, its journal — and
  * the migrations record, then builds an empty schema from `db/schema.sql` and
  * carries the book of kings and the accounts across. A carried account keeps
- * its token and its player id and loses its dynasty: the next visit chooses a
- * trade. With `--full` it deletes the book and the accounts too.
+ * its token, its player id and its family name, and loses its person: the next
+ * visit chooses a trade. With `--full` it deletes the book and the accounts too.
  *
  * `--check` shows what the reset would destroy and changes nothing. Without
  * `--force`, the script asks first; with no terminal to ask on, it refuses.
@@ -84,7 +84,7 @@ function printPreview(preview: ResetPreview): void {
   );
 
   if (!preview.full) {
-    process.stdout.write(`the accounts are kept, without their dynasty: ${count(preview.accounts, 'account')}\n`);
+    process.stdout.write(`the accounts are kept, without their person: ${count(preview.accounts, 'account')}\n`);
   }
 }
 

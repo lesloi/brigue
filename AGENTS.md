@@ -27,9 +27,9 @@ By default:
 - Within a format, changes to the shape of the world are additive only: a new field with a
   default. Renaming a field or changing a unit is a breaking change and needs a migration, so we
   do not do it. A new format may reset instead: see the DECISIONS entry on the next format.
-- A dynasty is held by a controller, `ai` or `human`; a seat is held by a person of that dynasty.
-  The simulation never asks who controls the dynasty: solo, multiplayer and a dormant dynasty are the
-  same code.
+- A person is the unit, and a seat is held by a person; `ia` says whether an AI
+  plays them. The simulation never asks who plays a person: solo, multiplayer and a
+  dormant person are the same code.
 - A refusal is an event, never a throw: the server replays stored actions days later, and one
   poisoned action must not be able to stop the town. Only a wrong world version throws.
 - The game speaks French; the code, the commits and the docs speak English.

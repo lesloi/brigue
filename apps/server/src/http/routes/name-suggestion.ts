@@ -4,54 +4,40 @@ import { AI_DYNASTY_NAMES, isValidName, nameKey, sanitizeName } from '@brigue/co
 
 import { closingOf } from '../../identity/players.ts';
 import { authenticate } from '../../identity/session.ts';
-import { drawDynastyIdentity, suggestDynastyName } from '../../town/names.ts';
+import { drawPersonIdentity, suggestFamilyName } from '../../town/names.ts';
 import type { AppContext } from '../context.ts';
 import { readSessionCookie } from '../cookies.ts';
 import { sendJson } from '../respond.ts';
 
-/** What a join is made of: an opaque id, and the names the dynasty is written with. */
+/** What a join is made of: an opaque id, and the names the person is written with. */
 export interface Candidate {
-  /** Opaque, never derived from the name: a retried join keeps the same dynasty. */
+  /** Opaque, never derived from the name: a retried join keeps the same candidate. */
   id: string;
-  dynastyName: string;
+  familyName: string;
   personName: string;
 }
 
 /**
- * The names no human dynasty of the server may take: the human dynasties already
- * there, and the three AI dynasties, which carry the same names in every town.
- * Only a human dynasty is ranked by name across towns, which is why the AI ones
- * are absent from the store's list and present here.
+ * The family names no human account of the server may take: the accounts
+ * already there, and the three AI family names, which appear in every town.
  */
-export async function humanNamesElsewhere(context: AppContext): Promise<Set<string>> {
-  const humans = await context.deps.worlds.listHumanNames();
+export async function humanNamesElsewhere(context: AppContext, except?: string): Promise<Set<string>> {
+  const humans = await context.deps.store.listNames();
+  const own = except === undefined ? null : nameKey(except);
 
-  return new Set([...humans, ...AI_DYNASTY_NAMES].map((name) => nameKey(name)));
+  return new Set(
+    [...humans.filter((name) => own === null || nameKey(name) !== own), ...AI_DYNASTY_NAMES].map((name) =>
+      nameKey(name),
+    ),
+  );
 }
 
 /**
- * The names the towns of the server carry: a suggestion the creation screen
- * prefills must be free in the town the join reaches, its AI dynasties included.
- * The pool already avoids the composition's three, so this matters for a town
- * whose AI names are not the ones the pool expects.
+ * The family names the accounts of the server carry: a suggestion the creation
+ * screen prefills must be free before the join writes anything.
  */
 export async function namesInSettledTowns(context: AppContext): Promise<string[]> {
-  const names: string[] = [];
-
-  for (const town of await context.deps.worlds.listTowns()) {
-    try {
-      const carried = await context.deps.worlds.withWorld(
-        async (session) => Object.values(session.snapshot.world.dynasties).map((dynasty) => dynasty.name),
-        town.id,
-      );
-      names.push(...carried);
-    } catch {
-      // The town went between the list and its lock: the join takes the next
-      // one, and the suggestion is drawn for the towns that remain.
-    }
-  }
-
-  return names;
+  return context.deps.store.listNames();
 }
 
 /**
@@ -63,9 +49,9 @@ export async function namesInSettledTowns(context: AppContext): Promise<string[]
  */
 export function candidateFor(kept: string | undefined, taken: readonly string[]): Candidate {
   const elsewhere = new Set(AI_DYNASTY_NAMES.map((carried) => nameKey(carried)));
-  const identity = drawDynastyIdentity(kept ?? suggestDynastyName(taken, elsewhere));
+  const identity = drawPersonIdentity(kept ?? suggestFamilyName(taken, elsewhere));
 
-  return { id: identity.id, dynastyName: identity.dynastyName, personName: identity.personName };
+  return { id: identity.id, familyName: identity.familyName, personName: identity.personName };
 }
 
 /**
@@ -83,7 +69,7 @@ export function readClaim(
   const rawId = typeof claim?.candidate === 'object' && claim.candidate !== null ? claim.candidate.id : undefined;
   const rawName = claim?.name;
 
-  if (rawId !== undefined && (typeof rawId !== 'string' || !/^dynasty-[0-9a-f-]{36}$/.test(rawId))) {
+  if (rawId !== undefined && (typeof rawId !== 'string' || !/^(?:dynasty|person)-[0-9a-f-]{36}$/.test(rawId))) {
     return { kind: 'poisoned' };
   }
   if (rawName !== undefined && typeof rawName !== 'string') {

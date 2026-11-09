@@ -9,9 +9,9 @@ export function committedCents(actions: readonly PendingActionView[], prices: Co
   let total = 0;
 
   for (const action of actions) {
-    if (action.type === 'dynasty.buy_title') {
+    if (action.type === 'person.buy_title') {
       total += prices.titleCents;
-    } else if (action.type === 'dynasty.upgrade_residence') {
+    } else if (action.type === 'person.upgrade_residence') {
       total += prices.residenceCents;
     } else if (action.type === 'workshop.build') {
       total += prices.buildCents;

@@ -1,23 +1,23 @@
 import {
-  dynastyResidence,
-  livingPersonOf,
-  dynastyTitle,
   displayedPrestige,
   GOODS,
   HOURS_PER_YEAR,
   NAME_PRICE,
   nextTitle,
+  residenceOf,
   RESIDENCE_LADDER,
   RULES,
   stockCapacityUnits,
   stockUnits,
   TITLE_LADDER,
+  titleOf,
   workshopCapacity,
+  workshopCap,
   workshopLevelCap,
   type Engagement,
   type GoodId,
-  type Dynasty,
   type Law,
+  type Person,
   type Seat,
   type SeatId,
   type SiteWork,
@@ -30,7 +30,7 @@ import type { TownInfo } from './worlds.ts';
 
 /** A workshop as the screen reads it: its chain and hourly figures come from the rules. */
 export interface WorkshopView {
-  id: string;
+  id: number;
   good: GoodId;
   level: number;
   input: GoodId | null;
@@ -39,18 +39,18 @@ export interface WorkshopView {
   upkeepCentsPerHour: number;
   /** What this workshop gives the warehouse at its level. */
   capacityUnits: number;
-  /** Whether the dynasty's degree allows one more level, and how long it takes. */
+  /** Whether the person's degree allows one more level, and how long it takes. */
   canUpgrade: boolean;
   upgradeHours: number | null;
 }
 
 /** A site under way: what it is for, and the hour it closes. */
 export interface SiteView {
-  id: string;
+  id: number;
   dueAt: number;
   work: SiteWork['work'];
   trade: Trade | null;
-  workshopId: string | null;
+  workshopId: number | null;
 }
 
 /**
@@ -59,7 +59,7 @@ export interface SiteView {
  */
 export interface LadderView {
   title: TitleId;
-  /** What the dynasty's residence level is called, never "residence 3". */
+  /** What the person's residence level is called, never "residence 3". */
   residence: string;
   titlePrestige: number;
   residencePrestige: number;
@@ -73,9 +73,12 @@ export interface LadderView {
   nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
-export interface OwnDynastyView {
-  id: string;
+export interface OwnPersonView {
+  id: number;
+  /** The account's family name, falling back to the person's display name. */
   name: string;
+  personName: string;
+  ia: boolean;
   treasuryCents: number;
   debtCents: number;
   favour: number;
@@ -94,24 +97,18 @@ export interface OwnDynastyView {
   rename: { priceCents: number };
 }
 
-/** What the town knows about another dynasty: its name and standing, not its purse. */
-export interface PublicDynastyView {
-  id: string;
+/** What the town knows about another person: their name and standing, not their purse. */
+export interface PublicPersonView {
+  id: number;
   name: string;
+  ia: boolean;
   prestige: number;
   /**
-   * The residence a dynasty has reached. Public because the screen shows it on
-   * the register of dynasties; an event no longer tells the town when it grows,
+   * The residence a person has reached. Public because the screen shows it on
+   * the register of people; an event no longer tells the town when it grows,
    * since it is the buyer's own line.
    */
   residenceLevel: number;
-}
-
-/** A person the client may name when a seat points at them. No attributes, no age. */
-export interface PublicPersonView {
-  id: string;
-  dynastyId: string;
-  name: string;
 }
 
 /**
@@ -132,11 +129,10 @@ export interface WorldProjection {
   hour: number;
   year: number;
   calendar: CalendarView;
-  dynasty: OwnDynastyView;
+  person: OwnPersonView;
   town: {
     id: number;
     name: string;
-    dynasties: PublicDynastyView[];
     people: PublicPersonView[];
     seats: Record<SeatId, Seat>;
     laws: Law[];
@@ -151,41 +147,41 @@ export interface WorldProjection {
 }
 
 /**
- * The client renders, it decides nothing: it gets its own dynasty in full and the
+ * The client renders, it decides nothing: it gets its own person in full and the
  * rest of the town at the detail the town itself would show. The seed, the
- * generator and other dynasties' treasuries never leave the server.
+ * generator and other people's treasuries never leave the server.
  */
-export function projectWorld(town: TownInfo, world: World, dynastyId: string, hourStartedAt: Date): WorldProjection {
-  const dynasty = world.dynasties[dynastyId];
-  if (!dynasty) {
-    // The token points at a dynasty the world no longer holds: a server bug, not
-    // something to paper over with a made-up dynasty.
-    throw new Error(`world ${world.seed} has no dynasty ${dynastyId}`);
+export function projectWorld(
+  town: TownInfo,
+  world: World,
+  personId: number,
+  hourStartedAt: Date,
+  familyName: string | null = null,
+): WorldProjection {
+  const person = world.people[personId];
+  if (!person) {
+    // The token points at a person the world no longer holds: a server bug, not
+    // something to paper over with a made-up person.
+    throw new Error(`world ${world.seed} has no person ${personId}`);
   }
 
   return {
     hour: world.hour,
     year: world.year,
     calendar: calendarOf(world, hourStartedAt),
-    dynasty: ownDynasty(world, dynasty),
+    person: ownPerson(world, person, familyName),
     town: {
       id: town.id,
       name: town.name,
-      dynasties: Object.values(world.dynasties)
+      people: Object.values(world.people)
         .map((candidate) => ({
           id: candidate.id,
           name: candidate.name,
-          prestige: displayedPrestige(
-            livingPersonOf(world, candidate.id)?.prestige ?? 0,
-            dynastyTitle(world, candidate.id),
-            dynastyResidence(world, candidate.id),
-          ),
-          residenceLevel: dynastyResidence(world, candidate.id),
+          ia: candidate.ia,
+          prestige: displayedPrestige(candidate.prestige, titleOf(candidate), residenceOf(candidate)),
+          residenceLevel: residenceOf(candidate),
         }))
-        .sort((left, right) => left.id.localeCompare(right.id)),
-      people: Object.values(world.people)
-        .map((person) => ({ id: person.id, dynastyId: person.dynastyId, name: person.name }))
-        .sort((left, right) => left.id.localeCompare(right.id)),
+        .sort((left, right) => left.id - right.id),
       seats: structuredClone(world.seats),
       laws: structuredClone(world.laws),
       market: structuredClone(world.market),
@@ -231,20 +227,21 @@ function calendarOf(world: World, hourStartedAt: Date): CalendarView {
   };
 }
 
-function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
-  const level = dynastyResidence(world, dynasty.id);
+function ownPerson(world: World, person: Person, familyName: string | null): OwnPersonView {
+  const level = residenceOf(person);
   const residence = RESIDENCE_LADDER[level - 1];
-  const title = dynastyTitle(world, dynasty.id);
+  const title = titleOf(person);
   const next = nextTitle(title);
-  const head = livingPersonOf(world, dynasty.id);
-  const servicePrestige = head?.prestige ?? 0;
+  const servicePrestige = person.prestige;
 
   return {
-    id: dynasty.id,
-    name: dynasty.name,
-    treasuryCents: head?.treasuryCents ?? 0,
-    debtCents: head?.debtCents ?? 0,
-    favour: head?.favour ?? 0,
+    id: person.id,
+    name: familyName !== null && familyName.trim() !== '' ? familyName : person.name,
+    personName: person.name,
+    ia: person.ia,
+    treasuryCents: person.treasuryCents,
+    debtCents: person.debtCents,
+    favour: person.favour,
     prestige: displayedPrestige(servicePrestige, title, level),
     title,
     residenceLevel: level,
@@ -270,7 +267,7 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
               hours: RULES.improvementHours[level + 1] ?? RULES.siteHours,
             },
     },
-    workshops: dynasty.workshops.map((workshop) => {
+    workshops: person.workshops.map((workshop) => {
       const recipe = RULES.recipes[workshop.good];
       const outputUnitsPerHour = workshop.level * RULES.outputPerLevel;
 
@@ -285,18 +282,18 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
         upgradeHours: RULES.improvementHours[workshop.level + 1] ?? null,
       };
     }),
-    stock: structuredClone(dynasty.stock),
-    stockUnits: stockUnits(dynasty),
-    stockCapacityUnits: stockCapacityUnits(dynasty),
+    stock: structuredClone(person.stock),
+    stockUnits: stockUnits(person),
+    stockCapacityUnits: stockCapacityUnits(person),
     build: {
       priceCents: RULES.buildCents,
       hours: RULES.siteHours,
       level: RULES.builtWorkshopLevel,
-      room: Math.max(0, residence.workshops - dynasty.workshops.length - buildingCount(world, dynasty.id, 'build')),
-      cap: residence.workshops,
+      room: Math.max(0, workshopCap(level) - person.workshops.length - buildingCount(world, person.id, 'build')),
+      cap: workshopCap(level),
     },
     sites: world.engagements.flatMap((engagement) =>
-      engagement.kind === 'site' && engagement.dynastyId === dynasty.id
+      engagement.kind === 'site' && engagement.personId === person.id
         ? [{ id: engagement.id, dueAt: engagement.dueAt, ...siteWorkOf(engagement) }]
         : [],
     ),
@@ -304,14 +301,14 @@ function ownDynasty(world: World, dynasty: Dynasty): OwnDynastyView {
   };
 }
 
-/** The sites of one kind a dynasty has open: a build in progress counts on the cap. */
-function buildingCount(world: World, dynastyId: string, work: SiteWork['work']): number {
+/** The sites of one kind a person has open: a build in progress counts on the cap. */
+function buildingCount(world: World, personId: number, work: SiteWork['work']): number {
   return world.engagements.filter(
-    (engagement) => engagement.kind === 'site' && engagement.dynastyId === dynastyId && engagement.work === work,
+    (engagement) => engagement.kind === 'site' && engagement.personId === personId && engagement.work === work,
   ).length;
 }
 
-/** What a site is for, as the screen names it: a trade, a workshop, the dynasty. */
+/** What a site is for, as the screen names it: a trade, a workshop, the person. */
 function siteWorkOf(site: Extract<Engagement, { kind: 'site' }>) {
   switch (site.work) {
     case 'build':

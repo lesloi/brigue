@@ -1,12 +1,4 @@
 import { drawBelow } from './prng.ts';
-import {
-  isValidName,
-  nameIsTaken,
-  nameKey,
-  sanitizeName,
-  type DynastyRenameOutcome,
-  type DynastyRenameRequest,
-} from './names.ts';
 import type { Action, Event, EventDraft, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
@@ -27,16 +19,13 @@ import {
   titleOf,
   TRADES,
   TRADE_CHAINS,
-  dynastyResidence,
-  dynastyTitle,
   sortWorkshops,
-  livingPersonOf,
   workshopCap,
   workshopLevelCap,
   type Engagement,
   type GoodId,
   type Person,
-  type Dynasty,
+  type PersonId,
   type SeatId,
   type SiteWork,
   type Trade,
@@ -75,7 +64,7 @@ export class WorldVersionError extends Error {
  * different orders are two different towns.
  */
 /**
- * `dormant` is the set of dynasties the server found silent. It is an argument
+ * `dormant` is the set of people the server found silent. It is an argument
  * and not a field of the world: silence is a fact about players, which the core
  * never reads, and the same town replays the same way whatever the clock says.
  */
@@ -83,7 +72,7 @@ export function advance(
   world: World,
   until: number,
   actions: readonly PlacedAction[] = [],
-  dormant: ReadonlySet<string> = new Set(),
+  dormant: ReadonlySet<PersonId> = new Set(),
 ): TickResult {
   if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
     throw new WorldVersionError(world);
@@ -121,7 +110,7 @@ export interface PlacedAction {
 }
 
 /** One hour of the town. Mutates `next`, which `advance` owns. */
-function step(next: World, actions: readonly Action[], events: EventDraft[], dormant: ReadonlySet<string>): void {
+function step(next: World, actions: readonly Action[], events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
   // The hour's own trade, good by good: sold minus bought. It is written on the
   // world once the hour is over, and prices the next bell.
   const flow = Object.fromEntries(GOODS.map((good) => [good, 0])) as Record<GoodId, number>;
@@ -130,13 +119,13 @@ function step(next: World, actions: readonly Action[], events: EventDraft[], dor
     // A stored action can be anything: it went through a database and a JSON
     // parser. An unknown one is refused, never skipped, and never thrown.
     if (!isKnownAction(candidate)) {
-      // No dynasty to answer: the line is kept for the court, and the town's
+      // No person to answer: the line is kept for the court, and the town's
       // chronicle never carries what has no reader.
       events.push({
         type: 'action.refused',
         audience: 'court',
         action: 'unknown',
-        dynastyId: 'unknown',
+        personId: 0,
         reason: 'unknown_action',
       });
       continue;
@@ -152,22 +141,22 @@ function step(next: World, actions: readonly Action[], events: EventDraft[], dor
   const town: EventDraft[] = [];
   resolveEngagements(next, town, dormant);
 
-  // The AI dynasties decide in the same breath as the players, at the same price:
+  // The AI people decide in the same breath as the players, at the same price:
   // both buy before the hour moves the market. Their lines go with the town's.
-  aiDynastiesBuy(next, flow, dormant);
+  aiPeopleBuy(next, flow, dormant);
 
   // Production, then the AI's sale, then upkeep: an AI pays its workshops from
   // the price it just took. The prices move at the bells only, so every trade of
   // the half-day happens at the price the players saw. Every line goes with the
-  // town's, so no AI's trade interrupts the dynasty's own run.
+  // town's, so no AI's trade interrupts the person's own run.
   runWorkshops(next, town, dormant);
-  aiDynastiesSell(next, flow, dormant);
+  aiPeopleSell(next, flow, dormant);
   payUpkeep(next, town, dormant);
 
   // At the start of the year, before the noon bell closes the candidacies, an
-  // AI dynasty without a seat looks for a vacant one.
+  // AI person without a seat looks for a vacant one.
   if (next.hour % HOURS_PER_YEAR === 1) {
-    aiDynastiesCampaign(next, town, dormant);
+    aiPeopleCampaign(next, town, dormant);
   }
 
   const bell = next.hour % (HOURS_PER_YEAR / 2) === 0;
@@ -195,7 +184,7 @@ function step(next: World, actions: readonly Action[], events: EventDraft[], dor
     holdScrutiny(next, town, dormant);
   }
 
-  // The hour reads as it was written: what the dynasty asked and got, then what
+  // The hour reads as it was written: what the person asked and got, then what
   // the town did with it. A reader looking for their own line finds it first.
   events.push(...town);
 
@@ -217,8 +206,8 @@ function isKnownAction(value: unknown): value is Action {
     type === 'workshop.build' ||
     type === 'workshop.destroy' ||
     type === 'workshop.upgrade' ||
-    type === 'dynasty.buy_title' ||
-    type === 'dynasty.upgrade_residence'
+    type === 'person.buy_title' ||
+    type === 'person.upgrade_residence'
   );
 }
 
@@ -235,19 +224,19 @@ function isKnownGood(good: unknown): good is GoodId {
 function refuse(
   events: EventDraft[],
   action: Action,
-  dynastyId: unknown,
+  personId: unknown,
   reason: RefusalReason,
-  knownDynasty: boolean,
+  knownPerson: boolean,
 ): void {
-  const id = typeof dynastyId === 'string' && dynastyId.length > 0 ? dynastyId : 'unknown';
+  const id = typeof personId === 'number' && Number.isInteger(personId) && personId > 0 ? personId : 0;
 
   events.push({
     type: 'action.refused',
-    // A dynasty's own refusal is its business; one naming a dynasty the town no
+    // A person's own refusal is its business; one naming a person the town no
     // longer holds has no mailbox and waits for the court.
-    audience: knownDynasty ? { dynastyId: id } : 'court',
+    audience: knownPerson ? { personId: id } : 'court',
     action: action.type,
-    dynastyId: id,
+    personId: id,
     reason,
   });
 }
@@ -257,75 +246,67 @@ function applyAction(
   action: Action,
   events: EventDraft[],
   flow: Record<GoodId, number>,
-  dormant: ReadonlySet<string>,
+  dormant: ReadonlySet<PersonId>,
 ): void {
-  const dynasty = world.dynasties[action.dynastyId];
-  if (!dynasty) {
-    refuse(events, action, action.dynastyId, 'unknown_dynasty', false);
+  const person = world.people[action.personId];
+  if (!person) {
+    refuse(events, action, action.personId, 'unknown_person', false);
     return;
   }
 
-  if (dormant.has(dynasty.id)) {
-    refuse(events, action, dynasty.id, 'dormant_dynasty', true);
-    return;
-  }
-
-  // The purse, the favour and the prestige are the head's: a dynasty nobody
-  // lives in has no hand to spend with.
-  const person = livingPersonOf(world, dynasty.id);
-  if (person === undefined) {
-    refuse(events, action, dynasty.id, 'unknown_dynasty', false);
+  if (dormant.has(person.id)) {
+    refuse(events, action, person.id, 'dormant_person', true);
     return;
   }
 
   // A degree or a residence level is bought once: two purchases for the same
   // next object would charge twice and deliver once, since the works of the
   // first already opens the second.
-  if (action.type === 'dynasty.buy_title' && sitesOf(world, dynasty.id, 'title') > 0) {
-    refuse(events, action, dynasty.id, 'site_in_progress', true);
+  if (action.type === 'person.buy_title' && sitesOf(world, person.id, 'title') > 0) {
+    refuse(events, action, person.id, 'site_in_progress', true);
     return;
   }
-  if (action.type === 'dynasty.upgrade_residence' && sitesOf(world, dynasty.id, 'residence') > 0) {
-    refuse(events, action, dynasty.id, 'site_in_progress', true);
+  if (action.type === 'person.upgrade_residence' && sitesOf(world, person.id, 'residence') > 0) {
+    refuse(events, action, person.id, 'site_in_progress', true);
     return;
   }
 
-  // A site already under way cannot be doubled: the dynasty has one builder, and
+  // A site already under way cannot be doubled: the person has one builder, and
   // two sites of one kind would race for the same workshop or the same degree.
   const building = world.engagements.some(
-    (engagement) => engagement.kind === 'site' && engagement.dynastyId === dynasty.id,
+    (engagement) => engagement.kind === 'site' && engagement.personId === person.id,
   );
   if (building && action.type !== 'market.buy' && action.type !== 'market.sell' && action.type !== 'council.campaign') {
-    refuse(events, action, dynasty.id, 'site_in_progress', true);
+    refuse(events, action, person.id, 'site_in_progress', true);
     return;
   }
 
   switch (action.type) {
     case 'market.buy': {
       if (!isKnownGood(action.good)) {
-        refuse(events, action, dynasty.id, 'unknown_good', true);
+        refuse(events, action, person.id, 'unknown_good', true);
         return;
       }
       if (!Number.isInteger(action.units) || action.units <= 0) {
-        refuse(events, action, dynasty.id, 'invalid_quantity', true);
+        refuse(events, action, person.id, 'invalid_quantity', true);
         return;
       }
 
       const priceCents = world.market[action.good];
       const totalCents = priceCents * action.units;
       if (person.treasuryCents < totalCents) {
-        refuse(events, action, dynasty.id, 'insufficient_funds', true);
+        refuse(events, action, person.id, 'insufficient_funds', true);
         return;
       }
       // The warehouse is one capacity for all goods, and a purchase is atomic:
       // it is refused whole, never trimmed to what would fit.
-      if (stockUnits(dynasty) + action.units > stockCapacityUnits(dynasty)) {
-        refuse(events, action, dynasty.id, 'stock_full', true);
+      if (stockUnits(person) + action.units > stockCapacityUnits(person)) {
+        refuse(events, action, person.id, 'stock_full', true);
         return;
       }
 
       person.treasuryCents -= totalCents;
-      dynasty.stock[action.good] = (dynasty.stock[action.good] ?? 0) + action.units;
+      person.stock[action.good] = (person.stock[action.good] ?? 0) + action.units;
       flow[action.good] -= action.units;
       // The trade itself has no journal line: the Marché screen holds the
       // price, the stock and the flow. Only what the town must be told — a
@@ -335,17 +316,17 @@ function applyAction(
 
     case 'market.sell': {
       if (!isKnownGood(action.good)) {
-        refuse(events, action, dynasty.id, 'unknown_good', true);
+        refuse(events, action, person.id, 'unknown_good', true);
         return;
       }
       if (!Number.isInteger(action.units) || action.units <= 0) {
-        refuse(events, action, dynasty.id, 'invalid_quantity', true);
+        refuse(events, action, person.id, 'invalid_quantity', true);
         return;
       }
 
-      const held = dynasty.stock[action.good] ?? 0;
+      const held = person.stock[action.good] ?? 0;
       if (held < action.units) {
-        refuse(events, action, dynasty.id, 'insufficient_stock', true);
+        refuse(events, action, person.id, 'insufficient_stock', true);
         return;
       }
 
@@ -354,9 +335,9 @@ function applyAction(
       person.treasuryCents += revenueCents;
       const left = held - action.units;
       if (left === 0) {
-        delete dynasty.stock[action.good];
+        delete person.stock[action.good];
       } else {
-        dynasty.stock[action.good] = left;
+        person.stock[action.good] = left;
       }
       flow[action.good] += action.units;
       return;
@@ -364,17 +345,17 @@ function applyAction(
 
     case 'council.campaign': {
       if (!(action.seatId in world.seats)) {
-        refuse(events, action, dynasty.id, 'unknown_seat', true);
+        refuse(events, action, person.id, 'unknown_seat', true);
         return;
       }
       // One candidacy at a time: another open campaign, on this seat or another,
       // is refused before it can spend any favour.
-      if (Object.values(world.campaigns).some((seat) => seat[dynasty.id] !== undefined)) {
-        refuse(events, action, dynasty.id, 'already_candidate', true);
+      if (Object.values(world.campaigns).some((seat) => seat[person.id] !== undefined)) {
+        refuse(events, action, person.id, 'already_candidate', true);
         return;
       }
       if (person.favour < RULES.campaignFavourCost) {
-        refuse(events, action, dynasty.id, 'insufficient_favour', true);
+        refuse(events, action, person.id, 'insufficient_favour', true);
         return;
       }
 
@@ -386,12 +367,12 @@ function applyAction(
       const countsAt = countsAtFor(world);
 
       const seat = (world.campaigns[action.seatId] ??= {});
-      seat[dynasty.id] = (seat[dynasty.id] ?? 0) + RULES.campaignVoteBonus;
+      seat[person.id] = (seat[person.id] ?? 0) + RULES.campaignVoteBonus;
 
       events.push({
         type: 'council.campaigned',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
+        audience: { personId: person.id },
+        personId: person.id,
         seatId: action.seatId,
         favourSpent: RULES.campaignFavourCost,
         countsAt,
@@ -401,49 +382,46 @@ function applyAction(
 
     case 'workshop.build': {
       if (!isKnownTrade(action.trade)) {
-        refuse(events, action, dynasty.id, 'unknown_trade', true);
+        refuse(events, action, person.id, 'unknown_trade', true);
         return;
       }
       // The residence counts the sites as well as the buildings: two builds in
       // two hours must not slip past a cap of one.
-      if (
-        dynasty.workshops.length + sitesOf(world, dynasty.id, 'build') >=
-        workshopCap(dynastyResidence(world, dynasty.id))
-      ) {
-        refuse(events, action, dynasty.id, 'workshop_cap', true);
+      if (person.workshops.length + sitesOf(world, person.id, 'build') >= workshopCap(residenceOf(person))) {
+        refuse(events, action, person.id, 'workshop_cap', true);
         return;
       }
       if (person.treasuryCents < RULES.buildCents) {
-        refuse(events, action, dynasty.id, 'insufficient_funds', true);
+        refuse(events, action, person.id, 'insufficient_funds', true);
         return;
       }
 
       person.treasuryCents -= RULES.buildCents;
-      openSite(world, dynasty.id, { work: 'build', trade: action.trade }, RULES.siteHours);
+      openSite(world, person.id, { work: 'build', trade: action.trade }, RULES.siteHours);
       return;
     }
 
     case 'workshop.destroy': {
-      const workshop = findWorkshop(dynasty, action.workshopId);
+      const workshop = findWorkshop(person, action.workshopId);
       if (workshop === undefined) {
-        refuse(events, action, dynasty.id, 'unknown_workshop', true);
+        refuse(events, action, person.id, 'unknown_workshop', true);
         return;
       }
-      // The last workshop is the dynasty's livelihood: destroying it would leave
-      // a dynasty that can neither produce nor rebuild. It is refused, not sold.
-      if (dynasty.workshops.length <= 1) {
-        refuse(events, action, dynasty.id, 'last_workshop', true);
+      // The last workshop is the person's livelihood: destroying it would leave
+      // a person that can neither produce nor rebuild. It is refused, not sold.
+      if (person.workshops.length <= 1) {
+        refuse(events, action, person.id, 'last_workshop', true);
         return;
       }
 
-      dynasty.workshops = dynasty.workshops.filter((candidate) => candidate.id !== workshop.id);
-      sortWorkshops(dynasty);
+      person.workshops = person.workshops.filter((candidate) => candidate.id !== workshop.id);
+      sortWorkshops(person);
       // Nothing is refunded, and the warehouse keeps its goods: a stock over the
       // new capacity is sold down, never confiscated.
       events.push({
         type: 'workshop.destroyed',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
+        audience: { personId: person.id },
+        personId: person.id,
         workshopId: workshop.id,
         good: workshop.good,
       });
@@ -451,32 +429,32 @@ function applyAction(
     }
 
     case 'workshop.upgrade': {
-      const workshop = findWorkshop(dynasty, action.workshopId);
+      const workshop = findWorkshop(person, action.workshopId);
       if (workshop === undefined) {
-        refuse(events, action, dynasty.id, 'unknown_workshop', true);
+        refuse(events, action, person.id, 'unknown_workshop', true);
         return;
       }
       const target = workshop.level + 1;
-      const degree = dynastyTitle(world, dynasty.id);
+      const degree = titleOf(person);
       if (target > workshopLevelCap(degree) || target > RULES.improvementHours.length - 1) {
-        refuse(events, action, dynasty.id, 'level_cap', true);
+        refuse(events, action, person.id, 'level_cap', true);
         return;
       }
 
       // An improvement costs hours, never money: the level is the work itself.
-      openSite(world, dynasty.id, { work: 'upgrade', workshopId: workshop.id }, improvementHours(target));
+      openSite(world, person.id, { work: 'upgrade', workshopId: workshop.id }, improvementHours(target));
       return;
     }
 
-    case 'dynasty.buy_title': {
-      const next = nextTitle(dynastyTitle(world, dynasty.id));
+    case 'person.buy_title': {
+      const next = nextTitle(titleOf(person));
       if (next === undefined) {
-        refuse(events, action, dynasty.id, 'no_next_title', true);
+        refuse(events, action, person.id, 'no_next_title', true);
         return;
       }
       const price = TITLE_LADDER[next].priceCents;
       if (person.treasuryCents < price) {
-        refuse(events, action, dynasty.id, 'insufficient_funds', true);
+        refuse(events, action, person.id, 'insufficient_funds', true);
         return;
       }
 
@@ -484,71 +462,71 @@ function applyAction(
       // A degree is obtained at the next noon or midnight, whatever the hour of
       // the purchase: the half-day is the calendar's, not a second clock.
       const dueAt = nextBellAfter(world.hour, RULES.titleHours);
-      openSite(world, dynasty.id, { work: 'title' }, dueAt - world.hour);
+      openSite(world, person.id, { work: 'title' }, dueAt - world.hour);
       return;
     }
 
-    case 'dynasty.upgrade_residence': {
-      const target = dynastyResidence(world, dynasty.id) + 1;
-      const opened = TITLE_LADDER[dynastyTitle(world, dynasty.id)].residenceLevel;
+    case 'person.upgrade_residence': {
+      const target = residenceOf(person) + 1;
+      const opened = TITLE_LADDER[titleOf(person)].residenceLevel;
       if (target > RESIDENCE_LADDER.length) {
-        refuse(events, action, dynasty.id, 'no_next_residence', true);
+        refuse(events, action, person.id, 'no_next_residence', true);
         return;
       }
-      // The title opens the level, money pays for it: a dynasty below its degree
+      // The title opens the level, money pays for it: a person below its degree
       // buys up to what the degree opened, and no further.
       if (target > opened) {
-        refuse(events, action, dynasty.id, 'title_open', true);
+        refuse(events, action, person.id, 'title_open', true);
         return;
       }
       const price = RESIDENCE_LADDER[target - 1].priceCents;
       if (person.treasuryCents < price) {
-        refuse(events, action, dynasty.id, 'insufficient_funds', true);
+        refuse(events, action, person.id, 'insufficient_funds', true);
         return;
       }
 
       person.treasuryCents -= price;
-      openSite(world, dynasty.id, { work: 'residence' }, improvementHours(target));
+      openSite(world, person.id, { work: 'residence' }, improvementHours(target));
       return;
     }
   }
 }
 
-/** A stored workshop id went through the parser too: only a string names one. */
-function findWorkshop(dynasty: Dynasty, workshopId: unknown) {
-  if (typeof workshopId !== 'string') {
+/** A stored workshop id went through the parser too: only a number names one. */
+function findWorkshop(person: Person, workshopId: unknown) {
+  if (typeof workshopId !== 'number' || !Number.isInteger(workshopId)) {
     return undefined;
   }
 
-  return dynasty.workshops.find((candidate) => candidate.id === workshopId);
+  return person.workshops.find((candidate) => candidate.id === workshopId);
 }
 
-/** The workshops a dynasty has open: not under an improvement, which stops it. */
-function openWorkshops(world: World, dynasty: Dynasty) {
+/** The workshops a person has open: not under an improvement, which stops it. */
+function openWorkshops(world: World, person: Person) {
   const closed = new Set(
     world.engagements.flatMap((engagement) =>
-      engagement.kind === 'site' && engagement.dynastyId === dynasty.id && engagement.work === 'upgrade'
+      engagement.kind === 'site' && engagement.personId === person.id && engagement.work === 'upgrade'
         ? [engagement.workshopId]
         : [],
     ),
   );
 
-  return dynasty.workshops.filter((workshop) => !closed.has(workshop.id));
+  return person.workshops.filter((workshop) => !closed.has(workshop.id));
 }
 
-/** The sites a dynasty has under way of one kind. */
-function sitesOf(world: World, dynastyId: string, work: SiteWork['work']): number {
+/** The sites a person has under way of one kind. */
+function sitesOf(world: World, personId: PersonId, work: SiteWork['work']): number {
   return world.engagements.filter(
-    (engagement) => engagement.kind === 'site' && engagement.dynastyId === dynastyId && engagement.work === work,
+    (engagement) => engagement.kind === 'site' && engagement.personId === personId && engagement.work === work,
   ).length;
 }
 
-function openSite(world: World, dynastyId: string, work: SiteWork, hours: number): void {
+function openSite(world: World, personId: PersonId, work: SiteWork, hours: number): void {
   world.engagementSeq += 1;
   world.engagements.push({
-    id: `engagement-${world.engagementSeq}`,
+    id: world.engagementSeq,
     kind: 'site' as const,
-    dynastyId,
+    personId,
     dueAt: world.hour + hours,
     ...work,
   });
@@ -566,61 +544,14 @@ function nextBellAfter(hour: number, minHours: number): number {
   return Math.ceil(target / half) * half;
 }
 
-export const NAME_MAX_LENGTH = 24;
-
 /**
- * The dynasty takes the name, and its living people take it with it: a dynasty's
- * people carry its name, and the dead keep the one they died with.
- *
- * The one way a name is given, at creation as on a rename: the checks come
- * first and a refusal changes nothing, so a caller never has to undo a charge.
- * A refusal is an answer, never a throw — the route turns it into a 409 and the
- * screen into a sentence.
+ * `Colin Leclerc` becomes `Colin Moreau`: the given name stays, the family moves.
+ * A person whose name does not end with the old family name takes the new one
+ * whole, which is what a first name with no family yet needs.
  */
-export function renameDynasty(world: World, dynasty: Dynasty, request: DynastyRenameRequest): DynastyRenameOutcome {
-  const name = sanitizeName(request.name);
-
-  if (!isValidName(name)) {
-    return { ok: false, reason: 'invalid_name' };
-  }
-  // The town's own dynasties, the AI ones included: two Carons would make its
-  // register unreadable, and the suggestion never draws an AI name for that.
-  if (nameIsTaken(dynastiesOf(world, dynasty.id), name)) {
-    return { ok: false, reason: 'name_taken' };
-  }
-  // Only a human dynasty is held to the server-wide rule: the AI ones carry the
-  // same names in every town, and only a human dynasty is ranked by name.
-  if (request.takenElsewhere?.has(nameKey(name)) === true) {
-    return { ok: false, reason: 'name_taken' };
-  }
-  const person = livingPersonOf(world, dynasty.id);
-  if (person === undefined || person.treasuryCents < request.priceCents) {
-    return { ok: false, reason: 'insufficient_funds' };
-  }
-
-  const before = dynasty.name;
-  person.treasuryCents -= request.priceCents;
-  dynasty.name = name;
-
-  for (const person of Object.values(world.people)) {
-    if (person.dynastyId === dynasty.id && person.alive) {
-      person.name = renamePerson(person.name, before, name);
-    }
-  }
-
-  return { ok: true, name };
-}
-
-/** The names of the town's dynasties, the renamed one aside. */
-function dynastiesOf(world: World, exceptDynastyId: string): string[] {
-  return Object.values(world.dynasties)
-    .filter((dynasty) => dynasty.id !== exceptDynastyId)
-    .map((dynasty) => dynasty.name);
-}
-
-/** `Colin Leclerc` becomes `Colin Moreau`: the given name stays, the dynasty moves. */
 export function renamePerson(personName: string, before: string, after: string): string {
-  const witness = personName.endsWith(before) ? personName.slice(0, personName.length - before.length) : '';
+  const witness =
+    before !== '' && personName.endsWith(before) ? personName.slice(0, personName.length - before.length) : '';
 
   return witness === '' ? after : `${witness}${after}`;
 }
@@ -668,32 +599,32 @@ export function nextPriceCents(input: PriceInput): number {
   return clamp(input.priceCents + input.driftCents + pressure + pull, input.floorCents, input.ceilCents);
 }
 
+/** The people a server plays, in id order, so a replay is stable. */
+function aiPeople(world: World): Person[] {
+  return Object.values(world.people)
+    .filter((person) => person.ia)
+    .sort((left, right) => left.id - right.id);
+}
+
 /**
- * The other dynasties are not puppets: an AI dynasty buys the input its workshops
+ * The other people are not puppets: an AI person buys the input its workshops
  * lack, at the hour's price, as far as its purse goes, and decides nothing
- * else. It is not an action, so a dynasty that cannot pay produces no refusal:
+ * else. It is not an action, so a person that cannot pay produces no refusal:
  * its workshop simply idles, which `runWorkshops` reports.
  *
  * No margin check on purpose. A guard that stops buying once the input costs
  * more than the output makes the AI's demand switch on and off with a one-hour
  * lag, and the price saws. The price is the guard.
  */
-function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: ReadonlySet<string>): void {
-  for (const dynastyId of Object.keys(world.dynasties).sort()) {
-    const dynasty = world.dynasties[dynastyId];
-
-    if (dynasty.controller !== 'ai' || dormant.has(dynastyId)) {
-      continue;
-    }
-
-    const person = livingPersonOf(world, dynastyId);
-    if (person === undefined) {
+function aiPeopleBuy(world: World, flow: Record<GoodId, number>, dormant: ReadonlySet<PersonId>): void {
+  for (const person of aiPeople(world)) {
+    if (dormant.has(person.id)) {
       continue;
     }
 
     // A workshop under improvement buys nothing: it will not eat until its
     // site is closed, and an AI that stocked for it would overflow the loft.
-    for (const workshop of openWorkshops(world, dynasty)) {
+    for (const workshop of openWorkshops(world, person)) {
       const recipe = RULES.recipes[workshop.good];
 
       if (recipe === null) {
@@ -701,7 +632,7 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: Rea
       }
 
       const wanted = workshop.level * RULES.outputPerLevel;
-      const shortfall = wanted * recipe.perUnit - (dynasty.stock[recipe.input] ?? 0);
+      const shortfall = wanted * recipe.perUnit - (person.stock[recipe.input] ?? 0);
 
       if (shortfall <= 0) {
         continue;
@@ -709,7 +640,7 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: Rea
 
       const priceCents = world.market[recipe.input];
       const affordable = Math.floor(person.treasuryCents / priceCents);
-      const room = stockCapacityUnits(dynasty) - stockUnits(dynasty);
+      const room = stockCapacityUnits(person) - stockUnits(person);
       const units = Math.min(shortfall, affordable, room);
 
       if (units <= 0) {
@@ -717,7 +648,7 @@ function aiDynastiesBuy(world: World, flow: Record<GoodId, number>, dormant: Rea
       }
 
       person.treasuryCents -= units * priceCents;
-      dynasty.stock[recipe.input] = (dynasty.stock[recipe.input] ?? 0) + units;
+      person.stock[recipe.input] = (person.stock[recipe.input] ?? 0) + units;
       flow[recipe.input] -= units;
     }
   }
@@ -767,22 +698,22 @@ function driftPrices(world: World): void {
   world.marketFlow = {};
 }
 
-function runWorkshops(world: World, events: EventDraft[], dormant: ReadonlySet<string>): void {
-  for (const dynastyId of Object.keys(world.dynasties).sort()) {
-    const dynasty = world.dynasties[dynastyId];
+function runWorkshops(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
+  const people = Object.values(world.people).sort((left, right) => left.id - right.id);
 
-    // A dormant dynasty runs nothing: the workshop is idle, the stock is still a
+  for (const person of people) {
+    // A dormant person runs nothing: the workshop is idle, the stock is still a
     // target, and its money is untouched. Wages are part of running it.
-    if (dormant.has(dynastyId)) {
+    if (dormant.has(person.id)) {
       continue;
     }
 
     // A workshop under improvement is a building site: it makes nothing, and
     // the upkeep it does not pay is the cost of the hours it takes.
-    for (const workshop of openWorkshops(world, dynasty)) {
+    for (const workshop of openWorkshops(world, person)) {
       const wanted = workshop.level * RULES.outputPerLevel;
       const recipe = RULES.recipes[workshop.good];
-      const available = recipe ? (dynasty.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
+      const available = recipe ? (person.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
       const makeable = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
 
       if (makeable === 0) {
@@ -793,14 +724,14 @@ function runWorkshops(world: World, events: EventDraft[], dormant: ReadonlySet<s
       // them out of nothing. Both must stop at the warehouse's cap, and the
       // units that do not fit are refused with an event, never dropped.
       const netPerUnit = 1 - (recipe?.perUnit ?? 0);
-      const room = stockCapacityUnits(dynasty) - stockUnits(dynasty);
+      const room = stockCapacityUnits(person) - stockUnits(person);
       const units = netPerUnit <= 0 ? makeable : Math.min(makeable, Math.floor(Math.max(0, room) / netPerUnit));
 
       if (units < makeable) {
         events.push({
           type: 'workshop.overflow',
-          audience: { dynastyId: dynasty.id },
-          dynastyId: dynasty.id,
+          audience: { personId: person.id },
+          personId: person.id,
           good: workshop.good,
           refusedUnits: makeable - units,
         });
@@ -812,40 +743,33 @@ function runWorkshops(world: World, events: EventDraft[], dormant: ReadonlySet<s
       if (recipe) {
         const left = available - units * recipe.perUnit;
         if (left === 0) {
-          delete dynasty.stock[recipe.input];
+          delete person.stock[recipe.input];
         } else {
-          dynasty.stock[recipe.input] = left;
+          person.stock[recipe.input] = left;
         }
       }
 
       // Production credits the warehouse, never the purse: the sale is a
       // separate action, at the hour's price.
-      dynasty.stock[workshop.good] = (dynasty.stock[workshop.good] ?? 0) + units;
+      person.stock[workshop.good] = (person.stock[workshop.good] ?? 0) + units;
     }
   }
 }
 
 /**
  * The AI takes the price and does not time it: every hour it sells whatever
- * its workshops left in the warehouse, at the hour's price. A human dynasty
+ * its workshops left in the warehouse, at the hour's price. A human person
  * keeps its stock, because holding for a better hour is the player's bet; a
- * dormant dynasty keeps everything it had.
+ * dormant person keeps everything it had.
  */
-function aiDynastiesSell(world: World, flow: Record<GoodId, number>, dormant: ReadonlySet<string>): void {
-  for (const dynastyId of Object.keys(world.dynasties).sort()) {
-    const dynasty = world.dynasties[dynastyId];
-
-    if (dynasty.controller !== 'ai' || dormant.has(dynastyId)) {
-      continue;
-    }
-
-    const person = livingPersonOf(world, dynastyId);
-    if (person === undefined) {
+function aiPeopleSell(world: World, flow: Record<GoodId, number>, dormant: ReadonlySet<PersonId>): void {
+  for (const person of aiPeople(world)) {
+    if (dormant.has(person.id)) {
       continue;
     }
 
     for (const good of GOODS) {
-      const units = dynasty.stock[good] ?? 0;
+      const units = person.stock[good] ?? 0;
       if (units <= 0) {
         continue;
       }
@@ -853,7 +777,7 @@ function aiDynastiesSell(world: World, flow: Record<GoodId, number>, dormant: Re
       const priceCents = world.market[good];
       const revenueCents = units * priceCents;
       person.treasuryCents += revenueCents;
-      delete dynasty.stock[good];
+      delete person.stock[good];
       flow[good] += units;
     }
   }
@@ -862,38 +786,33 @@ function aiDynastiesSell(world: World, flow: Record<GoodId, number>, dormant: Re
 /**
  * The upkeep of a workshop is one level's share, paid for every workshop that is
  * not under construction or improvement: a site stops the building, and it
- * stops what the building costs to run. Come after the AI's sale, so a dynasty
+ * stops what the building costs to run. Come after the AI's sale, so a person
  * pays from the price it just took.
  */
-function payUpkeep(world: World, events: EventDraft[], dormant: ReadonlySet<string>): void {
-  for (const dynastyId of Object.keys(world.dynasties).sort()) {
-    const dynasty = world.dynasties[dynastyId];
+function payUpkeep(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
+  const people = Object.values(world.people).sort((left, right) => left.id - right.id);
 
-    if (dormant.has(dynastyId)) {
-      continue;
-    }
-
-    const person = livingPersonOf(world, dynastyId);
-    if (person === undefined) {
+  for (const person of people) {
+    if (dormant.has(person.id)) {
       continue;
     }
 
     const building = new Set(
       world.engagements.flatMap((engagement) =>
-        engagement.kind === 'site' && engagement.dynastyId === dynastyId && engagement.work === 'upgrade'
+        engagement.kind === 'site' && engagement.personId === person.id && engagement.work === 'upgrade'
           ? [engagement.workshopId]
           : [],
       ),
     );
-    const levels = dynasty.workshops
+    const levels = person.workshops
       .filter((workshop) => !building.has(workshop.id))
       .reduce((total, workshop) => total + workshop.level, 0);
 
-    upkeepIsPaid(dynastyId, person, levels * RULES.upkeepPerWorkshopLevelCents, events);
+    upkeepIsPaid(person.id, person, levels * RULES.upkeepPerWorkshopLevelCents, events);
   }
 }
 
-function upkeepIsPaid(dynastyId: string, person: Person, upkeep: number, events: EventDraft[]): void {
+function upkeepIsPaid(personId: PersonId, person: Person, upkeep: number, events: EventDraft[]): void {
   if (upkeep > 0) {
     const paid = Math.min(person.treasuryCents, upkeep);
     person.treasuryCents -= paid;
@@ -901,7 +820,7 @@ function upkeepIsPaid(dynastyId: string, person: Person, upkeep: number, events:
     if (paid < upkeep) {
       const shortfallCents = upkeep - paid;
       person.debtCents += shortfallCents;
-      events.push({ type: 'dynasty.penniless', audience: { dynastyId }, dynastyId, shortfallCents });
+      events.push({ type: 'person.penniless', audience: { personId }, personId, shortfallCents });
     }
   }
 
@@ -909,7 +828,7 @@ function upkeepIsPaid(dynastyId: string, person: Person, upkeep: number, events:
     const repaid = Math.min(person.treasuryCents, person.debtCents);
     person.treasuryCents -= repaid;
     person.debtCents -= repaid;
-    events.push({ type: 'dynasty.debt_repaid', audience: { dynastyId }, dynastyId, amountCents: repaid });
+    events.push({ type: 'person.debt_repaid', audience: { personId }, personId, amountCents: repaid });
   }
 }
 
@@ -919,22 +838,22 @@ function upkeepIsPaid(dynastyId: string, person: Person, upkeep: number, events:
  * engagement behind it is resolved by the next tick that runs, and the event
  * carries both the hour it was due and the hour it was paid.
  */
-function resolveEngagements(world: World, events: EventDraft[], dormant: ReadonlySet<string>): void {
+function resolveEngagements(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
   const due = world.engagements
     .filter((engagement) => engagement.dueAt <= world.hour)
-    .sort((left, right) => left.dueAt - right.dueAt || left.id.localeCompare(right.id));
+    .sort((left, right) => left.dueAt - right.dueAt || left.id - right.id);
 
   if (due.length === 0) {
     return;
   }
 
-  // A dormant dynasty plays nothing, its sites included: what fell due for it
+  // A dormant person plays nothing, its sites included: what fell due for it
   // stays in the world and resolves at the visit that wakes it. The cost was
   // paid, and the journal must not claim a work done that never was.
   const waiting = due.filter(
     (engagement) =>
       engagement.kind === 'site' &&
-      (world.dynasties[engagement.dynastyId] === undefined || dormant.has(engagement.dynastyId)),
+      (world.people[engagement.personId] === undefined || dormant.has(engagement.personId)),
   );
   world.engagements = world.engagements.filter(
     (engagement) => engagement.dueAt > world.hour || waiting.includes(engagement),
@@ -952,24 +871,24 @@ function resolveEngagements(world: World, events: EventDraft[], dormant: Readonl
 }
 
 /**
- * What a site was opened for. The dynasty or the workshop can be gone — destroyed,
- * converted, the dynasty deleted — so every step is a check, never a throw: the
+ * What a site was opened for. The person or the workshop can be gone — destroyed,
+ * converted, the person deleted — so every step is a check, never a throw: the
  * cost was paid when the site was opened, and a site that outlived its object
  * has nothing left to finish.
  */
 function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>, events: EventDraft[]): void {
-  const dynasty = world.dynasties[site.dynastyId];
-  if (dynasty === undefined) {
+  const person = world.people[site.personId];
+  if (person === undefined) {
     return;
   }
 
   switch (site.work) {
     case 'build': {
-      if (dynasty.workshops.length >= workshopCap(dynastyResidence(world, dynasty.id))) {
+      if (person.workshops.length >= workshopCap(residenceOf(person))) {
         events.push({
           type: 'workshop.build_lost',
-          audience: { dynastyId: dynasty.id },
-          dynastyId: dynasty.id,
+          audience: { personId: person.id },
+          personId: person.id,
           trade: site.trade,
           paidCents: RULES.buildCents,
         });
@@ -977,31 +896,31 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
       }
       world.workshopSeq = (world.workshopSeq ?? highestWorkshopSeq(world)) + 1;
       const workshop = {
-        id: `workshop-${world.workshopSeq}`,
+        id: world.workshopSeq,
         good: TRADE_CHAINS[site.trade].output,
         level: RULES.builtWorkshopLevel,
       };
-      dynasty.workshops.push(workshop);
-      sortWorkshops(dynasty);
+      person.workshops.push(workshop);
+      sortWorkshops(person);
       events.push({
         type: 'workshop.built',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
+        audience: { personId: person.id },
+        personId: person.id,
         workshopId: workshop.id,
         trade: site.trade,
       });
       return;
     }
     case 'upgrade': {
-      const workshop = dynasty.workshops.find((candidate) => candidate.id === site.workshopId);
+      const workshop = person.workshops.find((candidate) => candidate.id === site.workshopId);
       if (workshop === undefined) {
         return;
       }
       workshop.level += 1;
       events.push({
         type: 'workshop.upgraded',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
+        audience: { personId: person.id },
+        personId: person.id,
         workshopId: workshop.id,
         level: workshop.level,
       });
@@ -1009,21 +928,10 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
     }
     case 'residence': {
       // The level is read on the Maison screen; the town has no line for it.
-      const person = livingPersonOf(world, dynasty.id);
-      if (person === undefined) {
-        return;
-      }
-      person.residenceLevel = Math.min(
-        residenceOf(person) + 1,
-        TITLE_LADDER[dynastyTitle(world, dynasty.id)].residenceLevel,
-      );
+      person.residenceLevel = Math.min(residenceOf(person) + 1, TITLE_LADDER[titleOf(person)].residenceLevel);
       return;
     }
     case 'title': {
-      const person = livingPersonOf(world, dynasty.id);
-      if (person === undefined) {
-        return;
-      }
       const next = nextTitle(titleOf(person));
       if (next === undefined) {
         return;
@@ -1035,9 +943,9 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
         person.residenceLevel = TITLE_LADDER[next].residenceLevel;
       }
       events.push({
-        type: 'dynasty.title_received',
-        audience: { dynastyId: dynasty.id },
-        dynastyId: dynasty.id,
+        type: 'person.title_received',
+        audience: { personId: person.id },
+        personId: person.id,
         title: next,
         dueAt: site.dueAt,
         resolvedAt: world.hour,
@@ -1049,19 +957,16 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
 /** A world stored without the counter still numbers its workshops in one run. */
 function highestWorkshopSeq(world: World): number {
   let highest = 0;
-  for (const dynasty of Object.values(world.dynasties)) {
-    for (const workshop of dynasty.workshops) {
-      const drawn = Number(workshop.id.replace(/^workshop-/, ''));
-      if (Number.isInteger(drawn)) {
-        highest = Math.max(highest, drawn);
-      }
+  for (const person of Object.values(world.people)) {
+    for (const workshop of person.workshops) {
+      highest = Math.max(highest, workshop.id);
     }
   }
 
   return highest;
 }
 
-function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<string>): void {
+function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
   // Age belongs to the calendar: every living person takes a year at the
   // scrutiny, whatever they did with it. The death roll is #7.
   for (const person of Object.values(world.people)) {
@@ -1074,7 +979,7 @@ function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<s
   // One person, one office: a person already elected during this scrutiny is
   // not a candidate for another seat on the same day. A town too small to fill
   // every seat leaves one vacant rather than electing the same person twice.
-  const electedPersonIds = new Set<string>();
+  const electedPersonIds = new Set<PersonId>();
   for (const seatId of SEATS) {
     contestSeat(world, seatId, elections, electedPersonIds, dormant);
   }
@@ -1091,31 +996,26 @@ function countsAtFor(world: World): number {
 }
 
 /**
- * At the first hour of a year, an AI dynasty that holds no seat and can pay
+ * At the first hour of a year, an AI person that holds no seat and can pay
  * tries a random vacant seat. A seated AI is the incumbent and defends it; the
  * climb waits for #55.
  */
-function aiDynastiesCampaign(world: World, events: EventDraft[], dormant: ReadonlySet<string>): void {
-  const seated = new Set<string>();
+function aiPeopleCampaign(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
+  const seated = new Set<PersonId>();
   for (const seatId of SEATS) {
     const person = seatHolder(world, seatId);
     if (person !== undefined) {
-      seated.add(person.dynastyId);
+      seated.add(person.id);
     }
   }
 
-  const dynasties = Object.keys(world.dynasties)
-    .filter((dynastyId) => {
-      const dynasty = world.dynasties[dynastyId];
+  for (const person of aiPeople(world)) {
+    if (dormant.has(person.id) || seated.has(person.id)) {
+      continue;
+    }
 
-      return dynasty.controller === 'ai' && !dormant.has(dynastyId) && !seated.has(dynastyId);
-    })
-    .sort();
-
-  for (const dynastyId of dynasties) {
     const vacant = SEATS.filter((seatId) => world.seats[seatId].personId === null);
-    const person = livingPersonOf(world, dynastyId);
-    if (person === undefined || person.favour < RULES.campaignFavourCost || vacant.length === 0) {
+    if (person.favour < RULES.campaignFavourCost || vacant.length === 0) {
       continue;
     }
 
@@ -1125,12 +1025,12 @@ function aiDynastiesCampaign(world: World, events: EventDraft[], dormant: Readon
 
     person.favour -= RULES.campaignFavourCost;
     const seat = (world.campaigns[seatId] ??= {});
-    seat[dynastyId] = (seat[dynastyId] ?? 0) + RULES.campaignVoteBonus;
+    seat[person.id] = (seat[person.id] ?? 0) + RULES.campaignVoteBonus;
 
     events.push({
       type: 'council.campaigned',
-      audience: { dynastyId },
-      dynastyId,
+      audience: { personId: person.id },
+      personId: person.id,
       seatId,
       favourSpent: RULES.campaignFavourCost,
       countsAt: countsAtFor(world),
@@ -1142,37 +1042,33 @@ function contestSeat(
   world: World,
   seatId: SeatId,
   events: EventDraft[],
-  electedPersonIds: Set<string>,
-  dormant: ReadonlySet<string>,
+  electedPersonIds: Set<PersonId>,
+  dormant: ReadonlySet<PersonId>,
 ): void {
   const campaigns = world.closedCampaigns[seatId] ?? {};
   const incumbent = seatHolder(world, seatId);
-  const incumbentDynastyId = incumbent?.dynastyId;
+  const incumbentPersonId = incumbent?.id;
 
-  // A candidate is a dynasty that stood (an open campaign, now closed at noon)
-  // and is still able to run, plus the active incumbent. A dormant dynasty
+  // A candidate is a person that stood (an open campaign, now closed at noon)
+  // and is still able to run, plus the active incumbent. A dormant person
   // neither stands nor is defended: with nobody to take its seat, the seat
   // falls vacant.
   const candidateIds = [
     ...new Set([
-      ...Object.keys(campaigns).filter((dynastyId) => {
-        const dynasty = world.dynasties[dynastyId];
+      ...Object.keys(campaigns)
+        .map(Number)
+        .filter((personId) => {
+          const person = world.people[personId];
 
-        return dynasty !== undefined && !dormant.has(dynastyId) && livingPersonOf(world, dynastyId) !== undefined;
-      }),
-      ...(incumbentDynastyId !== undefined &&
-      !dormant.has(incumbentDynastyId) &&
-      livingPersonOf(world, incumbentDynastyId) !== undefined
-        ? [incumbentDynastyId]
+          return person !== undefined && !dormant.has(personId) && person.alive;
+        }),
+      ...(incumbentPersonId !== undefined && !dormant.has(incumbentPersonId) && incumbent?.alive === true
+        ? [incumbentPersonId]
         : []),
     ]),
   ]
-    .filter((dynastyId) => {
-      const person = livingPersonOf(world, dynastyId);
-
-      return person !== undefined && !electedPersonIds.has(person.id);
-    })
-    .sort();
+    .filter((personId) => !electedPersonIds.has(personId))
+    .sort((left, right) => left - right);
 
   if (candidateIds.length === 0) {
     const wasHeld = world.seats[seatId].personId !== null;
@@ -1180,28 +1076,28 @@ function contestSeat(
     delete world.closedCampaigns[seatId];
 
     if (wasHeld) {
-      events.push({ type: 'council.election_held', audience: 'town', seatId, winnerDynastyId: null, votes: {} });
+      events.push({ type: 'council.election_held', audience: 'town', seatId, winnerPersonId: null, votes: {} });
     }
     return;
   }
 
-  const votes: Record<string, number> = {};
-  for (const dynastyId of candidateIds) {
+  const votes: Record<PersonId, number> = {};
+  for (const personId of candidateIds) {
     const [rng, roll] = drawBelow(world.rng, 5);
     world.rng = rng;
-    votes[dynastyId] = roll + 1 + (campaigns[dynastyId] ?? 0);
+    votes[personId] = roll + 1 + (campaigns[personId] ?? 0);
   }
 
-  // Highest vote wins; a tie goes to the dynasty that comes first by id, so the
+  // Highest vote wins; a tie goes to the person that comes first by id, so the
   // result never depends on the order of the object.
-  const winnerDynastyId = candidateIds.reduce((best, dynastyId) => (votes[dynastyId] > votes[best] ? dynastyId : best));
-  const winner = livingPersonOf(world, winnerDynastyId);
-  const changed = winnerDynastyId !== incumbentDynastyId;
+  const winnerPersonId = candidateIds.reduce((best, personId) => (votes[personId] > votes[best] ? personId : best));
+  const winner = world.people[winnerPersonId];
+  const changed = winnerPersonId !== incumbentPersonId;
 
   if (winner !== undefined) {
     // Take the new seat before giving up the old ones: a refused assignment
     // must not leave the winner with nowhere to sit.
-    const assignment = takeSeat(world, winnerDynastyId, winner.id);
+    const assignment = takeSeat(world, winner.id);
 
     if (assignment.ok) {
       // One office per person: the winner gives up every other seat, and each
@@ -1214,7 +1110,7 @@ function contestSeat(
             type: 'council.election_held',
             audience: 'town',
             seatId: otherSeatId,
-            winnerDynastyId: null,
+            winnerPersonId: null,
             votes: {},
           });
         }
@@ -1227,18 +1123,18 @@ function contestSeat(
   delete world.closedCampaigns[seatId];
 
   if (changed) {
-    events.push({ type: 'council.election_held', audience: 'town', seatId, winnerDynastyId, votes });
+    events.push({ type: 'council.election_held', audience: 'town', seatId, winnerPersonId, votes });
   }
 
   // Every candidate learns the result, whether the town sees a change or not.
-  for (const dynastyId of candidateIds) {
+  for (const personId of candidateIds) {
     events.push({
       type: 'council.election_result',
-      audience: { dynastyId },
-      dynastyId,
+      audience: { personId },
+      personId,
       seatId,
-      won: dynastyId === winnerDynastyId,
-      winnerDynastyId,
+      won: personId === winnerPersonId,
+      winnerPersonId,
       votes,
     });
   }

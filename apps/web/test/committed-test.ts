@@ -6,8 +6,8 @@ describe('money set aside', () => {
   it('counts what the queued purchases and builds will take', () => {
     // Arrange: a title, a residence level and a workshop, all queued.
     const queued = [
-      { id: 1, hour: 12, type: 'dynasty.buy_title' as const },
-      { id: 2, hour: 12, type: 'dynasty.upgrade_residence' as const },
+      { id: 1, hour: 12, type: 'person.buy_title' as const },
+      { id: 2, hour: 12, type: 'person.upgrade_residence' as const },
       { id: 3, hour: 12, type: 'workshop.build' as const, trade: 'baker' as const },
       { id: 4, hour: 12, type: 'market.buy' as const, good: 'wool' as const, units: 4 },
     ];

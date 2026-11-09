@@ -70,12 +70,12 @@ export function refuseClosing(context: AppContext, player: Player, response: Ser
 }
 
 /**
- * An account a reset left between towns holds a valid token and no dynasty. It
+ * An account a reset left between towns holds a valid token and no person. It
  * may choose a trade, which is an explicit action, but no read of the town and
  * no action can be served before that: the token stays, so this is not a 401.
  */
 export function boundPlayerOf(context: AppContext, player: Player, response: ServerResponse): BoundPlayer | null {
-  if (player.townId === null || player.dynastyId === null) {
+  if (player.townId === null || player.personId === null) {
     sendJson(response, 409, { error: 'dynasty_lost' });
     return null;
   }

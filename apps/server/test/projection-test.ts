@@ -12,7 +12,7 @@ import {
 } from '@brigue/core';
 
 import { projectWorld } from '../src/town/projection.ts';
-import { TEST_TOWN, tick, town } from './helpers.ts';
+import { LECLERC, TEST_TOWN, tick, town } from './helpers.ts';
 
 const SEED = 20261105;
 const START = new Date('2026-11-05T12:00:00.000Z');
@@ -34,7 +34,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
     expect(projection.hour).toBe(world.hour);
@@ -45,7 +45,7 @@ describe('the projection calendar', () => {
 
   it('names the town it was read from', () => {
     // Act
-    const projection = projectWorld(TEST_TOWN, town(SEED), 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, town(SEED), LECLERC, START);
 
     // Assert: the screen shows the town's name, and the hash covers it.
     expect(projection.town.id).toBe(TEST_TOWN.id);
@@ -54,7 +54,7 @@ describe('the projection calendar', () => {
 
   it('tells the screen where the year stands without making it derive a date', () => {
     // Arrange: the first hour of the first year.
-    const projection = projectWorld(TEST_TOWN, town(SEED), 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, town(SEED), LECLERC, START);
 
     // Act and assert
     expect(projection.calendar).toEqual({
@@ -70,7 +70,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), 4);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert: twenty hours in progress plus the scrutiny hour itself.
     expect(projection.calendar.hourOfYear).toBe(5);
@@ -85,7 +85,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR - 1);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert: the scrutiny happens when this hour ends, like the next tick.
     expect(projection.calendar.hourOfYear).toBe(HOURS_PER_YEAR);
@@ -93,17 +93,35 @@ describe('the projection calendar', () => {
     expect(projection.calendar.nextScrutinyAt).toBe(projection.nextBellAt);
   });
 
+  it('carries the family name when the account has one, and the display name too', () => {
+    // Act
+    const projection = projectWorld(TEST_TOWN, town(SEED), LECLERC, START, 'Leclerc');
+
+    // Assert
+    expect(projection.person.name).toBe('Leclerc');
+    expect(projection.person.personName).toBe('Colin Leclerc');
+  });
+
+  it('falls back to the person name when the account has no family name', () => {
+    // Act
+    const projection = projectWorld(TEST_TOWN, town(SEED), LECLERC, START, null);
+
+    // Assert
+    expect(projection.person.name).toBe('Colin Leclerc');
+    expect(projection.person.personName).toBe('Colin Leclerc');
+  });
+
   it('carries the workshop chain and weekly figures so the client derives no rule', () => {
     // Arrange
     const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
-    expect(projection.dynasty.workshops).toEqual([
+    expect(projection.person.workshops).toEqual([
       {
-        id: 'workshop-1',
+        id: 4,
         good: 'bread',
         level: 2,
         input: 'grain',
@@ -120,14 +138,14 @@ describe('the projection calendar', () => {
   it('carries zero input for a raw workshop', () => {
     // Arrange
     const world = town(SEED);
-    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
+    world.people[LECLERC].workshops = [{ id: 4, good: 'wool', level: 2 }];
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
-    expect(projection.dynasty.workshops[0]).toEqual({
-      id: 'workshop-1',
+    expect(projection.person.workshops[0]).toEqual({
+      id: 4,
       good: 'wool',
       level: 2,
       input: null,
@@ -143,14 +161,14 @@ describe('the projection calendar', () => {
   it('scales the hourly figures with the level', () => {
     // Arrange
     const world = town(SEED);
-    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'cloth', level: 3 }];
+    world.people[LECLERC].workshops = [{ id: 4, good: 'cloth', level: 3 }];
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
-    expect(projection.dynasty.workshops[0]).toEqual({
-      id: 'workshop-1',
+    expect(projection.person.workshops[0]).toEqual({
+      id: 4,
       good: 'cloth',
       level: 3,
       input: 'wool',
@@ -168,31 +186,29 @@ describe('the projection calendar', () => {
     const world = town(SEED);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert: the client sums nothing and derives no capacity.
     expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
-    expect(projection.dynasty.stockUnits).toBe(stockUnits(world.dynasties.leclerc));
-    expect(projection.dynasty.stockUnits).toBe(8);
-    expect(projection.dynasty.stockCapacityUnits).toBe(stockCapacityUnits(world.dynasties.leclerc));
+    expect(projection.person.stockUnits).toBe(stockUnits(world.people[LECLERC]));
+    expect(projection.person.stockUnits).toBe(8);
+    expect(projection.person.stockCapacityUnits).toBe(stockCapacityUnits(world.people[LECLERC]));
   });
 
   it('carries the ladder in its three shares, its names and the doors', () => {
     // Arrange: a fait, bourgeois, whose level 2 opens the residence 2.
     const world = town(SEED);
-    world.people['person-leclerc'].title = 'bourgeois';
-    world.people['person-leclerc'].prestige = 10_000;
-    world.engagements = [
-      { id: 'engagement-1', kind: 'site', dynastyId: 'leclerc', dueAt: world.hour + 6, work: 'title' },
-    ];
+    world.people[LECLERC].title = 'bourgeois';
+    world.people[LECLERC].prestige = 10_000;
+    world.engagements = [{ id: 1, kind: 'site', personId: LECLERC, dueAt: world.hour + 6, work: 'title' }];
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
-    expect(projection.dynasty.title).toBe('bourgeois');
-    expect(projection.dynasty.residenceLevel).toBe(1);
-    expect(projection.dynasty.ladder).toEqual({
+    expect(projection.person.title).toBe('bourgeois');
+    expect(projection.person.residenceLevel).toBe(1);
+    expect(projection.person.ladder).toEqual({
       title: 'bourgeois',
       residence: 'Masure',
       titlePrestige: 80,
@@ -205,19 +221,19 @@ describe('the projection calendar', () => {
       nextTitle: { title: 'notable', priceCents: 120_000 },
       nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true, hours: 1 },
     });
-    expect(projection.dynasty.prestige).toBe(80 + 0 + 200);
-    expect(projection.dynasty.build).toEqual({
+    expect(projection.person.prestige).toBe(80 + 0 + 200);
+    expect(projection.person.build).toEqual({
       priceCents: RULES.buildCents,
       hours: RULES.siteHours,
       level: RULES.builtWorkshopLevel,
       room: 0,
       cap: 1,
     });
-    expect(projection.dynasty.sites).toEqual([
-      { id: 'engagement-1', dueAt: world.hour + 6, work: 'title', trade: null, workshopId: null },
+    expect(projection.person.sites).toEqual([
+      { id: 1, dueAt: world.hour + 6, work: 'title', trade: null, workshopId: null },
     ]);
-    expect(projection.dynasty.rename).toEqual({ priceCents: NAME_PRICE.renameCents });
-    expect(projection.town.dynasties.find((dynasty) => dynasty.id === 'leclerc')?.prestige).toBe(280);
+    expect(projection.person.rename).toEqual({ priceCents: NAME_PRICE.renameCents });
+    expect(projection.town.people.find((person) => person.id === LECLERC)?.prestige).toBe(280);
   });
 
   it('carries the year of prices and their references', () => {
@@ -225,7 +241,7 @@ describe('the projection calendar', () => {
     const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
     for (const good of GOODS) {
@@ -240,7 +256,7 @@ describe('the projection calendar', () => {
     delete world.marketHistory;
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
     expect(projection.town.marketHistory).toEqual({});
@@ -252,7 +268,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, 'leclerc', START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
 
     // Assert
     expect(projection.calendar.hourOfYear).toBe(1);

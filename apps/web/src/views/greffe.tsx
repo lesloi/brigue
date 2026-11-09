@@ -2,7 +2,7 @@ import type { WorldResponse } from '../api.ts';
 import { eventLine } from '../events.ts';
 import { formatCount } from '../format.ts';
 import { Seal } from '../icons.tsx';
-import { dynastyName } from './ville.tsx';
+import { personName } from './ville.tsx';
 
 /**
  * The Greffe is the town's public chronicle: the elections that changed a seat,
@@ -11,7 +11,7 @@ import { dynastyName } from './ville.tsx';
  */
 export function Greffe({ data }: { data: WorldResponse }) {
   const { chronicle, world, summary } = data;
-  const nameOf = dynastyName(world);
+  const nameOf = personName(world);
   const newestFirst = [...chronicle].reverse();
 
   return (
@@ -48,7 +48,7 @@ export function Greffe({ data }: { data: WorldResponse }) {
               </div>
             ) : (
               newestFirst.map((event, index) => {
-                const line = eventLine(event, world.dynasty.id, nameOf);
+                const line = eventLine(event, world.person.id, nameOf);
 
                 return (
                   <div class="ev" key={`${event.type}-${event.at}-${index}`}>

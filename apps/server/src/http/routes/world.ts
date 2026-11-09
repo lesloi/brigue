@@ -30,13 +30,13 @@ export async function readWorld(
     return;
   }
 
-  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, at);
+  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.personId, bound.playerId, at);
 
   if (outcome.kind === 'gone') {
-    // The visit arrived after the dynasty was silent for a month: the world has
-    // already deleted it and erased the account. Clear the dead cookie so the
+    // The visit arrived after the person was silent for a month: the world has
+    // already deleted them and erased the account. Clear the dead cookie so the
     // client can take the freed place.
-    context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, personId: bound.personId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
@@ -52,13 +52,13 @@ export async function readWorld(
   }
   context.deps.logger.info('world.read', {
     townId: bound.townId,
-    dynastyId: bound.dynastyId,
+    personId: bound.personId,
     hour: caught.world.hour,
     hoursPlayed: caught.hours,
     skipped: caught.skipped,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
+  const projection = projectWorld(outcome.town, caught.world, bound.personId, caught.hourStartedAt, bound.name);
 
   sendJson(response, 200, {
     world: projection,
@@ -108,10 +108,10 @@ export async function advanceHour(
     return;
   }
 
-  const outcome = await advanceTown(townAccess(context), bound.townId, bound.dynastyId, at, context.now);
+  const outcome = await advanceTown(townAccess(context), bound.townId, bound.personId, bound.playerId, at, context.now);
 
   if (outcome.kind === 'gone') {
-    context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, personId: bound.personId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
@@ -121,11 +121,11 @@ export async function advanceHour(
 
   context.deps.logger.info('world.advanced', {
     townId: bound.townId,
-    dynastyId: bound.dynastyId,
+    personId: bound.personId,
     hour: caught.world.hour,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
+  const projection = projectWorld(outcome.town, caught.world, bound.personId, caught.hourStartedAt, bound.name);
 
   sendJson(response, 200, {
     world: projection,
@@ -176,7 +176,7 @@ export async function deleteMessage(
     return;
   }
 
-  const result = await context.deps.worlds.deleteMessage(id, bound.dynastyId);
+  const result = await context.deps.worlds.deleteMessage(id, bound.playerId);
 
   sendJson(response, 200, { deleted: result.deleted, unreadMessages: result.unread });
 }
@@ -215,7 +215,7 @@ export async function markMessageRead(
     return;
   }
 
-  const result = await context.deps.worlds.markMessageRead(id, bound.dynastyId);
+  const result = await context.deps.worlds.markMessageRead(id, bound.playerId);
 
   sendJson(response, 200, { read: result.read, unreadMessages: result.unread });
 }

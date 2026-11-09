@@ -1,5 +1,5 @@
-import { advance, createWorld, withFirstDynasty } from '../src/index.ts';
-import type { Action, Event, DynastyIdentity, Trade, World } from '../src/index.ts';
+import { advance, createWorld, withFirstPerson } from '../src/index.ts';
+import type { Action, Event, PersonIdentity, Trade, World } from '../src/index.ts';
 
 /**
  * One hour of the town, played the way the scheduler plays it: the actions are
@@ -8,7 +8,7 @@ import type { Action, Event, DynastyIdentity, Trade, World } from '../src/index.
 export function tick(
   world: World,
   actions: readonly Action[] = [],
-  dormant: ReadonlySet<string> = new Set(),
+  dormant: ReadonlySet<number> = new Set(),
 ): { world: World; events: Event[] } {
   return advance(
     world,
@@ -22,7 +22,7 @@ export function tick(
 export function playUntil(
   world: World,
   hour: number,
-  dormant: ReadonlySet<string> = new Set(),
+  dormant: ReadonlySet<number> = new Set(),
 ): { world: World; events: Event[] } {
   return advance(world, hour, [], dormant);
 }
@@ -38,21 +38,27 @@ export function nextBell(hour: number): number {
 export function playHalfDay(
   world: World,
   actions: readonly Action[] = [],
-  dormant: ReadonlySet<string> = new Set(),
+  dormant: ReadonlySet<number> = new Set(),
 ): { world: World; events: Event[] } {
   const first = tick(world, actions, dormant);
 
   return playUntil(first.world, nextBell(first.world.hour - 1), dormant);
 }
 
+/** The ids createWorld gives its three AI people, in creation order. */
+export const CARON = 1;
+export const FOURNIER = 2;
+export const CHARPENTIER = 3;
+
+/** The first person a player adds to the opening town. */
+export const LECLERC = 4;
+
 /** The fixture identity the tests play; production draws its own. */
-export const TEST_FIRST_DYNASTY: DynastyIdentity = {
-  id: 'leclerc',
-  dynastyName: 'Leclerc',
+export const TEST_FIRST_DYNASTY: PersonIdentity = {
   personName: 'Colin Leclerc',
 };
 
-/** The playable town: the AI dynasties plus the first player's dynasty. */
+/** The playable town: the AI people plus the first player's person. */
 export function town(seed: number, trade: Trade = 'weaver'): World {
-  return withFirstDynasty(createWorld(seed), trade, TEST_FIRST_DYNASTY);
+  return withFirstPerson(createWorld(seed), trade, TEST_FIRST_DYNASTY);
 }

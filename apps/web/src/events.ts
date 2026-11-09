@@ -1,4 +1,4 @@
-import type { Action, Event } from '@brigue/core';
+import type { Action, Event, PersonId } from '@brigue/core';
 
 import {
   formatCents,
@@ -22,28 +22,28 @@ export interface EventLine {
  * Turns one event into a sentence. It decides no rule: every number comes from
  * the event, never from the projection.
  */
-export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId: string) => string): EventLine {
-  const own = (dynastyId: string) => dynastyId === ownDynastyId;
-  const subject = (dynastyId: string) => (own(dynastyId) ? 'Vous' : nameOf(dynastyId));
-  const verb = (dynastyId: string, mine: string, theirs: string) => (own(dynastyId) ? mine : theirs);
+export function eventLine(event: Event, ownPersonId: PersonId, nameOf: (personId: PersonId) => string): EventLine {
+  const own = (personId: PersonId) => personId === ownPersonId;
+  const subject = (personId: PersonId) => (own(personId) ? 'Vous' : nameOf(personId));
+  const verb = (personId: PersonId, mine: string, theirs: string) => (own(personId) ? mine : theirs);
 
   switch (event.type) {
     case 'action.refused':
       return {
         tone: 'refusal',
-        text: `${subject(event.dynastyId)} : ${refusalName(event.action)} — ${refusalText(event.reason)}.`,
+        text: `${subject(event.personId)} : ${refusalName(event.action)} — ${refusalText(event.reason)}.`,
       };
 
     case 'market.bought':
       return {
         tone: 'loss',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez acheté', 'a acheté')} ${goodQuantity(event.units, event.good)} à ${formatCents(event.priceCents)} écus, soit ${formatCents(event.totalCents)} écus.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez acheté', 'a acheté')} ${goodQuantity(event.units, event.good)} à ${formatCents(event.priceCents)} écus, soit ${formatCents(event.totalCents)} écus.`,
       };
 
     case 'market.sold':
       return {
         tone: 'gain',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez vendu', 'a vendu')} ${goodQuantity(event.units, event.good)} à ${formatCents(event.priceCents)} écus, soit ${formatCents(event.revenueCents)} écus.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez vendu', 'a vendu')} ${goodQuantity(event.units, event.good)} à ${formatCents(event.priceCents)} écus, soit ${formatCents(event.revenueCents)} écus.`,
       };
 
     case 'market.price_changed':
@@ -55,85 +55,79 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
     case 'workshop.produced':
       return {
         tone: 'gain',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez produit', 'a produit')} ${goodQuantity(event.units, event.good)}.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez produit', 'a produit')} ${goodQuantity(event.units, event.good)}.`,
       };
 
     case 'workshop.overflow':
       return {
         tone: 'warning',
-        text: `${subject(event.dynastyId)} : entrepôt plein, ${goodQuantity(event.refusedUnits, event.good)} en trop.`,
+        text: `${subject(event.personId)} : entrepôt plein, ${goodQuantity(event.refusedUnits, event.good)} en trop.`,
       };
 
     case 'workshop.idle':
       return {
         tone: 'warning',
-        text: `${subject(event.dynastyId)} : atelier de ${goodName(event.good)} à l'arrêt, il manque ${goodQuantity(event.missingUnits, event.input)}.`,
+        text: `${subject(event.personId)} : atelier de ${goodName(event.good)} à l'arrêt, il manque ${goodQuantity(event.missingUnits, event.input)}.`,
       };
 
     case 'workshop.built':
       return {
         tone: 'gain',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez bâti', 'a bâti')} un atelier de ${tradeName(event.trade).toLowerCase()}.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez bâti', 'a bâti')} un atelier de ${tradeName(event.trade).toLowerCase()}.`,
       };
 
     case 'workshop.destroyed':
       return {
         tone: 'loss',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez fait abattre', 'a fait abattre')} un atelier de ${goodName(event.good)}.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez fait abattre', 'a fait abattre')} un atelier de ${goodName(event.good)}.`,
       };
 
     case 'workshop.upgraded':
       return {
         tone: 'gain',
-        text: `${subject(event.dynastyId)} : un atelier passe au niveau ${formatCount(event.level)}.`,
+        text: `${subject(event.personId)} : un atelier passe au niveau ${formatCount(event.level)}.`,
       };
 
     case 'workshop.build_lost':
       return {
         tone: 'refusal',
-        text: `Le chantier de ${tradeName(event.trade)} de ${subject(event.dynastyId)} échoue : ${formatCents(event.paidCents)} écus perdus.`,
+        text: `Le chantier de ${tradeName(event.trade)} de ${subject(event.personId)} échoue : ${formatCents(event.paidCents)} écus perdus.`,
       };
 
-    case 'dynasty.title_bought':
+    case 'person.title_bought':
       return {
         tone: 'council',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez acheté', 'a acheté')} le titre de ${titleName(event.title)} ; il ${verb(event.dynastyId, 'vous sera remis', 'sera remis')} au prochain midi ou minuit.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez acheté', 'a acheté')} le titre de ${titleName(event.title)} ; il ${verb(event.personId, 'vous sera remis', 'sera remis')} au prochain midi ou minuit.`,
       };
 
-    case 'dynasty.title_received':
+    case 'person.title_received':
       return {
         tone: 'council',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'êtes', 'est')} désormais ${titleName(event.title)}.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'êtes', 'est')} désormais ${titleName(event.title)}.`,
       };
 
-    case 'dynasty.residence_received':
+    case 'person.residence_received':
       return {
         tone: 'gain',
-        text: `${subject(event.dynastyId)} : la résidence atteint le niveau ${formatCount(event.level)}.`,
+        text: `${subject(event.personId)} : la résidence atteint le niveau ${formatCount(event.level)}.`,
       };
 
-    case 'dynasty.renamed':
-      return {
-        tone: 'council',
-        text: `La dynastie ${event.before} prend le nom de ${event.after}.`,
-      };
-
-    case 'dynasty.upkeep_paid':
+    case 'person.upkeep_paid':
       return {
         tone: 'loss',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez payé', 'a payé')} ${formatCents(event.amountCents)} écus d'entretien.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez payé', 'a payé')} ${formatCents(event.amountCents)} écus d'entretien.`,
       };
 
-    case 'dynasty.penniless':
+    case 'person.penniless':
       return {
         tone: 'refusal',
-        text: `${subject(event.dynastyId)} n'${verb(event.dynastyId, 'avez', 'a')} pas pu payer ${formatCents(event.shortfallCents)} écus d'entretien.`,
+        text: `${subject(event.personId)} n'${verb(event.personId, 'avez', 'a')} pas pu payer ${formatCents(event.shortfallCents)} écus d'entretien.`,
       };
 
-    case 'dynasty.debt_repaid':
+    case 'person.debt_repaid':
       return {
         tone: 'neutral',
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez remboursé', 'a remboursé')} ${formatCents(event.amountCents)} écus de dette.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez remboursé', 'a remboursé')} ${formatCents(event.amountCents)} écus de dette.`,
       };
 
     case 'council.campaigned':
@@ -141,7 +135,7 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
         tone: 'council',
         // A stored message keeps no town hour, so the line names the scrutiny's
         // own hour rather than a countdown from the moment it was written.
-        text: `${subject(event.dynastyId)} ${verb(event.dynastyId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est à l'heure ${formatCount(event.countsAt)}.`,
+        text: `${subject(event.personId)} ${verb(event.personId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est à l'heure ${formatCount(event.countsAt)}.`,
       };
 
     case 'engagement.resolved': {
@@ -153,13 +147,13 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
       if (event.kind === 'hearing') {
         return {
           tone: 'council',
-          text: `L'audience de ${subject(event.dynastyId)} est tenue${late}.`,
+          text: `L'audience de ${subject(event.personId)} est tenue${late}.`,
         };
       }
 
       return {
         tone: 'neutral',
-        text: `Le chantier de ${subject(event.dynastyId)} est achevé${late}.`,
+        text: `Le chantier de ${subject(event.personId)} est achevé${late}.`,
       };
     }
 
@@ -168,8 +162,8 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
         tone: 'neutral',
         text:
           event.kind === 'hearing'
-            ? `L'audience de ${subject(event.dynastyId)} est fixée à l'heure ${formatCount(event.dueAt)}.`
-            : `${subject(event.dynastyId)} : un chantier est ouvert, il sera clos à l'heure ${formatCount(event.dueAt)}.`,
+            ? `L'audience de ${subject(event.personId)} est fixée à l'heure ${formatCount(event.dueAt)}.`
+            : `${subject(event.personId)} : un chantier est ouvert, il sera clos à l'heure ${formatCount(event.dueAt)}.`,
       };
 
     case 'council.scrutiny_held':
@@ -179,7 +173,7 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
       };
 
     case 'council.election_held': {
-      if (event.winnerDynastyId === null) {
+      if (event.winnerPersonId === null) {
         return {
           tone: 'council',
           text: `Élection : la ${seatName(event.seatId)} reste vacante, personne ne s'est présenté.`,
@@ -187,11 +181,11 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
       }
 
       const votes = Object.entries(event.votes)
-        .map(([dynastyId, count]) => `${nameOf(dynastyId)} ${formatCount(count)}`)
+        .map(([personId, count]) => `${nameOf(Number(personId))} ${formatCount(count)}`)
         .join(', ');
       return {
         tone: 'council',
-        text: `Élection : la ${seatName(event.seatId)} revient à ${nameOf(event.winnerDynastyId)}. Voix : ${votes}.`,
+        text: `Élection : la ${seatName(event.seatId)} revient à ${nameOf(event.winnerPersonId)}. Voix : ${votes}.`,
       };
     }
 
@@ -199,11 +193,11 @@ export function eventLine(event: Event, ownDynastyId: string, nameOf: (dynastyId
       return event.won
         ? {
             tone: 'council',
-            text: `Vous êtes élu à la ${seatName(event.seatId)} avec ${formatCount(event.votes[event.dynastyId] ?? 0)} voix.`,
+            text: `Vous êtes élu à la ${seatName(event.seatId)} avec ${formatCount(event.votes[event.personId] ?? 0)} voix.`,
           }
         : {
             tone: 'neutral',
-            text: `Vous avez perdu la ${seatName(event.seatId)} ; ${nameOf(event.winnerDynastyId)} l'emporte.`,
+            text: `Vous avez perdu la ${seatName(event.seatId)} ; ${nameOf(event.winnerPersonId)} l'emporte.`,
           };
   }
 }
@@ -223,9 +217,9 @@ function refusalName(action: Action['type'] | 'unknown'): string {
       return 'démolition refusée';
     case 'workshop.upgrade':
       return 'agrandissement refusé';
-    case 'dynasty.buy_title':
+    case 'person.buy_title':
       return 'achat de titre refusé';
-    case 'dynasty.upgrade_residence':
+    case 'person.upgrade_residence':
       return 'élévation de la résidence refusée';
     case 'unknown':
       return 'action refusée';

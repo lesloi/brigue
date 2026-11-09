@@ -1,7 +1,7 @@
 import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import { residenceOf, titleOf } from '@brigue/core';
-import type { Action, Engagement, Event, GoodId, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
+import type { Action, Engagement, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
   JOURNAL_PAGE,
   NameInUseError,
@@ -77,6 +77,8 @@ export class PgWorldStore implements WorldStore {
           hourStartedAt,
         ],
       );
+      // The world is reattributed in place: the join needs the ids the database
+      // assigned before it can bind the account and return the session.
       await syncWorld(client, id, world);
 
       await client.query('COMMIT');
@@ -84,7 +86,7 @@ export class PgWorldStore implements WorldStore {
       return { id, name };
     } catch (error) {
       await rollback(client);
-      throw isNameViolation(error) ? new NameInUseError() : error;
+      throw isTownNameViolation(error) ? new NameInUseError() : error;
     } finally {
       client.release();
     }
@@ -92,26 +94,16 @@ export class PgWorldStore implements WorldStore {
 
   async listTowns(): Promise<TownInfo[]> {
     // Least filled first: the join takes the town that needs people most, and
-    // the oldest breaks a tie.
+    // the oldest breaks a tie. A living person is a place, as a dynasty was.
     const { rows } = await this.pool.query<{ id: string; name: string }>(
       `SELECT t.id, t.name
        FROM towns t
-       LEFT JOIN dynasties h ON h.town_id = t.id
+       LEFT JOIN people h ON h.town_id = t.id AND h.alive
        GROUP BY t.id, t.name, t.created_at
        ORDER BY count(h.id), t.created_at, t.id`,
     );
 
     return rows.map((row) => ({ id: Number(row.id), name: row.name }));
-  }
-
-  async listHumanNames(): Promise<string[]> {
-    // Only human dynasties: the three AI dynasties carry the same names in every
-    // town, and the partial index on the table is the same filter.
-    const { rows } = await this.pool.query<{ name: string }>(
-      `SELECT name FROM dynasties WHERE controller = 'human' ORDER BY name`,
-    );
-
-    return rows.map((row) => row.name);
   }
 
   async pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void> {
@@ -121,15 +113,15 @@ export class PgWorldStore implements WorldStore {
     await this.pool.query(`DELETE FROM messages WHERE recorded_at < $1`, [messagesBefore]);
   }
 
-  async markMessageRead(id: number, dynastyId: string): Promise<{ read: boolean; unread: number }> {
-    // Scoped to the dynasty: an id from another box changes nothing.
-    const { rowCount } = await this.pool.query(`UPDATE messages SET read = true WHERE id = $1 AND dynasty_id = $2`, [
+  async markMessageRead(id: number, playerId: number): Promise<{ read: boolean; unread: number }> {
+    // Scoped to the account: an id from another box changes nothing.
+    const { rowCount } = await this.pool.query(`UPDATE messages SET read = true WHERE id = $1 AND player_id = $2`, [
       id,
-      dynastyId,
+      playerId,
     ]);
     const counts = await this.pool.query<{ unread: number }>(
-      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE dynasty_id = $1`,
-      [dynastyId],
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE player_id = $1`,
+      [playerId],
     );
 
     return {
@@ -138,16 +130,13 @@ export class PgWorldStore implements WorldStore {
     };
   }
 
-  async deleteMessage(id: number, dynastyId: string): Promise<{ deleted: boolean; unread: number }> {
-    // Scoped to the dynasty: an id from another box deletes nothing and says
+  async deleteMessage(id: number, playerId: number): Promise<{ deleted: boolean; unread: number }> {
+    // Scoped to the account: an id from another box deletes nothing and says
     // nothing, so a bad guess is not an oracle.
-    const { rowCount } = await this.pool.query(`DELETE FROM messages WHERE id = $1 AND dynasty_id = $2`, [
-      id,
-      dynastyId,
-    ]);
+    const { rowCount } = await this.pool.query(`DELETE FROM messages WHERE id = $1 AND player_id = $2`, [id, playerId]);
     const counts = await this.pool.query<{ unread: number }>(
-      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE dynasty_id = $1`,
-      [dynastyId],
+      `SELECT count(*) FILTER (WHERE read = false)::int AS unread FROM messages WHERE player_id = $1`,
+      [playerId],
     );
 
     return {
@@ -168,10 +157,7 @@ export class PgWorldStore implements WorldStore {
       return result;
     } catch (error) {
       await rollback(client);
-      // The index over human names is the net behind the routes' check: a
-      // second server that slipped a name in between is a refusal the screen
-      // already knows, never a 500.
-      throw isNameViolation(error) ? new NameInUseError() : error;
+      throw error;
     } finally {
       client.release();
     }
@@ -211,7 +197,7 @@ class PgWorldSession implements WorldSession {
 
   async actionsBetween(from: number, to: number): Promise<StoredAction[]> {
     const { rows } = await this.client.query(
-      `SELECT id, dynasty_id, plays_at, action, received_at
+      `SELECT id, person_id, plays_at, action, received_at
        FROM actions
        WHERE town_id = $3 AND plays_at BETWEEN $1 AND $2
        ORDER BY plays_at, id`,
@@ -221,20 +207,20 @@ class PgWorldSession implements WorldSession {
     return rows.map(rowToStoredAction);
   }
 
-  async recentMessages(limit: number, dynastyId: string): Promise<MessagePage> {
+  async recentMessages(limit: number, playerId: number): Promise<MessagePage> {
     const { rows } = await this.client.query<MessageRow>(
-      `SELECT id, dynasty_id, type, payload, read
+      `SELECT id, player_id, type, payload, read
        FROM messages
-       WHERE dynasty_id = $2
+       WHERE player_id = $2
        ORDER BY id DESC
        LIMIT $1`,
-      [limit, dynastyId],
+      [limit, playerId],
     );
     const counts = await this.client.query<{ unread: number }>(
       `SELECT count(*) FILTER (WHERE read = false)::int AS unread
        FROM messages
-       WHERE dynasty_id = $1`,
-      [dynastyId],
+       WHERE player_id = $1`,
+      [playerId],
     );
 
     return {
@@ -265,7 +251,7 @@ class PgWorldSession implements WorldSession {
     // Scoped to the town: another town may carry the same id, and its action
     // must be as unknown here as an id that was never issued.
     const { rows } = await this.client.query(
-      `SELECT id, dynasty_id, plays_at, action, received_at
+      `SELECT id, person_id, plays_at, action, received_at
        FROM actions
        WHERE id = $1 AND town_id = $2`,
       [id, this.townId],
@@ -278,15 +264,15 @@ class PgWorldSession implements WorldSession {
   async append(action: NewStoredAction): Promise<StoredAction> {
     const { rows } = await this.client.query<{
       id: string;
-      dynasty_id: string;
+      person_id: string;
       plays_at: number;
       action: Action;
       received_at: Date | string;
     }>(
-      `INSERT INTO actions (town_id, dynasty_id, plays_at, action, received_at)
+      `INSERT INTO actions (town_id, person_id, plays_at, action, received_at)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, dynasty_id, plays_at, action, received_at`,
-      [this.townId, action.dynastyId, action.playsAt, json(action.action), action.receivedAt],
+       RETURNING id, person_id, plays_at, action, received_at`,
+      [this.townId, action.personId, action.playsAt, json(action.action), action.receivedAt],
     );
 
     return { ...rowToStoredAction(rows[0]!), ...(action.title === undefined ? {} : { title: action.title }) };
@@ -296,8 +282,8 @@ class PgWorldSession implements WorldSession {
     await this.client.query('DELETE FROM actions WHERE id = $1 AND town_id = $2', [id, this.townId]);
   }
 
-  async cancelDynasty(dynastyId: string): Promise<void> {
-    await this.client.query('DELETE FROM actions WHERE town_id = $1 AND dynasty_id = $2', [this.townId, dynastyId]);
+  async cancelPerson(personId: number): Promise<void> {
+    await this.client.query('DELETE FROM actions WHERE town_id = $1 AND person_id = $2', [this.townId, personId]);
   }
 
   async clear(): Promise<void> {
@@ -308,12 +294,25 @@ class PgWorldSession implements WorldSession {
   }
 
   async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
-    await syncWorld(this.client, this.townId, world);
+    const ids = await syncWorld(this.client, this.townId, world);
     await this.client.query(
       `UPDATE state SET hour = $2, year = $3, rng = $4, engagement_seq = $5, workshop_seq = $6, hour_started_at = $7
        WHERE town_id = $1`,
       [this.townId, world.hour, world.year, world.rng, world.engagementSeq, world.workshopSeq ?? 0, hourStartedAt],
     );
+
+    // A queued action keeps the person id it was taken with; when the database
+    // has just named a person, the queue follows the new id.
+    for (const [before, after] of ids.people) {
+      if (before !== after) {
+        await this.client.query(`UPDATE actions SET person_id = $3 WHERE town_id = $1 AND person_id = $2`, [
+          this.townId,
+          before,
+          after,
+        ]);
+      }
+    }
+
     await appendChronicle(
       this.client,
       this.townId,
@@ -321,16 +320,8 @@ class PgWorldSession implements WorldSession {
     );
     await appendMessages(
       this.client,
-      this.townId,
-      // A private line is written for a human dynasty only: an AI one has no
-      // mailbox to read it in.
-      events.filter((event) => {
-        if (typeof event.audience !== 'object') {
-          return false;
-        }
-
-        return world.dynasties[event.audience.dynastyId]?.controller === 'human';
-      }),
+      events.filter((event) => typeof event.audience === 'object'),
+      await readPlayerByPerson(this.client, this.townId),
     );
   }
 }
@@ -360,38 +351,32 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     throw new UnknownWorldError();
   }
 
-  const [dynasties, people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all(
-    [
-      client.query(`SELECT id, name, controller FROM dynasties WHERE town_id = $1 ORDER BY id`, [townId]),
-      client.query(
-        `SELECT id, dynasty_id, name, age, title, residence_level, treasury_cents, debt_cents, favour, prestige, alive FROM people WHERE town_id = $1 ORDER BY id`,
-        [townId],
-      ),
-      client.query(
-        `SELECT dynasty_id, id, good, level FROM workshops WHERE town_id = $1 ORDER BY dynasty_id, id COLLATE "C"`,
-        [townId],
-      ),
-      client.query(`SELECT dynasty_id, good, units FROM stock WHERE town_id = $1 ORDER BY dynasty_id, good`, [townId]),
-      client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
-      client.query(
-        `SELECT id, position, title, sponsor_dynasty_id, enacted_at FROM laws WHERE town_id = $1 ORDER BY position`,
-        [townId],
-      ),
-      client.query(
-        `SELECT id, kind, dynasty_id, due_at, work, trade, workshop_id, position FROM engagements WHERE town_id = $1 ORDER BY position`,
-        [townId],
-      ),
-      client.query(
-        `SELECT seat_id, dynasty_id, closed, votes FROM campaigns WHERE town_id = $1 ORDER BY seat_id, dynasty_id`,
-        [townId],
-      ),
-      client.query(`SELECT good, price_cents, flow_units FROM market WHERE town_id = $1 ORDER BY good`, [townId]),
-      client.query(
-        `SELECT good, position, price_cents FROM market_history WHERE town_id = $1 ORDER BY good, position`,
-        [townId],
-      ),
-    ],
-  );
+  const [people, workshops, stock, seats, laws, engagements, campaigns, market, history] = await Promise.all([
+    client.query(
+      `SELECT id, ia, person_name, age, title, residence_level, treasury_cents, debt_cents, favour, prestige, alive
+       FROM people WHERE town_id = $1 ORDER BY id`,
+      [townId],
+    ),
+    client.query(`SELECT id, person_id, good, level FROM workshops WHERE town_id = $1 ORDER BY id`, [townId]),
+    client.query(`SELECT person_id, good, units FROM stock WHERE town_id = $1 ORDER BY person_id, good`, [townId]),
+    client.query(`SELECT seat_id, person_id FROM seats WHERE town_id = $1 ORDER BY seat_id`, [townId]),
+    client.query(
+      `SELECT id, position, title, sponsor_person_id, enacted_at FROM laws WHERE town_id = $1 ORDER BY position`,
+      [townId],
+    ),
+    client.query(
+      `SELECT id, kind, person_id, due_at, work, trade, workshop_id, position FROM engagements WHERE town_id = $1 ORDER BY position`,
+      [townId],
+    ),
+    client.query(
+      `SELECT seat_id, person_id, closed, votes FROM campaigns WHERE town_id = $1 ORDER BY seat_id, person_id`,
+      [townId],
+    ),
+    client.query(`SELECT good, price_cents, flow_units FROM market WHERE town_id = $1 ORDER BY good`, [townId]),
+    client.query(`SELECT good, position, price_cents FROM market_history WHERE town_id = $1 ORDER BY good, position`, [
+      townId,
+    ]),
+  ]);
 
   const world: World = {
     formatVersion: row.format_version,
@@ -400,7 +385,6 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     rng: row.rng,
     hour: row.hour,
     year: row.year,
-    dynasties: {},
     people: {},
     seats: {} as Record<SeatId, Seat>,
     laws: [],
@@ -414,36 +398,15 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     workshopSeq: row.workshop_seq,
   };
 
-  for (const dynasty of dynasties.rows) {
-    world.dynasties[dynasty.id] = {
-      id: dynasty.id,
-      name: dynasty.name,
-      controller: dynasty.controller,
-      workshops: [],
-      stock: {},
-    };
-  }
-
-  for (const workshop of workshops.rows) {
-    world.dynasties[workshop.dynasty_id]?.workshops.push({
-      id: workshop.id,
-      good: workshop.good,
-      level: workshop.level,
-    });
-  }
-
-  for (const unit of stock.rows) {
-    const dynasty = world.dynasties[unit.dynasty_id];
-    if (dynasty !== undefined) {
-      dynasty.stock[unit.good as GoodId] = unit.units;
-    }
-  }
+  let highestWorkshop = 0;
+  let highestEngagement = 0;
 
   for (const person of people.rows) {
-    world.people[person.id] = {
-      id: person.id,
-      dynastyId: person.dynasty_id,
-      name: person.name,
+    const id = Number(person.id);
+    world.people[id] = {
+      id,
+      ia: person.ia,
+      name: person.person_name,
       age: person.age,
       title: person.title as TitleId,
       residenceLevel: person.residence_level,
@@ -452,39 +415,68 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
       favour: person.favour,
       prestige: person.prestige,
       alive: person.alive,
+      workshops: [],
+      stock: {},
     };
   }
 
+  for (const workshop of workshops.rows) {
+    const person = world.people[Number(workshop.person_id)];
+    const id = Number(workshop.id);
+    if (person !== undefined) {
+      person.workshops.push({ id, good: workshop.good, level: workshop.level });
+      highestWorkshop = Math.max(highestWorkshop, id);
+    }
+  }
+  for (const person of Object.values(world.people)) {
+    sortPersonWorkshops(person);
+  }
+
+  for (const unit of stock.rows) {
+    const person = world.people[Number(unit.person_id)];
+    if (person !== undefined) {
+      person.stock[unit.good as GoodId] = unit.units;
+    }
+  }
+
   for (const seat of seats.rows) {
-    world.seats[seat.seat_id as SeatId] = { personId: seat.person_id };
+    world.seats[seat.seat_id as SeatId] = {
+      personId: seat.person_id === null ? null : Number(seat.person_id),
+    };
   }
 
   for (const law of laws.rows) {
     world.laws.push({
-      id: law.id,
+      id: Number(law.id),
       title: law.title,
-      sponsorDynastyId: law.sponsor_dynasty_id,
+      sponsorPersonId: Number(law.sponsor_person_id),
       enactedAt: law.enacted_at,
     });
   }
 
   for (const engagement of engagements.rows) {
-    const base = { id: engagement.id, dynastyId: engagement.dynasty_id, dueAt: engagement.due_at };
+    const id = Number(engagement.id);
+    const base = { id, personId: Number(engagement.person_id), dueAt: engagement.due_at };
+    highestEngagement = Math.max(highestEngagement, id);
 
     if (engagement.kind === 'hearing') {
       world.engagements.push({ ...base, kind: 'hearing' });
       continue;
     }
-    // A site of the ladder says what it is for; a site stored before the ladder
-    // (ruleset 3 refuses the world anyway) has no work and is read as a dynasty
-    // site, which is the one the old engine could hold.
-    world.engagements.push(siteOf(base, engagement.work, engagement.trade, engagement.workshop_id));
+    world.engagements.push(
+      siteOf(
+        base,
+        engagement.work,
+        engagement.trade,
+        engagement.workshop_id === null ? null : Number(engagement.workshop_id),
+      ),
+    );
   }
 
   for (const campaign of campaigns.rows) {
     const map = campaign.closed ? world.closedCampaigns : world.campaigns;
-    const byDynasty = (map[campaign.seat_id as SeatId] ??= {});
-    byDynasty[campaign.dynasty_id] = campaign.votes;
+    const byPerson = (map[campaign.seat_id as SeatId] ??= {});
+    byPerson[Number(campaign.person_id)] = campaign.votes;
   }
 
   for (const good of market.rows) {
@@ -502,6 +494,11 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
     prices.push(point.price_cents);
   }
 
+  // The counters mint provisional ids above every id the town already holds,
+  // so a new row can never be mistaken for one the database named.
+  world.workshopSeq = Math.max(row.workshop_seq, highestWorkshop);
+  world.engagementSeq = Math.max(row.engagement_seq, highestEngagement);
+
   return {
     town: { id: Number(townRow.id), name: townRow.name },
     world,
@@ -514,16 +511,16 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
  * table, so the reader is the one that decides what a missing `work` means.
  */
 function siteOf(
-  base: { id: string; dynastyId: string; dueAt: number },
+  base: { id: number; personId: number; dueAt: number },
   work: string | null,
   trade: string | null,
-  workshopId: string | null,
+  workshopId: number | null,
 ): Engagement {
   switch (work) {
     case 'build':
       return { ...base, kind: 'site', work: 'build', trade: (trade ?? 'weaver') as Trade };
     case 'upgrade':
-      return { ...base, kind: 'site', work: 'upgrade', workshopId: workshopId ?? '' };
+      return { ...base, kind: 'site', work: 'upgrade', workshopId: workshopId ?? 0 };
     case 'title':
       return { ...base, kind: 'site', work: 'title' };
     default:
@@ -532,14 +529,14 @@ function siteOf(
 }
 
 /**
- * A save brings each table to what the world says: the rows are upserted by their
- * key, and the ones the world no longer holds are deleted. A row keeps its
- * identity from one hour to the next, and a piece that disappeared cannot leave
- * a row behind.
+ * A save brings each table to what the world says: the rows are inserted or
+ * updated by their key, and the ones the world no longer holds are deleted. A
+ * row keeps its identity from one hour to the next, and a piece that disappeared
+ * cannot leave a row behind.
  *
- * One descriptor per table, in the order the foreign keys require, so a table
- * cannot be forgotten. A row names its columns, so a value cannot land in the
- * wrong one by position.
+ * The serial tables are inserted without an id and read back: the database names
+ * people, workshops, laws and engagements, and the world is reattributed before
+ * the rows that refer to them are written.
  */
 interface TownTable {
   readonly table: string;
@@ -550,31 +547,18 @@ interface TownTable {
   rows(world: World, townId: number): ReadonlyArray<Record<string, unknown>>;
 }
 
-const byId = <T extends { id: string }>(left: T, right: T): number => left.id.localeCompare(right.id);
+const byId = <T extends { id: number }>(left: T, right: T): number => left.id - right.id;
 
 export const TOWN_TABLES: readonly TownTable[] = [
   {
-    table: 'dynasties',
-    key: ['town_id', 'id'],
-    columns: ['town_id', 'id', 'name', 'controller'],
-    rows: (world, townId) =>
-      Object.values(world.dynasties)
-        .sort(byId)
-        .map((dynasty) => ({
-          town_id: townId,
-          id: dynasty.id,
-          name: dynasty.name,
-          controller: dynasty.controller,
-        })),
-  },
-  {
     table: 'people',
-    key: ['town_id', 'id'],
+    key: ['id'],
     columns: [
-      'town_id',
       'id',
-      'dynasty_id',
-      'name',
+      'town_id',
+      'player_id',
+      'ia',
+      'person_name',
       'age',
       'title',
       'residence_level',
@@ -588,10 +572,11 @@ export const TOWN_TABLES: readonly TownTable[] = [
       Object.values(world.people)
         .sort(byId)
         .map((person) => ({
-          town_id: townId,
           id: person.id,
-          dynasty_id: person.dynastyId,
-          name: person.name,
+          town_id: townId,
+          player_id: null,
+          ia: person.ia,
+          person_name: person.name,
           age: person.age,
           title: titleOf(person),
           residence_level: residenceOf(person),
@@ -604,16 +589,16 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'workshops',
-    key: ['town_id', 'dynasty_id', 'id'],
-    columns: ['town_id', 'dynasty_id', 'id', 'good', 'level'],
+    key: ['id'],
+    columns: ['id', 'town_id', 'person_id', 'good', 'level'],
     rows: (world, townId) =>
-      Object.values(world.dynasties)
+      Object.values(world.people)
         .sort(byId)
-        .flatMap((dynasty) =>
-          dynasty.workshops.map((workshop) => ({
-            town_id: townId,
-            dynasty_id: dynasty.id,
+        .flatMap((person) =>
+          person.workshops.map((workshop) => ({
             id: workshop.id,
+            town_id: townId,
+            person_id: person.id,
             good: workshop.good,
             level: workshop.level,
           })),
@@ -621,15 +606,15 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'stock',
-    key: ['town_id', 'dynasty_id', 'good'],
-    columns: ['town_id', 'dynasty_id', 'good', 'units'],
+    key: ['town_id', 'person_id', 'good'],
+    columns: ['town_id', 'person_id', 'good', 'units'],
     rows: (world, townId) =>
-      Object.values(world.dynasties)
+      Object.values(world.people)
         .sort(byId)
-        .flatMap((dynasty) =>
-          Object.entries(dynasty.stock).map(([good, units]) => ({
+        .flatMap((person) =>
+          Object.entries(person.stock).map(([good, units]) => ({
             town_id: townId,
-            dynasty_id: dynasty.id,
+            person_id: person.id,
             good,
             units: units ?? 0,
           })),
@@ -648,39 +633,39 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
   {
     table: 'laws',
-    key: ['town_id', 'id'],
-    columns: ['town_id', 'id', 'position', 'title', 'sponsor_dynasty_id', 'enacted_at'],
+    key: ['id'],
+    columns: ['id', 'town_id', 'position', 'title', 'sponsor_person_id', 'enacted_at'],
     rows: (world, townId) =>
       world.laws.map((law, position) => ({
-        town_id: townId,
         id: law.id,
+        town_id: townId,
         position,
         title: law.title,
-        sponsor_dynasty_id: law.sponsorDynastyId,
+        sponsor_person_id: law.sponsorPersonId,
         enacted_at: law.enactedAt,
       })),
   },
   {
     table: 'engagements',
-    key: ['town_id', 'id'],
-    columns: ['town_id', 'id', 'kind', 'dynasty_id', 'due_at', 'work', 'trade', 'workshop_id', 'position'],
+    key: ['id'],
+    columns: ['id', 'town_id', 'kind', 'person_id', 'due_at', 'position', 'work', 'trade', 'workshop_id'],
     rows: (world, townId) =>
       world.engagements.map((engagement, position) => ({
-        town_id: townId,
         id: engagement.id,
+        town_id: townId,
         kind: engagement.kind,
-        dynasty_id: engagement.dynastyId,
+        person_id: engagement.personId,
         due_at: engagement.dueAt,
+        position,
         work: engagement.kind === 'site' ? engagement.work : null,
         trade: engagement.kind === 'site' && engagement.work === 'build' ? engagement.trade : null,
         workshop_id: engagement.kind === 'site' && engagement.work === 'upgrade' ? engagement.workshopId : null,
-        position,
       })),
   },
   {
     table: 'campaigns',
-    key: ['town_id', 'seat_id', 'dynasty_id', 'closed'],
-    columns: ['town_id', 'seat_id', 'dynasty_id', 'closed', 'votes'],
+    key: ['town_id', 'seat_id', 'person_id', 'closed'],
+    columns: ['town_id', 'seat_id', 'person_id', 'closed', 'votes'],
     rows: (world, townId) =>
       [...campaignRows(world.campaigns, false), ...campaignRows(world.closedCampaigns, true)].map((row) => ({
         town_id: townId,
@@ -710,28 +695,273 @@ export const TOWN_TABLES: readonly TownTable[] = [
   },
 ];
 
+interface IdMap {
+  people: Map<number, number>;
+  workshops: Map<number, number>;
+  laws: Map<number, number>;
+  engagements: Map<number, number>;
+}
+
 /**
  * Brings the town's rows to what the world says: every row is inserted or
  * updated by its key, and the rows the world no longer holds are deleted.
- * Nothing is rewritten for the sake of it, and a row keeps its identity from
- * one hour to the next.
+ * Serial rows are inserted without an id and reattributed in the world before
+ * the tables that refer to them are written.
  */
-async function syncWorld(client: PoolClient, townId: number, world: World): Promise<void> {
+async function syncWorld(client: PoolClient, townId: number, world: World): Promise<IdMap> {
+  const [existing, playerByPerson] = await Promise.all([
+    readExistingIds(client, townId),
+    readPlayerByPerson(client, townId),
+  ]);
+  const ids: IdMap = {
+    people: new Map(),
+    workshops: new Map(),
+    laws: new Map(),
+    engagements: new Map(),
+  };
+
+  // People first: every dependent row names a person, and the database names
+  // the person.
+  const peopleRows = Object.values(world.people)
+    .sort(byId)
+    .map((person) => ({
+      id: person.id,
+      town_id: townId,
+      player_id: playerByPerson.get(person.id) ?? null,
+      ia: person.ia,
+      person_name: person.name,
+      age: person.age,
+      title: titleOf(person),
+      residence_level: residenceOf(person),
+      treasury_cents: person.treasuryCents,
+      debt_cents: person.debtCents,
+      favour: person.favour,
+      prestige: person.prestige,
+      alive: person.alive,
+    }));
+  ids.people = await syncSerialRows(client, 'people', townId, peopleRows, existing.people);
+  remapPeople(world, ids.people);
+
+  const workshopRows = Object.values(world.people)
+    .sort(byId)
+    .flatMap((person) =>
+      person.workshops.map((workshop) => ({
+        id: workshop.id,
+        town_id: townId,
+        person_id: person.id,
+        good: workshop.good,
+        level: workshop.level,
+      })),
+    );
+  ids.workshops = await syncSerialRows(client, 'workshops', townId, workshopRows, existing.workshops);
+  remapWorkshops(world, ids.workshops);
+
+  const lawRows = world.laws.map((law, position) => ({
+    id: law.id,
+    town_id: townId,
+    position,
+    title: law.title,
+    sponsor_person_id: law.sponsorPersonId,
+    enacted_at: law.enactedAt,
+  }));
+  ids.laws = await syncSerialRows(client, 'laws', townId, lawRows, existing.laws);
+  for (const law of world.laws) {
+    law.id = ids.laws.get(law.id) ?? law.id;
+  }
+
+  const engagementRows = world.engagements.map((engagement, position) => ({
+    id: engagement.id,
+    town_id: townId,
+    kind: engagement.kind,
+    person_id: engagement.personId,
+    due_at: engagement.dueAt,
+    position,
+    work: engagement.kind === 'site' ? engagement.work : null,
+    trade: engagement.kind === 'site' && engagement.work === 'build' ? engagement.trade : null,
+    workshop_id: engagement.kind === 'site' && engagement.work === 'upgrade' ? engagement.workshopId : null,
+  }));
+  ids.engagements = await syncSerialRows(client, 'engagements', townId, engagementRows, existing.engagements);
+  for (const engagement of world.engagements) {
+    engagement.id = ids.engagements.get(engagement.id) ?? engagement.id;
+  }
+
   for (const entry of TOWN_TABLES) {
+    if (SERIAL_TABLES.has(entry.table)) {
+      continue;
+    }
     const rows = entry.rows(world, townId);
     await upsertRows(client, entry.table, entry.columns, entry.key, rows);
     await deleteMissing(client, entry.table, entry.key, townId, rows);
   }
+
+  // The meters mint above every id the town now holds, so the next provisional
+  // id is never one the database already gave.
+  world.workshopSeq = highestId(
+    [...Object.values(world.people)].flatMap((person) => person.workshops.map((workshop) => workshop.id)),
+    world.workshopSeq ?? 0,
+  );
+  world.engagementSeq = highestId(
+    world.engagements.map((engagement) => engagement.id),
+    world.engagementSeq,
+  );
+
+  return ids;
+}
+
+const SERIAL_TABLES = new Set(['people', 'workshops', 'laws', 'engagements']);
+
+async function readExistingIds(
+  client: PoolClient,
+  townId: number,
+): Promise<{ people: Set<number>; workshops: Set<number>; laws: Set<number>; engagements: Set<number> }> {
+  const [people, workshops, laws, engagements] = await Promise.all([
+    client.query<{ id: string }>(`SELECT id FROM people WHERE town_id = $1`, [townId]),
+    client.query<{ id: string }>(`SELECT id FROM workshops WHERE town_id = $1`, [townId]),
+    client.query<{ id: string }>(`SELECT id FROM laws WHERE town_id = $1`, [townId]),
+    client.query<{ id: string }>(`SELECT id FROM engagements WHERE town_id = $1`, [townId]),
+  ]);
+
+  return {
+    people: new Set(people.rows.map((row) => Number(row.id))),
+    workshops: new Set(workshops.rows.map((row) => Number(row.id))),
+    laws: new Set(laws.rows.map((row) => Number(row.id))),
+    engagements: new Set(engagements.rows.map((row) => Number(row.id))),
+  };
+}
+
+async function readPlayerByPerson(client: PoolClient, townId: number): Promise<Map<number, number>> {
+  const { rows } = await client.query<{ id: string; player_id: string }>(
+    `SELECT id, player_id FROM people WHERE town_id = $1 AND player_id IS NOT NULL`,
+    [townId],
+  );
+
+  return new Map(rows.map((row) => [Number(row.id), Number(row.player_id)]));
+}
+
+/** Rewrites the world's keys and every reference to a person the database named. */
+function remapPeople(world: World, mapping: ReadonlyMap<number, number>): void {
+  if (mapping.size === 0) {
+    return;
+  }
+
+  const people: Record<number, Person> = {};
+  for (const person of Object.values(world.people)) {
+    person.id = mapping.get(person.id) ?? person.id;
+    people[person.id] = person;
+  }
+  world.people = people;
+
+  for (const seat of Object.values(world.seats)) {
+    if (seat.personId !== null) {
+      seat.personId = mapping.get(seat.personId) ?? seat.personId;
+    }
+  }
+  for (const map of [world.campaigns, world.closedCampaigns]) {
+    for (const [seatId, byPerson] of Object.entries(map)) {
+      const remapped: Record<number, number> = {};
+      for (const [personId, votes] of Object.entries(byPerson ?? {})) {
+        remapped[mapping.get(Number(personId)) ?? Number(personId)] = votes;
+      }
+      map[seatId as SeatId] = remapped;
+    }
+  }
+  for (const engagement of world.engagements) {
+    engagement.personId = mapping.get(engagement.personId) ?? engagement.personId;
+  }
+  for (const law of world.laws) {
+    law.sponsorPersonId = mapping.get(law.sponsorPersonId) ?? law.sponsorPersonId;
+  }
+}
+
+/** Rewrites the workshops and the sites that improve them. */
+function remapWorkshops(world: World, mapping: ReadonlyMap<number, number>): void {
+  if (mapping.size === 0) {
+    return;
+  }
+
+  for (const person of Object.values(world.people)) {
+    for (const workshop of person.workshops) {
+      workshop.id = mapping.get(workshop.id) ?? workshop.id;
+    }
+    sortPersonWorkshops(person);
+  }
+  for (const engagement of world.engagements) {
+    if (engagement.kind === 'site' && engagement.work === 'upgrade') {
+      engagement.workshopId = mapping.get(engagement.workshopId) ?? engagement.workshopId;
+    }
+  }
+}
+
+function sortPersonWorkshops(person: Person): void {
+  person.workshops.sort((left, right) => left.id - right.id);
+}
+
+function highestId(ids: readonly number[], floor: number): number {
+  return ids.reduce((highest, id) => Math.max(highest, id), floor);
+}
+
+async function syncSerialRows(
+  client: PoolClient,
+  table: string,
+  townId: number,
+  rows: ReadonlyArray<{ id: number } & Record<string, unknown>>,
+  existing: ReadonlySet<number>,
+): Promise<Map<number, number>> {
+  const mapping = new Map<number, number>();
+  const kept: number[] = [];
+
+  for (const row of rows) {
+    const { id, ...values } = row;
+    const columns = Object.keys(values);
+
+    if (existing.has(id)) {
+      const assignments = columns.map((column, index) => `${column} = $${index + 1}`);
+      await client.query(`UPDATE ${table} SET ${assignments.join(', ')} WHERE id = $${columns.length + 1}`, [
+        ...columns.map((column) => values[column]),
+        id,
+      ]);
+      kept.push(id);
+      continue;
+    }
+
+    const marks = columns.map((_, index) => `$${index + 1}`);
+    const { rows: inserted } = await client.query<{ id: string }>(
+      `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${marks.join(', ')}) RETURNING id`,
+      columns.map((column) => values[column]),
+    );
+    const assigned = Number(inserted[0]?.id);
+    mapping.set(id, assigned);
+    kept.push(assigned);
+  }
+
+  await deleteSerialMissing(client, table, townId, kept);
+
+  return mapping;
+}
+
+async function deleteSerialMissing(
+  client: PoolClient,
+  table: string,
+  townId: number,
+  kept: readonly number[],
+): Promise<void> {
+  if (kept.length === 0) {
+    await client.query(`DELETE FROM ${table} WHERE town_id = $1`, [townId]);
+    return;
+  }
+
+  const marks = kept.map((_, index) => `$${index + 2}`);
+  await client.query(`DELETE FROM ${table} WHERE town_id = $1 AND id NOT IN (${marks.join(', ')})`, [townId, ...kept]);
 }
 
 function campaignRows(
   campaigns: World['campaigns'],
   closed: boolean,
-): Array<{ seat_id: string; dynasty_id: string; closed: boolean; votes: number }> {
-  return Object.entries(campaigns).flatMap(([seatId, byDynasty]) =>
-    Object.entries(byDynasty ?? {}).map(([dynastyId, votes]) => ({
+): Array<{ seat_id: string; person_id: number; closed: boolean; votes: number }> {
+  return Object.entries(campaigns).flatMap(([seatId, byPerson]) =>
+    Object.entries(byPerson ?? {}).map(([personId, votes]) => ({
       seat_id: seatId,
-      dynasty_id: dynastyId,
+      person_id: Number(personId),
       closed,
       votes,
     })),
@@ -755,22 +985,29 @@ async function appendChronicle(client: PoolClient, townId: number, events: Event
   );
 }
 
-async function appendMessages(client: PoolClient, townId: number, events: Event[]): Promise<void> {
+async function appendMessages(
+  client: PoolClient,
+  events: Event[],
+  playerByPerson: ReadonlyMap<number, number>,
+): Promise<void> {
   if (events.length === 0) {
     return;
   }
 
-  await insertRows(
-    client,
-    'messages',
-    ['dynasty_id', 'type', 'payload'],
-    events.map((event) => {
-      // The caller kept only the dynasty-addressed events.
-      const dynastyId = typeof event.audience === 'object' ? event.audience.dynastyId : '';
+  const rows = events.flatMap((event) => {
+    if (typeof event.audience !== 'object') {
+      return [];
+    }
+    const playerId = playerByPerson.get(event.audience.personId);
+    // An AI person, or one no account holds, has no mailbox.
+    if (playerId === undefined) {
+      return [];
+    }
 
-      return { dynasty_id: dynastyId, type: event.type, payload: json(messageBody(event)) };
-    }),
-  );
+    return [{ player_id: playerId, type: event.type, payload: json(messageBody(event)) }];
+  });
+
+  await insertRows(client, 'messages', ['player_id', 'type', 'payload'], rows);
 }
 
 /** The payload of a message: the event minus what the row already carries. */
@@ -894,7 +1131,7 @@ interface ChronicleRow {
 
 interface MessageRow {
   id: string | number;
-  dynasty_id: string;
+  player_id: string;
   type: string;
   payload: Record<string, unknown>;
   read: boolean;
@@ -907,19 +1144,19 @@ function rowToChronicleEvent(row: ChronicleRow): Event {
 function rowToMessage(row: MessageRow): Event {
   // A message has no town hour: the page orders by id, the prune by the write
   // instant, and no line reads `at`.
-  return { ...row.payload, type: row.type, audience: { dynastyId: row.dynasty_id }, at: 0 } as Event;
+  return { ...row.payload, type: row.type, audience: { personId: 0 }, at: 0 } as Event;
 }
 
 function rowToStoredAction(row: {
   id: string;
-  dynasty_id: string;
+  person_id: string;
   plays_at: number;
   action: Action;
   received_at: Date | string;
 }): StoredAction {
   return {
     id: Number(row.id),
-    dynastyId: row.dynasty_id,
+    personId: Number(row.person_id),
     playsAt: row.plays_at,
     action: row.action,
     receivedAt: asDate(row.received_at),
@@ -930,16 +1167,15 @@ function asDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
 
-/** The partial index over the names of human dynasties, and nothing else. */
-function isNameViolation(error: unknown): boolean {
+/** The unique index over town names, and nothing else. */
+function isTownNameViolation(error: unknown): boolean {
   if (typeof error !== 'object' || error === null || (error as { code?: unknown }).code !== '23505') {
     return false;
   }
 
   const constraint = (error as { constraint?: unknown }).constraint;
 
-  // A town's name is unique, and so is a human dynasty's across towns.
-  return constraint === 'towns_name_key' || constraint === 'dynasties_human_name';
+  return constraint === 'towns_name_key';
 }
 
 function json(value: unknown): string {

@@ -37,12 +37,17 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const townId = Number(townRows[0]?.id);
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, dynasty_id, created_at, last_seen_at, delete_after)
-       VALUES ($1, 'leclerc', $2, $3, $4)
+      `INSERT INTO players (token_hash, name, created_at, last_seen_at, delete_after)
+       VALUES ($1, 'Leclerc', $2, $3, $4)
        RETURNING player_id`,
       [tokenHash, CREATED_AT, LAST_SEEN_AT, DELETE_AFTER],
     );
     const playerId = Number(playerRows[0]?.player_id);
+    await pool.query(
+      `INSERT INTO people (town_id, player_id, ia, person_name, age, treasury_cents, debt_cents, favour, prestige, alive)
+       VALUES ($1, $2, false, 'Colin Leclerc', 20, 45000, 0, 50, 0, true)`,
+      [townId, playerId],
+    );
     await pool.query(
       `INSERT INTO kings (player_id, dynasty_name, crowned_at, elapsed_hours)
        VALUES ($1, 'Leclerc', $2, 12)`,
@@ -50,7 +55,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     await pool.query(
       `INSERT INTO state (town_id, format_version, ruleset_version, seed, rng, hour, year, hour_started_at)
-       VALUES ($1, 1, 1, 7, 7, 1, 1, now())`,
+       VALUES ($1, 2, 4, 7, 7, 1, 1, now())`,
       [townId],
     );
 
@@ -67,24 +72,26 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     // Assert: the town is gone, the account keeps its identity and its dates,
     // and the dynasty is the only thing it lost.
     const state = await pool.query('SELECT count(*)::int AS count FROM state');
+    const people = await pool.query('SELECT count(*)::int AS count FROM people');
     const players = await pool.query<{
       token_hash: string;
       player_id: string;
-      dynasty_id: string | null;
+      name: string;
       created_at: Date;
       last_seen_at: Date;
       delete_after: Date | null;
     }>(
-      `SELECT token_hash, player_id, dynasty_id, created_at, last_seen_at, delete_after
+      `SELECT token_hash, player_id, name, created_at, last_seen_at, delete_after
        FROM players`,
     );
     const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
 
     expect(state.rows[0]?.count).toBe(0);
+    expect(people.rows[0]?.count).toBe(0);
     expect(players.rows).toHaveLength(1);
     expect(players.rows[0]).toMatchObject({
       token_hash: tokenHash,
-      dynasty_id: null,
+      name: 'Leclerc',
     });
     expect(Number(players.rows[0]?.player_id)).toBe(playerId);
     expect(players.rows[0]?.created_at.toISOString()).toBe(CREATED_AT.toISOString());
@@ -138,7 +145,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
 
     // Act: a new account after the reset.
     const { rows } = await pool.query<{ player_id: string }>(
-      `INSERT INTO players (token_hash, dynasty_id) VALUES ($1, 'herse') RETURNING player_id`,
+      `INSERT INTO players (token_hash, name) VALUES ($1, 'Herse') RETURNING player_id`,
       ['b'.repeat(64)],
     );
 

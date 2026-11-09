@@ -1,4 +1,4 @@
-import type { Event, GoodId, Law, SeatId, TitleId, Trade } from '@brigue/core';
+import type { Event, GoodId, Law, PersonId, SeatId, TitleId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
@@ -14,7 +14,6 @@ export interface TradeIntent {
   good: GoodId;
 }
 
-/** One action the server holds for the current or next hour. */
 /** What a queued action costs when it plays, as far as the screen knows it. */
 export interface CommittedCents {
   titleCents: number;
@@ -22,6 +21,7 @@ export interface CommittedCents {
   buildCents: number;
 }
 
+/** One action the server holds for the current or next hour. */
 export interface PendingActionView {
   id: number;
   hour: number;
@@ -32,20 +32,20 @@ export interface PendingActionView {
     | 'workshop.build'
     | 'workshop.destroy'
     | 'workshop.upgrade'
-    | 'dynasty.buy_title'
-    | 'dynasty.upgrade_residence';
+    | 'person.buy_title'
+    | 'person.upgrade_residence';
   good?: GoodId;
   units?: number;
   seatId?: SeatId;
   trade?: Trade;
-  workshopId?: string;
+  workshopId?: number;
   /** The degree a title purchase buys, so the queue can name it. */
   title?: TitleId;
 }
 
 /** A workshop as the server projects it: the chain's input is not the client's rule. */
 export interface ProjectedWorkshop {
-  id: string;
+  id: number;
   good: GoodId;
   level: number;
   input: GoodId | null;
@@ -59,11 +59,11 @@ export interface ProjectedWorkshop {
 
 /** A site under way, and the hour it closes. */
 export interface ProjectedSite {
-  id: string;
+  id: number;
   dueAt: number;
   work: 'build' | 'upgrade' | 'residence' | 'title';
   trade: Trade | null;
-  workshopId: string | null;
+  workshopId: number | null;
 }
 
 /** The ladder, every figure already computed by the server. */
@@ -85,9 +85,13 @@ export interface WorldProjection {
   hour: number;
   year: number;
   calendar: CalendarView;
-  dynasty: {
-    id: string;
+  person: {
+    id: PersonId;
+    /** The family name the account carries; the person's name when it has none. */
     name: string;
+    /** The name the town sees, given name and family name together. */
+    personName: string;
+    ia: boolean;
     treasuryCents: number;
     debtCents: number;
     favour: number;
@@ -106,9 +110,8 @@ export interface WorldProjection {
   town: {
     id: number;
     name: string;
-    dynasties: Array<{ id: string; name: string; prestige: number; residenceLevel: number }>;
-    people: Array<{ id: string; dynastyId: string; name: string }>;
-    seats: Record<SeatId, { personId: string | null }>;
+    people: Array<{ id: PersonId; name: string; ia: boolean; prestige: number; residenceLevel: number }>;
+    seats: Record<SeatId, { personId: PersonId | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
     marketHistory: Partial<Record<GoodId, number[]>>;
@@ -132,7 +135,7 @@ export interface MessageView {
 
 export interface WorldResponse {
   world: WorldProjection;
-  /** The dynasty's private mail, newest page, in the order it happened. */
+  /** The person's private mail, newest page, in the order it happened. */
   messages: MessageView[];
   /** The town's public chronicle, newest page, in the order it happened. */
   chronicle: Event[];
@@ -151,10 +154,10 @@ export type ActionIntent =
   | { type: 'market.sell'; good: GoodId; units: number }
   | { type: 'council.campaign'; seatId: SeatId }
   | { type: 'workshop.build'; trade: Trade }
-  | { type: 'workshop.destroy'; workshopId: string }
-  | { type: 'workshop.upgrade'; workshopId: string }
-  | { type: 'dynasty.buy_title' }
-  | { type: 'dynasty.upgrade_residence' };
+  | { type: 'workshop.destroy'; workshopId: number }
+  | { type: 'workshop.upgrade'; workshopId: number }
+  | { type: 'person.buy_title' }
+  | { type: 'person.upgrade_residence' };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -171,7 +174,7 @@ export class ApiError extends Error {
 export interface SessionInfo {
   /** Empty for an account a reset left between towns, until it chooses again. */
   townId: number | null;
-  dynastyId: string | null;
+  personId: PersonId | null;
   /** Set when a deletion is scheduled: the deadline, in ISO. */
   deletionAfter: string | null;
 }
@@ -191,37 +194,35 @@ export async function readSession(): Promise<SessionInfo | null> {
 
 export interface Joined {
   townId: number;
-  dynastyId: string;
+  personId: PersonId;
   /** Only a new account gets a token: a returning one keeps its own. */
   token?: string;
 }
 
-/** The identity a join is made with, drawn by the server: opaque id, suggested name. */
-export interface DynastyCandidate {
-  id: string;
-  dynastyName: string;
+/** The identity a join is made with, drawn by the server: the family and first name. */
+export interface PersonCandidate {
+  familyName: string;
   personName: string;
 }
 
 /**
- * The candidate the creation screen prefills. No dynasty is founded by it: the
+ * The candidate the creation screen prefills. No person is founded by it: the
  * player edits the name, keeps it, and only the join writes anything.
  */
-export function readCandidate(): Promise<DynastyCandidate> {
+export function readCandidate(): Promise<PersonCandidate> {
   return send('/api/dynasty/name');
 }
 
 /**
- * A trade either founds a dynasty for a new account or gives one back to an
+ * A trade either founds a person for a new account or gives one back to an
  * account a reset left without one; the session cookie says which. The name
- * sent is the one the player kept, with the id of the candidate it came from:
- * a suggestion that never arrived mints its own, the name being the player's.
+ * sent is the family name the player kept.
  */
-export function joinTown(trade: Trade, name: string, candidateId?: string): Promise<Joined> {
+export function joinTown(trade: Trade, name: string): Promise<Joined> {
   return send<Joined>('/api/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trade, name, ...(candidateId ? { candidate: { id: candidateId } } : {}) }),
+    body: JSON.stringify({ trade, name }),
   });
 }
 
@@ -265,7 +266,7 @@ export function advanceHour(): Promise<WorldResponse> {
 export function sendAction(
   hour: number,
   action: ActionIntent,
-): Promise<{ id: string; hour: number; dynastyId: string }> {
+): Promise<{ id: number; hour: number; personId: PersonId }> {
   return send('/api/actions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -273,15 +274,15 @@ export function sendAction(
   });
 }
 
-/** The actions the server still holds for this dynasty, current and next hour. */
+/** The actions the server still holds for this person, current and next hour. */
 export async function readPending(): Promise<PendingActionView[]> {
   const body = await send<{ actions: PendingActionView[] }>('/api/actions');
 
   return body.actions;
 }
 
-/** The dynasty's name, changed at once: an identity, not a trade of the hour. */
-export function renameDynasty(name: string): Promise<{ name: string }> {
+/** The family name, changed at once: an identity, not a trade of the hour. */
+export function renameFamily(name: string): Promise<{ name: string }> {
   return send('/api/dynasty/name', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
