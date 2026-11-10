@@ -14,6 +14,7 @@ import {
 import { applySchema } from '../src/db/migrations.ts';
 import { PgWorldStore, TOWN_TABLES } from '../src/town/pg-worlds.ts';
 import {
+  HOUR_MS,
   NameInUseError,
   UnknownWorldError,
   hourStartedOf,
@@ -248,6 +249,27 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // comparison, and the store gives the hour back.
     expect(row.rows[0]?.plays_at).toEqual(hourStartedOf(START, 3));
     expect(action.playsAt).toBe(3);
+  });
+
+  it('moves the stored instants with the clock, so an hour keeps its hour', async () => {
+    // Arrange: an order and a chronicle line, both written for the third hour.
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+    const action = await withWorld(async (session) => session.append(storedAction(personId, 3, buy(personId, 1))));
+    await withWorld(async (session) => session.write(world, [priceAt(3)]));
+    const before = await hourOf(TEST_TOWN.id);
+
+    // Act: the clock jumps two hours, as the development route does.
+    await store.moveWorldClockBack(2);
+
+    // Assert: the town's own hour stays — it now owes two more hours — and
+    // neither row moved an hour. Left in place, each instant would decode two
+    // hours later and the order would play late.
+    expect(await hourOf(TEST_TOWN.id)).toBe(before);
+    expect((await store.readClock())?.worldStartedAt).toEqual(new Date(START.getTime() - 2 * HOUR_MS));
+    expect((await withWorld(async (session) => session.findAction(action.id)))?.playsAt).toBe(3);
+    expect((await withWorld(async (session) => session.recentChronicle(1)))[0]?.at).toBe(3);
   });
 
   it('erases a cancelled action', async () => {

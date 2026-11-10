@@ -131,11 +131,17 @@ export class PgWorldStore implements WorldStore {
       await client.query('BEGIN');
       const settings = await readSettings(client);
       const back = hours * HOUR_MS;
-      // The origin and every town's watermark move together: the clock jumps,
-      // the data stays where it was, so every town owes the same hours.
+      // Take every town's row before the clock moves: a town being written either
+      // lands before this shift or reads the new origin after it, never in between.
+      await client.query('SELECT id FROM towns ORDER BY id FOR UPDATE');
       await client.query(`UPDATE settings SET value = $1 WHERE key = 'world_started_at'`, [
         new Date(settings.worldStartedAt.getTime() - back).toISOString(),
       ]);
+      // The rows move with the origin: an hour they hold stays the hour they
+      // hold. Left in place, every instant would decode `hours` later than the
+      // store that keeps hours, and an ordered action would play late.
+      await client.query(`UPDATE actions SET plays_at = plays_at - make_interval(secs => $1)`, [back / 1000]);
+      await client.query(`UPDATE events SET at = at - make_interval(secs => $1)`, [back / 1000]);
       await client.query(`UPDATE towns SET last_played_at = last_played_at - make_interval(secs => $1)`, [back / 1000]);
       await client.query('COMMIT');
     } catch (error) {
