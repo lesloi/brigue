@@ -33,7 +33,8 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     // Arrange: a bound account, a king, and a town that should not survive.
     const tokenHash = 'a'.repeat(64);
     const { rows: townRows } = await pool.query<{ id: string }>(
-      `INSERT INTO towns (name) VALUES ('Saint-Aubin') RETURNING id`,
+      `INSERT INTO towns (name, last_played_at) VALUES ('Saint-Aubin', $1) RETURNING id`,
+      [CREATED_AT],
     );
     const townId = Number(townRows[0]?.id);
     const { rows: playerRows } = await pool.query<{ player_id: string }>(
@@ -55,8 +56,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     await pool.query(
       `INSERT INTO settings (key, value)
-       VALUES ('format_version', '3'), ('ruleset_version', '5'), ('world_started_at', now()::text),
-              ('scheduler_last_run_at', now()::text)`,
+       VALUES ('format_version', '3'), ('ruleset_version', '5'), ('world_started_at', now()::text)`,
     );
 
     return { tokenHash, townId, playerId };

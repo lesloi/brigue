@@ -29,6 +29,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   let pool: Pool;
   let store: PgWorldStore;
   const withWorld = <T>(run: (session: WorldSession) => Promise<T>) => store.withWorld(run, TEST_TOWN.id);
+  const hourOf = (townId: number) => store.withWorld(async (session) => session.snapshot.world.hour, townId);
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
@@ -135,9 +136,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await expect(attempt).rejects.toBeInstanceOf(UnknownWorldError);
   });
 
-  it('runs one pass at a time, across connections', async () => {
-    // Arrange: two passes, as two server instances would run them. The lock is
-    // a session-level advisory one, so it has to hold across connections.
+  it('serialises two writers of one town on its row', async () => {
+    // Arrange: a town, and a first writer that holds its row while a second
+    // waits for it — the pass-versus-visit race the design names.
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
@@ -145,37 +146,57 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       markFirstRunning = resolve;
     });
 
-    // Act: the second pass starts only once the first one holds the lock.
-    const first = store.withPassLock(async () => {
+    const first = withWorld(async (session) => {
       order.push('first:start');
       markFirstRunning();
-      // Load-bearing: without the delay, a missing lock would go unnoticed.
+      // Load-bearing: without the delay, a broken lock would go unnoticed.
       await delay(150);
+      await session.save({ ...session.snapshot.world, hour: 5 }, []);
       order.push('first:end');
     });
     await firstEntered;
-    const second = store.withPassLock(async () => {
+
+    // Act: the second writer starts while the first still holds the row.
+    const second = withWorld(async (session) => {
       order.push('second:start');
+      order.push(`second:saw:${session.snapshot.world.hour}`);
       order.push('second:end');
     });
     await Promise.all([first, second]);
 
-    // Assert: the second pass waited for the first.
-    expect(order).toEqual(['first:start', 'first:end', 'second:start', 'second:end']);
+    // Assert: the second waited, and read the watermark the first committed.
+    expect(order).toEqual(['first:start', 'first:end', 'second:start', 'second:saw:5', 'second:end']);
   });
 
-  it('moves the world watermark forward only', async () => {
+  it('keeps each town its own watermark', async () => {
+    // Arrange: two towns founded together.
+    const first = await store.createTown('First', createWorld(), START);
+    const second = await store.createTown('Second', createWorld(), START);
+
+    // Act: only the first one is played, five hours ahead.
+    await store.withWorld(async (session) => {
+      await session.save({ ...session.snapshot.world, hour: 6 }, []);
+    }, first.id);
+
+    // Assert: the second still owes the hours the first played.
+    expect(await hourOf(first.id)).toBe(6);
+    expect(await hourOf(second.id)).toBe(1);
+  });
+
+  it('moves a town watermark forward only', async () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(), START);
-    const hour = 60 * 60 * 1000;
-    const later = new Date(START.getTime() + 3 * hour);
+    await withWorld(async (session) => {
+      await session.save({ ...session.snapshot.world, hour: 5 }, []);
+    });
 
-    // Act
-    await store.markWorldPlayed(later);
-    await store.markWorldPlayed(new Date(START.getTime() + hour));
+    // Act: a save of an older world must not put the town back.
+    await withWorld(async (session) => {
+      await session.save({ ...session.snapshot.world, hour: 2 }, []);
+    });
 
-    // Assert: an older write cannot put the world back.
-    expect((await store.readClock())?.lastRunAt).toEqual(later);
+    // Assert
+    expect(await hourOf(TEST_TOWN.id)).toBe(5);
   });
 
   it('gives each action its own id, in the order it arrived', async () => {
@@ -351,7 +372,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     ]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
-    expect(settings.rows[0]?.count).toBe(4);
+    expect(settings.rows[0]?.count).toBe(3);
     expect(people.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
     // The mail belongs to the account, so it outlives the town it was written in.

@@ -294,7 +294,6 @@ describe('joining the town', () => {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
       readClock: () => real.readClock(),
-      markWorldPlayed: (at) => real.markWorldPlayed(at),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => {
         // Gone, not failing: the next join will not see it either.
@@ -307,7 +306,6 @@ describe('joining the town', () => {
         return real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
-      withPassLock: (run) => real.withPassLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>

@@ -7,7 +7,6 @@ import {
   HOUR_MS,
   UnknownWorldError,
   hourAt,
-  hourStartedOf,
   sessionWorld,
   type TownInfo,
   type WorldSession,
@@ -76,64 +75,39 @@ export interface SchedulerOptions extends WorldPass {
 }
 
 /**
- * The town moves without a reader: one pass over the world plays every hour the
- * wall clock owes, for every town alike. Only one pass runs at a time: the
- * store's pass lock makes the second read a world the first already brought up,
- * so it finds nothing due and writes nothing. A town that fails is logged while
- * the others still move.
+ * The town moves without a reader: one pass over the world plays every hour each
+ * town owes, up to the same target. Two passes on the same town serialise on the
+ * town's row lock, so the second finds nothing due and writes nothing; two towns
+ * never wait on each other, and a town that fails is logged while the others
+ * still move.
  *
- * The target hour is computed once per pass, from the world's origin, and every
- * town advances to it: there is one clock for the world, and no town can move
- * it alone. A visit calls this too, so a reader never advances only its own
- * town.
+ * The target hour is computed once per pass, from the world's origin; how far a
+ * town has got is its own watermark, so a town left behind catches up on its own
+ * while its neighbours go on.
  */
-export async function playWorld(pass: WorldPass, at: Date): Promise<number> {
-  // Two passes read the same clock before either has played it, and would play
-  // the same hours twice: the pass owns the world for its duration.
-  return pass.store.withPassLock(() => passOnce(pass, at));
-}
-
-/** Returns the whole hours the world lived in this pass, which is none if another was before it. */
-async function passOnce(pass: WorldPass, at: Date): Promise<number> {
+export async function playWorld(pass: WorldPass, at: Date): Promise<void> {
   const random = pass.random ?? Math.random;
 
   // An account a reset left between towns belongs to none, so the per-town
   // sweep never sees it: its own deadline is checked once per pass.
   await eraseUnboundAccounts(pass.players, at, pass.logger);
 
-  const towns = await pass.store.listTowns();
-  if (towns.length === 0) {
-    return 0;
-  }
-
-  // One clock, one target: read it before any town advances, so nothing moves
-  // the hour under the towns behind it.
   const clock = await pass.store.readClock();
   if (clock === null) {
-    throw new Error('the world has no settings');
+    // No world yet: the first join founds it.
+    return;
   }
-  const target = hourAt(clock.worldStartedAt, at);
-  const played = hourAt(clock.worldStartedAt, clock.lastRunAt);
 
-  let advanced = false;
+  const towns = await pass.store.listTowns();
+  // One clock, one target: what differs from town to town is only how far its
+  // own rows have been played, and each town reads that from its own watermark.
+  const target = hourAt(clock.worldStartedAt, at);
 
   for (const town of towns) {
-    advanced = (await playTown(town, at, target)) || advanced;
+    await playTown(town, at, target);
   }
 
-  // The data's watermark moves once, after every town, and only if some town
-  // lived an hour: a marker moved mid-pass would let a reader label rows with
-  // an hour they have not lived, and one moved by a town's save would speak for
-  // the others.
-  if (!advanced || target <= played) {
-    return 0;
-  }
-
-  await pass.store.markWorldPlayed(hourStartedOf(clock.worldStartedAt, target));
-
-  return target - played;
-
-  async function playTown(town: TownInfo, at: Date, target: number): Promise<boolean> {
+  async function playTown(town: TownInfo, at: Date, target: number): Promise<void> {
     try {
       const outcome = await pass.store.withWorld(async (session) => {
         const world = sessionWorld(session);
@@ -168,9 +142,11 @@ async function passOnce(pass: WorldPass, at: Date): Promise<number> {
         if (humanPersonOf(presence.world) === undefined) {
           await session.clear();
           pass.logger.info('town.deleted', { townId: town.id });
-          return { expired, hour: null, advanced: false };
+          return { expired, hour: null };
         }
 
+        // The town plays from its own watermark: a visit to another town, or a
+        // pass that failed here, leaves this town's hours owed to it.
         const due = await playDue(session, presence.world, target, presence.dormant, random);
 
         if (due.hours > 0 || presence.deletedPersonIds.length > 0 || persons.size > 0) {
@@ -180,7 +156,7 @@ async function passOnce(pass: WorldPass, at: Date): Promise<number> {
           pass.logger.info('town.advanced', { townId: town.id, hours: due.hours });
         }
 
-        return { expired, hour: due.world.hour, advanced: due.hours > 0 };
+        return { expired, hour: due.world.hour };
       }, town.id);
 
       for (const personId of new Set(outcome.expired.map((player) => player.personId))) {
@@ -197,20 +173,16 @@ async function passOnce(pass: WorldPass, at: Date): Promise<number> {
           new Date(at.getTime() - PACING.messageRetentionHours * HOUR_MS),
         );
       }
-
-      return outcome.advanced;
     } catch (error) {
       // A town deleted between the list and the lock is no town: the next join
       // starts a new one.
       if (error instanceof UnknownWorldError) {
-        return false;
+        return;
       }
 
       // A stopped scheduler leaves every screen healthy and the town frozen, so
       // the failure is logged on every pass: silence is the failure mode.
       failure(pass.logger, town.id, error);
-
-      return false;
     }
   }
 

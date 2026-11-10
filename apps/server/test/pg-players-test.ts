@@ -36,7 +36,8 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
 
   async function seedPerson(personId: number, playerId: number | null = null): Promise<number> {
     const { rows: towns } = await pool.query<{ id: string }>(
-      `INSERT INTO towns (name) VALUES ($1) ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
+      `INSERT INTO towns (name, last_played_at) VALUES ($1, now())
+       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name RETURNING id`,
       [TOWN],
     );
     const townId = Number(towns[0]?.id);

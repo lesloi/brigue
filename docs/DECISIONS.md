@@ -194,23 +194,23 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   The hour is the clock, so what takes less than one is rounded up, and the screen says the hour
   something ends, never the minute. The hour is not stored: `world_started_at` is, and the hour is
   the whole hours elapsed since it, so the data can only be behind the clock, never ahead of it.
-  A visit runs the same pass over every town — the clock is the world's, and a reader cannot
-  advance its own town alone — so an hour is played in the pass, whoever calls it.
-  A server stopped a week plays that week at the next pass: no cap, because those hours were lived
-  in real time and skipping them would leave the town lying about its own history.
-  The price is a component to watch: a stopped scheduler leaves every screen
-  healthy and the world frozen, so the age of the world is what an operator alerts on.
+  How far behind is each town's own business: `towns.last_played_at` is the town's watermark, so a
+  visit plays the town it visits and leaves its neighbours their hours, and a pass that failed for
+  one town costs it nothing. A server stopped a week plays that week at the next pass: no cap,
+  because those hours were lived in real time and skipping them would leave the town lying about
+  its own history.
+  The price is a component to watch: a stopped scheduler leaves every screen healthy and the towns
+  frozen, so the lag of the town furthest behind is what an operator alerts on — the world's hour
+  no longer says it, since every town keeps its own.
   The rate, how many real hours a year lasts, lives in `PACING`, read by the server, never in the
   world. Revisit if a pass ever proves too long to run in one go.
 
-- **One writer per world.** The scheduler and a visit both write the same town, so two
-  passes could each advance it and lose one of them. A pass holds a world-level lock for its whole
-  duration — one row of `settings` locked in every town's transaction would not span the towns —
-  and only then reads the clock, so the second pass finds the hours already played. Inside a pass,
-  each town's transaction holds the `scheduler_last_run_at` row (`SELECT … FOR UPDATE`), which is
-  what keeps a reader's write and a pass's write of the same town apart. The watermark itself
-  moves once, at the end of a pass that played an hour, and never backwards: a town's save says
-  nothing about the other towns, and a reader must never label rows with an hour they have not
+- **One writer per town.** The scheduler and a visit both write the same town, so two
+  writers could each advance it and lose one of them. A write holds the town's own row for its
+  whole duration — `SELECT … FOR UPDATE` on `towns` — so two writers of one town serialise and a
+  town's watermark is read after the other writer committed; two towns never wait on each other,
+  and there is no world-wide writer to contend with. The watermark moves forward only, from the
+  hour the saved world has reached: a reader must never label rows with an hour they have not
   lived. An action's id is the row's own sequence, and that id is the order in
   which actions were received, because insertion order is the only contract there is. The client
   sends
@@ -478,13 +478,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   every town table carries its `town_id` — people, seats, workshops, stock, laws, engagements,
   campaigns and the market are a town itself. What belongs to no person and to no town lives in
   the world's `settings`, one text key/value row per variable: `world_started_at`,
-  `scheduler_last_run_at`, `format_version` and `ruleset_version`. There is one world, one clock
-  and several towns: `world_started_at` says what hour it is and `scheduler_last_run_at` says how
-  far the rows have been played, so the gap between them is what the next pass owes, and the
-  `scheduler_last_run_at` row is what the writer locks. The store parses the numbers and the
-  instants from the text. The first town writes the settings; a later town reads them, so founding
-  a town cannot reset the clock. `towns` keeps only `id`, `name` and `created_at`; `year` is
-  derived from `hour` and `hour` from `world_started_at`, and there is no per-town state row and
+  `format_version` and `ruleset_version`. There is one world, one clock and several towns:
+  `world_started_at` says what hour it is, for everyone, and the store parses the numbers and the
+  instant from the text. How far a town's rows have been played is the town's own
+  `last_played_at`, which is also the row a writer locks: one town's failure must not cost the
+  others their hours. The first town writes the settings; a later town reads them, so founding a
+  town cannot reset the clock. `towns` keeps `id`, `name`, `created_at` and that watermark; `year`
+  is derived from `hour` and `hour` from `world_started_at`, and there is no per-town state row and
   no generator cursor.
   The simulation still reads and writes a town whole, but the storage keeps it in rows, so a screen
   can read the market alone and the book of kings is a query. Every autoincremented id is a global

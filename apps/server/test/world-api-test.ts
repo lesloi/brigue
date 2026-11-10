@@ -9,7 +9,7 @@ import { createLogger } from '../src/logger.ts';
 import { playDue } from '../src/town/scheduler.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
 import { issueToken } from '../src/identity/session.ts';
-import { MemoryWorldStore, hourAt, hourStartedOf } from '../src/town/worlds.ts';
+import { MemoryWorldStore, hourAt } from '../src/town/worlds.ts';
 import { CARON, FOURNIER, LECLERC, seeded, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
@@ -113,7 +113,6 @@ async function start(
         const due = await playDue(session, world, target, new Set(), seeded());
         if (due.hours > 0) {
           await session.save(due.world, due.events, accounts);
-          await worlds.markWorldPlayed(hourStartedOf(session.snapshot.worldStartedAt, target));
         }
       }, TEST_TOWN.id);
       await worlds.pruneJournal(

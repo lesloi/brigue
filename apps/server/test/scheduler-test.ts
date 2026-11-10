@@ -11,7 +11,6 @@ import {
   MemoryWorldStore,
   UnknownWorldError,
   hourAt,
-  hourStartedOf,
   type NewStoredAction,
   type WorldSession,
   type WorldStore,
@@ -51,7 +50,6 @@ async function pass(store: MemoryWorldStore, now: Date) {
 
     if (due.hours > 0) {
       await session.save(due.world, due.events);
-      await store.markWorldPlayed(hourStartedOf(worldStartedAt, target));
     }
 
     return due;
@@ -206,9 +204,8 @@ describe('playWorld', () => {
     // Act
     await Promise.all([playWorld(access, at), playWorld(access, at)]);
 
-    // Assert: the town lived the hour once, and the data met the clock once.
+    // Assert: the town lived the hour once, whatever the two passes read.
     expect((await worldOf(store)).world.hour).toBe(2);
-    expect((await store.readClock())?.lastRunAt).toEqual(at);
   });
 });
 
@@ -236,10 +233,9 @@ describe('startScheduler', () => {
     clock.now += HOUR;
     await vi.advanceTimersByTimeAsync(1_000);
 
-    // Assert: the pass played the hour, and the world's data met its clock.
+    // Assert: the pass played the hour.
     const played = await worldOf(store);
     expect(played.world.hour).toBe(2);
-    expect((await store.readClock())?.lastRunAt).toEqual(new Date(clock.now));
 
     // Act: more passes on the same hour.
     await vi.advanceTimersByTimeAsync(5_000);
@@ -290,7 +286,6 @@ describe('startScheduler', () => {
     await store.withWorld(async (session) => {
       await session.save({ ...session.snapshot.world, hour: 193 }, hours(1, 31));
     }, TEST_TOWN.id);
-    await store.markWorldPlayed(hourStartedOf(START, 193));
     clock.now += 8 * 24 * HOUR;
     await store.withWorld(async (session) => {
       await session.save(session.snapshot.world, hours(32, 120));
@@ -372,12 +367,10 @@ describe('startScheduler', () => {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
       readClock: () => real.readClock(),
-      markWorldPlayed: (at) => real.markWorldPlayed(at),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) =>
         townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      withPassLock: (run) => real.withPassLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
@@ -536,11 +529,9 @@ describe('startScheduler', () => {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
       readClock: () => real.readClock(),
-      markWorldPlayed: (at) => real.markWorldPlayed(at),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      withPassLock: (run) => real.withPassLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) => {
@@ -580,11 +571,9 @@ describe('startScheduler', () => {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
       readClock: () => real.readClock(),
-      markWorldPlayed: (at) => real.markWorldPlayed(at),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      withPassLock: (run) => real.withPassLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: () => Promise.reject(new Error('the journal is stuck')),
@@ -621,7 +610,6 @@ describe('startScheduler', () => {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
       readClock: () => real.readClock(),
-      markWorldPlayed: (at) => real.markWorldPlayed(at),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => {
         attempts += 1;
@@ -629,7 +617,6 @@ describe('startScheduler', () => {
         return attempts === 1 ? Promise.reject(new Error('the database is down')) : real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
-      withPassLock: (run) => real.withPassLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>

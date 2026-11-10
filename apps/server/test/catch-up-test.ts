@@ -11,8 +11,8 @@ const START = new Date('2026-11-05T00:00:00.000Z');
 const HOUR = HOUR_MS;
 
 describe('catchUpTown', () => {
-  it('advances every town, not only the one visited', async () => {
-    // Arrange: two towns, one reader, and an hour the scheduler has not played.
+  it('advances the town it visits, and only that one', async () => {
+    // Arrange: two towns, one reader, and two hours the scheduler has not played.
     const worlds = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
     const first = await worlds.createTown('A', town(20261105), START);
@@ -24,18 +24,18 @@ describe('catchUpTown', () => {
     // Act: the reader visits the first town, two hours after the founding.
     const outcome = await catchUpTown(access, first.id, LECLERC, player.playerId, new Date(START.getTime() + 2 * HOUR));
 
-    // Assert: the world moved, so both towns lived the two hours.
+    // Assert: the visited town lived the two hours; the other owes them still.
     expect(outcome.kind).toBe('caught');
     if (outcome.kind !== 'caught') {
       return;
     }
     expect(outcome.hours).toBe(2);
     expect(outcome.world.hour).toBe(3);
-    expect(await worlds.withWorld(async (session) => session.snapshot.world.hour, second.id)).toBe(3);
+    expect(await worlds.withWorld(async (session) => session.snapshot.world.hour, second.id)).toBe(1);
   });
 
-  it('writes nothing when the world owes no hour', async () => {
-    // Arrange: the scheduler has already played the hour the clock shows.
+  it('writes nothing when the town owes no hour', async () => {
+    // Arrange: the town's data already met the clock.
     const worlds = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
     const created = await worlds.createTown(TEST_TOWN.name, town(20261105), START);
@@ -54,14 +54,13 @@ describe('catchUpTown', () => {
     }
     expect(outcome.hours).toBe(0);
     expect(outcome.world.hour).toBe(1);
-    expect((await worlds.readClock())?.lastRunAt).toEqual(START);
   });
 });
 
 describe('advanceTown', () => {
   it('moves the world clock an hour ahead of the wall clock, and plays that hour', async () => {
     // Arrange: development wants the next hour now, and the hour belongs to the
-    // world, so the world's origin moves rather than a town's.
+    // world, so the world's origin moves rather than the town's.
     const worlds = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
     await worlds.createTown(TEST_TOWN.name, town(20261105), START);

@@ -40,16 +40,20 @@ CREATE TABLE kings (
 );
 
 -- Every town table carries its `town_id` and the rows of a town are the town;
--- the world's clock lives in `settings`. One world, one clock, several towns: a
--- pass plays them all, serialised by a lock of its own, and each town's write
--- locks the `scheduler_last_run_at` row.
+-- the world's clock lives in `settings`. One world, one clock, several towns:
+-- every town counts its hours from the same origin, but each holds its own
+-- watermark and owes its own hours, so a town that fell behind keeps them.
 
 -- A name may come back after a reset; an id never does, so a dead town's
 -- accounts cannot point at a new one.
 CREATE TABLE towns (
   id bigserial PRIMARY KEY,
   name text NOT NULL UNIQUE,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  -- The start of the first hour this town's rows do not hold yet: the town's own
+  -- watermark, and the row a writer locks. The world's hour is derived from
+  -- `world_started_at`, so the gap between the two is what this town owes.
+  last_played_at timestamptz NOT NULL
 );
 
 -- The world's settings: one key/value row each, outside any town. The first
@@ -58,10 +62,9 @@ CREATE TABLE towns (
 -- instants.
 --
 -- `world_started_at` is when the world was founded, and every hour is counted
--- from it: the hour is the wall clock, never a stored counter. `scheduler_last_run_at`
--- is the start of the first hour the rows do not hold yet — the data is behind
--- the clock by however many hours separate the two — and it is the row a write
--- of a town locks.
+-- from it: the hour is the wall clock, never a stored counter. How far a town's
+-- rows have been played is that town's own `last_played_at`, not a world-wide
+-- counter: one town's failure must not cost the others their hours.
 CREATE TABLE settings (
   key text PRIMARY KEY,
   value text NOT NULL

@@ -9,7 +9,7 @@ mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 - `packages/core`: the whole simulation. Pure TypeScript: no I/O, no wall clock read, no
   global random read; where it needs time or chance, the caller passes them.
 - `apps/server`: Node, holds the world in Postgres, serves the API, and plays the hours the
-  wall clock owes, in a scheduled pass that a visit runs too.
+  wall clock owes: a scheduled pass over every town, and the town a visit reads.
 - `apps/web`: a Vite PWA, mobile first. It renders the projection and the events, and sends
   action intents; it decides nothing.
 - TypeScript everywhere, one language for the core, the server and the client. pnpm workspace.

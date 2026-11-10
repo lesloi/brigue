@@ -54,14 +54,12 @@ export interface WorldSnapshot {
 }
 
 /**
- * The world's shared clock, both ends of it: the instant it was founded, which
- * says what hour it is, and the instant of its data, which says how far the
- * towns have been played. The gap between the two is what the scheduler owes.
+ * The world's clock: the instant it was founded, from which every hour is
+ * counted. How far a town's rows have been played is the town's own business,
+ * and it is stored on the town (`towns.last_played_at`).
  */
 export interface Clock {
   worldStartedAt: Date;
-  /** The start of the first hour the rows do not hold yet. */
-  lastRunAt: Date;
 }
 
 /** One stored message: the row's id, its flag, and the line. */
@@ -82,7 +80,7 @@ export interface MessagePage {
   unread: number;
 }
 
-/** One unit of work on the town, inside the world's hour-row lock. */
+/** One unit of work on the town, inside the town's row lock. */
 export interface WorldSession {
   readonly snapshot: WorldSnapshot;
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
@@ -129,8 +127,9 @@ export interface WorldStore {
   /**
    * Creates the town row and its first rows, and returns the town with the id
    * the database assigned. The first town founds the world at `at`; a later one
-   * joins the clock it finds, so every town shares one clock. It is not
-   * idempotent: a second call creates a second town, so a join calls it once
+   * joins the clock it finds, so every town shares one clock. Its rows start at
+   * the hour it joins, so it owes nothing of the hours before it existed. It is
+   * not idempotent: a second call creates a second town, so a join calls it once
    * inside `withJoinLock`.
    */
   createTown(name: string, world: World, at: Date): Promise<TownInfo>;
@@ -142,20 +141,15 @@ export interface WorldStore {
    */
   readClock(): Promise<Clock | null>;
   /**
-   * Records how far the world's data has been played, by the start of the first
-   * hour the rows do not hold yet. Only a pass writes it, once, after every
-   * town: a town's save says nothing about the others.
-   */
-  markWorldPlayed(firstUnplayedAt: Date): Promise<void>;
-  /**
    * Local development only: moves the world's origin back, so the world is
    * `hours` hours further along than the wall clock says. Every town gains the
    * same hours, because there is one clock.
    */
   moveWorldClockBack(hours: number): Promise<void>;
   /**
-   * Locks the world for the whole callback — the scheduler and the reader both
-   * write, and two passes over the same town would lose one of them.
+   * Locks the town for the whole callback: the scheduler and the reader both
+   * write it, and two passes over the same town would play the same hour twice.
+   * The lock is the town's own row, so two towns never wait on each other.
    */
   withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T>;
   /**
@@ -164,12 +158,6 @@ export interface WorldStore {
    * hour row's lock.
    */
   withJoinLock<T>(run: () => Promise<T>): Promise<T>;
-  /**
-   * Serializes the passes. Two passes read the same clock before either has
-   * played it, so without this both would play the same hours and the town
-   * would live them twice. It spans every town, so the row lock cannot hold it.
-   */
-  withPassLock<T>(run: () => Promise<T>): Promise<T>;
   /**
    * Drops the chronicle and the mail written before their cut. Their own
    * statements, outside the state lock: a prune that fails must not roll back an
@@ -212,6 +200,8 @@ export class NameInUseError extends Error {
 
 interface MemoryWorld {
   snapshot: WorldSnapshot;
+  /** The start of the first hour this town's rows do not hold yet. */
+  lastPlayedAt: Date;
   actions: StoredAction[];
   nextActionId: number;
   chronicle: { id: number; event: Event; recordedAt: Date }[];
@@ -224,8 +214,6 @@ interface StoredClock {
   formatVersion: number;
   rulesetVersion: number;
   worldStartedAt: Date;
-  /** The start of the first hour the rows do not hold yet. */
-  lastRunAt: Date;
 }
 
 /**
@@ -239,7 +227,6 @@ export class MemoryWorldStore implements WorldStore {
   private nextTownId = 1;
   private queue: Promise<unknown> = Promise.resolve();
   private joinQueue: Promise<unknown> = Promise.resolve();
-  private passQueue: Promise<unknown> = Promise.resolve();
   /** The world's shared clock and identity, outside any town. */
   private clock: StoredClock | null = null;
   /** The instant an event is written, for the real-time journal cut. */
@@ -260,13 +247,15 @@ export class MemoryWorldStore implements WorldStore {
         formatVersion: world.formatVersion,
         rulesetVersion: world.rulesetVersion,
         worldStartedAt: new Date(at),
-        lastRunAt: new Date(at),
       };
-    } else {
-      world.formatVersion = this.clock.formatVersion;
-      world.rulesetVersion = this.clock.rulesetVersion;
-      world.hour = hourAt(this.clock.worldStartedAt, this.clock.lastRunAt);
     }
+
+    // A town's rows start at the hour it joins: it owes none of the hours before
+    // it existed, and however far behind its neighbours are, it begins on time.
+    const lastPlayedAt = hourStartedOf(this.clock.worldStartedAt, hourAt(this.clock.worldStartedAt, at));
+    world.formatVersion = this.clock.formatVersion;
+    world.rulesetVersion = this.clock.rulesetVersion;
+    world.hour = hourAt(this.clock.worldStartedAt, lastPlayedAt);
 
     this.towns.set(town.id, {
       snapshot: {
@@ -274,6 +263,7 @@ export class MemoryWorldStore implements WorldStore {
         world: structuredClone(world),
         worldStartedAt: new Date(this.clock.worldStartedAt),
       },
+      lastPlayedAt,
       actions: [],
       nextActionId: 1,
       chronicle: [],
@@ -300,7 +290,7 @@ export class MemoryWorldStore implements WorldStore {
       return null;
     }
 
-    return { worldStartedAt: new Date(this.clock.worldStartedAt), lastRunAt: new Date(this.clock.lastRunAt) };
+    return { worldStartedAt: new Date(this.clock.worldStartedAt) };
   }
 
   async moveWorldClockBack(hours: number): Promise<void> {
@@ -308,8 +298,14 @@ export class MemoryWorldStore implements WorldStore {
       return;
     }
 
-    this.clock.worldStartedAt = new Date(this.clock.worldStartedAt.getTime() - hours * HOUR_MS);
-    this.clock.lastRunAt = new Date(this.clock.lastRunAt.getTime() - hours * HOUR_MS);
+    // The origin and every town's watermark move together: the clock jumps, the
+    // data stays where it was, so every town owes the same hours.
+    const back = hours * HOUR_MS;
+    this.clock.worldStartedAt = new Date(this.clock.worldStartedAt.getTime() - back);
+
+    for (const stored of this.towns.values()) {
+      stored.lastPlayedAt = new Date(stored.lastPlayedAt.getTime() - back);
+    }
   }
 
   async pruneJournal(townId: number, chronicleBefore: Date, messagesBefore: Date): Promise<void> {
@@ -372,12 +368,12 @@ export class MemoryWorldStore implements WorldStore {
       const backup = structuredClone(stored);
       const clockBackup = this.clock === null ? null : structuredClone(this.clock);
 
-      // A town reads the world's clock, not a copy of its own: the hour belongs
-      // to the world, the rows belong to the town.
+      // The hour belongs to the world and the watermark to the town: a town that
+      // failed a pass keeps its own and plays what it owes next time.
       if (this.clock !== null) {
         stored.snapshot.world.formatVersion = this.clock.formatVersion;
         stored.snapshot.world.rulesetVersion = this.clock.rulesetVersion;
-        stored.snapshot.world.hour = hourAt(this.clock.worldStartedAt, this.clock.lastRunAt);
+        stored.snapshot.world.hour = hourAt(this.clock.worldStartedAt, stored.lastPlayedAt);
         stored.snapshot.worldStartedAt = new Date(this.clock.worldStartedAt);
       }
 
@@ -410,30 +406,6 @@ export class MemoryWorldStore implements WorldStore {
     );
 
     return current;
-  }
-
-  async withPassLock<T>(run: () => Promise<T>): Promise<T> {
-    const previous = this.passQueue;
-    const current = previous.then(() => run());
-
-    this.passQueue = current.then(
-      () => undefined,
-      () => undefined,
-    );
-
-    return current;
-  }
-
-  async markWorldPlayed(firstUnplayedAt: Date): Promise<void> {
-    if (this.clock === null) {
-      return;
-    }
-
-    // Forward only: a pass that played less than the one before it must not put
-    // the world back.
-    if (firstUnplayedAt.getTime() > this.clock.lastRunAt.getTime()) {
-      this.clock.lastRunAt = new Date(firstUnplayedAt);
-    }
   }
 
   async close(): Promise<void> {}
@@ -486,6 +458,12 @@ export class MemoryWorldStore implements WorldStore {
           world: structuredClone(world),
           worldStartedAt: stored.snapshot.worldStartedAt,
         };
+        // Only this town's watermark moves, and only forward: another town's
+        // pass says nothing about this one.
+        const firstUnplayed = hourStartedOf(stored.snapshot.worldStartedAt, world.hour);
+        if (firstUnplayed.getTime() > stored.lastPlayedAt.getTime()) {
+          stored.lastPlayedAt = firstUnplayed;
+        }
         for (const event of events) {
           if (event.audience === 'town') {
             stored.chronicle.push({ id: stored.nextEventId, event: structuredClone(event), recordedAt: this.now() });
