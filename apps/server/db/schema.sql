@@ -26,9 +26,9 @@ CREATE TABLE players (
 -- known by in every town, and the book of kings keeps it.
 CREATE UNIQUE INDEX players_family_name ON players (lower(name));
 
--- The sweep of the accounts a reset left between towns looks at the deadline,
--- once per pass: without this it reads every account every minute.
-CREATE INDEX players_due_deletion ON players (delete_after) WHERE delete_after IS NOT NULL;
+-- The sweep of the accounts whose deadline passed looks at the deadline, once
+-- per pass: without this it reads every account every minute.
+CREATE INDEX players_due_deletion ON players (delete_after);
 
 -- The only record that crosses a reset, and a full reset deletes it too. It
 -- names nobody: the book outlives the accounts, and a crown is the town's
@@ -132,6 +132,10 @@ CREATE TABLE seats (
   PRIMARY KEY (town_id, seat_id)
 );
 
+-- A seat names its holder: deleting the person must find the seat, and the key
+-- starts at the town.
+CREATE INDEX seats_person ON seats (person_id);
+
 -- A law is what the town voted: a code from a catalogue, and the value it was
 -- set to. One row per rule in force, so enacting it again is setting it again.
 -- Nothing writes this table yet; the catalogue is the town's, not the store's.
@@ -141,10 +145,6 @@ CREATE TABLE laws (
   value integer NOT NULL,
   PRIMARY KEY (town_id, code)
 );
-
--- A seat names its holder: deleting the person must find the seat, and the key
--- starts at the town.
-CREATE INDEX seats_person ON seats (person_id) WHERE person_id IS NOT NULL;
 
 -- A campaign has no duration: it is a candidacy, it counts at the coming
 -- scrutiny, and the scrutiny deletes it. No closed flag, no votes: the vote is
@@ -185,6 +185,8 @@ CREATE TABLE events (
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- The page reads the town's lines newest first: the trailing id is the order,
+-- and it is what spares the sort, not decoration.
 CREATE INDEX events_town_id ON events (town_id, id);
 
 CREATE INDEX events_town_recorded_at ON events (town_id, recorded_at);
@@ -211,6 +213,7 @@ CREATE TABLE messages (
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- The box reads newest first, as the chronicle does: the trailing id is the order.
 CREATE INDEX messages_player ON messages (player_id, id);
 
 -- The thirty-day prune is the box's clock, not the reader's: one delete over
@@ -219,7 +222,7 @@ CREATE INDEX messages_recorded_at ON messages (recorded_at);
 
 -- A letter outlives its author: erasing the account must find the letters it
 -- wrote to take the name away.
-CREATE INDEX messages_author ON messages (author_player_id) WHERE author_player_id IS NOT NULL;
+CREATE INDEX messages_author ON messages (author_player_id);
 
 -- The row's own id is the order the actions arrived in, because two clocks never
 -- agree. A client that sends the same order twice sends two actions.
@@ -237,6 +240,7 @@ CREATE TABLE actions (
   received_at timestamptz NOT NULL DEFAULT now()
 );
 
+-- A pass reads the hours it owes in order: the trailing id is that order.
 CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, id);
 
 -- An ordered action names its person: a person erased takes its queue with it,
