@@ -131,7 +131,9 @@ export interface WorldStore {
    * the hour it joins, so it owes nothing of the hours before it existed. It is
    * not idempotent: a second call creates a second town, so a join calls it once
    * inside `withJoinLock`. `bindings` names the accounts the new persons answer
-   * to, so a human person is written with its account, never without one.
+   * to, so a human person is written with its account, never without one; a
+   * store that keeps the binding outside its own rows — the memory store's
+   * accounts are the player store's — ignores it, and the caller binds after.
    */
   createTown(name: string, world: World, at: Date, bindings?: ReadonlyMap<number, number>): Promise<TownInfo>;
   /** Every town, oldest first, so a join can look for a free place. */
@@ -278,11 +280,13 @@ export class MemoryWorldStore implements WorldStore {
 
   async listTowns(): Promise<TownInfo[]> {
     // A stable sort keeps the insertion order — oldest first — on equal counts.
+    // A living person is a place: a dead one takes no seat and must not weigh a
+    // town down in the join's choice.
+    const places = (stored: MemoryWorld) =>
+      Object.values(stored.snapshot.world.people).filter((person) => person.alive);
+
     return [...this.towns.values()]
-      .sort(
-        (left, right) =>
-          Object.keys(left.snapshot.world.people).length - Object.keys(right.snapshot.world.people).length,
-      )
+      .sort((left, right) => places(left).length - places(right).length)
       .map((stored) => ({ ...stored.snapshot.town }));
   }
 

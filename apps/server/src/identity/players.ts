@@ -111,9 +111,11 @@ export class MemoryPlayerStore implements PlayerStore {
     }
     for (const existing of this.players.values()) {
       // The memory store has no global sequence: a person id is scoped by its
-      // town, the way the database scopes a real id by the row it names.
+      // town, the way the database scopes a real id by the row it names. A
+      // person another account holds matches nothing, and the store answers
+      // null as the database's guarded update does.
       if (existing.townId === townId && existing.personId === personId) {
-        throw new PersonAlreadyBoundError(personId);
+        return null;
       }
     }
 

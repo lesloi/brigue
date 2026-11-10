@@ -86,7 +86,9 @@ describe('the binding', () => {
     await store.rebind(first.player.tokenHash, 1, 901, new Date());
     const second = await issueToken(store, 'Caron');
 
-    await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).rejects.toThrow();
+    // The person is taken: the store answers null, as the database's guarded
+    // update does, and the caller refuses the join.
+    await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).resolves.toBeNull();
     await store.deleteAccount(first.player.playerId);
 
     await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).resolves.toBeDefined();

@@ -86,6 +86,23 @@ describe('the town store', () => {
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
   });
 
+  it('counts only the living when it picks the least-filled town', async () => {
+    // Arrange: the younger town's only person is dead.
+    const store = new MemoryWorldStore();
+    const old = await store.createTown('Old', town(1), new Date());
+    const young = await store.createTown('New', town(1), new Date());
+    await store.withWorld(async (session) => {
+      const world = session.snapshot.world;
+      for (const person of Object.values(world.people)) {
+        person.alive = false;
+      }
+      await session.write(world, []);
+    }, young.id);
+
+    // Assert: the dead take no place, so the emptied town comes first.
+    expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
+  });
+
   it('gives a name that comes back a new id', async () => {
     // Arrange: a town that has lived and gone.
     const store = new MemoryWorldStore();
