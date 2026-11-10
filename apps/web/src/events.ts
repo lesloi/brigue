@@ -82,25 +82,13 @@ export function eventLine(event: Event, ownPersonId: PersonId, nameOf: (personId
         text: `${subject(event.personId)} : un atelier passe au niveau ${formatCount(event.level)}.`,
       };
 
-    case 'workshop.build_lost':
-      return {
-        tone: 'refusal',
-        text: `Le chantier de ${tradeName(event.trade)} de ${subject(event.personId)} échoue : ${formatCents(event.paidCents)} écus perdus.`,
-      };
-
     case 'person.title_bought':
-      return {
-        tone: 'council',
-        text: `${subject(event.personId)} ${verb(event.personId, 'avez acheté', 'a acheté')} le titre de ${titleName(event.title)} ; il ${verb(event.personId, 'vous sera remis', 'sera remis')} au prochain midi ou minuit.`,
-      };
-
-    case 'person.title_received':
       return {
         tone: 'council',
         text: `${subject(event.personId)} ${verb(event.personId, 'êtes', 'est')} désormais ${titleName(event.title)}.`,
       };
 
-    case 'person.residence_received':
+    case 'person.residence_bought':
       return {
         tone: 'gain',
         text: `${subject(event.personId)} : la résidence atteint le niveau ${formatCount(event.level)}.`,
@@ -130,34 +118,6 @@ export function eventLine(event: Event, ownPersonId: PersonId, nameOf: (personId
         // A stored message keeps no town hour, so the line names the scrutiny's
         // own hour rather than a countdown from the moment it was written.
         text: `${subject(event.personId)} ${verb(event.personId, 'avez déposé', 'a déposé')} une candidature à la ${seatName(event.seatId)} avec ${formatCount(event.favourSpent)} de faveur ; le scrutin qui la compte est à l'heure ${formatCount(event.countsAt)}.`,
-      };
-
-    case 'engagement.resolved': {
-      const late =
-        event.resolvedAt === event.dueAt
-          ? ''
-          : ` (${formatCount(event.resolvedAt - event.dueAt)} heure${event.resolvedAt - event.dueAt > 1 ? 's' : ''} de retard)`;
-
-      if (event.kind === 'hearing') {
-        return {
-          tone: 'council',
-          text: `L'audience de ${subject(event.personId)} est tenue${late}.`,
-        };
-      }
-
-      return {
-        tone: 'neutral',
-        text: `Le chantier de ${subject(event.personId)} est achevé${late}.`,
-      };
-    }
-
-    case 'engagement.opened':
-      return {
-        tone: 'neutral',
-        text:
-          event.kind === 'hearing'
-            ? `L'audience de ${subject(event.personId)} est fixée à l'heure ${formatCount(event.dueAt)}.`
-            : `${subject(event.personId)} : un chantier est ouvert, il sera clos à l'heure ${formatCount(event.dueAt)}.`,
       };
 
     case 'council.scrutiny_held':

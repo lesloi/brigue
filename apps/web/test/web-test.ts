@@ -230,32 +230,10 @@ describe('eventLine', () => {
     // Act
     const line = eventLine(event, 4, nameOf);
 
-    // Assert: the screen does not claim the coming scrutiny when the noon bell
-    // has already closed this year's.
+    // Assert: the line names the scrutiny the event carries.
     expect(line.tone).toBe('council');
     expect(line.text).toContain('candidature à la mairie');
     expect(line.text).toContain("à l'heure 48");
-  });
-
-  it('counts a late engagement in hours', () => {
-    // Arrange: heard three hours after it fell due.
-    const event: Event = {
-      type: 'engagement.resolved',
-      audience: { personId: 4 },
-      at: 8,
-      engagementId: 1,
-      kind: 'hearing',
-      personId: 4,
-      dueAt: 5,
-      resolvedAt: 8,
-    };
-
-    // Act
-    const line = eventLine(event, 4, nameOf);
-
-    // Assert
-    expect(line.text).toContain("L'audience de Vous est tenue");
-    expect(line.text).toContain('3 heures de retard');
   });
 });
 

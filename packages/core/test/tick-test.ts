@@ -196,92 +196,56 @@ describe('the simulation core', () => {
     }
   });
 
-  it('lodges a candidacy at once and the noon bell closes it for the scrutiny', () => {
-    // Arrange: lodged during hour one, before any noon.
+  it('lodges a candidacy at once, for the coming scrutiny', () => {
+    // Arrange: lodged during hour one, before any scrutiny.
     const queued = tick(town(SEED), [{ type: 'council.campaign', personId: LECLERC, seatId: 'maire' }]);
 
-    // Assert: the bonus is in the open map at once, and the event says which
+    // Assert: the candidacy is in the map at once, and the event says which
     // scrutiny it counts for. The AI may have campaigned for the same seat.
-    expect(queued.world.campaigns.maire?.[LECLERC]).toBe(RULES.campaignVoteBonus);
-    expect(queued.world.engagements).toEqual([]);
+    expect(queued.world.campaigns.maire).toContain(LECLERC);
     expect(queued.events).toContainEqual(
       expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', countsAt: HOURS_PER_YEAR }),
     );
 
-    // Act: run to the hour before noon, then step across the bell.
-    const beforeNoon = play(queued.world, 10).world;
-    const afterNoon = tick(beforeNoon).world;
+    // Act: the scrutiny consumes it.
+    const later = play(queued.world, HOURS_PER_YEAR).world;
 
-    // Assert: the bell closes the open map into the one the scrutiny reads.
-    expect(beforeNoon.closedCampaigns.maire).toBeUndefined();
-    expect(afterNoon.closedCampaigns.maire?.[LECLERC]).toBe(RULES.campaignVoteBonus);
-    expect(afterNoon.campaigns.maire).toBeUndefined();
+    // Assert: nothing is left for the next one.
+    expect(later.campaigns.maire).toBeUndefined();
   });
 
-  it('counts a candidacy lodged after the noon bell for the next scrutiny', () => {
+  it('counts a candidacy lodged after noon for the coming scrutiny', () => {
     // Arrange: the town is past noon on its first day.
     const world = { ...town(SEED), hour: HOURS_PER_YEAR / 2 + 1 };
 
     // Act
     const queued = tick(world, [{ type: 'council.campaign', personId: LECLERC, seatId: 'maire' }]);
 
-    // Assert: it waits for the scrutiny after the coming one.
+    // Assert: the noon bell no longer splits the day: it counts at the coming
+    // scrutiny, whatever the hour it was lodged at.
     expect(queued.events).toContainEqual(
-      expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', countsAt: HOURS_PER_YEAR * 2 }),
+      expect.objectContaining({ type: 'council.campaigned', seatId: 'maire', countsAt: HOURS_PER_YEAR }),
     );
-    expect(queued.world.campaigns.maire).toEqual({ [LECLERC]: RULES.campaignVoteBonus });
-    expect(queued.world.closedCampaigns.maire).toBeUndefined();
+    expect(queued.world.campaigns.maire).toEqual([LECLERC]);
   });
 
-  it('resolves an engagement at its due hour', () => {
-    // The due hour is the caller's business: a hearing falls at the next noon
-    // sitting, a site after twelve hours. This checks the resolver, not the
-    // scheduling.
-    const noon = HOURS_PER_YEAR / 2;
+  it('counts a candidacy lodged on the scrutiny hour itself', () => {
+    // Arrange: the town is at the hour the scrutiny is held.
+    const world = { ...town(SEED), hour: HOURS_PER_YEAR };
 
-    for (const [kind, dueAt] of [
-      ['hearing', noon],
-      ['site', 1 + RULES.siteHours],
-    ] as const) {
-      // Arrange: an engagement due at that hour. A residence site needs the
-      // degree that opens the next level.
-      const world = town(SEED);
-      if (kind === 'site') {
-        world.people[LECLERC].title = 'bourgeois';
-      }
-      world.engagements = [
-        kind === 'site'
-          ? { id: 1, kind, personId: LECLERC, dueAt, work: 'residence' }
-          : { id: 1, kind, personId: LECLERC, dueAt },
-      ];
+    // Act: the candidacy is applied before the scrutiny reads the seat.
+    const { world: after, events } = tick(world, [
+      { type: 'council.campaign', personId: LECLERC, seatId: 'tresorier' },
+    ]);
 
-      // Act: run to the due hour, then one tick more.
-      const early = play(world, dueAt - world.hour);
-      const due = tick(early.world);
-
-      // Assert: it waits for its hour, then leaves the world and does its work.
-      expect(early.world.engagements).toHaveLength(1);
-      expect(due.world.engagements).toEqual([]);
-      if (kind === 'site') {
-        expect(due.world.people[LECLERC]?.residenceLevel).toBe(2);
-      }
-    }
-  });
-
-  it('resolves an engagement behind the town clock by the next tick instead of dropping it', () => {
-    // Arrange: an older state can leave the counter past a due hour. A cap jump
-    // moves only the wall clock, so this is the defensive path, not the normal one.
-    const world = town(SEED);
-    world.hour = 900;
-    world.people[LECLERC].title = 'bourgeois';
-    world.engagements = [{ id: 1, kind: 'site', personId: LECLERC, dueAt: 800, work: 'residence' }];
-
-    // Act
-    const { world: after } = tick(world);
-
-    // Assert: it resolves on the first tick that runs, and does its work.
-    expect(after.engagements).toEqual([]);
-    expect(after.people[LECLERC]?.residenceLevel).toBe(2);
+    // Assert: the stand is taken this hour, and the dread is gone with it.
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'council.election_result' && event.seatId === 'tresorier' && event.personId === LECLERC,
+      ),
+    ).toBe(true);
+    expect(after.campaigns.tresorier).toBeUndefined();
   });
 
   it('keeps a campaign for one seat out of another seat vote', () => {

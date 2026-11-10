@@ -53,15 +53,11 @@ describe('dormancy', () => {
     expect(presence.world.seats.maire.personId).toBe(CARON);
   });
 
-  it('deletes a person silent for more than thirty days with its seat and its sites', () => {
+  it('deletes a person silent for more than thirty days with its seat and its candidacy', () => {
     // Arrange
     const world = aHumanWorld();
     world.seats.maire = { personId: CARON };
-    world.campaigns.maire = { [CARON]: 2 };
-    world.engagements = [
-      { id: 1, kind: 'site', personId: CARON, dueAt: world.hour + 4, work: 'residence' },
-      { id: 2, kind: 'hearing', personId: LECLERC, dueAt: world.hour + 4 },
-    ];
+    world.campaigns.maire = [CARON, LECLERC];
     const seen = new Date(START - (PACING.deletionDays * DAY + HOUR));
 
     // Act
@@ -71,8 +67,7 @@ describe('dormancy', () => {
     expect(presence.deletedPersonIds).toEqual([CARON]);
     expect(presence.world.people[CARON]).toBeUndefined();
     expect(presence.world.seats.maire.personId).toBeNull();
-    expect(presence.world.campaigns.maire).toEqual({});
-    expect(presence.world.engagements.map((engagement) => engagement.id)).toEqual([2]);
+    expect(presence.world.campaigns.maire).toEqual([LECLERC]);
   });
 
   it('still reads a person at exactly the thirty-day boundary', () => {
@@ -314,7 +309,6 @@ describe('the thirty-day deletion', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
-        upgradeHours: 3,
       },
     ]);
     expect(body.world.person.stock.grain).toBe(8);

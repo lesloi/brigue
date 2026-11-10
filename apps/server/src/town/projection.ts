@@ -16,15 +16,12 @@ import {
   workshopCap,
   workshopLevelCap,
   yearOf,
-  type Engagement,
   type GoodId,
   type Law,
   type Person,
   type Seat,
   type SeatId,
-  type SiteWork,
   type TitleId,
-  type Trade,
   type World,
 } from '@brigue/core';
 
@@ -35,24 +32,14 @@ export interface WorkshopView {
   id: number;
   good: GoodId;
   level: number;
-  input: GoodId | null;
+  input: GoodId;
   outputUnitsPerHour: number;
   inputUnitsPerHour: number;
   upkeepCentsPerHour: number;
   /** What this workshop gives the warehouse at its level. */
   capacityUnits: number;
-  /** Whether the person's degree allows one more level, and how long it takes. */
+  /** Whether the person's degree allows one more level. */
   canUpgrade: boolean;
-  upgradeHours: number | null;
-}
-
-/** A site under way: what it is for, and the hour it closes. */
-export interface SiteView {
-  id: number;
-  dueAt: number;
-  work: SiteWork['work'];
-  trade: Trade | null;
-  workshopId: number | null;
 }
 
 /**
@@ -72,7 +59,7 @@ export interface LadderView {
   stockDefence: number;
   workshopLevelCap: number;
   nextTitle: { title: TitleId; priceCents: number } | null;
-  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean } | null;
 }
 
 export interface OwnPersonView {
@@ -94,8 +81,7 @@ export interface OwnPersonView {
   /** What the stock holds in total, and the warehouse's cap: the client sums nothing. */
   stockUnits: number;
   stockCapacityUnits: number;
-  build: { priceCents: number; hours: number; level: number; room: number; cap: number };
-  sites: SiteView[];
+  build: { priceCents: number; level: number; room: number; cap: number };
   rename: { priceCents: number };
 }
 
@@ -139,8 +125,6 @@ export interface WorldProjection {
     seats: Record<SeatId, Seat>;
     laws: Law[];
     market: Record<GoodId, number>;
-    /** The last prices per good, so the Marché can draw them. */
-    marketHistory: Partial<Record<GoodId, number[]>>;
     /** The centre of the band each good's price is pulled around; the chart draws it as a guide. */
     marketReferences: Record<GoodId, number>;
   };
@@ -191,7 +175,6 @@ export function projectWorld(
       seats: structuredClone(world.seats),
       laws: structuredClone(world.laws),
       market: structuredClone(world.market),
-      marketHistory: structuredClone(world.marketHistory ?? {}),
       marketReferences: Object.fromEntries(GOODS.map((good) => [good, RULES.market[good].referenceCents])) as Record<
         GoodId,
         number
@@ -270,7 +253,6 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
               name: RESIDENCE_LADDER[level]!.name,
               priceCents: RESIDENCE_LADDER[level].priceCents,
               opened: level < TITLE_LADDER[title].residenceLevel,
-              hours: RULES.improvementHours[level + 1] ?? RULES.siteHours,
             },
     },
     workshops: person.workshops.map((workshop) => {
@@ -287,7 +269,6 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
         upkeepCentsPerHour: workshop.level * RULES.upkeepPerWorkshopLevelCents,
         capacityUnits: workshopCapacity(workshop.level),
         canUpgrade: workshop.level < workshopLevelCap(title),
-        upgradeHours: RULES.improvementHours[workshop.level + 1] ?? null,
       };
     }),
     stock: structuredClone(person.stock),
@@ -295,35 +276,10 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
     stockCapacityUnits: stockCapacityUnits(person),
     build: {
       priceCents: RULES.buildCents,
-      hours: RULES.siteHours,
       level: RULES.builtWorkshopLevel,
-      room: Math.max(0, workshopCap(level) - person.workshops.length - buildingCount(world, person.id, 'build')),
+      room: Math.max(0, workshopCap(level) - person.workshops.length),
       cap: workshopCap(level),
     },
-    sites: world.engagements.flatMap((engagement) =>
-      engagement.kind === 'site' && engagement.personId === person.id
-        ? [{ id: engagement.id, dueAt: engagement.dueAt, ...siteWorkOf(engagement) }]
-        : [],
-    ),
     rename: { priceCents: NAME_PRICE.renameCents },
   };
-}
-
-/** The sites of one kind a person has open: a build in progress counts on the cap. */
-function buildingCount(world: World, personId: number, work: SiteWork['work']): number {
-  return world.engagements.filter(
-    (engagement) => engagement.kind === 'site' && engagement.personId === personId && engagement.work === work,
-  ).length;
-}
-
-/** What a site is for, as the screen names it: a trade, a workshop, the person. */
-function siteWorkOf(site: Extract<Engagement, { kind: 'site' }>) {
-  switch (site.work) {
-    case 'build':
-      return { work: site.work, trade: site.trade, workshopId: null };
-    case 'upgrade':
-      return { work: site.work, trade: null, workshopId: site.workshopId };
-    default:
-      return { work: site.work, trade: null, workshopId: null };
-  }
 }

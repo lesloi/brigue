@@ -62,6 +62,8 @@ export interface PlayerStore {
   cancelDeletion(tokenHash: string): Promise<void>;
   /** Deletes the account (and its mail) whose person is gone. */
   deletePerson(personId: number): Promise<void>;
+  /** Erases an account no person ever took: a join that failed after issuing it. */
+  eraseAccount(tokenHash: string): Promise<void>;
   /**
    * Erases the accounts a reset left without a person whose deletion deadline
    * has passed, and returns how many. They belong to no town, so the per-town
@@ -156,6 +158,10 @@ export class MemoryPlayerStore implements PlayerStore {
         this.players.delete(tokenHash);
       }
     }
+  }
+
+  async eraseAccount(tokenHash: string): Promise<void> {
+    this.players.delete(tokenHash);
   }
 
   async deleteUnboundDue(at: Date): Promise<number> {

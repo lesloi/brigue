@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  advance,
   createWorld,
   displayedPrestige,
-  HOURS_PER_YEAR,
   nextTitle,
   RULES,
   stockCapacityUnits,
@@ -14,30 +12,12 @@ import {
   workshopCap,
   workshopLevelCap,
   withFirstPerson,
-  type Action,
   type Event,
   type World,
 } from '../src/index.ts';
-import { CARON, LECLERC, seeded, TEST_FIRST_DYNASTY, tick, town } from './helpers.ts';
+import { CARON, LECLERC, TEST_FIRST_DYNASTY, tick, town } from './helpers.ts';
 
 const SEED = 20261107;
-
-/** Plays hour by hour, placing the actions on the hour they are given for. */
-function play(
-  world: World,
-  until: number,
-  actions: (hour: number) => Action[] = () => [],
-  dormant: ReadonlySet<number> = new Set(),
-): { world: World; events: Event[] } {
-  const placed = [];
-  for (let hour = world.hour; hour <= until; hour += 1) {
-    for (const action of actions(hour)) {
-      placed.push({ at: hour, action });
-    }
-  }
-
-  return advance(world, until, placed, dormant, seeded(world.hour));
-}
 
 function leased(world: World) {
   return world.people[LECLERC];
@@ -57,8 +37,8 @@ describe('workshops, trades and the ladder', () => {
     expect(stockCapacityUnits(createWorld().people[CARON])).toBe(350);
   });
 
-  it('builds a workshop that works the new chain, and charges for it', () => {
-    // Arrange: a purse that pays the build and the upkeep of the site's hours.
+  it("builds a workshop at once, on the action's hour, and charges for it", () => {
+    // Arrange: a purse that pays the build.
     const world = town(SEED);
     world.people[LECLERC].treasuryCents = 1_000_000;
     const treasury = world.people[LECLERC].treasuryCents;
@@ -67,25 +47,20 @@ describe('workshops, trades and the ladder', () => {
     world.people[LECLERC].title = 'bourgeois';
     world.people[LECLERC].residenceLevel = 3;
 
-    // Act: the build is a twelve-hour site.
-    const { world: after, events } = play(world, world.hour + RULES.siteHours, (hour) =>
-      hour === world.hour ? [{ type: 'workshop.build', personId: LECLERC, trade: 'baker' }] : [],
-    );
+    // Act
+    const { world: after, events } = tick(world, [{ type: 'workshop.build', personId: LECLERC, trade: 'baker' }]);
 
-    // Assert: paid at the opening, the workshop appears when the site falls due.
+    // Assert: the workshop is there the same hour, at the built level.
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'workshop.built', audience: { personId: LECLERC }, trade: 'baker' }),
     );
     expect(leased(after).workshops).toHaveLength(2);
     expect(leased(after).workshops[1]?.trade).toBe('baker');
     expect(leased(after).workshops[1]?.level).toBe(RULES.builtWorkshopLevel);
-    // The purse moved by the build and by the upkeep of every hour since: the
-    // site is the new workshop's, which does not exist yet, so it stops nothing,
-    // and the dynasty also earned what it sold.
     expect(treasury - after.people[LECLERC].treasuryCents).toBeGreaterThanOrEqual(RULES.buildCents);
   });
 
-  it('counts the site against the residence cap, so two builds cannot beat a cap of one', () => {
+  it('refuses a build past the residence cap', () => {
     // Arrange: a dynasty at residence 1, which holds one workshop it already has.
     const world = town(SEED);
 
@@ -95,7 +70,24 @@ describe('workshops, trades and the ladder', () => {
     // Assert
     expect(refusal(events, 'workshop_cap')).toBeDefined();
     expect(leased(after).workshops).toHaveLength(1);
-    expect(after.engagements).toEqual([]);
+  });
+
+  it('builds two workshops in one hour when the residence holds three', () => {
+    // Arrange: a knight's residence, which holds three workshops.
+    const world = town(SEED);
+    world.people[LECLERC].title = 'chevalier';
+    world.people[LECLERC].residenceLevel = 6;
+    world.people[LECLERC].treasuryCents = 1_000_000;
+
+    // Act: one build opens a place, the next fills it.
+    const { world: after, events } = tick(world, [
+      { type: 'workshop.build', personId: LECLERC, trade: 'baker' },
+      { type: 'workshop.build', personId: LECLERC, trade: 'carpenter' },
+    ]);
+
+    // Assert
+    expect(leased(after).workshops).toHaveLength(3);
+    expect(events.filter((event) => event.type === 'workshop.built')).toHaveLength(2);
   });
 
   it('refuses to destroy the last workshop', () => {
@@ -138,11 +130,9 @@ describe('workshops, trades and the ladder', () => {
     const { events } = tick(world, [{ type: 'workshop.upgrade', personId: LECLERC, workshopId }]);
     const promoted = town(SEED);
     promoted.people[LECLERC].title = 'bourgeois';
-    const run = play(promoted, promoted.hour + RULES.improvementHours[3], (hour) =>
-      hour === promoted.hour ? [{ type: 'workshop.upgrade', personId: LECLERC, workshopId }] : [],
-    );
+    const run = tick(promoted, [{ type: 'workshop.upgrade', personId: LECLERC, workshopId }]);
 
-    // Assert
+    // Assert: the level is raised at once, and the warehouse grows with it.
     expect(refusal(events, 'level_cap')).toBeDefined();
     expect(run.events).toContainEqual(
       expect.objectContaining({ type: 'workshop.upgraded', personId: LECLERC, level: 3 }),
@@ -151,92 +141,32 @@ describe('workshops, trades and the ladder', () => {
     expect(stockCapacityUnits(leased(run.world))).toBe(350);
   });
 
-  it('stops production for the hours a workshop is under improvement', () => {
-    // Arrange: a loom with wool, on a short works.
+  it('upgrades at once, and the hour produces at the new level', () => {
+    // Arrange: a loom with wool, before the action.
     const world = town(SEED);
     world.people[LECLERC].title = 'bourgeois';
     world.people[LECLERC].stock = { wool: 60 };
     const workshopId = leased(world).workshops[0]!.id;
 
-    // Act: the improvement is open at the first hour, and its site runs one hour.
+    // Act: the action and the production happen in the same hour.
     const started = tick(world, [{ type: 'workshop.upgrade', personId: LECLERC, workshopId }]);
 
-    // Assert: no cloth is woven while the site is open, and the wool is untouched.
-    expect(started.world.people[LECLERC].stock).toEqual({ wool: 60 });
+    // Assert: the higher level wove six cloth, not four.
+    expect(started.world.people[LECLERC].stock.cloth).toBe(6);
   });
 
-  it('refuses a second site while one is under way', () => {
-    // Arrange: a dynasty whose residence holds two, so only the site guard can refuse.
-    const world = town(SEED);
-    world.people[LECLERC].title = 'bourgeois';
-    world.people[LECLERC].residenceLevel = 3;
-    world.people[LECLERC].treasuryCents = 1_000_000;
-
-    // Act: a build opens a site, a destroy in the same hour is refused.
-    const { world: after, events } = tick(world, [
-      { type: 'workshop.build', personId: LECLERC, trade: 'baker' },
-      { type: 'workshop.destroy', personId: LECLERC, workshopId: leased(world).workshops[0]!.id },
-    ]);
-
-    // Assert
-    expect(refusal(events, 'site_in_progress')).toBeDefined();
-    expect(after.engagements).toHaveLength(1);
-    expect(after.people[LECLERC]?.workshops).toHaveLength(1);
-  });
-
-  it("holds a dormant dynasty's site until it comes back", () => {
-    // Arrange: a dynasty that went silent while its works were open.
-    const world = town(SEED);
-    world.people[LECLERC].title = 'bourgeois';
-
-    // Act
-    const { world: after, events } = tick(
-      world,
-      [{ type: 'workshop.upgrade', personId: LECLERC, workshopId: leased(world).workshops[0]!.id }],
-      new Set([LECLERC]),
-    );
-
-    // Assert: the action is refused, and nothing opens.
-    expect(refusal(events, 'dormant_person')).toBeDefined();
-    expect(after.engagements).toEqual([]);
-  });
-
-  it('pays no upkeep for a workshop under improvement', () => {
-    // Arrange: a dynasty with a purse and no stock to sell.
-    const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
-    world.people[LECLERC].title = 'bourgeois';
-    world.people[LECLERC].stock = { wool: 50 };
-    const workshopId = 1;
-
-    // Act: the improvement starts, then one more hour.
-    const started = tick(world, [{ type: 'workshop.upgrade', personId: LECLERC, workshopId }]);
-    const after = tick(started.world);
-
-    // Assert: no upkeep is charged for that workshop while it is a site, so the
-    // purse does not move at all.
-    expect(after.world.people[LECLERC].treasuryCents).toBe(world.people[LECLERC].treasuryCents);
-  });
-
-  it('obtains a title at the next noon or midnight', () => {
-    // Arrange: a town at the first hour, which is just after midnight.
+  it("obtains a title at once, on the action's hour", () => {
+    // Arrange
     const world = town(SEED);
     world.people[LECLERC].treasuryCents = 1_000_000;
     const price = 60_000;
 
-    // Act: bought at the first hour, obtained at the coming noon.
-    const { world: after, events } = play(world, HOURS_PER_YEAR / 2, (hour) =>
-      hour === world.hour ? [{ type: 'person.buy_title', personId: LECLERC }] : [],
-    );
+    // Act
+    const { world: after, events } = tick(world, [{ type: 'person.buy_title', personId: LECLERC }]);
 
-    // Assert
+    // Assert: the degree is there the same hour, and the price was paid.
     expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'person.title_received',
-        personId: LECLERC,
-        title: 'bourgeois',
-        dueAt: HOURS_PER_YEAR / 2,
-      }),
+      expect.objectContaining({ type: 'person.title_bought', personId: LECLERC, title: 'bourgeois' }),
     );
     expect(titleOf(after.people[LECLERC]!)).toBe('bourgeois');
     expect(world.people[LECLERC].treasuryCents - after.people[LECLERC].treasuryCents).toBeGreaterThanOrEqual(price);
@@ -250,10 +180,9 @@ describe('workshops, trades and the ladder', () => {
     // Act
     const { world: after, events } = tick(world, [{ type: 'person.buy_title', personId: LECLERC }]);
 
-    // Assert: nothing is opened and the degree does not move.
+    // Assert: nothing is bought and the degree does not move.
     expect(refusal(events, 'insufficient_funds')).toBeDefined();
     expect(titleOf(after.people[LECLERC]!)).toBe('roturier');
-    expect(after.engagements).toEqual([]);
   });
 
   it('opens the residence only as far as the title did', () => {
@@ -269,24 +198,23 @@ describe('workshops, trades and the ladder', () => {
     expect(after.people[LECLERC]?.residenceLevel).toBe(1);
   });
 
-  it('charges a title bought twice in one hour only once', () => {
-    // Arrange: the same degree ordered twice before the hour plays.
+  it('climbs two degrees in one hour, paying each one', () => {
+    // Arrange: an order placed twice before the hour plays.
     const world = town(SEED);
     world.people[LECLERC].treasuryCents = 1_000_000;
+    const spent = (next: World, before: World) =>
+      before.people[LECLERC].treasuryCents - (next.people[LECLERC]?.treasuryCents ?? 0);
 
-    // Act
+    // Act: the first degree applies before the second is read.
     const { world: after, events } = tick(world, [
       { type: 'person.buy_title', personId: LECLERC },
       { type: 'person.buy_title', personId: LECLERC },
     ]);
 
-    // Assert: one works, one charge, one refusal.
-    expect(
-      after.engagements.filter((engagement) => engagement.kind === 'site' && engagement.work === 'title'),
-    ).toHaveLength(1);
-    expect(refusal(events, 'site_in_progress')).toBeDefined();
-    expect(world.people[LECLERC].treasuryCents - after.people[LECLERC].treasuryCents).toBeGreaterThanOrEqual(60_000);
-    expect(world.people[LECLERC].treasuryCents - after.people[LECLERC].treasuryCents).toBeLessThan(60_000 + 100_000);
+    // Assert: bourgeois then notable, one price each.
+    expect(events.filter((event) => event.type === 'person.title_bought')).toHaveLength(2);
+    expect(titleOf(after.people[LECLERC]!)).toBe('notable');
+    expect(spent(after, world)).toBeGreaterThanOrEqual(60_000 + 120_000);
   });
 
   it('pays for a residence level the title opened, and the level caps prestige and workshops', () => {
@@ -297,9 +225,7 @@ describe('workshops, trades and the ladder', () => {
     expect(workshopCap(1)).toBe(1);
 
     // Act
-    const run = play(world, world.hour + RULES.improvementHours[2], (hour) =>
-      hour === world.hour ? [{ type: 'person.upgrade_residence', personId: LECLERC }] : [],
-    );
+    const run = tick(world, [{ type: 'person.upgrade_residence', personId: LECLERC }]);
 
     // Assert
     const person = run.world.people[LECLERC];

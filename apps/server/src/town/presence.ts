@@ -1,4 +1,4 @@
-import { PACING, type World } from '@brigue/core';
+import { PACING, type SeatId, type World } from '@brigue/core';
 
 import type { Player } from '../identity/players.ts';
 
@@ -19,9 +19,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * the dormancy threshold, is in that set. Past the deletion threshold it is
  * removed, and its seats become vacant.
  *
- * A person with no player row at all is dormant but not deleted: there is no
- * visit to measure the silence from, and the join path puts the first person
- * back.
+ * A human person with no player row cannot be written by the store — a person
+ * is written with its account — so such a row is a crash's residue: it is left
+ * alone here and no longer holds a place a join would take.
  */
 export function applyPresence(world: World, players: readonly Player[], now: number): Presence {
   const latestSeen = new Map<number, number>();
@@ -85,13 +85,8 @@ export function removePerson(world: World, personId: number): void {
     }
   }
 
-  for (const map of [world.campaigns, world.closedCampaigns]) {
-    for (const byPerson of Object.values(map)) {
-      delete byPerson?.[personId];
-    }
+  // A person that is gone stands for nothing: its candidacies go with it.
+  for (const [seatId, personIds] of Object.entries(world.campaigns)) {
+    world.campaigns[seatId as SeatId] = (personIds ?? []).filter((candidate) => candidate !== personId);
   }
-
-  // A person that is gone owes nothing: its queued engagements must not resolve
-  // into an event naming a person the town no longer holds.
-  world.engagements = world.engagements.filter((engagement) => engagement.personId !== personId);
 }

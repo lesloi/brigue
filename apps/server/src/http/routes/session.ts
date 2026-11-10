@@ -4,7 +4,6 @@ import {
   createWorld,
   humanPersonOf,
   nameKey,
-  nextPersonId,
   RULES,
   TRADES,
   withFirstPerson,
@@ -12,7 +11,7 @@ import {
   type Trade,
 } from '@brigue/core';
 
-import { closingOf, PersonAlreadyBoundError, type Player } from '../../identity/players.ts';
+import { closingOf, NameAlreadyBoundError, PersonAlreadyBoundError, type Player } from '../../identity/players.ts';
 import { authenticate, issueToken } from '../../identity/session.ts';
 import { drawTownName } from '../../town/names.ts';
 import { NameInUseError, sessionWorld, UnknownWorldError, type TownInfo } from '../../town/worlds.ts';
@@ -171,14 +170,25 @@ async function joinTown(
     const joined = await context.deps.worlds.withJoinLock(async () => {
       const candidate = await claim();
       const elsewhere = await humanNamesElsewhere(context);
-      const placed = await takePlace(context, trade, candidate, elsewhere, at);
+      // The account is issued first: a person is written with the account that
+      // holds it, so a person without one is an AI and never a place waiting.
       const { token, player } = await issueToken(context.deps.store, candidate.familyName, at);
-      const bound = await context.deps.store.rebind(player.tokenHash, placed.town.id, placed.personId, at);
-      if (bound === null) {
-        throw new PersonAlreadyBoundError(placed.personId);
-      }
 
-      return { townId: placed.town.id, personId: placed.personId, token };
+      try {
+        const placed = await takePlace(context, trade, candidate, elsewhere, at, player.playerId);
+        // The place is written already bound; the account says so on its side,
+        // and a place another account holds is refused before the token is kept.
+        const bound = await context.deps.store.rebind(player.tokenHash, placed.town.id, placed.personId, at);
+        if (bound === null) {
+          throw new PersonAlreadyBoundError(placed.personId);
+        }
+
+        return { townId: placed.town.id, personId: placed.personId, token };
+      } catch (error) {
+        // The place never landed: the account nobody received must not stay.
+        await context.deps.store.eraseAccount(player.tokenHash);
+        throw error;
+      }
     });
 
     context.deps.logger.info('session.joined', { ip, townId: joined.townId, personId: joined.personId });
@@ -244,7 +254,7 @@ async function choosePerson(
 
       const candidate = await claim();
       const elsewhere = await humanNamesElsewhere(context, current.name);
-      const placed = await takePlace(context, trade, candidate, elsewhere, at);
+      const placed = await takePlace(context, trade, candidate, elsewhere, at, current.playerId);
       const rebound = await context.deps.store.rebind(current.tokenHash, placed.town.id, placed.personId, at);
       if (rebound === null) {
         return { kind: 'refused' as const };
@@ -306,7 +316,7 @@ async function refusedJoin(
     sendJson(response, 409, { error: 'name_required' });
     return true;
   }
-  if (error instanceof NameTakenError || error instanceof NameInUseError) {
+  if (error instanceof NameTakenError || error instanceof NameInUseError || error instanceof NameAlreadyBoundError) {
     // The town's own rule, or the index that catches a name a second server
     // slipped in: the screen answers both the same way.
     context.deps.logger.warn('session.name_taken', { ip });
@@ -326,11 +336,10 @@ class NameTakenError extends Error {
 }
 
 /**
- * The place a join takes: a free person in a town, else a town of its own. The
- * caller holds the join lock, so two joins never take the same place, and the
- * place is written here — before the token, so a failure after it leaves a
- * person the next join takes, under that join's own name. The person it returns
- * is the one written.
+ * The place a join takes: a person in a town below its cap, else a town of its
+ * own. The caller holds the join lock and has already issued the account, so the
+ * person is written with it and a place that never lands takes its account with
+ * it. The person it returns is the one written.
  */
 async function takePlace(
   context: AppContext,
@@ -338,6 +347,7 @@ async function takePlace(
   candidate: Candidate,
   elsewhere: ReadonlySet<string>,
   at: Date,
+  playerId: number,
 ): Promise<{ town: TownInfo; personId: number }> {
   if (candidate.familyName === '') {
     throw new NameRefusedError('');
@@ -347,7 +357,7 @@ async function takePlace(
     let placed: number | null;
 
     try {
-      placed = await takePlaceIn(context, town, trade, candidate, elsewhere);
+      placed = await takePlaceIn(context, town, trade, candidate, elsewhere, playerId);
     } catch (error) {
       // The town went between the list and its lock, or the scheduler deleted
       // it: the next join will not see it either.
@@ -367,13 +377,13 @@ async function takePlace(
   const name = drawTownName();
   const world = createWorld();
   const next = withFirstPerson(world, trade, candidate);
-  const town = await context.deps.worlds.createTown(name, next, at);
-  // `createTown` writes the rows back into the world: the id the database gave
-  // the first person is the one the account will bind to.
   const first = humanPersonOf(next);
   if (first === undefined) {
     throw new Error('the first person was not added to the world');
   }
+  // The first person is written already bound: the account holds it from the
+  // first row, so no read can mistake it for an AI.
+  const town = await context.deps.worlds.createTown(name, next, at, new Map([[first.id, playerId]]));
 
   return { town, personId: first.id };
 }
@@ -393,6 +403,7 @@ async function takePlaceIn(
   trade: Trade,
   candidate: Candidate,
   elsewhere: ReadonlySet<string>,
+  playerId: number,
 ): Promise<number | null> {
   if (elsewhere.has(nameKey(candidate.familyName))) {
     throw new NameTakenError();
@@ -404,34 +415,23 @@ async function takePlaceIn(
     if (humanPersonOf(world) === undefined) {
       return null;
     }
-
-    const players = await context.deps.store.listByTown(town.id);
-    const taken = new Set(players.flatMap((player) => (player.personId === null ? [] : [player.personId])));
-    const free = Object.values(world.people)
-      .filter((person) => !person.ia && !taken.has(person.id))
-      .sort((left, right) => left.id - right.id)[0];
-
-    if (free !== undefined) {
-      // The place waits with the name its first player would have had: the one
-      // this player kept takes over, unpaid, as at creation.
-      const next = structuredClone(world);
-      next.people[free.id]!.name = candidate.personName;
-      await session.save(next, []);
-      return free.id;
-    }
     if (Object.keys(world.people).length >= RULES.dynastyCap) {
       return null;
     }
 
     const before = new Set(Object.keys(world.people).map(Number));
     const next = withNewcomer(world, trade, { personName: candidate.personName });
-    await session.save(next, []);
-
-    // The save names the new person; the id the world carries after it is the
-    // one the account binds to.
     const fresh = Object.values(next.people).find((person) => !person.ia && !before.has(person.id));
 
-    return fresh?.id ?? nextPersonId(world);
+    if (fresh === undefined) {
+      throw new Error('the newcomer was not added to the world');
+    }
+
+    // The newcomer is written with its account in the same save: a person
+    // without one would be an AI the moment the row lands.
+    await session.save(next, [], new Map([[fresh.id, playerId]]));
+
+    return fresh.id;
   }, town.id);
 }
 

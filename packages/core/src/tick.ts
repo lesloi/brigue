@@ -5,7 +5,6 @@ import {
   outputOf,
   HOURS_PER_YEAR,
   nextTitle,
-  PRICE_HISTORY_BELLS,
   residenceOf,
   RESIDENCE_LADDER,
   RULES,
@@ -21,12 +20,10 @@ import {
   sortWorkshops,
   workshopCap,
   workshopLevelCap,
-  type Engagement,
   type GoodId,
   type Person,
   type PersonId,
   type SeatId,
-  type SiteWork,
   type Trade,
   type World,
 } from './world.ts';
@@ -144,12 +141,9 @@ function step(
     applyAction(next, candidate, events, flow, dormant);
   }
 
-  // What fell due is paid before the hour's trade, so an engagement resolved in
-  // the same hour as its last action already counts for that hour. Its lines
-  // belong to the world, not to the week's trades: they are gathered apart and
-  // placed after the actions that opened them.
+  // The town's own lines are gathered apart from the actions', and placed after
+  // them, so a reader's line always comes first.
   const town: EventDraft[] = [];
-  resolveEngagements(next, town, dormant);
 
   // The AI people decide in the same breath as the players, at the same price:
   // both buy before the hour moves the market. Their lines go with the town's.
@@ -179,13 +173,6 @@ function step(
 
   if (bell) {
     driftPrices(next);
-  }
-
-  // Noon closes the candidacies: what is in the open map counts tonight, what
-  // is lodged after the bell waits for the next scrutiny.
-  if (next.hour % HOURS_PER_YEAR === HOURS_PER_YEAR / 2) {
-    next.closedCampaigns = next.campaigns;
-    next.campaigns = {};
   }
 
   // The scrutiny closes the year: every seat is up, once a day.
@@ -267,28 +254,6 @@ function applyAction(
     return;
   }
 
-  // A degree or a residence level is bought once: two purchases for the same
-  // next object would charge twice and deliver once, since the works of the
-  // first already opens the second.
-  if (action.type === 'person.buy_title' && sitesOf(world, person.id, 'title') > 0) {
-    refuse(events, action, person.id, 'site_in_progress', true);
-    return;
-  }
-  if (action.type === 'person.upgrade_residence' && sitesOf(world, person.id, 'residence') > 0) {
-    refuse(events, action, person.id, 'site_in_progress', true);
-    return;
-  }
-
-  // A site already under way cannot be doubled: the person has one builder, and
-  // two sites of one kind would race for the same workshop or the same degree.
-  const building = world.engagements.some(
-    (engagement) => engagement.kind === 'site' && engagement.personId === person.id,
-  );
-  if (building && action.type !== 'market.buy' && action.type !== 'market.sell' && action.type !== 'council.campaign') {
-    refuse(events, action, person.id, 'site_in_progress', true);
-    return;
-  }
-
   switch (action.type) {
     case 'market.buy': {
       if (!isKnownGood(action.good)) {
@@ -358,7 +323,7 @@ function applyAction(
       }
       // One candidacy at a time: another open campaign, on this seat or another,
       // is refused before it can spend any favour.
-      if (Object.values(world.campaigns).some((seat) => seat[person.id] !== undefined)) {
+      if (Object.values(world.campaigns).some((seat) => seat?.includes(person.id) === true)) {
         refuse(events, action, person.id, 'already_candidate', true);
         return;
       }
@@ -369,13 +334,16 @@ function applyAction(
 
       person.favour -= RULES.campaignFavourCost;
 
-      // A candidacy has no run behind it: it is lodged, and the noon bell
-      // decides which scrutiny it counts for. The event says which, so the
-      // screen can tell the player what they bought.
+      // A candidacy has no run behind it: it is lodged, and it counts at the
+      // coming scrutiny. The event says which, so the screen can tell the
+      // player what they bought.
       const countsAt = countsAtFor(world);
+      const seat = (world.campaigns[action.seatId] ??= []);
 
-      const seat = (world.campaigns[action.seatId] ??= {});
-      seat[person.id] = (seat[person.id] ?? 0) + RULES.campaignVoteBonus;
+      if (!seat.includes(person.id)) {
+        seat.push(person.id);
+        seat.sort((left, right) => left - right);
+      }
 
       events.push({
         type: 'council.campaigned',
@@ -393,9 +361,7 @@ function applyAction(
         refuse(events, action, person.id, 'unknown_trade', true);
         return;
       }
-      // The residence counts the sites as well as the buildings: two builds in
-      // two hours must not slip past a cap of one.
-      if (person.workshops.length + sitesOf(world, person.id, 'build') >= workshopCap(residenceOf(person))) {
+      if (person.workshops.length >= workshopCap(residenceOf(person))) {
         refuse(events, action, person.id, 'workshop_cap', true);
         return;
       }
@@ -405,7 +371,20 @@ function applyAction(
       }
 
       person.treasuryCents -= RULES.buildCents;
-      openSite(world, person.id, { work: 'build', trade: action.trade }, RULES.siteHours);
+      const workshop = {
+        id: highestWorkshopSeq(world) + 1,
+        trade: action.trade,
+        level: RULES.builtWorkshopLevel,
+      };
+      person.workshops.push(workshop);
+      sortWorkshops(person);
+      events.push({
+        type: 'workshop.built',
+        audience: { personId: person.id },
+        personId: person.id,
+        workshopId: workshop.id,
+        trade: workshop.trade,
+      });
       return;
     }
 
@@ -444,13 +423,20 @@ function applyAction(
       }
       const target = workshop.level + 1;
       const degree = titleOf(person);
-      if (target > workshopLevelCap(degree) || target > RULES.improvementHours.length - 1) {
+      if (target > workshopLevelCap(degree)) {
         refuse(events, action, person.id, 'level_cap', true);
         return;
       }
 
-      // An improvement costs hours, never money: the level is the work itself.
-      openSite(world, person.id, { work: 'upgrade', workshopId: workshop.id }, improvementHours(target));
+      // An improvement costs hours, never money, and the hour is the action's.
+      workshop.level = target;
+      events.push({
+        type: 'workshop.upgraded',
+        audience: { personId: person.id },
+        personId: person.id,
+        workshopId: workshop.id,
+        level: workshop.level,
+      });
       return;
     }
 
@@ -467,10 +453,8 @@ function applyAction(
       }
 
       person.treasuryCents -= price;
-      // A degree is obtained at the next noon or midnight, whatever the hour of
-      // the purchase: the half-day is the calendar's, not a second clock.
-      const dueAt = nextBellAfter(world.hour, RULES.titleHours);
-      openSite(world, person.id, { work: 'title' }, dueAt - world.hour);
+      person.title = next;
+      events.push({ type: 'person.title_bought', audience: { personId: person.id }, personId: person.id, title: next });
       return;
     }
 
@@ -494,7 +478,13 @@ function applyAction(
       }
 
       person.treasuryCents -= price;
-      openSite(world, person.id, { work: 'residence' }, improvementHours(target));
+      person.residenceLevel = target;
+      events.push({
+        type: 'person.residence_bought',
+        audience: { personId: person.id },
+        personId: person.id,
+        level: target,
+      });
       return;
     }
   }
@@ -507,53 +497,6 @@ function findWorkshop(person: Person, workshopId: unknown) {
   }
 
   return person.workshops.find((candidate) => candidate.id === workshopId);
-}
-
-/** The workshops a person has open: not under an improvement, which stops it. */
-function openWorkshops(world: World, person: Person) {
-  const closed = new Set(
-    world.engagements.flatMap((engagement) =>
-      engagement.kind === 'site' && engagement.personId === person.id && engagement.work === 'upgrade'
-        ? [engagement.workshopId]
-        : [],
-    ),
-  );
-
-  return person.workshops.filter((workshop) => !closed.has(workshop.id));
-}
-
-/** The sites a person has under way of one kind. */
-function sitesOf(world: World, personId: PersonId, work: SiteWork['work']): number {
-  return world.engagements.filter(
-    (engagement) => engagement.kind === 'site' && engagement.personId === personId && engagement.work === work,
-  ).length;
-}
-
-/** The next provisional id, above every engagement the town already holds. */
-function nextEngagementId(world: World): number {
-  return world.engagements.reduce((highest, engagement) => Math.max(highest, engagement.id), 0) + 1;
-}
-
-function openSite(world: World, personId: PersonId, work: SiteWork, hours: number): void {
-  world.engagements.push({
-    id: nextEngagementId(world),
-    kind: 'site' as const,
-    personId,
-    dueAt: world.hour + hours,
-    ...work,
-  });
-}
-
-/** The improvement takes at least the title's half-day, and lands on a bell. */
-function improvementHours(level: number): number {
-  return RULES.improvementHours[Math.min(level, RULES.improvementHours.length - 1)] ?? RULES.siteHours;
-}
-
-function nextBellAfter(hour: number, minHours: number): number {
-  const target = hour + minHours;
-  const half = HOURS_PER_YEAR / 2;
-
-  return Math.ceil(target / half) * half;
 }
 
 /**
@@ -631,9 +574,9 @@ function aiPeopleBuy(world: World, flow: Record<GoodId, number>, dormant: Readon
       continue;
     }
 
-    // A workshop under improvement buys nothing: it will not eat until its
-    // site is closed, and an AI that stocked for it would overflow the loft.
-    for (const workshop of openWorkshops(world, person)) {
+    // A person that is dormant runs nothing, and each workshop buys for its own
+    // level: a shop stocked beyond its need would overflow the loft.
+    for (const workshop of person.workshops) {
       const chain = TRADE_CHAINS[workshop.trade];
       const wanted = workshop.level * RULES.outputPerLevel;
       const shortfall = wanted * RULES.inputPerOutput[workshop.trade] - (person.stock[chain.input] ?? 0);
@@ -659,9 +602,6 @@ function aiPeopleBuy(world: World, flow: Record<GoodId, number>, dormant: Readon
 }
 
 function driftPrices(world: World): void {
-  // A world stored before the history existed starts its record at this bell.
-  world.marketHistory ??= {};
-
   // The constants are per hour; a bell prices a whole half-day of trade, so the
   // scale it is measured against is the half-day's.
   const hours = HOURS_PER_YEAR / 2;
@@ -681,14 +621,6 @@ function driftPrices(world: World): void {
     });
 
     world.market[good] = after;
-
-    // One point per bell even when the price holds: the chart must not skip a
-    // quiet bell, or two changes would look adjacent.
-    const history = (world.marketHistory[good] ??= []);
-    history.push(after);
-    if (history.length > PRICE_HISTORY_BELLS) {
-      history.splice(0, history.length - PRICE_HISTORY_BELLS);
-    }
   }
 
   // The bell closes the period: the next one starts from zero.
@@ -705,9 +637,7 @@ function runWorkshops(world: World, events: EventDraft[], dormant: ReadonlySet<P
       continue;
     }
 
-    // A workshop under improvement is a building site: it makes nothing, and
-    // the upkeep it does not pay is the cost of the hours it takes.
-    for (const workshop of openWorkshops(world, person)) {
+    for (const workshop of person.workshops) {
       const wanted = workshop.level * RULES.outputPerLevel;
       const chain = TRADE_CHAINS[workshop.trade];
       const perUnit = RULES.inputPerOutput[workshop.trade];
@@ -762,10 +692,9 @@ function aiPeopleSell(world: World, flow: Record<GoodId, number>, dormant: Reado
 }
 
 /**
- * The upkeep of a workshop is one level's share, paid for every workshop that is
- * not under construction or improvement: a site stops the building, and it
- * stops what the building costs to run. Come after the AI's sale, so a person
- * pays from the price it just took.
+ * The upkeep of a workshop is one level's share, paid for every workshop the
+ * person holds. Comes after the AI's sale, so a person pays from the price it
+ * just took.
  */
 function payUpkeep(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
   const people = Object.values(world.people).sort((left, right) => left.id - right.id);
@@ -775,16 +704,7 @@ function payUpkeep(world: World, events: EventDraft[], dormant: ReadonlySet<Pers
       continue;
     }
 
-    const building = new Set(
-      world.engagements.flatMap((engagement) =>
-        engagement.kind === 'site' && engagement.personId === person.id && engagement.work === 'upgrade'
-          ? [engagement.workshopId]
-          : [],
-      ),
-    );
-    const levels = person.workshops
-      .filter((workshop) => !building.has(workshop.id))
-      .reduce((total, workshop) => total + workshop.level, 0);
+    const levels = person.workshops.reduce((total, workshop) => total + workshop.level, 0);
 
     upkeepIsPaid(person.id, person, levels * RULES.upkeepPerWorkshopLevelCents, events);
   }
@@ -807,127 +727,6 @@ function upkeepIsPaid(personId: PersonId, person: Person, upkeep: number, events
     person.treasuryCents -= repaid;
     person.debtCents -= repaid;
     events.push({ type: 'person.debt_repaid', audience: { personId }, personId, amountCents: repaid });
-  }
-}
-
-/**
- * Pays every engagement whose due hour has arrived. A hour the catch-up never
- * simulated does not drop it: the town's hour counter is the only clock, so an
- * engagement behind it is resolved by the next tick that runs, and the event
- * carries both the hour it was due and the hour it was paid.
- */
-function resolveEngagements(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>): void {
-  const due = world.engagements
-    .filter((engagement) => engagement.dueAt <= world.hour)
-    .sort((left, right) => left.dueAt - right.dueAt || left.id - right.id);
-
-  if (due.length === 0) {
-    return;
-  }
-
-  // A dormant person plays nothing, its sites included: what fell due for it
-  // stays in the world and resolves at the visit that wakes it. The cost was
-  // paid, and the journal must not claim a work done that never was.
-  const waiting = due.filter(
-    (engagement) =>
-      engagement.kind === 'site' &&
-      (world.people[engagement.personId] === undefined || dormant.has(engagement.personId)),
-  );
-  world.engagements = world.engagements.filter(
-    (engagement) => engagement.dueAt > world.hour || waiting.includes(engagement),
-  );
-
-  for (const engagement of due) {
-    if (waiting.includes(engagement)) {
-      continue;
-    }
-
-    if (engagement.kind === 'site') {
-      completeSite(world, engagement, events);
-    }
-  }
-}
-
-/**
- * What a site was opened for. The person or the workshop can be gone — destroyed,
- * converted, the person deleted — so every step is a check, never a throw: the
- * cost was paid when the site was opened, and a site that outlived its object
- * has nothing left to finish.
- */
-function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>, events: EventDraft[]): void {
-  const person = world.people[site.personId];
-  if (person === undefined) {
-    return;
-  }
-
-  switch (site.work) {
-    case 'build': {
-      if (person.workshops.length >= workshopCap(residenceOf(person))) {
-        events.push({
-          type: 'workshop.build_lost',
-          audience: { personId: person.id },
-          personId: person.id,
-          trade: site.trade,
-          paidCents: RULES.buildCents,
-        });
-        return;
-      }
-      const workshop = {
-        id: highestWorkshopSeq(world) + 1,
-        trade: site.trade,
-        level: RULES.builtWorkshopLevel,
-      };
-      person.workshops.push(workshop);
-      sortWorkshops(person);
-      events.push({
-        type: 'workshop.built',
-        audience: { personId: person.id },
-        personId: person.id,
-        workshopId: workshop.id,
-        trade: site.trade,
-      });
-      return;
-    }
-    case 'upgrade': {
-      const workshop = person.workshops.find((candidate) => candidate.id === site.workshopId);
-      if (workshop === undefined) {
-        return;
-      }
-      workshop.level += 1;
-      events.push({
-        type: 'workshop.upgraded',
-        audience: { personId: person.id },
-        personId: person.id,
-        workshopId: workshop.id,
-        level: workshop.level,
-      });
-      return;
-    }
-    case 'residence': {
-      // The level is read on the Maison screen; the town has no line for it.
-      person.residenceLevel = Math.min(residenceOf(person) + 1, TITLE_LADDER[titleOf(person)].residenceLevel);
-      return;
-    }
-    case 'title': {
-      const next = nextTitle(titleOf(person));
-      if (next === undefined) {
-        return;
-      }
-      person.title = next;
-      // The residence never exceeds what the new degree opens: buying a degree
-      // below a residence already paid for leaves the residence where it is.
-      if (residenceOf(person) > TITLE_LADDER[next].residenceLevel) {
-        person.residenceLevel = TITLE_LADDER[next].residenceLevel;
-      }
-      events.push({
-        type: 'person.title_received',
-        audience: { personId: person.id },
-        personId: person.id,
-        title: next,
-        dueAt: site.dueAt,
-        resolvedAt: world.hour,
-      });
-    }
   }
 }
 
@@ -956,12 +755,9 @@ function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<P
   events.push(...elections);
 }
 
-/** The scrutiny a candidacy lodged now counts for: the coming one before noon, the next after. */
+/** The scrutiny a candidacy lodged now counts for: the coming one. */
 function countsAtFor(world: World): number {
-  const localHour = ((world.hour - 1) % HOURS_PER_YEAR) + 1;
-  const scrutiny = Math.ceil(world.hour / HOURS_PER_YEAR) * HOURS_PER_YEAR;
-
-  return localHour <= HOURS_PER_YEAR / 2 ? scrutiny : scrutiny + HOURS_PER_YEAR;
+  return Math.ceil(world.hour / HOURS_PER_YEAR) * HOURS_PER_YEAR;
 }
 
 /**
@@ -996,8 +792,12 @@ function aiPeopleCampaign(
     const seatId = vacant[Math.floor(random() * vacant.length)] as SeatId;
 
     person.favour -= RULES.campaignFavourCost;
-    const seat = (world.campaigns[seatId] ??= {});
-    seat[person.id] = (seat[person.id] ?? 0) + RULES.campaignVoteBonus;
+    const seat = (world.campaigns[seatId] ??= []);
+
+    if (!seat.includes(person.id)) {
+      seat.push(person.id);
+      seat.sort((left, right) => left - right);
+    }
 
     events.push({
       type: 'council.campaigned',
@@ -1018,23 +818,20 @@ function contestSeat(
   dormant: ReadonlySet<PersonId>,
   random: () => number,
 ): void {
-  const campaigns = world.closedCampaigns[seatId] ?? {};
+  const candidates = world.campaigns[seatId] ?? [];
   const incumbent = seatHolder(world, seatId);
   const incumbentPersonId = incumbent?.id;
 
-  // A candidate is a person that stood (an open campaign, now closed at noon)
-  // and is still able to run, plus the active incumbent. A dormant person
-  // neither stands nor is defended: with nobody to take its seat, the seat
-  // falls vacant.
+  // A candidate is a person that stood and is still able to run, plus the
+  // active incumbent. A dormant person neither stands nor is defended: with
+  // nobody to take its seat, the seat falls vacant.
   const candidateIds = [
     ...new Set([
-      ...Object.keys(campaigns)
-        .map(Number)
-        .filter((personId) => {
-          const person = world.people[personId];
+      ...candidates.filter((personId) => {
+        const person = world.people[personId];
 
-          return person !== undefined && !dormant.has(personId) && person.alive;
-        }),
+        return person !== undefined && !dormant.has(personId) && person.alive;
+      }),
       ...(incumbentPersonId !== undefined && !dormant.has(incumbentPersonId) && incumbent?.alive === true
         ? [incumbentPersonId]
         : []),
@@ -1046,7 +843,7 @@ function contestSeat(
   if (candidateIds.length === 0) {
     const wasHeld = world.seats[seatId].personId !== null;
     world.seats[seatId] = { personId: null };
-    delete world.closedCampaigns[seatId];
+    delete world.campaigns[seatId];
 
     if (wasHeld) {
       events.push({ type: 'council.election_held', audience: 'town', seatId, winnerPersonId: null, votes: {} });
@@ -1054,9 +851,11 @@ function contestSeat(
     return;
   }
 
+  // The vote is the town's, not the candidate's purse: a campaign buys the
+  // candidacy, and the scrutiny rolls once for every candidate.
   const votes: Record<PersonId, number> = {};
   for (const personId of candidateIds) {
-    votes[personId] = 1 + Math.floor(random() * 5) + (campaigns[personId] ?? 0);
+    votes[personId] = 1 + Math.floor(random() * 5);
   }
 
   // Highest vote wins; a tie goes to the person that comes first by id, so the
@@ -1091,7 +890,7 @@ function contestSeat(
       electedPersonIds.add(winner.id);
     }
   }
-  delete world.closedCampaigns[seatId];
+  delete world.campaigns[seatId];
 
   if (changed) {
     events.push({ type: 'council.election_held', audience: 'town', seatId, winnerPersonId, votes });

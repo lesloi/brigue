@@ -1,4 +1,4 @@
-import type { EngagementKind, GoodId, PersonId, SeatId, TitleId, Trade } from './world.ts';
+import type { GoodId, PersonId, SeatId, TitleId, Trade } from './world.ts';
 
 /**
  * Immutable domain vocabulary: what the player has to do, and what the world
@@ -43,7 +43,6 @@ export type RefusalReason =
   | 'title_open'
   | 'name_taken'
   | 'invalid_name'
-  | 'site_in_progress'
   | 'already_candidate'
   | 'no_next_title'
   | 'no_next_residence';
@@ -77,25 +76,12 @@ type EventBody =
   | { type: 'workshop.built'; personId: PersonId; workshopId: number; trade: Trade }
   | { type: 'workshop.destroyed'; personId: PersonId; workshopId: number; good: GoodId }
   | { type: 'workshop.upgraded'; personId: PersonId; workshopId: number; level: number }
-  | { type: 'workshop.build_lost'; personId: PersonId; trade: Trade; paidCents: number }
   | { type: 'person.title_bought'; personId: PersonId; title: TitleId }
-  | { type: 'person.title_received'; personId: PersonId; title: TitleId; dueAt: number; resolvedAt: number }
-  | { type: 'person.residence_received'; personId: PersonId; level: number; dueAt: number; resolvedAt: number }
+  | { type: 'person.residence_bought'; personId: PersonId; level: number }
   | { type: 'person.upkeep_paid'; personId: PersonId; amountCents: number }
   | { type: 'person.penniless'; personId: PersonId; shortfallCents: number }
   | { type: 'person.debt_repaid'; personId: PersonId; amountCents: number }
   | { type: 'council.campaigned'; personId: PersonId; seatId: SeatId; favourSpent: number; countsAt: number }
-  | { type: 'engagement.opened'; engagementId: number; kind: EngagementKind; personId: PersonId; dueAt: number }
-  | {
-      type: 'engagement.resolved';
-      engagementId: number;
-      kind: EngagementKind;
-      personId: PersonId;
-      seatId?: SeatId;
-      dueAt: number;
-      /** The hour the town actually reached: equal to `dueAt` unless late. */
-      resolvedAt: number;
-    }
   | { type: 'council.scrutiny_held'; year: number; seats: SeatId[] }
   | {
       type: 'council.election_held';
@@ -113,6 +99,50 @@ type EventBody =
       winnerPersonId: PersonId;
       votes: Record<PersonId, number>;
     };
+
+/**
+ * Every event type, in a fixed order. The code of a type is its one-based place
+ * in this list, and it is what the journal rows carry: the list may grow, but a
+ * place already written is never renumbered.
+ */
+export const EVENT_TYPES = [
+  'action.refused',
+  'market.bought',
+  'market.price_changed',
+  'market.sold',
+  'workshop.produced',
+  'workshop.idle',
+  'workshop.built',
+  'workshop.destroyed',
+  'workshop.upgraded',
+  'person.title_bought',
+  'person.residence_bought',
+  'person.upkeep_paid',
+  'person.penniless',
+  'person.debt_repaid',
+  'council.campaigned',
+  'council.scrutiny_held',
+  'council.election_held',
+  'council.election_result',
+] as const;
+
+export type EventType = (typeof EVENT_TYPES)[number];
+
+export function eventTypeCode(type: EventType): number {
+  const code = EVENT_TYPES.indexOf(type) + 1;
+
+  // A type the list does not know cannot be written: a zero row would be
+  // unreadable, and the journal reads only codes the list holds.
+  if (code === 0) {
+    throw new Error(`the event type "${type}" is not in EVENT_TYPES`);
+  }
+
+  return code;
+}
+
+export function eventTypeOfCode(code: number): EventType | undefined {
+  return EVENT_TYPES[code - 1];
+}
 
 /** An event as a step builds it: the hour is stamped by `advance`. */
 export type EventDraft = EventBody & { audience: Audience };

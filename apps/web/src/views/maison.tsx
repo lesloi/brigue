@@ -63,10 +63,6 @@ export function Maison({
   const ladder = person.ladder;
   const [name, setName] = useState(person.name);
   const [choosing, setChoosing] = useState(false);
-  // A workshop's works lock the builders; the remise of a title does not, it is
-  // the town's own door. A second degree waits only on the first being
-  // delivered, which is what `titleQueued` and the site of a title say.
-  const building = person.sites.some((site) => site.work !== 'title');
   // The queued purchases wait for their order to play: the next degree is
   // already bought as far as this hour is concerned.
   const titleQueued = pending.some((action) => action.type === 'person.buy_title');
@@ -149,12 +145,7 @@ export function Maison({
               <div class="wait">
                 <div class="nm">
                   <b>Titre de {titleName(ladder.nextTitle.title)}</b>
-                  <p>
-                    {titleHint(
-                      titleQueued || building,
-                      person.sites.some((site) => site.work === 'title'),
-                    )}
-                  </p>
+                  <p>{titleHint(titleQueued)}</p>
                 </div>
                 <button
                   class="btn"
@@ -192,7 +183,6 @@ export function Maison({
                   class="btn"
                   type="button"
                   disabled={
-                    building ||
                     residenceQueued ||
                     !ladder.nextResidence.opened ||
                     busy === 'residence' ||
@@ -222,7 +212,6 @@ export function Maison({
                 key={workshop.id}
                 workshop={workshop}
                 busy={busy}
-                building={building}
                 last={person.workshops.length <= 1}
                 onUpgrade={onUpgrade}
                 onDestroy={onDestroy}
@@ -236,7 +225,7 @@ export function Maison({
                   class="trade-choice"
                   type="button"
                   key={trade}
-                  disabled={building || busy === 'build'}
+                  disabled={busy === 'build'}
                   onClick={() => {
                     setChoosing(false);
                     onBuild(trade);
@@ -251,11 +240,11 @@ export function Maison({
             <button
               class="btn outline wide"
               type="button"
-              disabled={building || busy === 'build'}
+              disabled={busy === 'build'}
               onClick={() => setChoosing(true)}
             >
               <span class="btn-label">
-                Bâtir un atelier <Price cents={person.build.priceCents} /> · {formatCount(person.build.hours)} h
+                Bâtir un atelier <Price cents={person.build.priceCents} />
               </span>
             </button>
           ) : null}
@@ -298,20 +287,17 @@ export function Maison({
     </main>
   );
 }
-function titleHint(queued: boolean, delivering: boolean): string {
+function titleHint(queued: boolean): string {
   if (queued) {
     return 'Commande en attente pour cette heure.';
-  }
-  if (delivering) {
-    return 'Le titre en cours est remis au prochain midi ou minuit.';
   }
 
   return 'Obtenu au prochain midi ou minuit.';
 }
 
 /**
- * What holds the next residence level, or how long it takes: a door the title
- * has not opened yet, or the hours the upgrade costs.
+ * What holds the next residence level: a door the title has not opened yet, or
+ * nothing, since the level is bought at once.
  */
 function residenceHint(ladder: WorldResponse['world']['person']['ladder'], nameOf: (title: TitleId) => string): string {
   const next = ladder.nextResidence;
@@ -323,7 +309,7 @@ function residenceHint(ladder: WorldResponse['world']['person']['ladder'], nameO
     return `Prérequis : titre de ${nameOf(ladder.nextTitle?.title ?? ladder.title)}`;
   }
 
-  return `${formatCount(next.hours)} h de travaux.`;
+  return 'Les travaux sont faits à l’heure même.';
 }
 
 /** A price with the coin that says it is one, shared by every button that costs. */
@@ -339,14 +325,12 @@ function Price({ cents }: { cents: number }) {
 function WorkshopLine({
   workshop,
   busy,
-  building,
   last,
   onUpgrade,
   onDestroy,
 }: {
   workshop: ProjectedWorkshop;
   busy: string | null;
-  building: boolean;
   last: boolean;
   onUpgrade(workshopId: number): void;
   onDestroy(workshopId: number): void;
@@ -369,16 +353,16 @@ function WorkshopLine({
         <button
           class="btn"
           type="button"
-          disabled={building || !workshop.canUpgrade || busy === `upgrade-${workshop.id}`}
+          disabled={!workshop.canUpgrade || busy === `upgrade-${workshop.id}`}
           title={workshop.canUpgrade ? undefined : 'Le titre ne permet pas ce niveau'}
           onClick={() => onUpgrade(workshop.id)}
         >
-          {workshop.upgradeHours === null ? 'Agrandir' : `Agrandir (${formatCount(workshop.upgradeHours)} h)`}
+          Agrandir
         </button>
         <button
           class="btn outline"
           type="button"
-          disabled={building || last || busy === `destroy-${workshop.id}`}
+          disabled={last || busy === `destroy-${workshop.id}`}
           onClick={() => onDestroy(workshop.id)}
         >
           Rétrograder

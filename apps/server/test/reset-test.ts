@@ -45,15 +45,13 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const playerId = Number(playerRows[0]?.player_id);
     await pool.query(
-      `INSERT INTO people (town_id, player_id, ia, person_name, treasury_cents, debt_cents, favour, prestige, alive)
-       VALUES ($1, $2, false, 'Colin Leclerc', 45000, 0, 50, 0, true)`,
+      `INSERT INTO people (town_id, player_id, person_name, treasury_cents, debt_cents, favour, prestige, alive)
+       VALUES ($1, $2, 'Colin Leclerc', 45000, 0, 50, 0, true)`,
       [townId, playerId],
     );
-    await pool.query(
-      `INSERT INTO kings (player_id, dynasty_name, crowned_at, elapsed_hours)
-       VALUES ($1, 'Leclerc', $2, 12)`,
-      [playerId, CROWNED_AT],
-    );
+    await pool.query(`INSERT INTO kings (dynasty_name, crowned_at, elapsed_hours) VALUES ('Leclerc', $1, 12)`, [
+      CROWNED_AT,
+    ]);
     await pool.query(
       `INSERT INTO settings (key, value)
        VALUES ('format_version', '4'), ('ruleset_version', '6'), ('world_started_at', now()::text)`,
@@ -84,7 +82,9 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
       `SELECT token_hash, player_id, name, created_at, last_seen_at, delete_after
        FROM players`,
     );
-    const kings = await pool.query<{ player_id: string; crowned_at: Date }>('SELECT player_id, crowned_at FROM kings');
+    const kings = await pool.query<{ dynasty_name: string; crowned_at: Date }>(
+      'SELECT dynasty_name, crowned_at FROM kings',
+    );
 
     expect(settings.rows[0]?.count).toBe(0);
     expect(people.rows[0]?.count).toBe(0);
@@ -98,7 +98,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     expect(players.rows[0]?.last_seen_at.toISOString()).toBe(LAST_SEEN_AT.toISOString());
     expect(players.rows[0]?.delete_after?.toISOString()).toBe(DELETE_AFTER.toISOString());
     expect(kings.rows).toHaveLength(1);
-    expect(Number(kings.rows[0]?.player_id)).toBe(playerId);
+    expect(kings.rows[0]?.dynasty_name).toBe('Leclerc');
     expect(kings.rows[0]?.crowned_at.toISOString()).toBe(CROWNED_AT.toISOString());
     expect(report).toMatchObject({ kings: 1, accounts: 1, full: false });
     expect(report.applied).toEqual(['schema.sql']);
@@ -128,13 +128,10 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     const report = await resetDatabase(pool);
 
     // Assert: the book crosses, under its new column.
-    const kings = await pool.query<{ player_id: string; dynasty_name: string }>(
-      'SELECT player_id, dynasty_name FROM kings',
-    );
+    const kings = await pool.query<{ dynasty_name: string }>('SELECT dynasty_name FROM kings');
 
     expect(report.kings).toBe(1);
     expect(kings.rows).toHaveLength(1);
-    expect(Number(kings.rows[0]?.player_id)).toBe(42);
     expect(kings.rows[0]?.dynasty_name).toBe('Leclerc');
   });
 

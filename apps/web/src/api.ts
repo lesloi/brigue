@@ -54,16 +54,6 @@ export interface ProjectedWorkshop {
   upkeepCentsPerHour: number;
   capacityUnits: number;
   canUpgrade: boolean;
-  upgradeHours: number | null;
-}
-
-/** A site under way, and the hour it closes. */
-export interface ProjectedSite {
-  id: number;
-  dueAt: number;
-  work: 'build' | 'upgrade' | 'residence' | 'title';
-  trade: Trade | null;
-  workshopId: number | null;
 }
 
 /** The ladder, every figure already computed by the server. */
@@ -78,7 +68,7 @@ export interface ProjectedLadder {
   stockDefence: number;
   workshopLevelCap: number;
   nextTitle: { title: TitleId; priceCents: number } | null;
-  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean } | null;
 }
 
 export interface WorldProjection {
@@ -103,8 +93,7 @@ export interface WorldProjection {
     stock: Partial<Record<GoodId, number>>;
     stockUnits: number;
     stockCapacityUnits: number;
-    build: { priceCents: number; hours: number; level: number; room: number; cap: number };
-    sites: ProjectedSite[];
+    build: { priceCents: number; level: number; room: number; cap: number };
     rename: { priceCents: number };
   };
   town: {
@@ -114,7 +103,6 @@ export interface WorldProjection {
     seats: Record<SeatId, { personId: PersonId | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
-    marketHistory: Partial<Record<GoodId, number[]>>;
     marketReferences: Record<GoodId, number>;
   };
   /** The instant the current hour ends, so the client can show the next bell. */

@@ -1,6 +1,6 @@
 import type { GoodId, RefusalReason, SeatId, TitleId, Trade } from '@brigue/core';
 
-import type { PendingActionView, ProjectedSite } from './api.ts';
+import type { PendingActionView } from './api.ts';
 
 const MONEY = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 const COUNT = new Intl.NumberFormat('fr-FR');
@@ -145,20 +145,6 @@ export function pendingActionText(action: PendingActionView): string {
   }
 }
 
-/** A site under way, said in the same voice as the queue. */
-export function siteWorkText(site: ProjectedSite, workshopNameOf: (id: number) => string): string {
-  switch (site.work) {
-    case 'build':
-      return site.trade === null ? 'Construction' : `Construction d'un atelier de ${tradeName(site.trade)}`;
-    case 'upgrade':
-      return `Agrandissement de ${site.workshopId === null ? 'l’atelier' : workshopNameOf(site.workshopId)}`;
-    case 'residence':
-      return 'Élévation de la résidence';
-    case 'title':
-      return 'Remise du titre';
-  }
-}
-
 export function seatName(seat: SeatId): string {
   switch (seat) {
     case 'maire':
@@ -212,8 +198,6 @@ export function refusalText(reason: RefusalReason): string {
       return 'aucun titre au-dessus';
     case 'no_next_residence':
       return 'la résidence est au plus haut';
-    case 'site_in_progress':
-      return 'un chantier est déjà en cours';
     case 'already_candidate':
       return 'vous avez déjà une candidature en cours';
     case 'name_taken':

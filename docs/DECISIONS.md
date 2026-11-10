@@ -17,13 +17,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   would make multiplayer a rewrite instead of an assignment. The seat is held by a **person**; that is what makes a career and a succession possible. Revisit only if the town proves
   too small to hold a solo player's pace.
 
-- **A join takes the first free place; a full world gets a new town.** The towns are visited
-  least filled first — the one that needs people most — and the oldest breaks a tie. A human person
-  no player has ever taken is a free place, and a town below twenty people takes a new human
-  person; a town whose humans have all gone is left to its deletion, never given to a newcomer.
-  When no town has a place, the join founds one — three AI people and the newcomer's person — and
-  names it by drawing from a list of places. A name may come back; its id, assigned by the
-  database, never does.
+- **A join adds a person; a full world gets a new town.** The towns are visited least filled
+  first — the one that needs people most — and the oldest breaks a tie. A person without an account
+  is an AI, so a join never takes one over: it writes its own person, with the account in the same
+  row, and a town below twenty people holds one more. A town whose humans have all gone is left to
+  its deletion, never given to a newcomer. When no town has a place, the join founds one — three
+  AI people and the newcomer's person — and names it by drawing from a list of places. A name may
+  come back; its id, assigned by the database, never does.
 
 - **A silent person is forgotten, not robbed; a human who arrives takes an AI's place.** Silence
   is a state of the town, not a punishment: a person with no visit for a few days — three,
@@ -83,7 +83,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **Only those who stand are candidates, and one seat at a time.** A person stands by paying the
   campaign favour cost; the active incumbent stands without paying. A second open candidacy is
-  refused, and a candidacy is never cumulative on the same seat. A person elected to one seat gives
+  refused, and a candidacy is never cumulative on the same seat. A candidacy carries no strength: the
+  campaign buys the stand, the scrutiny rolls the votes (`1 + 1d5` per candidate), and the row is
+  gone the moment the seat is decided. A person elected to one seat gives
   up any other it held: that seat falls vacant and is announced as such, even when it was settled
   earlier in the same scrutiny. The candidate learns the result whether the town changes hands or
   not; the town's chronicle carries only a new winner or a vacancy. A dormant incumbent who does not
@@ -100,8 +102,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   that votes and a court. Revisit if the tiers end up voting the same thing three times.
 
 - **One franchise everywhere.** Every person votes at every tier, at the same scrutiny, with the
-  same roll and the same campaign bonus; what changes with the tier is the title required and the
-  price of a campaign. A narrower college — mayors electing the county, counts electing the king —
+  same roll; what changes with the tier is the title required and the price of a campaign. A narrower college — mayors electing the county, counts electing the king —
   would disenfranchise the person who has just lost. The price of a campaign rises with the tier and the favour
   spent on one is never refunded: buying a crown must ruin a person.
 
@@ -119,10 +120,10 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   Revisit if one speed swallows the other.
 
 - **The book of kings is the only record that crosses a reset.** One line per reign at the
-  clerk's office: the player, the family name, the instant of the crowning and the time it took to
-  crown a king. No register of families crosses; the town's own people are the register while it
-  lives, and they go with it. The crown follows the player, not the name: a name taken again
-  inherits nothing. Revisit if the long game needs the families' columns.
+  clerk's office: the family name, the instant of the crowning and the time it took to crown a
+  king. No register of families crosses; the town's own people are the register while it lives,
+  and they go with it. The book names no account: a crown is the town's memory, and a name taken
+  again inherits nothing. Revisit if the long game needs the families' columns.
 
 - **The only ending is a won crown, and the crown reigns a day.** No season ends on a clock and no
   wipe takes the book: a person is reset by death, one at a time, so the town turns over without
@@ -131,19 +132,18 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   formality: he grants nothing, and the town lives as it did. Nobody can depose him: there is no
   plot and no counter-power, because the season is already over.
   Neither bell of that last day renews anything — the seal takes their place — and it opens a new
-  town with the same names. What crosses is the book of kings: the player, the family name,
-  the instant of the crowning and the time it took. The crown follows the player, not the name: a
-  name taken again inherits nothing. Revisit if the last election is decided before it starts, or
-  if the day goes unwatched.
+  town with the same names. What crosses is the book of kings: the family name, the instant of the
+  crowning and the time it took. It names no account, so a name taken again inherits nothing, and
+  the book outlives every player it remembers. Revisit if the last election is decided before it
+  starts, or if the day goes unwatched.
 
 - **The residence is one ladder.** The title opens a level, money pays for it, and the level sets
   the prestige cap, the defence of the stock and the number of workshops (1,1,2,2,2,3,3,3,3,4,4,4).
   Three separate ladders would be three things to read on a phone; one says what the person can
   hold, which is what chapter II must teach. The title and the level are two purchases, the degree
   first: one purchase would make the title and the residence the same object and leave "standing"
-  with nothing of its own. A title is obtained at the next noon or midnight, never at once: it is
-  paid for the hour it is bought and delivered at the town's rendezvous, like a candidacy. Revisit
-  if a level stops meaning anything.
+  with nothing of its own. Both apply on the hour they are bought: nothing waits, and no works are
+  opened. Revisit if a level stops meaning anything.
 
 - **The warehouse is what the workshops hold.** Every workshop gives capacity by its level — 100,
   200, 350 and on — and the person's warehouse is their sum. A second building is a second store,
@@ -309,8 +309,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   person who enters at twenty and is offered retirement at fifty — and changing that moves the
   `rulesetVersion`. Revisit if a continuous clock makes the town harder to read than a weekly one.
 
-- **Two bells a day: noon and midnight.** At noon the council sits, the court judges and
-  candidacies close; at midnight the year turns, every seat comes up and the votes are counted.
+- **Two bells a day: noon and midnight.** At noon the council sits and the court judges; at
+  midnight the year turns, every seat comes up and the votes are counted.
   Two fixed hours are what
   let a player queue an action in advance and still be counted: the deadline is the same for
   everyone, and it does not reward being awake. The server's clock is on the screen, so noon means
@@ -364,16 +364,13 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   The raw goods join the flow like the others: the wool, grain and wood the workshops buy push
   their prices up, and selling them pushes them down.
 
-- **Engagements have durations; there are no action points.** A building site takes twelve hours,
-  a campaign is a candidacy lodged before the noon bell — its old run is gone, because one that
-  ended four hours before the vote was decoration — a hearing is held at the next noon sitting
-  after the complaint, and the provost investigates in the hours between. A duration counts in
-  town time and the screen shows the hour it ends, so a player plans with "ready at 19:00". What
-  falls due is resolved by the
-  next advance, even if the town has already passed the instant, and the event carries both
-  instants: late rather than dropped. A budget of actions per hour would be action points with
-  another clock; the calendar is the scarcity, and it does not punish sleep. Revisit if players
-  stop returning between engagements.
+- **There are no works and no action points.** An act applies on the hour it is ordered: a
+  workshop is built, a level is raised, a degree is bought, all at once. Nothing waits in a queue
+  of construction, so nothing can be half-built when the town stops, and no row carries a due hour
+  any more. What still takes time is the calendar itself — a scrutiny, a mandate, a candidacy that
+  counts at the next vote — and it needs no site table. A budget of actions per hour would be
+  action points with another clock; the calendar is the scarcity, and it does not punish sleep.
+  Revisit if acting at once makes a decision feel free.
 
 - **Laws are domains, plus exceptional votes.** Each office fixes its own laws alone: the mayor
   the sales and guild taxes and the watch's budget, the provost the definition of crimes, the
@@ -420,8 +417,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The AI plays politics.** At the start of each year an AI person without a seat tries a random
   vacant one, paying the campaign cost if it has the favour; a seated AI defends its seat and does
-  not challenge another holder or climb until #55. It votes with the same roll and campaign bonus
-  as a human. It also buys the input its workshops lack,
+  not challenge another holder or climb until #55. It votes with the same roll as a human. It also buys the input its workshops lack,
   as before, and sells its stock at the market price. The earlier rule — an AI buys and decides
   nothing else — was right for a town of four; at twenty it leaves the player alone in a crowd.
   It sells its whole stock every hour, at the market price: it takes the price, it does not
@@ -477,7 +473,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **The towns are the database: tables, not a document.** One database holds several towns, and
   every town table carries its `town_id`, except the two that hang from a person — `workshops` and
   `stock` name `person_id` and a town owns them through its people. People, seats, laws,
-  engagements, campaigns and the market are a town itself. What belongs to no person and to no town lives in
+  candidacies and the market are a town itself. What belongs to no person and to no town lives in
   the world's `settings`, one text key/value row per variable: `world_started_at`,
   `format_version` and `ruleset_version`. There is one world, one clock and several towns:
   `world_started_at` says what hour it is, for everyone, and the store parses the numbers and the
@@ -490,16 +486,19 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   A word with a closed list is stored as the code of its place in that list, one based: `title` is
   the rank in `TITLES` (1 is the roturier), `trade` the place in `TRADES`, `good` the place in
   `GOODS`. A list may gain an entry; a code already written is never renumbered, because it sits in
-  rows a replay reads back. A seat's name and an event's type stay words: they are keys a query
-  matches, not attributes a rule reads.
-  The simulation still reads and writes a town whole, but the storage keeps it in rows, so a screen
-  can read the market alone and the book of kings is a query. Every autoincremented id is a global
+  rows a replay reads back. An event's type is the place in `EVENT_TYPES`, so the journal holds a
+  number the core knows; a seat's name stays a word, since it is a key a query matches. A person
+  is an AI exactly when `people.player_id` is null: the account is written with the person, never
+  after it, so no person waits for one.
+  An action is stored as its type and its payload apart, so a query reads what was asked without
+  parsing the row. The simulation still reads and writes a town whole, but the storage keeps it in
+  rows, so a screen can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back
   and writes it into the in-memory world before the rows that reference it, so a person's key, a
-  seat, a campaign, an action, a workshop and a site all agree after a save. A format change is a
+  seat, a candidacy, an action and a workshop all agree after a save. A format change is a
   migration across those tables; a reset is a wipe of them. Deleting a town cascades its tables;
   the accounts, their mail and the book of kings outlive it. What a sealed season keeps is the
-  book: the seal writes the crowned player, the family name, the instant and the time it took; the
+  book: the seal writes the family name, the instant and the time it took; the
   town itself is dropped, and only a full reset deletes the book.
   The accounts outlive a season's seal, which takes the person and keeps the account; an ordinary
   reset does the same, and the first visit after it asks for a trade. The account carries the

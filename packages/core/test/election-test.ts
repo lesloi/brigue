@@ -11,17 +11,25 @@ function play(
   hours: number,
   at: (hour: number) => Action[] = () => [],
   dormant: ReadonlySet<number> = new Set(),
+  random: () => number = () => 0.5,
 ): { world: World; events: Event[] } {
   let current = world;
   const events: Event[] = [];
 
   for (let hour = 0; hour < hours; hour += 1) {
-    const result = tick(current, at(hour), dormant);
+    const result = tick(current, at(hour), dormant, random);
     current = result.world;
     events.push(...result.events);
   }
 
   return { world: current, events };
+}
+
+/** Rolls one value per candidate, in the order their ids are sorted. */
+function rolls(...values: number[]): () => number {
+  let index = 0;
+
+  return () => values[index++] ?? 0;
 }
 
 /** The AI still buys and sells, but it does not take a seat unless it holds one. */
@@ -61,13 +69,14 @@ describe('the election', () => {
   });
 
   it('does not announce a re-elected incumbent', () => {
-    // Arrange: caron holds the seat and outruns the only challenger.
+    // Arrange: caron holds the seat and the roll favours him.
     const world = withoutAiCampaigns(town(SEED));
     world.seats.maire = { personId: CARON };
-    world.campaigns.maire = { [LECLERC]: 0, [CARON]: 100 };
+    world.campaigns.maire = [LECLERC];
+    const dice = rolls(0.99, 0);
 
     // Act
-    const result = play(world, YEAR);
+    const result = play(world, YEAR, undefined, new Set(), dice);
 
     // Assert: the incumbent keeps it, the town hears nothing, the candidates do.
     expect(
@@ -82,13 +91,14 @@ describe('the election', () => {
   });
 
   it('announces a new winner', () => {
-    // Arrange: caron holds the seat and loses it to the challenger.
+    // Arrange: caron holds the seat and the roll goes to the challenger.
     const world = withoutAiCampaigns(town(SEED));
     world.seats.maire = { personId: CARON };
-    world.campaigns.maire = { [LECLERC]: 100, [CARON]: 0 };
+    world.campaigns.maire = [LECLERC];
+    const dice = rolls(0, 0.99);
 
     // Act
-    const result = play(world, YEAR);
+    const result = play(world, YEAR, undefined, new Set(), dice);
 
     // Assert
     expect(
@@ -111,7 +121,7 @@ describe('the election', () => {
     ]);
 
     // Assert: the first stands, the second is refused, and only one cost is paid.
-    expect(result.world.campaigns.maire?.[LECLERC]).toBe(RULES.campaignVoteBonus);
+    expect(result.world.campaigns.maire).toEqual([LECLERC]);
     expect(result.world.campaigns.tresorier).toBeUndefined();
     expect(result.world.people[LECLERC].favour).toBe(before - RULES.campaignFavourCost);
     expect(result.events).toContainEqual(
@@ -119,12 +129,37 @@ describe('the election', () => {
     );
   });
 
+  it('gives a tie to the lowest id, never to the order of the object', () => {
+    // Arrange: caron holds the seat and the roll gives every candidate the same
+    // vote; caron's id is the lowest of the two.
+    const world = withoutAiCampaigns(town(SEED));
+    world.seats.maire = { personId: CARON };
+    world.campaigns.maire = [LECLERC];
+
+    // Act
+    const result = play(world, YEAR, undefined, new Set(), rolls(0, 0));
+
+    // Assert: a tie keeps the incumbent, whose vote is the first of the sorted
+    // candidate ids.
+    expect(
+      result.events.find(
+        (event): event is Extract<Event, { type: 'council.election_result' }> =>
+          event.type === 'council.election_result' && event.seatId === 'maire' && event.won,
+      )?.winnerPersonId,
+    ).toBe(CARON);
+  });
+
   it('leaves the seat a climbing winner gives up publicly vacant', () => {
-    // Arrange: leclerc holds the provostship and stands for the mayoralty.
+    // Arrange: leclerc holds the provostship and stands for the mayoralty, and
+    // the roll gives it to him.
     const world = withoutAiCampaigns(town(SEED));
     world.seats.prevot = { personId: LECLERC };
-    const result = play(world, YEAR, (hour) =>
-      hour === 7 ? [{ type: 'council.campaign', personId: LECLERC, seatId: 'maire' }] : [],
+    const result = play(
+      world,
+      YEAR,
+      (hour) => (hour === 7 ? [{ type: 'council.campaign', personId: LECLERC, seatId: 'maire' }] : []),
+      new Set(),
+      rolls(0.99),
     );
 
     // Assert: leclerc takes the mayoralty and the provostship falls vacant with

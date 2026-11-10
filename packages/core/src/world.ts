@@ -307,27 +307,6 @@ export interface Law {
   value: number;
 }
 
-/** The durations the calendar gives an engagement, in hours. */
-export type EngagementKind = 'hearing' | 'site';
-
-/**
- * What a site is for. A workshop is built by `trade`, improved by `workshopId`;
- * the person's own level is raised by `residence`; a degree is obtained at the
- * next noon or midnight. The cost is paid when the site is opened, so what is
- * left to pay in hours is all the site carries.
- */
-export type SiteWork =
-  { work: 'build'; trade: Trade } | { work: 'upgrade'; workshopId: number } | { work: 'residence' } | { work: 'title' };
-
-/**
- * Work that takes hours. It carries the instant it falls due rather than a
- * remaining count, so a catch-up can replay whole hours and pay what is owed.
- * A campaign has no duration left: it is a candidacy, and it counts once.
- */
-export type Engagement =
-  | { id: number; kind: 'hearing'; personId: PersonId; dueAt: number }
-  | ({ id: number; kind: 'site'; personId: PersonId; dueAt: number } & SiteWork);
-
 export interface World {
   /** Stamped so a saved world can be refused rather than silently misread. */
   formatVersion: number;
@@ -345,33 +324,14 @@ export interface World {
    * stored rather than recomputed: the price you see is the town you were.
    */
   marketFlow: Partial<Record<GoodId, number>>;
-  /**
-   * The last PRICE_HISTORY_BELLS prices per good, in cents, one point per tick.
-   * Optional because a world stored before the field existed must keep ticking:
-   * its history starts at the tick that first sees it.
-   */
-  marketHistory?: Partial<Record<GoodId, number[]>>;
-  /** Votes bought per seat, per person, cleared when that seat is elected. */
-  campaigns: Partial<Record<SeatId, Record<PersonId, number>>>;
-  /**
-   * Candidacies closed at the last noon bell: they count at the coming
-   * scrutiny. What is lodged after that bell waits in `campaigns` for the next.
-   */
-  closedCampaigns: Partial<Record<SeatId, Record<PersonId, number>>>;
-  /**
-   * What the town owes to a future hour: a campaign, a hearing, a building
-   * site. Resolved by the tick when its due hour arrives, even if the town
-   * only reaches that hour later.
-   */
-  engagements: Engagement[];
-  /** Mints provisional engagement ids until the store assigns the real ones. */
-  /** Mints provisional workshop ids until the store assigns the real ones. */
+  /** Who stands for each seat; the coming scrutiny consumes the lists. */
+  campaigns: Partial<Record<SeatId, PersonId[]>>;
 }
 
-export const FORMAT_VERSION = 4;
+export const FORMAT_VERSION = 5;
 
 export const RULES = {
-  version: 5,
+  version: 6,
   /**
    * The starting kit: a person must buy its input and pay a few hours of upkeep
    * before its first sale. Every person gets it, the first as much as a later
@@ -385,11 +345,6 @@ export const RULES = {
   builtWorkshopLevel: 1,
   /** The town stops growing here; a newcomer with no place starts another town. */
   dynastyCap: 20,
-  /**
-   * A building site takes twelve hours. A hearing has no fixed delay: it is
-   * held at the next noon sitting after the complaint.
-   */
-  siteHours: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
   /**
@@ -428,18 +383,6 @@ export const RULES = {
    * only for what it produces would make its size free.
    */
   upkeepPerWorkshopLevelCents: 120,
-  /**
-   * A title is obtained at the next noon or midnight, wherever it is bought: a
-   * half-day, counted from the hour of the purchase. The half-day is the
-   * calendar's, not a second clock.
-   */
-  titleHours: 6,
-  /**
-   * The hours an improvement takes, by the level it reaches: the step grows
-   * with the level, so the top of the ladder is a long intent and not a tap.
-   * Index zero is unused; level 2 is one hour.
-   */
-  improvementHours: [0, 0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66],
   /** What building a workshop of the starting level costs. */
   buildCents: 50_000,
   campaignFavourCost: 5,
@@ -704,16 +647,6 @@ export function createWorld(): World {
       planks: RULES.market.planks.referenceCents,
     },
     marketFlow: {},
-    marketHistory: {
-      wool: [RULES.market.wool.referenceCents],
-      cloth: [RULES.market.cloth.referenceCents],
-      grain: [RULES.market.grain.referenceCents],
-      bread: [RULES.market.bread.referenceCents],
-      wood: [RULES.market.wood.referenceCents],
-      planks: [RULES.market.planks.referenceCents],
-    },
     campaigns: {},
-    closedCampaigns: {},
-    engagements: [],
   };
 }

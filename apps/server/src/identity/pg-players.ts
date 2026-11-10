@@ -67,15 +67,20 @@ export class PgPlayerStore implements PlayerStore {
 
   async rebind(tokenHash: string, townId: number, personId: number, at: Date): Promise<Player | null> {
     try {
-      // The person is the only row that carries the binding: an account may
-      // bind once, and only to a person no account holds. An account already
-      // bound matches nothing, so a second choice is a refusal, not a rebind.
+      // The person is the only row that carries the binding: an account binds
+      // once, to a person no account holds. A person already written for this
+      // account — the join does that at creation — matches too, so the call is
+      // a confirmation there, and a person another account holds matches
+      // nothing, which is what a refusal looks like.
       const bound = await this.pool.query(
         `UPDATE people pe
          SET player_id = p.player_id
          FROM players p
-         WHERE p.token_hash = $1 AND pe.id = $2 AND pe.town_id = $3 AND pe.player_id IS NULL
-           AND NOT EXISTS (SELECT 1 FROM people own WHERE own.player_id = p.player_id)
+         WHERE p.token_hash = $1 AND pe.id = $2 AND pe.town_id = $3
+           AND (pe.player_id IS NULL OR pe.player_id = p.player_id)
+           AND NOT EXISTS (
+             SELECT 1 FROM people own WHERE own.player_id = p.player_id AND own.id <> pe.id
+           )
          RETURNING pe.id`,
         [tokenHash, personId, townId],
       );
@@ -143,6 +148,22 @@ export class PgPlayerStore implements PlayerStore {
 
     await this.pool.query('DELETE FROM messages WHERE player_id = $1', [playerId]);
     await this.pool.query('DELETE FROM players WHERE player_id = $1', [playerId]);
+  }
+
+  async eraseAccount(tokenHash: string): Promise<void> {
+    // A join that failed may have written the person before it knew the place
+    // would not land: the row goes with the account, so no person is left
+    // holding an account the server no longer has. The mail goes too.
+    const { rows } = await this.pool.query<{ player_id: string }>(
+      `DELETE FROM players WHERE token_hash = $1 RETURNING player_id`,
+      [tokenHash],
+    );
+    const playerId = rows[0]?.player_id;
+
+    if (playerId !== undefined) {
+      await this.pool.query('DELETE FROM people WHERE player_id = $1', [playerId]);
+      await this.pool.query('DELETE FROM messages WHERE player_id = $1', [playerId]);
+    }
   }
 
   async deleteUnboundDue(at: Date): Promise<number> {

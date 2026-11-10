@@ -175,14 +175,12 @@ until the mechanic that raises them exists.
 A workshop is bound to one trade — weaver, baker, carpenter — and a person may hold several,
 even two of the same trade. There is no conversion: to change what the person makes, it builds
 another workshop and destroys the old one, and it can never destroy its last. A workshop is
-built at the first level; each further level takes longer, and it produces nothing while it
-grows. A person pays an upkeep for every workshop that runs, one level's share an hour, and
-nothing for a workshop under works.
+built at the first level, and each further level is bought at once. A person pays an upkeep for
+every workshop that runs, one level's share an hour.
 
 The **residence** is one ladder: the title opens a level, money pays for it, and the level sets
 the prestige cap, the defence of the stock and the number of workshops. The two purchases are
-separate: the title is bought first, then the level it opened. A title is obtained at the next
-noon or midnight, a workshop and a residence upgrade when their works are done.
+separate: the title is bought first, then the level it opened, and both apply at once.
 
 **Favour** is the currency of elections. It is earned by service — a mandate held, a
 jury served, a vote cast with the winner — and by visible acts: a gift to the treasury, a funded
@@ -228,11 +226,10 @@ advances a year per day. The world has one clock, shared by every town: all town
 hour and the same date. A mandate lasts a day. A character's thirty playable years last thirty
 real days.
 
-Engagements have durations, not action points: a building site takes twelve hours, a campaign is
-a candidacy lodged before the noon bell, and a hearing is held at the next noon sitting after the
-complaint. A duration is counted in town time and the screen shows the hour it ends, so a player
-plans with "ready at 19:00". What falls due is resolved by the next advance, even if the town has
-already passed the instant, and the event carries both instants: late rather than dropped.
+Acts apply at once: a workshop is built, a degree bought and a residence raised on the hour they
+are ordered, with no works and no action points. What takes time is the calendar — a candidacy
+counts at the next scrutiny, a mandate lasts a day, a season turns on the crown — and the clock is
+the only scarcity.
 
 ## Screens
 
@@ -254,8 +251,8 @@ a map of places, drawn in seals, serves as navigation.
 
 Not built. The town's council is the first floor; the two above it are written here so their
 offices have names before they have code. Both are elected by every person, at the same midnight
-scrutiny, with the same roll and the same campaign bonus; only the title required, the career
-required and the price of a campaign change.
+scrutiny, with the same roll; only the title required, the career required and the price of a
+campaign change.
 
 ### The county
 

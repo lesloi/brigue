@@ -263,8 +263,9 @@ describe('joining the town', () => {
     expect(world.people[first.personId]?.treasuryCents).toBe(RULES.startingPurseCents);
   });
 
-  it('takes a person no account has taken', async () => {
-    // Arrange: a town whose first person exists but was never bound.
+  it('adds a person to a town, bound to the account', async () => {
+    // Arrange: a town whose first person no account holds — an AI, since a
+    // person without an account is one.
     const harness = await start();
     const base = town(7);
     await harness.worlds.createTown(TEST_TOWN.name, base, new Date());
@@ -273,14 +274,13 @@ describe('joining the town', () => {
     const response = await join(harness);
     const body = (await response.json()) as { personId: number; townId: number };
 
-    // Assert: the free place is taken, under the name the join kept; the token
-    // points at a person the town holds — the place's own — and none is added.
+    // Assert: the join adds its own person, and the town holds both.
     expect(response.status).toBe(201);
     expect(body.townId).toBe(TEST_TOWN.id);
-    expect(body.personId).toBe(LECLERC);
+    expect(body.personId).not.toBe(LECLERC);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
-    expect(world.people[body.personId]?.name).not.toBe('Leclerc');
-    expect(Object.keys(world.people)).toHaveLength(Object.keys(base.people).length);
+    expect(world.people[body.personId]?.ia).toBe(false);
+    expect(Object.keys(world.people)).toHaveLength(Object.keys(base.people).length + 1);
   });
 
   it('skips a town that vanishes between the list and its lock', async () => {
@@ -434,7 +434,6 @@ describe('joining the town', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
-        upgradeHours: 3,
       },
     ]);
     expect(world.world.person.stock.grain).toBe(8);
@@ -469,7 +468,6 @@ describe('joining the town', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
-        upgradeHours: 3,
       },
     ]);
   });
@@ -664,7 +662,7 @@ describe('a token a reset left without a person', () => {
     expect(await again.json()).toMatchObject({ townId: body.townId, personId: body.personId });
   });
 
-  it('takes a free person when a town has one', async () => {
+  it('gives a returning account a person of its own when the town has none bound', async () => {
     // Arrange: a town whose first person no account holds.
     const harness = await start();
     await harness.worlds.createTown(TEST_TOWN.name, town(7), new Date());
@@ -674,12 +672,12 @@ describe('a token a reset left without a person', () => {
     const response = await choose(harness, 'carpenter', cookie);
     const body = (await response.json()) as { townId: number; personId: number };
 
-    // Assert: the free place, named by the choice, and no person added.
+    // Assert: the account gets a person of its own, and one is added.
     expect(response.status).toBe(200);
     expect(body.townId).toBe(TEST_TOWN.id);
-    expect(body.personId).toBe(LECLERC);
+    expect(body.personId).not.toBe(LECLERC);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, TEST_TOWN.id);
-    expect(Object.keys(world.people)).toHaveLength(Object.keys(town(7).people).length);
+    expect(Object.keys(world.people)).toHaveLength(Object.keys(town(7).people).length + 1);
   });
 
   it('binds a double tap once, without spending a second place', async () => {

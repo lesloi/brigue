@@ -25,14 +25,11 @@ CREATE TABLE players (
 -- known by in every town, and the book of kings keeps it.
 CREATE UNIQUE INDEX players_family_name ON players (lower(name));
 
--- The only record that crosses a reset, and a full reset deletes it too. Keyed
--- by the player and the instant: the crown follows the player, and a town's hour
--- means nothing once the town is gone. No foreign key to `players`, because the
--- book outlives the account.
+-- The only record that crosses a reset, and a full reset deletes it too. It
+-- names nobody: the book outlives the accounts, and a crown is the town's
+-- memory, not a column to join on.
 CREATE TABLE kings (
   id bigserial PRIMARY KEY,
-  -- Null when the account that wore the crown is gone: the book outlives it.
-  player_id bigint,
   dynasty_name text NOT NULL,
   crowned_at timestamptz NOT NULL,
   -- The town's age at the crowning, in hours from the first hour of the world.
@@ -73,8 +70,9 @@ CREATE TABLE settings (
 
 -- The person is the unit of the world: the purse, the debt, the favour, the
 -- prestige, the degree, the residence and the workshops are theirs. A human
--- person points at the account that controls it; an AI person points at nobody
--- and carries `ia = true`. The family name is not here: it is the account's.
+-- person points at the account that controls it; a person with no account is an
+-- AI, so `player_id IS NULL` is the whole of the fact. The family name is not
+-- here: it is the account's.
 --
 -- The codes a row carries are one-based places in a list the core writes
 -- (`TITLES`, `GOODS`, `TRADES`), so `title = 1` is the roturier and `title = 12`
@@ -83,7 +81,6 @@ CREATE TABLE people (
   id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   player_id bigint,
-  ia boolean NOT NULL,
   person_name text NOT NULL,
   title smallint NOT NULL DEFAULT 1,
   residence_level integer NOT NULL DEFAULT 1,
@@ -138,31 +135,14 @@ CREATE TABLE laws (
   PRIMARY KEY (town_id, code)
 );
 
--- A site says what it is for — a title at the next bell, a workshop built or
--- improved — and its cost is paid when it opens, so the row needs nothing else.
-CREATE TABLE engagements (
-  id bigserial PRIMARY KEY,
-  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  kind text NOT NULL,
-  person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
-  due_at integer NOT NULL,
-  position integer NOT NULL,
-  work text,
-  trade smallint,
-  workshop_id bigint REFERENCES workshops (id) ON DELETE SET NULL
-);
-
-CREATE INDEX engagements_due ON engagements (town_id, due_at);
-
--- A campaign has no duration: it counts for one scrutiny, and `closed` says
--- which — a candidacy lodged after the bell waits for the next one.
+-- A campaign has no duration: it is a candidacy, it counts at the coming
+-- scrutiny, and the scrutiny deletes it. No closed flag, no votes: the vote is
+-- the town's roll, and nothing keeps the result once it is said.
 CREATE TABLE campaigns (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   seat_id text NOT NULL,
   person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
-  closed boolean NOT NULL DEFAULT false,
-  votes integer NOT NULL,
-  PRIMARY KEY (town_id, seat_id, person_id, closed)
+  PRIMARY KEY (town_id, seat_id, person_id)
 );
 
 CREATE TABLE market (
@@ -171,14 +151,6 @@ CREATE TABLE market (
   price_cents integer NOT NULL,
   flow_units integer NOT NULL DEFAULT 0,
   PRIMARY KEY (town_id, good)
-);
-
-CREATE TABLE market_history (
-  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  good smallint NOT NULL,
-  position integer NOT NULL,
-  price_cents integer NOT NULL,
-  PRIMARY KEY (town_id, good, position)
 );
 
 -- The town's chronicle, read as a page: every reader sees the same one, and a
@@ -192,7 +164,9 @@ CREATE TABLE events (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   at integer NOT NULL,
   audience text NOT NULL,
-  type text NOT NULL,
+  -- The place of the type in the core's `EVENT_TYPES`: a number a code list
+  -- pins, so a rename never rewrites a line already written.
+  type smallint NOT NULL,
   payload jsonb NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
@@ -208,8 +182,8 @@ CREATE TABLE messages (
   id bigserial PRIMARY KEY,
   player_id bigint NOT NULL,
   -- A notice carries its kind and the fields of its sentence; prose carries
-  -- neither and puts its text in `body`.
-  type text,
+  -- neither and puts its text in `body`. The kind is the same code as an event's.
+  type smallint,
   payload jsonb,
   body text,
   -- Null when the town wrote it, never set on a notice. Filled from the
@@ -229,7 +203,10 @@ CREATE TABLE actions (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
   plays_at integer NOT NULL,
-  action jsonb NOT NULL,
+  -- The action is a type and its fields apart: a query can read what was asked
+  -- without parsing the payload, and an unknown type is a row, not a crash.
+  type text NOT NULL,
+  payload jsonb NOT NULL,
   received_at timestamptz NOT NULL DEFAULT now()
 );
 

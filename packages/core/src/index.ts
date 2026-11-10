@@ -1,6 +1,7 @@
 export { canonicalJson } from './canonical.ts';
 export { isVisibleTo, visibleTo } from './events.ts';
-export type { Action, Audience, Event, EventDraft, RefusalReason } from './events.ts';
+export type { Action, Audience, Event, EventDraft, EventType, RefusalReason } from './events.ts';
+export { EVENT_TYPES, eventTypeCode, eventTypeOfCode } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
 export {
   DYNASTY_NAMES,
@@ -65,8 +66,6 @@ export {
   workshopLevelCap,
   WORKSHOP_CAPACITY_UNITS,
   yearOf,
-  type Engagement,
-  type EngagementKind,
   type PersonIdentity,
   type GoodId,
   type Law,
@@ -77,7 +76,6 @@ export {
   type SeatAttempt,
   type SeatId,
   type SeatRefusal,
-  type SiteWork,
   type TitleId,
   type TitleStep,
   type Trade,

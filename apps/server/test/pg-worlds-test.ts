@@ -42,10 +42,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Restarting the identity keeps every case on the same town id; the book is
     // deleted before the accounts it names, and both are scoped to this fixture
     // so the parallel account test keeps its own rows.
-    await pool.query(
-      'DELETE FROM kings WHERE player_id IN (SELECT player_id FROM players WHERE token_hash = ANY($1))',
-      [[CLEARED_TOKEN, 'a'.repeat(64)]],
-    );
+    await pool.query('DELETE FROM kings');
     await pool.query('DELETE FROM players WHERE token_hash = ANY($1)', [[CLEARED_TOKEN, 'a'.repeat(64)]]);
     // The mail has no town column, so the cascade does not reach it.
     await pool.query('TRUNCATE messages RESTART IDENTITY');
@@ -329,7 +326,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const world = { ...town(8), hour: 5 };
     await store.createTown(TEST_TOWN.name, world, START);
     const human = humanPerson(world);
-    const playerId = await bindAccount(TEST_TOWN.id, human.id, CLEARED_TOKEN);
+    await bindAccount(TEST_TOWN.id, human.id, CLEARED_TOKEN);
     await withWorld(async (session) => {
       await session.append(storedAction(human.id, 5, buy(human.id, 2)));
       await session.save(world, [
@@ -350,11 +347,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         },
       ]);
     });
-    await pool.query(
-      `INSERT INTO kings (player_id, dynasty_name, crowned_at, elapsed_hours)
-       VALUES ($1, 'Leclerc', now(), 12)`,
-      [playerId],
-    );
+    await pool.query(`INSERT INTO kings (dynasty_name, crowned_at, elapsed_hours) VALUES ('Leclerc', now(), 12)`);
 
     // Act
     await withWorld(async (session) => session.clear());
@@ -633,7 +626,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // carries its type and its payload. The table holds both shapes and refuses
     // neither: the writer is what keeps them apart.
     await expect(insert(', body, author_player_id', ['Bonjour', playerId + 1])).resolves.toBeDefined();
-    await expect(insert(', type, payload', ['title_open', '{}'])).resolves.toBeDefined();
+    // The type is a code from the core's list, not a word.
+    await expect(insert(', type, payload', [1, '{}'])).resolves.toBeDefined();
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {
@@ -641,6 +635,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const world = { ...town(6), hour: 3 };
     await store.createTown(TEST_TOWN.name, world, START);
     const personId = humanPerson(world).id;
+    // A human person exists only with its account: bind it before reading back.
+    await bindAccount(TEST_TOWN.id, personId, 'a'.repeat(64));
     const action = storedAction(personId, 3, buy(personId, 1));
     let actionId = 0;
 

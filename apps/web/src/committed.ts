@@ -2,8 +2,8 @@ import type { CommittedCents, PendingActionView } from './api.ts';
 
 /**
  * What the queued actions will take from the purse. The market and the
- * campaigns are left out: their price is settled by the hour they play, so the
- * screen cannot promise a figure for them.
+ * campaigns are left out: the price of a trade is the hour's, and a campaign's
+ * is a favour cost the screen does not count.
  */
 export function committedCents(actions: readonly PendingActionView[], prices: CommittedCents): number {
   let total = 0;

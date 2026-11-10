@@ -22,7 +22,6 @@ export interface ResetReport {
 }
 
 interface SurvivingKing {
-  player_id: number | null;
   dynasty_name: string;
   crowned_at: Date;
   elapsed_hours: number;
@@ -68,8 +67,8 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'kings',
-        ['player_id', 'dynasty_name', 'crowned_at', 'elapsed_hours'],
-        kings.map((king) => [king.player_id, king.dynasty_name, king.crowned_at, king.elapsed_hours]),
+        ['dynasty_name', 'crowned_at', 'elapsed_hours'],
+        kings.map((king) => [king.dynasty_name, king.crowned_at, king.elapsed_hours]),
       );
 
       // The account keeps its id, its family name and its dates; the person
@@ -89,12 +88,8 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       );
 
       // The rebuilt players sequence starts at one; the carried ids must not
-      // be handed to a new account. A king outlives its account, so the book
-      // may hold the highest id of all. The next account takes max + 1.
-      const maxPlayerId = [
-        ...kings.map((king) => king.player_id ?? 0),
-        ...accounts.map((account) => account.player_id),
-      ].reduce((max, id) => Math.max(max, id), 0);
+      // be handed to a new account. The next account takes max + 1.
+      const maxPlayerId = accounts.map((account) => account.player_id).reduce((max, id) => Math.max(max, id), 0);
       if (maxPlayerId > 0) {
         await client.query(`SELECT setval(pg_get_serial_sequence('players', 'player_id'), $1, false)`, [
           maxPlayerId + 1,
@@ -139,9 +134,11 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   // a database reset before the rename carries `house_name`, one reset after it
   // carries `dynasty_name`.
   const nameColumn = types.has('dynasty_name') ? 'dynasty_name' : types.has('house_name') ? 'house_name' : null;
+  // The book names nobody: a crown is the town's memory, and the account it was
+  // worn by does not cross. A book of the shape that still carries a player id
+  // crosses the same way, the column dropped with the schema that held it.
   const shape =
     nameColumn !== null &&
-    types.get('player_id') === 'bigint' &&
     types.get('elapsed_hours') === 'integer' &&
     types.get('crowned_at') === 'timestamp with time zone';
 
@@ -158,14 +155,12 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   }
 
   const { rows } = await client.query<{
-    player_id: string | null;
     dynasty_name: string;
     crowned_at: Date;
     elapsed_hours: number;
-  }>(`SELECT player_id, ${nameColumn} AS dynasty_name, crowned_at, elapsed_hours FROM kings`);
+  }>(`SELECT ${nameColumn} AS dynasty_name, crowned_at, elapsed_hours FROM kings`);
 
   return rows.map((row) => ({
-    player_id: row.player_id === null ? null : Number(row.player_id),
     dynasty_name: row.dynasty_name,
     crowned_at: row.crowned_at,
     elapsed_hours: row.elapsed_hours,

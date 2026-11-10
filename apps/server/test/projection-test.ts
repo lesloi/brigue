@@ -136,7 +136,6 @@ describe('the projection calendar', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
-        upgradeHours: 3,
       },
     ]);
   });
@@ -161,7 +160,6 @@ describe('the projection calendar', () => {
       upkeepCentsPerHour: 360,
       capacityUnits: 350,
       canUpgrade: false,
-      upgradeHours: 6,
     });
   });
 
@@ -184,7 +182,6 @@ describe('the projection calendar', () => {
     const world = town(SEED);
     world.people[LECLERC].title = 'bourgeois';
     world.people[LECLERC].prestige = 10_000;
-    world.engagements = [{ id: 1, kind: 'site', personId: LECLERC, dueAt: world.hour + 6, work: 'title' }];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
@@ -203,24 +200,20 @@ describe('the projection calendar', () => {
       stockDefence: 10,
       workshopLevelCap: 3,
       nextTitle: { title: 'notable', priceCents: 120_000 },
-      nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true, hours: 1 },
+      nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true },
     });
     expect(projection.person.prestige).toBe(80 + 0 + 200);
     expect(projection.person.build).toEqual({
       priceCents: RULES.buildCents,
-      hours: RULES.siteHours,
       level: RULES.builtWorkshopLevel,
       room: 0,
       cap: 1,
     });
-    expect(projection.person.sites).toEqual([
-      { id: 1, dueAt: world.hour + 6, work: 'title', trade: null, workshopId: null },
-    ]);
     expect(projection.person.rename).toEqual({ priceCents: NAME_PRICE.renameCents });
     expect(projection.town.people.find((person) => person.id === LECLERC)?.prestige).toBe(280);
   });
 
-  it('carries the year of prices and their references', () => {
+  it('carries the references of every price', () => {
     // Arrange
     const world = town(SEED, 'baker');
 
@@ -229,22 +222,9 @@ describe('the projection calendar', () => {
 
     // Assert
     for (const good of GOODS) {
-      expect(projection.town.marketHistory[good]).toEqual([RULES.market[good].referenceCents]);
+      expect(projection.town.market[good]).toBe(RULES.market[good].referenceCents);
       expect(projection.town.marketReferences[good]).toBe(RULES.market[good].referenceCents);
     }
-  });
-
-  it('projects a field-less world with an empty history', () => {
-    // Arrange: a world stored before the history field existed.
-    const world = town(SEED);
-    delete world.marketHistory;
-
-    // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
-
-    // Assert
-    expect(projection.town.marketHistory).toEqual({});
-    expect(Object.keys(projection.town.marketReferences).sort()).toEqual([...GOODS].sort());
   });
 
   it('points at the next year once a scrutiny has closed the last one', () => {

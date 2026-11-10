@@ -130,9 +130,10 @@ export interface WorldStore {
    * joins the clock it finds, so every town shares one clock. Its rows start at
    * the hour it joins, so it owes nothing of the hours before it existed. It is
    * not idempotent: a second call creates a second town, so a join calls it once
-   * inside `withJoinLock`.
+   * inside `withJoinLock`. `bindings` names the accounts the new persons answer
+   * to, so a human person is written with its account, never without one.
    */
-  createTown(name: string, world: World, at: Date): Promise<TownInfo>;
+  createTown(name: string, world: World, at: Date, bindings?: ReadonlyMap<number, number>): Promise<TownInfo>;
   /** Every town, oldest first, so a join can look for a free place. */
   listTowns(): Promise<TownInfo[]>;
   /**
