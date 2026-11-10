@@ -1,23 +1,24 @@
 /**
- * A dynasty's name, and the rule that keeps two dynasties of one town apart.
+ * A family's name, and the rule that keeps two of them apart.
  *
- * The name is identity, not data: it is shown on every screen, read by the
- * town's register and by the global ranking, so two dynasties a reader could
- * confuse must not exist. A name is letters and digits only — no accent, no
- * space, no apostrophe, no mark — which leaves nothing to fold but the case.
- * The comparison goes further than the rule on purpose: names written before
- * the rule carry accents (`Hébert`), and `Hebert` must find them, the way the
- * issue asks for names "accents and case aside". The database compares bytes,
- * so this module is the rule, and the database's index is only a net behind it.
+ * The name is identity, not data: it is shown on every screen and read by the
+ * town's register, so two names a reader could confuse must not exist. A name is
+ * letters and digits only — no accent, no space, no apostrophe, no mark — which
+ * leaves nothing to fold but the case. The comparison goes further than the rule
+ * on purpose: names written before the rule carry accents (`Hébert`), and
+ * `Hebert` must find them, the way the issue asks for names "accents and case
+ * aside". The database compares bytes, so this module is the rule, and the
+ * database's index is only a net behind it.
  */
 
 /** Longer is a sentence, not a name; the screen and the rule say the same number. */
 export const NAME_MAX_LENGTH = 24;
 
 /**
- * What a suggested name may be drawn from. None of them is an AI dynasty's: no
- * human dynasty of the server may take one, see `AI_DYNASTY_NAMES`. The list is a
- * suggestion, never a limit: a player who is not drawn one writes their own.
+ * What a suggested family name may be drawn from. None of them is an AI family
+ * name: no human account of the server may take one, see `AI_DYNASTY_NAMES`. The
+ * list is a suggestion, never a limit: a player who is not drawn one writes
+ * their own.
  */
 export const DYNASTY_NAMES = [
   'Leclerc',
@@ -110,27 +111,11 @@ export function nameKey(name: string): string {
   return folded.normalize('NFD').replace(DIACRITICS, '');
 }
 
-/** A name is unique in its town: another dynasty, however it writes it, holds it. */
-export function nameIsTaken(dynasties: Iterable<string>, name: string): boolean {
+/** A name is unique across the server: another account, however it writes it, holds it. */
+export function nameIsTaken(names: Iterable<string>, name: string): boolean {
   const key = nameKey(name);
 
-  return Array.from(dynasties).some((carried) => nameKey(carried) === key);
-}
-
-/** What a rename asks: shared by the route, the core and the tests. */
-export interface DynastyRenameRequest {
-  /** The name as the player wrote it; it is trimmed and cleaned here, not by the caller. */
-  name: string;
-  /** Unpaid when zero: the name kept at creation costs nothing. */
-  priceCents: number;
-  /**
-   * The keys of the human dynasties of the whole server, this one aside. Only the
-   * server knows them: the town sees its own dynasties, and an AI name elsewhere
-   * is no conflict.
-   */
-  takenElsewhere?: ReadonlySet<string>;
+  return Array.from(names).some((carried) => nameKey(carried) === key);
 }
 
 export type NameRefusal = 'invalid_name' | 'name_taken' | 'insufficient_funds';
-
-export type DynastyRenameOutcome = { ok: true; name: string } | { ok: false; reason: NameRefusal };

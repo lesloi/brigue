@@ -1,9 +1,9 @@
 /**
- * The dynasty, drawn once, beside the town's hero on the Maison screen. It is
- * decoration: the residence level and the workshops it holds climb with the
- * dynasty, so the drawing says what the figures say, never more.
+ * The person's house, drawn once, beside the town's hero on the Maison screen.
+ * It is decoration: the residence level and the workshops it holds climb with
+ * the person, so the drawing says what the figures say, never more.
  */
-export function DynastyScene({ residenceLevel }: { residenceLevel: number }) {
+export function PersonScene({ residenceLevel }: { residenceLevel: number }) {
   // A tower grows with the residence; the courtyard fills after the threshold.
   const towerHeight = 34 + Math.min(Math.max(residenceLevel, 1), 12) * 4;
   const wings = residenceLevel >= 6 ? 2 : residenceLevel >= 3 ? 1 : 0;

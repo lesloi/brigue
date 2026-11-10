@@ -1,4 +1,4 @@
-import type { Event, GoodId, Law, SeatId, TitleId, Trade } from '@brigue/core';
+import type { Event, GoodId, Law, PersonId, SeatId, TitleId, Trade } from '@brigue/core';
 
 /** What `GET /api/world` returns. The client renders it and computes no rule. */
 export interface CalendarView {
@@ -14,7 +14,6 @@ export interface TradeIntent {
   good: GoodId;
 }
 
-/** One action the server holds for the current or next hour. */
 /** What a queued action costs when it plays, as far as the screen knows it. */
 export interface CommittedCents {
   titleCents: number;
@@ -22,8 +21,9 @@ export interface CommittedCents {
   buildCents: number;
 }
 
+/** One action the server holds for the current or next hour. */
 export interface PendingActionView {
-  id: string;
+  id: number;
   hour: number;
   type:
     | 'market.buy'
@@ -32,20 +32,20 @@ export interface PendingActionView {
     | 'workshop.build'
     | 'workshop.destroy'
     | 'workshop.upgrade'
-    | 'dynasty.buy_title'
-    | 'dynasty.upgrade_residence';
+    | 'person.buy_title'
+    | 'person.upgrade_residence';
   good?: GoodId;
   units?: number;
   seatId?: SeatId;
   trade?: Trade;
-  workshopId?: string;
+  workshopId?: number;
   /** The degree a title purchase buys, so the queue can name it. */
   title?: TitleId;
 }
 
 /** A workshop as the server projects it: the chain's input is not the client's rule. */
 export interface ProjectedWorkshop {
-  id: string;
+  id: number;
   good: GoodId;
   level: number;
   input: GoodId | null;
@@ -55,15 +55,6 @@ export interface ProjectedWorkshop {
   capacityUnits: number;
   canUpgrade: boolean;
   upgradeHours: number | null;
-}
-
-/** A site under way, and the hour it closes. */
-export interface ProjectedSite {
-  id: string;
-  dueAt: number;
-  work: 'build' | 'upgrade' | 'residence' | 'title';
-  trade: Trade | null;
-  workshopId: string | null;
 }
 
 /** The ladder, every figure already computed by the server. */
@@ -85,15 +76,17 @@ export interface WorldProjection {
   hour: number;
   year: number;
   calendar: CalendarView;
-  dynasty: {
-    id: string;
+  person: {
+    id: PersonId;
+    /** The family name the account carries; the person's name when it has none. */
     name: string;
+    /** The name the town sees, given name and family name together. */
+    personName: string;
+    ia: boolean;
     treasuryCents: number;
     debtCents: number;
     favour: number;
     prestige: number;
-    career: number;
-    dormant: boolean;
     title: TitleId;
     residenceLevel: number;
     ladder: ProjectedLadder;
@@ -102,18 +95,15 @@ export interface WorldProjection {
     stockUnits: number;
     stockCapacityUnits: number;
     build: { priceCents: number; hours: number; level: number; room: number; cap: number };
-    sites: ProjectedSite[];
     rename: { priceCents: number };
   };
   town: {
     id: number;
     name: string;
-    dynasties: Array<{ id: string; name: string; prestige: number; dormant: boolean; residenceLevel: number }>;
-    people: Array<{ id: string; dynastyId: string; name: string }>;
-    seats: Record<SeatId, { personId: string | null }>;
+    people: Array<{ id: PersonId; name: string; ia: boolean; prestige: number; residenceLevel: number }>;
+    seats: Record<SeatId, { personId: PersonId | null }>;
     laws: Law[];
     market: Record<GoodId, number>;
-    marketHistory: Partial<Record<GoodId, number[]>>;
     marketReferences: Record<GoodId, number>;
   };
   /** The instant the current hour ends, so the client can show the next bell. */
@@ -122,7 +112,6 @@ export interface WorldProjection {
 
 export interface CatchUpSummary {
   hours: number;
-  skipped: number;
 }
 
 /** One stored message: its row id, its unread state, and the line. */
@@ -134,7 +123,7 @@ export interface MessageView {
 
 export interface WorldResponse {
   world: WorldProjection;
-  /** The dynasty's private mail, newest page, in the order it happened. */
+  /** The person's private mail, newest page, in the order it happened. */
   messages: MessageView[];
   /** The town's public chronicle, newest page, in the order it happened. */
   chronicle: Event[];
@@ -153,10 +142,10 @@ export type ActionIntent =
   | { type: 'market.sell'; good: GoodId; units: number }
   | { type: 'council.campaign'; seatId: SeatId }
   | { type: 'workshop.build'; trade: Trade }
-  | { type: 'workshop.destroy'; workshopId: string }
-  | { type: 'workshop.upgrade'; workshopId: string }
-  | { type: 'dynasty.buy_title' }
-  | { type: 'dynasty.upgrade_residence' };
+  | { type: 'workshop.destroy'; workshopId: number }
+  | { type: 'workshop.upgrade'; workshopId: number }
+  | { type: 'person.buy_title' }
+  | { type: 'person.upgrade_residence' };
 
 export class ApiError extends Error {
   readonly status: number;
@@ -173,7 +162,7 @@ export class ApiError extends Error {
 export interface SessionInfo {
   /** Empty for an account a reset left between towns, until it chooses again. */
   townId: number | null;
-  dynastyId: string | null;
+  personId: PersonId | null;
   /** Set when a deletion is scheduled: the deadline, in ISO. */
   deletionAfter: string | null;
 }
@@ -193,37 +182,35 @@ export async function readSession(): Promise<SessionInfo | null> {
 
 export interface Joined {
   townId: number;
-  dynastyId: string;
+  personId: PersonId;
   /** Only a new account gets a token: a returning one keeps its own. */
   token?: string;
 }
 
-/** The identity a join is made with, drawn by the server: opaque id, suggested name. */
-export interface DynastyCandidate {
-  id: string;
-  dynastyName: string;
+/** The identity a join is made with, drawn by the server: the family and first name. */
+export interface PersonCandidate {
+  familyName: string;
   personName: string;
 }
 
 /**
- * The candidate the creation screen prefills. No dynasty is founded by it: the
+ * The candidate the creation screen prefills. No person is founded by it: the
  * player edits the name, keeps it, and only the join writes anything.
  */
-export function readCandidate(): Promise<DynastyCandidate> {
+export function readCandidate(): Promise<PersonCandidate> {
   return send('/api/dynasty/name');
 }
 
 /**
- * A trade either founds a dynasty for a new account or gives one back to an
+ * A trade either founds a person for a new account or gives one back to an
  * account a reset left without one; the session cookie says which. The name
- * sent is the one the player kept, with the id of the candidate it came from:
- * a suggestion that never arrived mints its own, the name being the player's.
+ * sent is the family name the player kept.
  */
-export function joinTown(trade: Trade, name: string, candidateId?: string): Promise<Joined> {
+export function joinTown(trade: Trade, name: string): Promise<Joined> {
   return send<Joined>('/api/session', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trade, name, ...(candidateId ? { candidate: { id: candidateId } } : {}) }),
+    body: JSON.stringify({ trade, name }),
   });
 }
 
@@ -267,23 +254,23 @@ export function advanceHour(): Promise<WorldResponse> {
 export function sendAction(
   hour: number,
   action: ActionIntent,
-): Promise<{ id: string; hour: number; dynastyId: string }> {
+): Promise<{ id: number; hour: number; personId: PersonId }> {
   return send('/api/actions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: actionId(), hour, action }),
+    body: JSON.stringify({ hour, action }),
   });
 }
 
-/** The actions the server still holds for this dynasty, current and next hour. */
+/** The actions the server still holds for this person, current and next hour. */
 export async function readPending(): Promise<PendingActionView[]> {
   const body = await send<{ actions: PendingActionView[] }>('/api/actions');
 
   return body.actions;
 }
 
-/** The dynasty's name, changed at once: an identity, not a trade of the hour. */
-export function renameDynasty(name: string): Promise<{ name: string }> {
+/** The family name, changed at once: an identity, not a trade of the hour. */
+export function renameFamily(name: string): Promise<{ name: string }> {
   return send('/api/dynasty/name', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -291,8 +278,8 @@ export function renameDynasty(name: string): Promise<{ name: string }> {
   });
 }
 
-export async function cancelAction(id: string): Promise<void> {
-  const response = await fetch(`/api/actions/${encodeURIComponent(id)}`, {
+export async function cancelAction(id: number): Promise<void> {
+  const response = await fetch(`/api/actions/${id}`, {
     method: 'DELETE',
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
@@ -301,23 +288,6 @@ export async function cancelAction(id: string): Promise<void> {
   if (!response.ok) {
     throw new ApiError(response.status, await errorCode(response));
   }
-}
-
-/**
- * `crypto.randomUUID` is only exposed in a secure context, and a phone testing
- * the town over plain HTTP is not one. getRandomValues is available everywhere.
- */
-function actionId(): string {
-  if (typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
-  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 async function send<T>(path: string, init: RequestInit = {}): Promise<T> {

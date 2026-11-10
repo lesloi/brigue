@@ -1,24 +1,27 @@
+import { nameKey } from '@brigue/core';
+
 export interface Player {
   /** SHA-256 of the raw token, never the token itself. */
   tokenHash: string;
   /** The stable identity the book of kings keeps; the store assigns it. */
   playerId: number;
+  /** The human family name; the person carries its display name. */
+  name: string;
   /** Empty for an account a reset left between towns, until it chooses again. */
   townId: number | null;
-  dynastyId: string | null;
+  personId: number | null;
   createdAt: Date;
   /** The last visit. Dormancy and the thirty-day deletion are measured from it. */
   lastSeenAt: Date;
-  revokedAt: Date | null;
   /** Set when the player asks to delete their identity: the erasure deadline. */
   deleteAfter: Date | null;
 }
 
 /**
- * An account with a dynasty. Every route that plays a town needs one: a valid
- * token without a dynasty may only choose a trade, which is an explicit action.
+ * An account with a person. Every route that plays a town needs one: a valid
+ * token without a person may only choose a trade, which is an explicit action.
  */
-export type BoundPlayer = Player & { townId: number; dynastyId: string };
+export type BoundPlayer = Player & { townId: number; personId: number };
 
 export type Closing = { kind: 'none' } | { kind: 'pending'; after: Date } | { kind: 'due' };
 
@@ -33,10 +36,10 @@ export function closingOf(player: Player, at: Date): Closing {
     : { kind: 'pending', after: player.deleteAfter };
 }
 
-export class DynastyAlreadyBoundError extends Error {
-  constructor(townId: number | null, dynastyId: string | null) {
-    super(`dynasty ${townId}/${dynastyId} already has a live token`);
-    this.name = 'DynastyAlreadyBoundError';
+export class PersonAlreadyBoundError extends Error {
+  constructor(personId: number | null) {
+    super(`person ${personId} already has a live token`);
+    this.name = 'PersonAlreadyBoundError';
   }
 }
 
@@ -45,35 +48,41 @@ export interface PlayerStore {
   insert(player: Omit<Player, 'playerId'>): Promise<Player>;
   findByTokenHash(tokenHash: string): Promise<Player | null>;
   /**
-   * Gives a dynasty back to an account a reset left without one. Null when the
-   * account is already bound or revoked: the choice is only made once.
+   * Gives the person to an account a reset left without one. Null when the
+   * account is already bound or the person is taken: the choice is made once.
    */
-  rebind(tokenHash: string, townId: number, dynastyId: string, at: Date): Promise<Player | null>;
-  revoke(tokenHash: string, at: Date): Promise<void>;
-  /** Records a visit without reopening a revoked session. */
+  rebind(tokenHash: string, townId: number, personId: number, at: Date): Promise<Player | null>;
+  /** Records a visit on an account that still exists. */
   touch(tokenHash: string, at: Date): Promise<void>;
-  /** Every account of a town, live or revoked, so presence can see the last visit. */
+  /** Every account of a town, so presence can see the last visit. */
   listByTown(townId: number): Promise<Player[]>;
-  /** Revokes every live account of a dynasty, for the thirty-day deletion. */
-  revokeDynasty(townId: number, dynastyId: string, at: Date): Promise<void>;
   /** Schedules the erasure of an identity; a second request keeps the first. */
   markDeletion(tokenHash: string, at: Date): Promise<void>;
   /** Cancels a scheduled erasure: the player came back. */
   cancelDeletion(tokenHash: string): Promise<void>;
-  /** Deletes every row of a dynasty, for an identity the scheduler erased. */
-  deleteDynasty(townId: number, dynastyId: string): Promise<void>;
   /**
-   * Erases the accounts a reset left without a dynasty whose deletion deadline
+   * Deletes the account and its mail; the person it holds goes with it, by the
+   * schema's cascade. Never called under a town's row lock: the cascade writes
+   * the person's row, which the lock covers.
+   */
+  deleteAccount(playerId: number): Promise<void>;
+  /** Erases an account no person ever took: a join that failed after issuing it. */
+  eraseAccount(tokenHash: string): Promise<void>;
+  /**
+   * Erases the accounts a reset left without a person whose deletion deadline
    * has passed, and returns how many. They belong to no town, so the per-town
    * sweep never reaches them.
    */
   deleteUnboundDue(at: Date): Promise<number>;
+  /** The family names of every account, for the server-wide uniqueness rule. */
+  listNames(): Promise<string[]>;
+  /** Changes the family name; a name another account carries is refused. */
+  renameName(tokenHash: string, name: string): Promise<void>;
 }
 
 /**
  * The database is the real store; this one exists so the auth tests do not
- * need a Postgres service. It mirrors the migration's partial unique index:
- * one live token per dynasty.
+ * need a Postgres service. It mirrors the unique index over the family name.
  */
 export class MemoryPlayerStore implements PlayerStore {
   private readonly players = new Map<string, Player>();
@@ -81,20 +90,10 @@ export class MemoryPlayerStore implements PlayerStore {
 
   async insert(player: Omit<Player, 'playerId'>): Promise<Player> {
     if (this.players.has(player.tokenHash)) {
-      throw new DynastyAlreadyBoundError(player.townId, player.dynastyId);
+      throw new PersonAlreadyBoundError(player.personId);
     }
-
-    // A dynasty-less account holds no place: only a bound one can collide.
-    for (const existing of this.players.values()) {
-      if (
-        player.townId !== null &&
-        player.dynastyId !== null &&
-        existing.revokedAt === null &&
-        existing.townId === player.townId &&
-        existing.dynastyId === player.dynastyId
-      ) {
-        throw new DynastyAlreadyBoundError(player.townId, player.dynastyId);
-      }
+    if (this.carriesName(player.name)) {
+      throw new NameAlreadyBoundError(player.name);
     }
 
     const stored: Player = { ...player, playerId: this.nextPlayerId };
@@ -104,20 +103,23 @@ export class MemoryPlayerStore implements PlayerStore {
     return { ...stored };
   }
 
-  async rebind(tokenHash: string, townId: number, dynastyId: string, at: Date): Promise<Player | null> {
+  async rebind(tokenHash: string, townId: number, personId: number, at: Date): Promise<Player | null> {
     const player = this.players.get(tokenHash);
 
-    if (player === undefined || player.revokedAt !== null || player.dynastyId !== null) {
+    if (player === undefined || player.personId !== null) {
       return null;
     }
-
     for (const existing of this.players.values()) {
-      if (existing.revokedAt === null && existing.townId === townId && existing.dynastyId === dynastyId) {
-        throw new DynastyAlreadyBoundError(townId, dynastyId);
+      // The memory store has no global sequence: a person id is scoped by its
+      // town, the way the database scopes a real id by the row it names. A
+      // person another account holds matches nothing, and the store answers
+      // null as the database's guarded update does.
+      if (existing.townId === townId && existing.personId === personId) {
+        return null;
       }
     }
 
-    const stored: Player = { ...player, townId, dynastyId, lastSeenAt: new Date(at) };
+    const stored: Player = { ...player, townId, personId, lastSeenAt: new Date(at) };
     this.players.set(tokenHash, stored);
 
     return { ...stored };
@@ -129,30 +131,15 @@ export class MemoryPlayerStore implements PlayerStore {
     return player ? { ...player } : null;
   }
 
-  async revoke(tokenHash: string, at: Date): Promise<void> {
-    const player = this.players.get(tokenHash);
-    if (player && player.revokedAt === null) {
-      this.players.set(tokenHash, { ...player, revokedAt: at, lastSeenAt: at });
-    }
-  }
-
   async touch(tokenHash: string, at: Date): Promise<void> {
     const player = this.players.get(tokenHash);
-    if (player && player.revokedAt === null) {
+    if (player) {
       this.players.set(tokenHash, { ...player, lastSeenAt: at });
     }
   }
 
   async listByTown(townId: number): Promise<Player[]> {
     return [...this.players.values()].filter((player) => player.townId === townId).map((player) => ({ ...player }));
-  }
-
-  async revokeDynasty(townId: number, dynastyId: string, at: Date): Promise<void> {
-    for (const [tokenHash, player] of this.players) {
-      if (player.townId === townId && player.dynastyId === dynastyId && player.revokedAt === null) {
-        this.players.set(tokenHash, { ...player, revokedAt: at });
-      }
-    }
   }
 
   async markDeletion(tokenHash: string, at: Date): Promise<void> {
@@ -171,19 +158,23 @@ export class MemoryPlayerStore implements PlayerStore {
     }
   }
 
-  async deleteDynasty(townId: number, dynastyId: string): Promise<void> {
+  async deleteAccount(playerId: number): Promise<void> {
     for (const [tokenHash, player] of this.players) {
-      if (player.townId === townId && player.dynastyId === dynastyId) {
+      if (player.playerId === playerId) {
         this.players.delete(tokenHash);
       }
     }
+  }
+
+  async eraseAccount(tokenHash: string): Promise<void> {
+    this.players.delete(tokenHash);
   }
 
   async deleteUnboundDue(at: Date): Promise<number> {
     let erased = 0;
 
     for (const [tokenHash, player] of this.players) {
-      if (player.dynastyId === null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime()) {
+      if (player.personId === null && player.deleteAfter !== null && player.deleteAfter.getTime() <= at.getTime()) {
         this.players.delete(tokenHash);
         erased += 1;
       }
@@ -192,10 +183,42 @@ export class MemoryPlayerStore implements PlayerStore {
     return erased;
   }
 
-  /** Mirrors the reset: every account keeps its identity and loses its dynasty. */
+  async listNames(): Promise<string[]> {
+    return [...this.players.values()].map((player) => player.name).sort();
+  }
+
+  async renameName(tokenHash: string, name: string): Promise<void> {
+    const player = this.players.get(tokenHash);
+
+    if (player === undefined) {
+      return;
+    }
+    if (this.carriesName(name, tokenHash)) {
+      throw new NameAlreadyBoundError(name);
+    }
+    this.players.set(tokenHash, { ...player, name });
+  }
+
+  private carriesName(name: string, exceptTokenHash?: string): boolean {
+    const key = nameKey(name);
+
+    return [...this.players.values()].some(
+      (player) => player.tokenHash !== exceptTokenHash && nameKey(player.name) === key,
+    );
+  }
+
+  /** Mirrors the reset: every account keeps its identity and loses its person. */
   resetAccounts(): void {
     for (const [tokenHash, player] of this.players) {
-      this.players.set(tokenHash, { ...player, townId: null, dynastyId: null });
+      this.players.set(tokenHash, { ...player, townId: null, personId: null });
     }
+  }
+}
+
+/** A family name another account already carries. */
+export class NameAlreadyBoundError extends Error {
+  constructor(name: string) {
+    super(`the family name "${name}" is already carried`);
+    this.name = 'NameAlreadyBoundError';
   }
 }

@@ -1,7 +1,7 @@
 import { TRADES, type Trade } from '@brigue/core/world';
 import { useEffect, useState } from 'preact/hooks';
 
-import type { DynastyCandidate } from '../api.ts';
+import type { PersonCandidate } from '../api.ts';
 import { tradeChainText, tradeName } from '../format.ts';
 import { Seal } from '../icons.tsx';
 
@@ -13,7 +13,7 @@ interface CreateProps {
   /** The name the route refused as taken: the field says so where it is. */
   taken: boolean;
   /** The identity the server prefills: the name the join will keep. */
-  candidate: DynastyCandidate | null;
+  candidate: PersonCandidate | null;
   candidateError: boolean;
   resuming: boolean;
   resumeError: string | null;
@@ -54,7 +54,7 @@ export function Create({
 
   useEffect(() => {
     if (candidate !== null && !touched) {
-      setName(candidate.dynastyName);
+      setName(candidate.familyName);
     }
   }, [candidate, touched]);
 

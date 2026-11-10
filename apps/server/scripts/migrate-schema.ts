@@ -1,8 +1,8 @@
-import { applyMigrations, pendingMigrations } from '../src/db/migrations.ts';
+import { applySchema, pendingSchema } from '../src/db/migrations.ts';
 
 /**
  * The schema of the database, not the world inside it: it applies
- * `db/migrations/*.sql` and records them in `schema_migrations`.
+ * `db/schema.sql` to an empty database and records it in `schema_migrations`.
  *
  * Two callers: a deploy runs it as is, and a schema gate can run it with
  * `--check` to refuse service until the database matches the image it ships
@@ -20,14 +20,14 @@ const pool = new Pool({ connectionString });
 
 try {
   if (checkOnly) {
-    const pending = await pendingMigrations(pool);
+    const pending = await pendingSchema(pool);
 
     if (pending.length > 0) {
       process.stderr.write(`pending migrations: ${pending.join(', ')}\n`);
       process.exitCode = 1;
     }
   } else {
-    for (const file of await applyMigrations(pool)) {
+    for (const file of await applySchema(pool)) {
       process.stdout.write(`applied ${file}\n`);
     }
   }

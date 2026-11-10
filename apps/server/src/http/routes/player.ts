@@ -39,7 +39,7 @@ export async function requestDeletion(
     await context.deps.store.markDeletion(player.tokenHash, after);
     context.deps.logger.info('player.deletion_scheduled', {
       townId: player.townId,
-      dynastyId: player.dynastyId,
+      personId: player.personId,
       deleteAfter: after.toISOString(),
     });
   }
@@ -68,7 +68,7 @@ export async function cancelDeletion(
 
   if (closing.kind === 'pending') {
     await context.deps.store.cancelDeletion(player.tokenHash);
-    context.deps.logger.info('player.deletion_cancelled', { townId: player.townId, dynastyId: player.dynastyId });
+    context.deps.logger.info('player.deletion_cancelled', { townId: player.townId, personId: player.personId });
   }
 
   response.writeHead(204, { 'Cache-Control': 'no-store' });

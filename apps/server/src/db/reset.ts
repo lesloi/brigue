@@ -13,38 +13,36 @@ export interface ResetOptions {
 export interface ResetReport {
   /** Kings carried across; zero on a full reset. */
   kings: number;
-  /** Accounts carried across without a dynasty; zero on a full reset. */
+  /** Accounts carried across without a person; zero on a full reset. */
   accounts: number;
   /** Whether the book of kings was deleted too. */
   full: boolean;
-  /** The migrations the empty schema was built from. */
+  /** The schema file the empty schema was built from. */
   applied: string[];
 }
 
 interface SurvivingKing {
-  player_id: number;
   dynasty_name: string;
-  person_name: string;
   crowned_at: Date;
   elapsed_hours: number;
 }
 
-/** The identity a reset keeps: everything but the town and the dynasty it lost. */
+/** The identity a reset keeps: everything but the town and the person it lost. */
 interface SurvivingAccount {
   token_hash: string;
   player_id: number;
+  name: string;
   created_at: Date;
   last_seen_at: Date;
-  revoked_at: Date | null;
   delete_after: Date | null;
 }
 
 /**
- * Drops the whole schema and builds it again from the migrations.
+ * Drops the whole schema and builds it again from `db/schema.sql`.
  *
  * The book of kings and the accounts are copied across, because no ordinary
- * reset touches them: the token is the identity, and a reset takes the dynasty,
- * not the player. A carried account comes back with no town and no dynasty, and
+ * reset touches them: the token is the identity, and a reset takes the person,
+ * not the player. A carried account comes back with no town and no person, and
  * its player chooses a trade on the next visit. A full reset deletes both.
  *
  * Destructive by design: the caller asks the operator first.
@@ -69,44 +67,29 @@ export async function resetDatabase(pool: Pool, options: ResetOptions = {}): Pro
       await insertRows(
         client,
         'kings',
-        ['player_id', 'dynasty_name', 'person_name', 'crowned_at', 'elapsed_hours'],
-        kings.map((king) => [king.player_id, king.dynasty_name, king.person_name, king.crowned_at, king.elapsed_hours]),
+        ['dynasty_name', 'crowned_at', 'elapsed_hours'],
+        kings.map((king) => [king.dynasty_name, king.crowned_at, king.elapsed_hours]),
       );
 
-      // The account keeps its id and its dates; the dynasty does not cross.
+      // The account keeps its id, its family name and its dates; the person
+      // does not cross.
       await insertRows(
         client,
         'players',
-        [
-          'token_hash',
-          'player_id',
-          'town_id',
-          'dynasty_id',
-          'created_at',
-          'last_seen_at',
-          'revoked_at',
-          'delete_after',
-        ],
+        ['token_hash', 'player_id', 'name', 'created_at', 'last_seen_at', 'delete_after'],
         accounts.map((account) => [
           account.token_hash,
           account.player_id,
-          null,
-          null,
+          account.name,
           account.created_at,
           account.last_seen_at,
-          account.revoked_at,
           account.delete_after,
         ]),
-        true,
       );
 
       // The rebuilt players sequence starts at one; the carried ids must not
-      // be handed to a new account. A king outlives its account, so the book
-      // may hold the highest id of all. The next account takes max + 1.
-      const maxPlayerId = [
-        ...kings.map((king) => king.player_id),
-        ...accounts.map((account) => account.player_id),
-      ].reduce((max, id) => Math.max(max, id), 0);
+      // be handed to a new account. The next account takes max + 1.
+      const maxPlayerId = accounts.map((account) => account.player_id).reduce((max, id) => Math.max(max, id), 0);
       if (maxPlayerId > 0) {
         await client.query(`SELECT setval(pg_get_serial_sequence('players', 'player_id'), $1, false)`, [
           maxPlayerId + 1,
@@ -151,9 +134,11 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   // a database reset before the rename carries `house_name`, one reset after it
   // carries `dynasty_name`.
   const nameColumn = types.has('dynasty_name') ? 'dynasty_name' : types.has('house_name') ? 'house_name' : null;
+  // The book names nobody: a crown is the town's memory, and the account it was
+  // worn by does not cross. A book of the shape that still carries a player id
+  // crosses the same way, the column dropped with the schema that held it.
   const shape =
     nameColumn !== null &&
-    types.get('player_id') === 'bigint' &&
     types.get('elapsed_hours') === 'integer' &&
     types.get('crowned_at') === 'timestamp with time zone';
 
@@ -170,28 +155,25 @@ async function survivingKings(client: PoolClient): Promise<SurvivingKing[]> {
   }
 
   const { rows } = await client.query<{
-    player_id: string;
     dynasty_name: string;
-    person_name: string;
     crowned_at: Date;
     elapsed_hours: number;
-  }>(`SELECT player_id, ${nameColumn} AS dynasty_name, person_name, crowned_at, elapsed_hours FROM kings`);
+  }>(`SELECT ${nameColumn} AS dynasty_name, crowned_at, elapsed_hours FROM kings`);
 
   return rows.map((row) => ({
-    player_id: Number(row.player_id),
     dynasty_name: row.dynasty_name,
-    person_name: row.person_name,
     crowned_at: row.crowned_at,
     elapsed_hours: row.elapsed_hours,
   }));
 }
 
 /**
- * The accounts an ordinary reset keeps. The token, the player id, the dates and
- * a pending deletion cross; the town and the dynasty do not, so the player
- * chooses a trade on the next visit. An accounts table of the older shape (a
- * world id, no stable player id) cannot be carried, so a non-empty one stops
- * the reset with a named reason instead of a silent cast.
+ * The accounts an ordinary reset keeps. The token, the player id, the family
+ * name, the dates and a pending deletion cross; the town and the person do not,
+ * so the player chooses a trade on the next visit. An accounts table of the
+ * older shape (a world id, no stable player id, no family name) cannot be
+ * carried, so a non-empty one stops the reset with a named reason instead of a
+ * silent cast.
  */
 async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]> {
   const { rows: present } = await client.query<{ present: boolean }>(
@@ -208,7 +190,7 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
      WHERE table_schema = 'public' AND table_name = 'players'`,
   );
   const presentColumns = new Set(columns.map((column) => column.column_name));
-  const needed = ['token_hash', 'player_id', 'created_at', 'last_seen_at', 'revoked_at', 'delete_after'];
+  const needed = ['token_hash', 'player_id', 'name', 'created_at', 'last_seen_at', 'delete_after'];
 
   if (!needed.every((column) => presentColumns.has(column))) {
     const { rows: count } = await client.query<{ count: number }>('SELECT count(*)::int AS count FROM players');
@@ -225,12 +207,12 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
   const { rows } = await client.query<{
     token_hash: string;
     player_id: string;
+    name: string;
     created_at: Date;
     last_seen_at: Date;
-    revoked_at: Date | null;
     delete_after: Date | null;
   }>(
-    `SELECT token_hash, player_id, created_at, last_seen_at, revoked_at, delete_after
+    `SELECT token_hash, player_id, name, created_at, last_seen_at, delete_after
      FROM players
      ORDER BY player_id`,
   );
@@ -238,20 +220,14 @@ async function survivingAccounts(client: PoolClient): Promise<SurvivingAccount[]
   return rows.map((row) => ({
     token_hash: row.token_hash,
     player_id: Number(row.player_id),
+    name: row.name,
     created_at: row.created_at,
     last_seen_at: row.last_seen_at,
-    revoked_at: row.revoked_at,
     delete_after: row.delete_after,
   }));
 }
 
-async function insertRows(
-  client: PoolClient,
-  table: string,
-  columns: string[],
-  rows: unknown[][],
-  overriding = false,
-): Promise<void> {
+async function insertRows(client: PoolClient, table: string, columns: string[], rows: unknown[][]): Promise<void> {
   if (rows.length === 0) {
     return;
   }
@@ -267,11 +243,7 @@ async function insertRows(
     return `(${marks.join(', ')})`;
   });
 
-  // A carried identity keeps the id it had, which an identity column refuses
-  // unless the insert overrides it.
-  const clause = overriding ? 'OVERRIDING SYSTEM VALUE ' : '';
-
-  await client.query(`INSERT INTO ${table} (${columns.join(', ')}) ${clause}VALUES ${tuples.join(', ')}`, values);
+  await client.query(`INSERT INTO ${table} (${columns.join(', ')}) VALUES ${tuples.join(', ')}`, values);
 }
 
 export interface TablePreview {
@@ -286,7 +258,7 @@ export interface ResetPreview {
   full: boolean;
   /** Kings that would survive; zero on a full reset. */
   kings: number;
-  /** Accounts that would survive without a dynasty; zero on a full reset. */
+  /** Accounts that would survive without a person; zero on a full reset. */
   accounts: number;
 }
 

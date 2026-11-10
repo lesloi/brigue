@@ -5,5 +5,10 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['packages/*/test/**/*-test.ts', 'apps/*/test/**/*-test.ts'],
+    // The Postgres suites share one database and the town fixtures reset its
+    // sequences; running files one at a time keeps them from truncating each
+    // other's towns mid-test.
+    fileParallelism: false,
+    maxWorkers: 1,
   },
 });

@@ -1,38 +1,38 @@
-import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { Pool } from 'pg';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { applyMigrations, defaultMigrationsDirectory, pendingMigrations } from '../src/db/migrations.ts';
+import { applySchema, defaultSchemaPath, pendingSchema } from '../src/db/migrations.ts';
 
 const databaseUrl = process.env.DATABASE_URL ?? '';
 const directories: string[] = [];
 
 // The move of this module into `src/db` is what the path depends on: the
 // command the image runs has no database to prove it, so the file system does.
-describe('the default migration directory', () => {
-  it('holds the migrations the image ships', async () => {
+describe('the default schema file', () => {
+  it('is the schema the image ships', async () => {
     // Act
-    const files = await readdir(defaultMigrationsDirectory());
+    const sql = await readFile(defaultSchemaPath(), 'utf8');
 
     // Assert
-    expect(files).toContain('0001_initial.sql');
+    expect(sql).toContain('CREATE TABLE towns');
   });
 });
 
 // Skips as a whole when there is no database to talk to, like the store test.
-describe.runIf(databaseUrl !== '')('migrations', () => {
+describe.runIf(databaseUrl !== '')('the schema file', () => {
   let pool: Pool;
 
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
-    await applyMigrations(pool);
+    await applySchema(pool);
   });
 
   afterEach(async () => {
-    // A temp migration is recorded like a real one; left behind, it would make
+    // A temp schema is recorded like the real one; left behind, it would make
     // the next run of this suite believe it was already applied.
     await pool.query(
       `DELETE FROM schema_migrations
@@ -46,56 +46,57 @@ describe.runIf(databaseUrl !== '')('migrations', () => {
     await pool.end();
   });
 
-  async function migrationsWith(file: string, sql: string): Promise<string> {
-    const directory = await mkdtemp(join(tmpdir(), 'brigue-migrations-'));
+  async function schemaWith(file: string, sql: string): Promise<string> {
+    const directory = await mkdtemp(join(tmpdir(), 'brigue-schema-'));
     directories.push(directory);
-    await writeFile(join(directory, file), sql);
+    const path = join(directory, file);
+    await writeFile(path, sql);
 
-    return directory;
+    return path;
   }
 
   it('has nothing pending once the schema is up to date', async () => {
     // Act
-    const pending = await pendingMigrations(pool);
+    const pending = await pendingSchema(pool);
 
     // Assert
     expect(pending).toEqual([]);
   });
 
-  it('reports a migration the running image carries and the schema does not', async () => {
+  it('reports a schema the running image carries and the database does not', async () => {
     // Arrange
-    const directory = await migrationsWith('9999_pending.sql', 'SELECT 1;');
+    const path = await schemaWith('9999_pending.sql', 'SELECT 1;');
 
     // Act
-    const pending = await pendingMigrations(pool, directory);
+    const pending = await pendingSchema(pool, path);
 
     // Assert
     expect(pending).toEqual(['9999_pending.sql']);
   });
 
-  it('applies a migration once and keeps no row twice', async () => {
+  it('applies a schema once and keeps no row twice', async () => {
     // Arrange
-    const directory = await migrationsWith('9998_once.sql', 'CREATE TABLE IF NOT EXISTS once_test (id int);');
+    const path = await schemaWith('9998_once.sql', 'CREATE TABLE IF NOT EXISTS once_test (id int);');
 
     // Act
-    const first = await applyMigrations(pool, directory);
-    const second = await applyMigrations(pool, directory);
+    const first = await applySchema(pool, path);
+    const second = await applySchema(pool, path);
 
     // Assert
     expect(first).toEqual(['9998_once.sql']);
     expect(second).toEqual([]);
-    expect(await pendingMigrations(pool, directory)).toEqual([]);
+    expect(await pendingSchema(pool, path)).toEqual([]);
   });
 
-  it('leaves a failing migration pending, and unapplied', async () => {
+  it('leaves a failing schema pending, and unapplied', async () => {
     // Arrange
-    const directory = await migrationsWith('9997_broken.sql', 'CREATE TABLE broken_test (id int) nonsense;');
+    const path = await schemaWith('9997_broken.sql', 'CREATE TABLE broken_test (id int) nonsense;');
 
     // Act
-    const apply = applyMigrations(pool, directory);
+    const apply = applySchema(pool, path);
 
     // Assert
     await expect(apply).rejects.toThrow();
-    expect(await pendingMigrations(pool, directory)).toEqual(['9997_broken.sql']);
+    expect(await pendingSchema(pool, path)).toEqual(['9997_broken.sql']);
   });
 });

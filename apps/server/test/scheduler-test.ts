@@ -1,20 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PACING, stateHash, withNewcomer, type Action, type Event, type World } from '@brigue/core';
+import { stateHash, withNewcomer, type Action, type Event, type World } from '@brigue/core';
 
 import { createLogger } from '../src/logger.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
-import { playDue, startScheduler } from '../src/town/scheduler.ts';
+import { playDue, playWorld, startScheduler } from '../src/town/scheduler.ts';
 import { issueToken } from '../src/identity/session.ts';
 import {
   HOUR_MS,
   MemoryWorldStore,
   UnknownWorldError,
-  type StoredAction,
+  hourAt,
+  type NewStoredAction,
   type WorldSession,
   type WorldStore,
 } from '../src/town/worlds.ts';
-import { TEST_FIRST_DYNASTY, TEST_TOWN, town as playableTown } from './helpers.ts';
+import { LECLERC, seeded, TEST_TOWN, town as playableTown } from './helpers.ts';
 
 const START = new Date('2026-11-05T00:00:00.000Z');
 const HOUR = HOUR_MS;
@@ -32,20 +33,23 @@ function withTown<T>(store: MemoryWorldStore, run: (session: WorldSession) => Pr
   return store.withWorld(run, TEST_TOWN.id);
 }
 
-async function playersWith(dynastyId = TEST_FIRST_DYNASTY.id, at = START): Promise<MemoryPlayerStore> {
+async function playersWith(personId = LECLERC, at = START): Promise<MemoryPlayerStore> {
   const players = new MemoryPlayerStore();
-  await issueToken(players, TEST_TOWN.id, dynastyId, at);
+  const { player } = await issueToken(players, 'Leclerc', at);
+  await players.rebind(player.tokenHash, TEST_TOWN.id, personId, at);
 
   return players;
 }
 
-/** One pass of the loop: play what is due, then keep it when an hour was lived. */
-async function pass(store: MemoryWorldStore, now: Date, minHours = 1) {
+/** One pass of the loop over one town: play what is due, then keep it. */
+async function pass(store: MemoryWorldStore, now: Date) {
   return withTown(store, async (session) => {
-    const due = await playDue(session, session.snapshot, now, minHours);
+    const { world, worldStartedAt } = session.snapshot;
+    const target = hourAt(worldStartedAt, now);
+    const due = await playDue(session, world, target, new Set(), seeded());
 
     if (due.hours > 0) {
-      await session.save(due.world, due.hourStartedAt, due.events);
+      await session.write(due.world, due.events);
     }
 
     return due;
@@ -56,10 +60,10 @@ async function worldOf(store: MemoryWorldStore) {
   return withTown(store, async (session) => session.snapshot);
 }
 
-function buy(id: string, at: number, units: number): StoredAction {
-  const action: Action = { type: 'market.buy', dynastyId: 'leclerc', good: 'wool', units };
+function buy(at: number, units: number): NewStoredAction {
+  const action: Action = { type: 'market.buy', personId: LECLERC, good: 'wool', units };
 
-  return { id, dynastyId: 'leclerc', playsAt: at, action, receivedAt: new Date(START), cancelledAt: null };
+  return { personId: LECLERC, playsAt: at, action, receivedAt: new Date(START) };
 }
 
 /** One chronicle line per hour, so a cut has a visible order to work on. */
@@ -69,7 +73,7 @@ function priceAt(hour: number): Event {
     audience: 'town',
     at: hour,
     seatId: 'maire',
-    winnerDynastyId: null,
+    winnerPersonId: null,
     votes: {},
   };
 }
@@ -88,13 +92,11 @@ describe('playDue', () => {
 
     // Assert
     expect(due.hours).toBe(0);
-    expect(due.skipped).toBe(0);
     expect(due.world.hour).toBe(1);
-    expect(due.hourStartedAt).toEqual(START);
     expect(due.events).toEqual([]);
   });
 
-  it('plays the hours the wall clock owes and moves the anchor with them', async () => {
+  it('plays the hours the wall clock owes', async () => {
     // Arrange
     const store = await town();
     const now = new Date(START.getTime() + 3 * HOUR);
@@ -104,9 +106,7 @@ describe('playDue', () => {
 
     // Assert: the town lived three hours, so its hour went from 1 to 4.
     expect(due.hours).toBe(3);
-    expect(due.skipped).toBe(0);
     expect(due.world.hour).toBe(4);
-    expect(due.hourStartedAt).toEqual(now);
     expect(due.events.length).toBeGreaterThan(0);
   });
 
@@ -128,58 +128,33 @@ describe('playDue', () => {
     const [bulkSnapshot, steppedSnapshot] = await Promise.all([worldOf(atOnce), worldOf(stepByStep)]);
     expect(stateHash(steppedSnapshot.world)).toBe(stateHash(bulkSnapshot.world));
     expect(stepped).toEqual(bulk.events);
-    expect(steppedSnapshot.hourStartedAt).toEqual(bulkSnapshot.hourStartedAt);
+    expect(steppedSnapshot.worldStartedAt).toEqual(bulkSnapshot.worldStartedAt);
   });
 
-  it('jumps over a backlog past the cap and counts the hours it skipped', async () => {
-    // Arrange
+  it('plays a backlog as long as the town was stopped, with no cap', async () => {
+    // Arrange: a server down for a week plays the whole week, so the data is
+    // back on the real clock instead of staying behind it.
     const store = await town();
-    const elapsed = PACING.maxCatchUpHours + 5;
-    const now = new Date(START.getTime() + elapsed * HOUR);
+    const elapsed = 7 * 24;
 
     // Act
-    const due = await pass(store, now);
-
-    // Assert: the unplayed hours are not simulated, but the anchor still meets
-    // the wall clock, or the town would owe them forever.
-    expect(due.hours).toBe(PACING.maxCatchUpHours);
-    expect(due.skipped).toBe(5);
-    expect(due.world.hour).toBe(1 + PACING.maxCatchUpHours);
-    expect(due.hourStartedAt).toEqual(now);
-
-    // Act: five more wall hours pass.
-    const later = await pass(store, new Date(now.getTime() + 5 * HOUR));
-
-    // Assert: only the new hours are played; the skipped ones are gone.
-    expect(later.hours).toBe(5);
-    expect(later.skipped).toBe(0);
-    expect(later.world.hour).toBe(1 + PACING.maxCatchUpHours + 5);
-  });
-
-  it('plays a backlog exactly at the cap without skipping', async () => {
-    // Arrange: the boundary is where an off-by-one would hide.
-    const store = await town();
-    const now = new Date(START.getTime() + PACING.maxCatchUpHours * HOUR);
-
-    // Act
-    const due = await pass(store, now);
+    const due = await pass(store, new Date(START.getTime() + elapsed * HOUR));
 
     // Assert
-    expect(due.hours).toBe(PACING.maxCatchUpHours);
-    expect(due.skipped).toBe(0);
-    expect(due.world.hour).toBe(1 + PACING.maxCatchUpHours);
-    expect(due.hourStartedAt).toEqual(now);
+    expect(due.hours).toBe(elapsed);
+    expect(due.world.hour).toBe(1 + elapsed);
   });
 
   it('does not touch the world it is given', async () => {
     // Arrange: the memory store hands out its live snapshot, so an in-place
-    // step would corrupt the stored town even without a save.
+    // step would corrupt the stored town even without a write.
     const store = await town();
 
     // Act
     const hashes = await withTown(store, async (session) => {
-      const before = stateHash(session.snapshot.world);
-      await playDue(session, session.snapshot, new Date(START.getTime() + 2 * HOUR));
+      const { world, worldStartedAt } = session.snapshot;
+      const before = stateHash(world);
+      await playDue(session, world, hourAt(worldStartedAt, new Date(START.getTime() + 2 * HOUR)), new Set(), seeded());
 
       return { before, after: stateHash(session.snapshot.world) };
     });
@@ -188,37 +163,20 @@ describe('playDue', () => {
     expect(hashes.after).toBe(hashes.before);
   });
 
-  it('leaves a town one hour behind to the scheduler and wakes it at two', async () => {
-    // Arrange: the reader's floor is what tells a live loop from a dead one.
-    const store = await town();
-
-    // Act
-    const one = await pass(store, new Date(START.getTime() + HOUR), 2);
-    const two = await pass(store, new Date(START.getTime() + 2 * HOUR), 2);
-
-    // Assert
-    expect(one.hours).toBe(0);
-    expect(one.hourStartedAt).toEqual(START);
-    expect(two.hours).toBe(2);
-    expect(two.world.hour).toBe(3);
-  });
-
   it('plays the actions of the hours it sweeps, on their own hour and in order', async () => {
     // Arrange: two refusals share an hour, a buy follows on the next one. A
     // refusal keeps the order it was received in, which is what the row order is.
     const store = await town();
-    const refused = (id: string, at: number, action: Action): StoredAction => ({
-      id,
-      dynastyId: 'leclerc',
+    const refused = (at: number, action: Action): NewStoredAction => ({
+      personId: LECLERC,
       playsAt: at,
       action,
       receivedAt: new Date(START),
-      cancelledAt: null,
     });
     await withTown(store, async (session) => {
-      await session.append(refused('first', 2, { type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }));
-      await session.append(buy('second', 3, 4));
-      await session.append(refused('third', 2, { type: 'dynasty.buy_title', dynastyId: 'leclerc' }));
+      await session.append(refused(2, { type: 'market.sell', personId: LECLERC, good: 'grain', units: 1 }));
+      await session.append(buy(3, 4));
+      await session.append(refused(2, { type: 'person.buy_title', personId: LECLERC }));
     });
 
     // Act
@@ -227,12 +185,27 @@ describe('playDue', () => {
     // Assert: the two refusals of hour two come in received order, before the
     // third hour's buy.
     const mine = due.events.flatMap((event) =>
-      event.type === 'action.refused' && event.dynastyId === 'leclerc' ? [{ at: event.at, action: event.action }] : [],
+      event.type === 'action.refused' && event.personId === LECLERC ? [{ at: event.at, action: event.action }] : [],
     );
     expect(mine).toEqual([
       { at: 2, action: 'market.sell' },
-      { at: 2, action: 'dynasty.buy_title' },
+      { at: 2, action: 'person.buy_title' },
     ]);
+  });
+});
+
+describe('playWorld', () => {
+  it('serialises two passes, so an hour is never lived twice', async () => {
+    // Arrange: a visit and the timer both pass at the same instant.
+    const store = await town();
+    const access = { store, players: await playersWith(), logger: createLogger(() => {}), random: seeded() };
+    const at = new Date(START.getTime() + HOUR);
+
+    // Act
+    await Promise.all([playWorld(access, at), playWorld(access, at)]);
+
+    // Assert: the town lived the hour once, whatever the two passes read.
+    expect((await worldOf(store)).world.hour).toBe(2);
   });
 });
 
@@ -252,6 +225,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -259,10 +233,9 @@ describe('startScheduler', () => {
     clock.now += HOUR;
     await vi.advanceTimersByTimeAsync(1_000);
 
-    // Assert: the pass played the hour and moved the anchor with it.
+    // Assert: the pass played the hour.
     const played = await worldOf(store);
     expect(played.world.hour).toBe(2);
-    expect(played.hourStartedAt).toEqual(new Date(clock.now));
 
     // Act: more passes on the same hour.
     await vi.advanceTimersByTimeAsync(5_000);
@@ -289,6 +262,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -302,25 +276,26 @@ describe('startScheduler', () => {
   });
 
   it('prunes the journal past the real-time window on a pass that plays nothing', async () => {
-    // Arrange: a town re-anchored eight days later, holding entries written
-    // before the window. Nothing is due, so the pass has no save to hang a prune
-    // on.
+    // Arrange: a town whose data already met a clock eight days ahead, holding
+    // entries written before the window. Nothing is due, so the pass has no write
+    // to hang a prune on.
     vi.useFakeTimers();
     const clock = { now: START.getTime() };
     const store = new MemoryWorldStore(() => new Date(clock.now));
-    await store.createTown(TEST_TOWN.name, { ...playableTown(20261105), hour: 200 }, START);
+    await store.createTown(TEST_TOWN.name, playableTown(20261105), START);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 31));
+      await session.write({ ...session.snapshot.world, hour: 193 }, hours(1, 31));
     }, TEST_TOWN.id);
     clock.now += 8 * 24 * HOUR;
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, new Date(clock.now), hours(32, 120));
+      await session.write(session.snapshot.world, hours(32, 120));
     }, TEST_TOWN.id);
     const scheduler = startScheduler({
       store,
       players: await playersWith(),
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -336,7 +311,7 @@ describe('startScheduler', () => {
       }),
       TEST_TOWN.id,
     );
-    expect(read.hour).toBe(200);
+    expect(read.hour).toBe(193);
     expect(read.page[0]?.at).toBe(32);
     expect(read.page).toHaveLength(89);
   });
@@ -348,14 +323,17 @@ describe('startScheduler', () => {
     const players = new MemoryPlayerStore();
     const a = await store.createTown('A', playableTown(20261105), START);
     const b = await store.createTown('B', playableTown(20261106), START);
-    await issueToken(players, a.id, TEST_FIRST_DYNASTY.id, START);
-    await issueToken(players, b.id, TEST_FIRST_DYNASTY.id, START);
+    const aToken = await issueToken(players, 'Leclerc', START);
+    await players.rebind(aToken.player.tokenHash, a.id, LECLERC, START);
+    const bToken = await issueToken(players, 'Leclerc2', START);
+    await players.rebind(bToken.player.tokenHash, b.id, LECLERC, START);
     const clock = { now: START.getTime() };
     const scheduler = startScheduler({
       store,
       players,
       logger: createLogger(() => {}),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -364,9 +342,14 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     scheduler.stop();
 
-    // Assert: both towns lived the hour, each on its own clock.
-    expect((await store.withWorld(async (session) => session.snapshot, a.id)).world.hour).toBe(2);
-    expect((await store.withWorld(async (session) => session.snapshot, b.id)).world.hour).toBe(2);
+    // Assert: both towns lived the hour, sharing the world's one clock, and
+    // both advanced their own data.
+    const aWorld = (await store.withWorld(async (session) => session.snapshot, a.id)).world;
+    const bWorld = (await store.withWorld(async (session) => session.snapshot, b.id)).world;
+    expect(aWorld.hour).toBe(2);
+    expect(bWorld.hour).toBe(2);
+    expect(aWorld.marketFlow).not.toEqual({});
+    expect(bWorld.marketFlow).not.toEqual({});
   });
 
   it('keeps playing the other towns when one fails', async () => {
@@ -376,17 +359,20 @@ describe('startScheduler', () => {
     const bad = await real.createTown('Bad', playableTown(20261105), START);
     const good = await real.createTown('Good', playableTown(20261106), START);
     const players = new MemoryPlayerStore();
-    await issueToken(players, bad.id, TEST_FIRST_DYNASTY.id, START);
-    await issueToken(players, good.id, TEST_FIRST_DYNASTY.id, START);
+    const badToken = await issueToken(players, 'Leclerc', START);
+    await players.rebind(badToken.player.tokenHash, bad.id, LECLERC, START);
+    const goodToken = await issueToken(players, 'Leclerc2', START);
+    await players.rebind(goodToken.player.tokenHash, good.id, LECLERC, START);
     const broken: WorldStore = {
-      createTown: (name, world, hourStartedAt) => real.createTown(name, world, hourStartedAt),
+      createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
-      listHumanNames: () => real.listHumanNames(),
+      readClock: () => real.readClock(),
+      moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) =>
         townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
-      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
+      markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
+      deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),
       close: () => real.close(),
@@ -398,6 +384,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -405,10 +392,14 @@ describe('startScheduler', () => {
     await vi.advanceTimersByTimeAsync(1_000);
     scheduler.stop();
 
-    // Assert: the failure is named, and the sound town still moves.
+    // Assert: the failure is named, and the sound town still moves. The failed
+    // town shares the world's clock but its own data never advanced.
     expect(logs.some((line) => line.includes('town.advance_failed') && line.includes(String(bad.id)))).toBe(true);
-    expect((await real.withWorld(async (session) => session.snapshot, good.id)).world.hour).toBe(2);
-    expect((await real.withWorld(async (session) => session.snapshot, bad.id)).world.hour).toBe(1);
+    const goodWorld = (await real.withWorld(async (session) => session.snapshot, good.id)).world;
+    const badWorld = (await real.withWorld(async (session) => session.snapshot, bad.id)).world;
+    expect(goodWorld.hour).toBe(2);
+    expect(goodWorld.marketFlow).not.toEqual({});
+    expect(badWorld.marketFlow).toEqual({});
   });
 
   it('erases an identity whose week is over, and the town with it', async () => {
@@ -416,18 +407,15 @@ describe('startScheduler', () => {
     vi.useFakeTimers();
     const store = await town();
     const players = new MemoryPlayerStore();
-    const { player } = await issueToken(
-      players,
-      TEST_TOWN.id,
-      TEST_FIRST_DYNASTY.id,
-      new Date(START.getTime() - 8 * 24 * HOUR),
-    );
+    const { player } = await issueToken(players, 'Leclerc', new Date(START.getTime() - 8 * 24 * HOUR));
+    await players.rebind(player.tokenHash, TEST_TOWN.id, LECLERC, new Date(START.getTime() - 8 * 24 * HOUR));
     await players.markDeletion(player.tokenHash, new Date(START.getTime() - HOUR));
     const scheduler = startScheduler({
       store,
       players,
       logger: createLogger(() => {}),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -447,16 +435,19 @@ describe('startScheduler', () => {
     vi.useFakeTimers();
     const store = new MemoryWorldStore();
     const players = new MemoryPlayerStore();
-    const identity = { id: 'moreau', dynastyName: 'Moreau', personName: 'Colin Moreau' };
+    const identity = { personName: 'Colin Moreau' };
     await store.createTown(TEST_TOWN.name, withNewcomer(playableTown(20261105), 'baker', identity), START);
-    const gone = await issueToken(players, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, START);
-    const stays = await issueToken(players, TEST_TOWN.id, identity.id, START);
+    const gone = await issueToken(players, 'Leclerc', START);
+    await players.rebind(gone.player.tokenHash, TEST_TOWN.id, LECLERC, START);
+    const stays = await issueToken(players, 'Moreau', START);
+    await players.rebind(stays.player.tokenHash, TEST_TOWN.id, 5, START);
     await players.markDeletion(gone.player.tokenHash, new Date(START.getTime() - HOUR));
     const scheduler = startScheduler({
       store,
       players,
       logger: createLogger(() => {}),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -466,8 +457,8 @@ describe('startScheduler', () => {
 
     // Assert: the erased dynasty and its row are gone, the other keeps the town.
     const world = (await store.withWorld(async (session) => session.snapshot, TEST_TOWN.id)).world;
-    expect(world.dynasties[TEST_FIRST_DYNASTY.id]).toBeUndefined();
-    expect(world.dynasties[identity.id]).toBeDefined();
+    expect(world.people[LECLERC]).toBeUndefined();
+    expect(world.people[5]).toBeDefined();
     expect(await players.findByTokenHash(gone.player.tokenHash)).toBeNull();
     expect(await players.findByTokenHash(stays.player.tokenHash)).not.toBeNull();
   });
@@ -481,10 +472,10 @@ describe('startScheduler', () => {
     await players.insert({
       tokenHash,
       townId: null,
-      dynastyId: null,
+      personId: null,
+      name: 'Ancien',
       createdAt: START,
       lastSeenAt: START,
-      revokedAt: null,
       deleteAfter: new Date(START.getTime() - HOUR),
     });
     const logs: string[] = [];
@@ -493,6 +484,7 @@ describe('startScheduler', () => {
       players,
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -515,6 +507,7 @@ describe('startScheduler', () => {
       players: new MemoryPlayerStore(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -535,11 +528,12 @@ describe('startScheduler', () => {
     const store: WorldStore = {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
-      listHumanNames: () => real.listHumanNames(),
+      readClock: () => real.readClock(),
+      moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
-      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
+      markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
+      deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) => {
         pruned.push(townId);
 
@@ -548,12 +542,14 @@ describe('startScheduler', () => {
       close: () => real.close(),
     };
     const players = new MemoryPlayerStore();
-    await issueToken(players, TEST_TOWN.id, TEST_FIRST_DYNASTY.id, new Date(START.getTime() - 31 * 24 * HOUR));
+    const late = await issueToken(players, 'Leclerc', new Date(START.getTime() - 31 * 24 * HOUR));
+    await players.rebind(late.player.tokenHash, TEST_TOWN.id, LECLERC, new Date(START.getTime() - 31 * 24 * HOUR));
     const scheduler = startScheduler({
       store,
       players,
       logger: createLogger(() => {}),
       now: () => new Date(START),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -574,11 +570,12 @@ describe('startScheduler', () => {
     const guarded: WorldStore = {
       createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
-      listHumanNames: () => real.listHumanNames(),
+      readClock: () => real.readClock(),
+      moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => real.withWorld(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
-      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
+      markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
+      deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: () => Promise.reject(new Error('the journal is stuck')),
       close: () => real.close(),
     };
@@ -589,6 +586,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 
@@ -609,17 +607,18 @@ describe('startScheduler', () => {
     const real = await town();
     let attempts = 0;
     const flaky: WorldStore = {
-      createTown: (name, world, hourStartedAt) => real.createTown(name, world, hourStartedAt),
+      createTown: (name, world, at) => real.createTown(name, world, at),
       listTowns: () => real.listTowns(),
-      listHumanNames: () => real.listHumanNames(),
+      readClock: () => real.readClock(),
+      moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => {
         attempts += 1;
 
         return attempts === 1 ? Promise.reject(new Error('the database is down')) : real.withWorld(run, townId);
       },
       withJoinLock: (run) => real.withJoinLock(run),
-      markMessageRead: (id, dynastyId) => real.markMessageRead(id, dynastyId),
-      deleteMessage: (id, dynastyId) => real.deleteMessage(id, dynastyId),
+      markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
+      deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
       pruneJournal: (townId, chronicleBefore, messagesBefore) =>
         real.pruneJournal(townId, chronicleBefore, messagesBefore),
       close: () => real.close(),
@@ -631,6 +630,7 @@ describe('startScheduler', () => {
       players: await playersWith(),
       logger: createLogger((line) => logs.push(line)),
       now: () => new Date(clock.now),
+      random: seeded(),
       everyMs: 1_000,
     });
 

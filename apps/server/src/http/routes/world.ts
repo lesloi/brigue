@@ -30,35 +30,27 @@ export async function readWorld(
     return;
   }
 
-  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.dynastyId, at);
+  const outcome = await catchUpTown(townAccess(context), bound.townId, bound.personId, bound.playerId, at);
 
   if (outcome.kind === 'gone') {
-    // The visit arrived after the dynasty was silent for a month: the world has
-    // already deleted it and revoked the token. Clear the dead cookie so the
+    // The visit arrived after the person was silent for a month: the world has
+    // already deleted them and erased the account. Clear the dead cookie so the
     // client can take the freed place.
-    context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, personId: bound.personId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
 
-  const caught = outcome.result;
   await context.deps.store.touch(bound.tokenHash, at);
 
-  if (caught.skipped > 0) {
-    context.deps.logger.warn('world.catch_up_capped', {
-      townId: bound.townId,
-      skipped: caught.skipped,
-    });
-  }
   context.deps.logger.info('world.read', {
     townId: bound.townId,
-    dynastyId: bound.dynastyId,
-    hour: caught.world.hour,
-    hoursPlayed: caught.hours,
-    skipped: caught.skipped,
+    personId: bound.personId,
+    hour: outcome.world.hour,
+    hoursPlayed: outcome.hours,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
+  const projection = projectWorld(outcome.town, outcome.world, bound.personId, outcome.worldStartedAt, bound.name);
 
   sendJson(response, 200, {
     world: projection,
@@ -66,8 +58,7 @@ export async function readWorld(
     chronicle: outcome.chronicle,
     unreadMessages: outcome.unread,
     summary: {
-      hours: caught.hours,
-      skipped: caught.skipped,
+      hours: outcome.hours,
     },
     // The projected state, not the world: hashing the world would reveal the
     // seed and with it every future the town has not lived yet.
@@ -108,24 +99,23 @@ export async function advanceHour(
     return;
   }
 
-  const outcome = await advanceTown(townAccess(context), bound.townId, bound.dynastyId, at, context.now);
+  const outcome = await advanceTown(townAccess(context), bound.townId, bound.personId, bound.playerId, at);
 
   if (outcome.kind === 'gone') {
-    context.deps.logger.warn('world.session_expired', { townId: bound.townId, dynastyId: bound.dynastyId });
+    context.deps.logger.warn('world.session_expired', { townId: bound.townId, personId: bound.personId });
     unauthorized(response, context.secureCookies, true);
     return;
   }
 
-  const caught = outcome.result;
   await context.deps.store.touch(bound.tokenHash, at);
 
   context.deps.logger.info('world.advanced', {
     townId: bound.townId,
-    dynastyId: bound.dynastyId,
-    hour: caught.world.hour,
+    personId: bound.personId,
+    hour: outcome.world.hour,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.dynastyId, caught.hourStartedAt);
+  const projection = projectWorld(outcome.town, outcome.world, bound.personId, outcome.worldStartedAt, bound.name);
 
   sendJson(response, 200, {
     world: projection,
@@ -133,8 +123,7 @@ export async function advanceHour(
     chronicle: outcome.chronicle,
     unreadMessages: outcome.unread,
     summary: {
-      hours: caught.hours,
-      skipped: caught.skipped,
+      hours: outcome.hours,
     },
     stateHash: hashJson(projection),
     deletionGraceDays: PACING.deletionGraceDays,
@@ -176,7 +165,7 @@ export async function deleteMessage(
     return;
   }
 
-  const result = await context.deps.worlds.deleteMessage(id, bound.dynastyId);
+  const result = await context.deps.worlds.deleteMessage(id, bound.playerId);
 
   sendJson(response, 200, { deleted: result.deleted, unreadMessages: result.unread });
 }
@@ -215,7 +204,7 @@ export async function markMessageRead(
     return;
   }
 
-  const result = await context.deps.worlds.markMessageRead(id, bound.dynastyId);
+  const result = await context.deps.worlds.markMessageRead(id, bound.playerId);
 
   sendJson(response, 200, { read: result.read, unreadMessages: result.unread });
 }

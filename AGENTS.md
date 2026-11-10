@@ -6,19 +6,21 @@ mostly on a phone, in short visits. Vocabulary: [GLOSSARY.md](./GLOSSARY.md).
 
 ## Architecture
 
-- `packages/core`: the whole simulation. Pure TypeScript: no I/O, no wall clock, no global
-  random. One seed in, one world out.
-- `apps/server`: Node, holds the world in Postgres, serves the API, catches the
-  world up when a player asks for it.
+- `packages/core`: the whole simulation. Pure TypeScript: no I/O, no wall clock read, no
+  global random read; where it needs time or chance, the caller passes them.
+- `apps/server`: Node, holds the world in Postgres, serves the API, and plays the hours the
+  wall clock owes: a scheduled pass over every town, and the town a visit reads.
 - `apps/web`: a Vite PWA, mobile first. It renders the projection and the events, and sends
   action intents; it decides nothing.
 - TypeScript everywhere, one language for the core, the server and the client. pnpm workspace.
 
 By default:
 
-- `advance(world, until, actions)` returns a new world and the events up to that instant. It never
-  mutates the world it is given, and the core never reads the clock or `Math.random`; a test
-  guards both.
+- `advance(world, until, actions, dormant, random)` returns a new world and the events up to
+  that instant. It never mutates the world it is given. The core reads neither the wall clock
+  nor a global random source itself: the instant and the random stream are passed in by the
+  caller. A test guards that no `Date` call and no `Math.random` is written inside
+  `packages/core`; randomness is still allowed, as an argument.
 - Money is integer cents. There is no float in the simulation, and no amount is ever a string.
 - The core never imports from `apps/*`. It is the one part that must stay replayable without a
   server, a database or a browser.
@@ -27,9 +29,9 @@ By default:
 - Within a format, changes to the shape of the world are additive only: a new field with a
   default. Renaming a field or changing a unit is a breaking change and needs a migration, so we
   do not do it. A new format may reset instead: see the DECISIONS entry on the next format.
-- A dynasty is held by a controller, `ai` or `human`; a seat is held by a person of that dynasty.
-  The simulation never asks who controls the dynasty: solo, multiplayer and a dormant dynasty are the
-  same code.
+- A person is the unit, and a seat is held by a person; `ia` says whether an AI
+  plays them. The simulation never asks who plays a person: solo, multiplayer and a
+  dormant person are the same code.
 - A refusal is an event, never a throw: the server replays stored actions days later, and one
   poisoned action must not be able to stop the town. Only a wrong world version throws.
 - The game speaks French; the code, the commits and the docs speak English.

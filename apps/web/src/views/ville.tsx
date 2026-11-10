@@ -1,10 +1,12 @@
+import type { PersonId } from '@brigue/core';
+
 import type { PendingActionView, WorldResponse } from '../api.ts';
 import { netPendingFor } from '../trade.ts';
 import { formatCents, formatCount, goodQuantity, workshopName } from '../format.ts';
 import { HeroScene } from '../hero.tsx';
 import { ResourceIcon, Seal, WorkshopThumb } from '../icons.tsx';
 import { DevBar } from './devbar.tsx';
-import { DynastyBar } from './dynastybar.tsx';
+import { PersonBar } from './dynastybar.tsx';
 
 interface VilleProps {
   data: WorldResponse;
@@ -30,8 +32,7 @@ export function Ville({
   onDeleteAccount,
 }: VilleProps) {
   const { world } = data;
-  const dynasty = world.dynasty;
-  const nameOf = dynastyName(world);
+  const person = world.person;
 
   return (
     <main class="screen">
@@ -41,7 +42,7 @@ export function Ville({
         <div class="id">
           <Seal />
           <div>
-            <div class="nm">Dynastie {dynasty.name}</div>
+            <div class="nm">Dynastie {person.name}</div>
             <div class="pl">
               {world.town.name} &middot; an {world.year}
             </div>
@@ -75,20 +76,20 @@ export function Ville({
         </div>
       </section>
 
-      <DynastyBar data={data} mode="ville" pending={pending} />
+      <PersonBar data={data} mode="ville" pending={pending} />
 
       {data.dev === true ? <DevBar data={data} busy={advancing} onAdvance={onAdvance} /> : null}
 
       <div class="body">
-        <section class="sec" aria-labelledby="dynasty-title">
+        <section class="sec" aria-labelledby="person-title">
           <div class="h">
-            <b id="dynasty-title">Ta dynastie</b>
+            <b id="person-title">Ta dynastie</b>
             <span>
-              {dynasty.workshops.length} atelier{dynasty.workshops.length > 1 ? 's' : ''}
+              {person.workshops.length} atelier{person.workshops.length > 1 ? 's' : ''}
             </span>
           </div>
           <div class="card">
-            {dynasty.workshops.length === 0 ? (
+            {person.workshops.length === 0 ? (
               <div class="row empty">
                 <div class="nm">
                   <b>Aucun atelier</b>
@@ -96,11 +97,11 @@ export function Ville({
                 </div>
               </div>
             ) : (
-              dynasty.workshops.map((workshop) => (
+              person.workshops.map((workshop) => (
                 <WorkshopRow
                   workshop={workshop}
                   priceCents={world.town.market[workshop.good]}
-                  stock={dynasty.stock}
+                  stock={person.stock}
                   pendingInput={
                     workshop.input === null
                       ? 0
@@ -113,7 +114,7 @@ export function Ville({
                 />
               ))
             )}
-            {dynasty.debtCents > 0 ? (
+            {person.debtCents > 0 ? (
               <div class="row debt">
                 <div class="th">
                   <ResourceIcon kind="coins" />
@@ -124,7 +125,7 @@ export function Ville({
                 </div>
                 <div class="act">
                   <span class="price owed">
-                    <b>{formatCents(dynasty.debtCents)}</b> écus
+                    <b>{formatCents(person.debtCents)}</b> écus
                   </span>
                 </div>
               </div>
@@ -148,12 +149,9 @@ export function Ville({
             ) : (
               world.town.laws.map((law) => (
                 <div class="law">
-                  <b>{law.title}</b>
+                  <b>{law.code}</b>
                   <span class="pill">vigueur</span>
-                  <p>
-                    portée par <span>{nameOf(law.sponsorDynastyId)}</span> &middot;{' '}
-                    {lawAgeText(law.enactedAt, world.hour)}
-                  </p>
+                  <p>réglée à {formatCount(law.value)}</p>
                 </div>
               ))
             )}
@@ -169,11 +167,11 @@ export function Ville({
   );
 }
 
-export function dynastyName(world: WorldResponse['world']): (dynastyId: string) => string {
-  const names = new Map(world.town.dynasties.map((dynasty) => [dynasty.id, dynasty.name]));
-  names.set(world.dynasty.id, world.dynasty.name);
+export function personName(world: WorldResponse['world']): (personId: PersonId) => string {
+  const names = new Map(world.town.people.map((person) => [person.id, person.name]));
+  names.set(world.person.id, world.person.name);
 
-  return (dynastyId) => names.get(dynastyId) ?? 'une dynastie inconnue';
+  return (personId) => names.get(personId) ?? 'une personne inconnue';
 }
 
 export function countdownText(nextBellAt: string, now: number): string {
@@ -184,17 +182,6 @@ export function countdownText(nextBellAt: string, now: number): string {
   }
 
   return `cloche dans ${durationText(remaining)}`;
-}
-
-/** How long ago the town enacted a law, said in hours from its own clock. */
-export function lawAgeText(enactedAt: number, currentHour: number): string {
-  const age = currentHour - enactedAt;
-
-  if (age <= 0) {
-    return 'cette heure';
-  }
-
-  return `il y a ${formatCount(age)} heure${age > 1 ? 's' : ''}`;
 }
 
 function durationText(remaining: number): string {
@@ -217,9 +204,9 @@ function WorkshopRow({
   pendingInput,
   onGoMarket,
 }: {
-  workshop: WorldResponse['world']['dynasty']['workshops'][number];
+  workshop: WorldResponse['world']['person']['workshops'][number];
   priceCents: number;
-  stock: WorldResponse['world']['dynasty']['stock'];
+  stock: WorldResponse['world']['person']['stock'];
   pendingInput: number;
   onGoMarket(): void;
 }) {

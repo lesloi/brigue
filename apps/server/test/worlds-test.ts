@@ -2,7 +2,11 @@ import { createWorld, type Event } from '@brigue/core';
 import { describe, expect, it } from 'vitest';
 
 import { MemoryWorldStore, UnknownWorldError, type MessageView } from '../src/town/worlds.ts';
-import { town } from './helpers.ts';
+import { CARON, LECLERC, town } from './helpers.ts';
+
+const PLAYER = 900_001;
+const OTHER_PLAYER = 900_002;
+const ACCOUNTS = new Map([[LECLERC, PLAYER]]);
 
 /** One chronicle line per hour, so a cut has a visible order to work on. */
 function heldAt(hour: number): Event {
@@ -11,18 +15,18 @@ function heldAt(hour: number): Event {
     audience: 'town',
     at: hour,
     seatId: 'maire',
-    winnerDynastyId: null,
+    winnerPersonId: null,
     votes: {},
   };
 }
 
 /** One private line per hour, addressed to the weaver of `town()`. */
-function repaidAt(hour: number): Extract<Event, { type: 'dynasty.debt_repaid' }> {
+function repaidAt(hour: number): Extract<Event, { type: 'person.debt_repaid' }> {
   return {
-    type: 'dynasty.debt_repaid',
-    audience: { dynastyId: 'leclerc' },
+    type: 'person.debt_repaid',
+    audience: { personId: LECLERC },
     at: hour,
-    dynastyId: 'leclerc',
+    personId: LECLERC,
     // The payload carries the hour, since a stored message keeps no `at`.
     amountCents: hour,
   };
@@ -42,25 +46,24 @@ function range(from: number, to: number): number[] {
 
 /** The payload of each message, which carries the hour it stands for. */
 function amountsOf(messages: MessageView[]): number[] {
-  return messages.map((message) => (message.event.type === 'dynasty.debt_repaid' ? message.event.amountCents : -1));
+  return messages.map((message) => (message.event.type === 'person.debt_repaid' ? message.event.amountCents : -1));
 }
 
 describe('the town store', () => {
   it('keeps two towns apart and clears one without the other', async () => {
     // Arrange
     const store = new MemoryWorldStore();
-    const first = await store.createTown('A', { ...createWorld(1), seed: 1 }, new Date());
-    const second = await store.createTown('B', { ...createWorld(2), seed: 2 }, new Date());
+    const first = await store.createTown('A', createWorld(), new Date());
+    const second = await store.createTown('B', createWorld(), new Date());
 
     // Act: each town reads its own snapshot.
     const a = await store.withWorld(async (session) => session.snapshot, first.id);
     const b = await store.withWorld(async (session) => session.snapshot, second.id);
 
-    // Assert: names and states do not mix.
+    // Assert: names do not mix, and both towns share the world's seed.
     expect(a.town).toEqual(first);
     expect(b.town).toEqual(second);
-    expect(a.world.seed).toBe(1);
-    expect(b.world.seed).toBe(2);
+    expect(a.world.hour).toBe(b.world.hour);
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([first.id, second.id]);
 
     // Act: the first town goes, the second stays.
@@ -74,23 +77,40 @@ describe('the town store', () => {
   });
 
   it('lists the least-filled town first, the oldest on a tie', async () => {
-    // Arrange: an older town of four dynasties and a younger one of three.
+    // Arrange: an older town of four people and a younger one of three.
     const store = new MemoryWorldStore();
     const old = await store.createTown('Old', town(1), new Date());
-    const young = await store.createTown('New', createWorld(2), new Date());
+    const young = await store.createTown('New', createWorld(), new Date());
 
     // Act and assert: the emptier town comes first, whatever its age.
+    expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
+  });
+
+  it('counts only the living when it picks the least-filled town', async () => {
+    // Arrange: the younger town's only person is dead.
+    const store = new MemoryWorldStore();
+    const old = await store.createTown('Old', town(1), new Date());
+    const young = await store.createTown('New', town(1), new Date());
+    await store.withWorld(async (session) => {
+      const world = session.snapshot.world;
+      for (const person of Object.values(world.people)) {
+        person.alive = false;
+      }
+      await session.write(world, []);
+    }, young.id);
+
+    // Assert: the dead take no place, so the emptied town comes first.
     expect((await store.listTowns()).map((entry) => entry.id)).toEqual([young.id, old.id]);
   });
 
   it('gives a name that comes back a new id', async () => {
     // Arrange: a town that has lived and gone.
     const store = new MemoryWorldStore();
-    const first = await store.createTown('Amiens', createWorld(1), new Date());
+    const first = await store.createTown('Amiens', createWorld(), new Date());
     await store.withWorld(async (session) => session.clear(), first.id);
 
     // Act: the same name comes back.
-    const second = await store.createTown('Amiens', createWorld(2), new Date());
+    const second = await store.createTown('Amiens', createWorld(), new Date());
 
     // Assert: the id is new, the name is not.
     expect(second.name).toBe('Amiens');
@@ -100,10 +120,10 @@ describe('the town store', () => {
   it('creates a new town on a second call', async () => {
     // Arrange
     const store = new MemoryWorldStore();
-    const first = await store.createTown('A', createWorld(1), new Date());
+    const first = await store.createTown('A', createWorld(), new Date());
 
     // Act: a second creation is a second town, not a retry.
-    const second = await store.createTown('A', createWorld(9), new Date());
+    const second = await store.createTown('A', createWorld(), new Date());
 
     // Assert
     expect(second.id).not.toBe(first.id);
@@ -116,11 +136,11 @@ describe('the town store', () => {
     const store = new MemoryWorldStore(() => now);
     const created = await store.createTown('A', town(1), now);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 60));
+      await session.write(session.snapshot.world, hours(1, 60));
     }, created.id);
     now = new Date('2026-01-09T00:00:00.000Z');
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(61, 120));
+      await session.write(session.snapshot.world, hours(61, 120));
     }, created.id);
 
     // Act: the cut is seven days after the first batch, before the second.
@@ -137,7 +157,7 @@ describe('the town store', () => {
     const store = new MemoryWorldStore(() => written);
     const created = await store.createTown('A', town(1), written);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 10));
+      await session.write(session.snapshot.world, hours(1, 10));
     }, created.id);
 
     // Act: the cut is the write instant itself.
@@ -154,25 +174,25 @@ describe('the town store', () => {
     const store = new MemoryWorldStore(() => now);
     const created = await store.createTown('A', town(1), now);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 10));
+      await session.write(session.snapshot.world, mailHours(1, 10), ACCOUNTS);
     }, created.id);
     now = new Date('2026-01-09T00:00:00.000Z');
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(11, 20));
+      await session.write(session.snapshot.world, mailHours(11, 20), ACCOUNTS);
     }, created.id);
 
     // Act: the chronicle cut falls between the batches, the mail cut before both.
     await store.pruneJournal(created.id, new Date('2026-01-08T00:00:00.000Z'), new Date('2025-12-01T00:00:00.000Z'));
 
     // Assert: the mail keeps both batches whole; only a line's own cut drops it.
-    const page = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const page = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     expect(amountsOf(page.messages)).toEqual(range(1, 20));
 
     // Act: a mail cut inside the batches drops the first.
     await store.pruneJournal(created.id, new Date('2026-01-08T00:00:00.000Z'), new Date('2026-01-05T00:00:00.000Z'));
 
     // Assert
-    const kept = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const kept = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     expect(amountsOf(kept.messages)).toEqual(range(11, 20));
   });
 
@@ -181,9 +201,9 @@ describe('the town store', () => {
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5));
+      await session.write(session.snapshot.world, mailHours(1, 5), ACCOUNTS);
     }, created.id);
-    const before = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const before = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     const target = before.messages[2];
     expect(target).toBeDefined();
 
@@ -195,13 +215,13 @@ describe('the town store', () => {
     expect(before.unread).toBe(5);
 
     // Act: another dynasty names the id, then the owner opens it.
-    const foreign = await store.markMessageRead(target?.id ?? 0, 'caron');
-    const own = await store.markMessageRead(target?.id ?? 0, 'leclerc');
+    const foreign = await store.markMessageRead(target?.id ?? 0, OTHER_PLAYER);
+    const own = await store.markMessageRead(target?.id ?? 0, PLAYER);
 
     // Assert: the foreigner reads nothing; the owner's one line only.
     expect(foreign).toEqual({ read: false, unread: 0 });
     expect(own).toEqual({ read: true, unread: 4 });
-    const after = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const after = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     expect(after.unread).toBe(4);
     expect(after.messages.filter((message) => message.read).map((message) => message.id)).toEqual([target?.id]);
   });
@@ -211,37 +231,37 @@ describe('the town store', () => {
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5));
+      await session.write(session.snapshot.world, mailHours(1, 5), ACCOUNTS);
     }, created.id);
 
     // Act
-    const page = await store.withWorld(async (session) => session.recentMessages(2, 'leclerc'), created.id);
+    const page = await store.withWorld(async (session) => session.recentMessages(2, PLAYER), created.id);
 
     // Assert: messages 4 and 5, and the badge names what the page holds.
     expect(amountsOf(page.messages)).toEqual([4, 5]);
     expect(page.unread).toBe(2);
   });
 
-  it('deletes one message of the dynasty, and only its own', async () => {
+  it('deletes one message of the account, and only its own', async () => {
     // Arrange: five messages for the weaver.
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5));
+      await session.write(session.snapshot.world, mailHours(1, 5), ACCOUNTS);
     }, created.id);
-    const page = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const page = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     const target = page.messages[2];
     expect(target).toBeDefined();
 
     // Act: another dynasty names the id, then the owner does.
-    const foreign = await store.deleteMessage(target?.id ?? 0, 'caron');
-    const own = await store.deleteMessage(target?.id ?? 0, 'leclerc');
+    const foreign = await store.deleteMessage(target?.id ?? 0, OTHER_PLAYER);
+    const own = await store.deleteMessage(target?.id ?? 0, PLAYER);
 
     // Assert: the foreign delete is a no-op (and answers the foreigner's own
     // badge, which is empty); the owner's removes the line.
     expect(foreign).toEqual({ deleted: false, unread: 0 });
     expect(own).toEqual({ deleted: true, unread: 4 });
-    const after = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const after = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     expect(amountsOf(after.messages)).toEqual([1, 2, 4, 5]);
   });
 
@@ -254,16 +274,16 @@ describe('the town store', () => {
       audience: 'court',
       at: 1,
       action: 'unknown',
-      dynastyId: 'unknown',
+      personId: 0,
       reason: 'unknown_action',
     };
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [refused]);
+      await session.write(session.snapshot.world, [refused]);
     }, created.id);
 
     // Act
     const chronicle = await store.withWorld(async (session) => session.recentChronicle(100), created.id);
-    const mail = await store.withWorld(async (session) => session.recentMessages(100, 'leclerc'), created.id);
+    const mail = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
 
     // Assert: neither the town's page nor a mailbox carries it.
     expect(chronicle).toEqual([]);
@@ -275,14 +295,15 @@ describe('the town store', () => {
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [
-        repaidAt(1),
-        { ...repaidAt(2), audience: { dynastyId: 'caron' }, dynastyId: 'caron' },
-      ]);
+      await session.write(
+        session.snapshot.world,
+        [repaidAt(1), { ...repaidAt(2), audience: { personId: CARON }, personId: CARON }],
+        ACCOUNTS,
+      );
     }, created.id);
 
     // Act
-    const caron = await store.withWorld(async (session) => session.recentMessages(100, 'caron'), created.id);
+    const caron = await store.withWorld(async (session) => session.recentMessages(100, 900_003), created.id);
 
     // Assert
     expect(caron.messages).toEqual([]);

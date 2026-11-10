@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { advance, stockCapacityUnits, type Action, type World } from '../src/index.ts';
-import { town } from './helpers.ts';
+import { advance, type Action, type World } from '../src/index.ts';
+import { LECLERC, seeded, town } from './helpers.ts';
 
 const SEED = 20261109;
 
@@ -17,34 +17,35 @@ describe('the order of an hour', () => {
       world,
       world.hour,
       actions.map((action) => ({ at: world.hour, action })),
+      new Set(),
+      seeded(world.hour),
     ).events;
 
   it('keeps a refusal before the message the town writes afterwards', () => {
-    // Arrange: the warehouse is one unit short of full, and the looms ask for
-    // four wool; the action sells grain the dynasty does not hold.
+    // Arrange: a sale the dynasty cannot make, and an empty purse with a
+    // workshop to run, so the town's own upkeep line falls due in the same hour.
     const world = town(SEED);
-    world.dynasties.leclerc.workshops = [{ id: 'workshop-1', good: 'wool', level: 2 }];
-    world.dynasties.leclerc.stock = { cloth: stockCapacityUnits(world.dynasties.leclerc) - 1 };
+    world.people[LECLERC].treasuryCents = 0;
 
     // Act
-    const events = play(world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }]);
+    const events = play(world, [{ type: 'market.sell', personId: LECLERC, good: 'grain', units: 1 }]);
 
-    // Assert: the refusal opens the hour, and the overflow of the town's own
-    // step comes after it.
+    // Assert: the refusal opens the hour, and the upkeep the town pays after the
+    // actions comes after it.
     const refused = events.findIndex((event) => event.type === 'action.refused');
-    const overflow = events.findIndex((event) => event.type === 'workshop.overflow');
+    const penniless = events.findIndex((event) => event.type === 'person.penniless');
     expect(refused).toBe(0);
-    expect(overflow).toBeGreaterThan(refused);
+    expect(penniless).toBeGreaterThan(refused);
   });
 
   it('keeps the order of two actions of one hour', () => {
     // Arrange: a sale the dynasty cannot make, then a good the town does not
     // trade.
     const world = town(SEED);
-    const unknown = { type: 'market.buy', dynastyId: 'leclerc', good: 'silk', units: 1 } as unknown as Action;
+    const unknown = { type: 'market.buy', personId: LECLERC, good: 'silk', units: 1 } as unknown as Action;
 
     // Act
-    const events = play(world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }, unknown]);
+    const events = play(world, [{ type: 'market.sell', personId: LECLERC, good: 'grain', units: 1 }, unknown]);
 
     // Assert
     expect(events[0]).toMatchObject({ type: 'action.refused', reason: 'insufficient_stock' });
@@ -56,7 +57,7 @@ describe('the order of an hour', () => {
     const world = town(SEED);
 
     // Act
-    const events = play(world, [{ type: 'market.sell', dynastyId: 'leclerc', good: 'grain', units: 1 }]);
+    const events = play(world, [{ type: 'market.sell', personId: LECLERC, good: 'grain', units: 1 }]);
 
     // Assert
     expect(events.length).toBeGreaterThan(0);

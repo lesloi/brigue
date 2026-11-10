@@ -5,27 +5,31 @@ French in the data and in the interface, and the English here is only how we tal
 
 ## The town
 
-- **Dynastie** — the unit a player controls, named the same in French, in English and in the code:
-  one family, its money, its title, its workshops, its grudges. The simulation knows it as a
-  place. Two names in the interface still say Maison, on purpose: the tab that opens its screen,
-  and the residence level of that name, which is a building and not the player.
-- **Fondateur** — the first dynasty of the town. Not a political role: no seat, no vote, no special
+- **Dynastie** — the family name an account carries, and a line in the book of kings. It is no
+  longer a place in the world: the person is the unit, and their money, title, workshops and
+  grudges are theirs. Two names in the interface still say Maison, on purpose: the tab that opens
+  the person's screen, and the residence level of that name, which is a building and not the player.
+- **Fondateur** — the first person of the town. Not a political role: no seat, no vote, no special
   trade; it only differs in its starting kit.
-- **Fournisseur** — an AI dynasty that produces a raw good: wool, grain or wood. Permanent, and
-  never replaced by a human.
-- **Personnage** — the current member of the dynasty. Holds the attributes, ages,
-  dies, and is replaced by an heir.
-- **Ville** — the town, Saint-Aubin. Twenty dynasties at most, and the lowest tier of government.
+- **Fournisseur** — an AI person that produces a raw good: wool, grain or wood. Permanent, and
+  never replaced by a human. Not in the world yet: raw goods enter a town by purchase only, and no
+  workshop makes one — a workshop practises a trade, and a trade turns a raw good into a finished
+  one.
+- **Personnage** — the unit of the world. Holds the money, the title, the residence, the
+  workshops and the stock, dies, and is replaced by an heir. Its age will come back with the death
+  roll, as a birth hour in the world's clock (#92).
+- **Ville** — the town, Saint-Aubin. Twenty people at most, and the lowest tier of government.
 - **Comté** — the county: several towns, one council, one comte. Above the town.
 - **Royaume** — the kingdom: several counties, one council, one king. The highest tier.
-- **Heure** — the clock. One real hour is half a town month; twenty-four hours make a year, and a
+- **Heure** — the clock. One world has one clock, shared by every town: one real hour is half a
+  town month; twenty-four hours make a year, and a
   year is a day. A duration is said in hours when planning, in months when the town speaks.
 - **Mois** — two real hours; twelve months make a year.
 - **An** — twenty-four real hours, one day. The calendar advances a year per day.
-- **Place** — a seat or a dynasty as something the town can assign: a dynasty is held by a controller
-  (`ai` or `human`), a seat by a person.
-- **Dormance** — the state of a dynasty whose player has stopped playing: it keeps its money and its
-  grudges, nothing runs, it stands for nothing and holds no office. After thirty days, the dynasty
+- **Place** — a seat or a person as something the town can assign: a person is played by an AI or
+  an account (`ia`), a seat is held by a person.
+- **Dormance** — the state of a person whose player has stopped playing: it keeps its money and its
+  grudges, nothing runs, it stands for nothing and holds no office. After thirty days, the person
   is deleted.
 
 ## The council
@@ -48,16 +52,16 @@ French in the data and in the interface, and the English here is only how we tal
 - **Crieur** — the herald. Publishes the ban, defines libel, carries the rumours.
 - **Jurat**, **Marguillier** — the five seats without a lever: salary, prestige, a vote on
   exceptional measures, and jury duty.
-- **Carrière** — the offices a dynasty has held. It gates the floor of the pyramid the dynasty may
+- **Carrière** — the offices a person has held. It gates the floor of the pyramid the person may
   stand for, and it falls one floor at death.
-- **Titre** — the dynasty's rank, from roturier to prince. Bought, obtained at the next noon or
+- **Titre** — the person's rank, from roturier to prince. Bought, obtained at the next noon or
   midnight, lost by a court or by death.
-- **Faveur** — favour: the standing that makes a dynasty electable. Earned by service (a mandate, a
+- **Faveur** — favour: the standing that makes a person electable. Earned by service (a mandate, a
   jury, a vote with the winner) and by visible spending (a gift, a work, a banquet); lost by
   offence.
-- **Prestige** — prestige: what the town thinks of the dynasty. The title's and the residence's
+- **Prestige** — prestige: what the town thinks of the person. The title's and the residence's
   shares are bought; what service adds is capped by the residence level.
-- **Livre des rois** — the clerk's record of the crowned kings: their player, dynasty, person, day
+- **Livre des rois** — the clerk's record of the crowned kings: their player, family name, day
   and the time it took, kept across towns.
 
 ## The law
@@ -67,9 +71,10 @@ French in the data and in the interface, and the English here is only how we tal
 - **Mesure** — an exceptional decision the council votes: a work, a loan, an amnesty, a
   requisition, the gates.
 - **Greffe** — the clerk's office: acts, complaints, evidence, the record of what was decided.
-- **Loi** — a law in force, always with the dynasty that carried it.
+- **Loi** — a law in force: a code from the town's catalogue and the value it holds. Nothing
+  enacts one yet.
 - **Séance** — a sitting of the council, where the exceptional measures are voted.
-- **Jury** — five dynasties drawn at random, excluding the parties, voting in secret.
+- **Jury** — five people drawn at random, excluding the parties, voting in secret.
 - **Juge** — the office that did not investigate the case; he does not vote, he fixes the sentence
   and breaks a tie.
 - **Gravité** — the provost places each crime at minor, medium or serious; the penalty follows
@@ -80,7 +85,7 @@ French in the data and in the interface, and the English here is only how we tal
   crime, and the clerk in office exposes it automatically.
 - **Peine** — the sentence: a fine, the loss of a title degree, or prison. A medium sentence is two
   days and a tenth of the estate; there is no exile.
-- **Prison** — a political death, not a pause: the prisoner keeps his dynasty and his trade, but
+- **Prison** — a political death, not a pause: the prisoner keeps his estate and his trade, but
   cannot stand, vote, judge or buy a title, and his office is suspended until the next election.
 
 ## Money and goods
@@ -100,29 +105,30 @@ French in the data and in the interface, and the English here is only how we tal
 - **Pain** — bread, the good the town eats.
 - **Bois** — wood, the raw material of planks.
 - **Planche** — plank, the good the town builds with.
-- **Entrepôt** — the warehouse: finished goods. Its capacity is what the dynasty's workshops hold
+- **Entrepôt** — the warehouse: finished goods. Its capacity is what the person's workshops hold
   between them.
 
 ## The person
 
-- **Attributs** — artisanat, parole, intrigue. Raised by use, capped by the trade and the title,
-  and lost with the person.
+- **Degré** — the title a person holds (roturier, bourgeois, …). Bought by the person, it opens
+  the residence and the workshops and dies with them; the heir starts one degree lower.
 - **Métier** — the trade a workshop practises: weaver, baker, carpenter. A player chooses one at
-  creation; to change it, the dynasty builds a workshop of the other trade and destroys the old one.
+  creation; to change it, the person builds a workshop of the other trade and destroys the old one.
 - **Atelier** — the workshop: one trade, one level. It produces into the warehouse, holds its share
   of the warehouse's capacity, and costs an upkeep for every level it has.
 - **Entretien** — the upkeep of a workshop, one level's share an hour; nothing while it is a works.
-- **Résidence** — the dynasty's one ladder: the title opens a level, money pays for it, and the level
-  sets the prestige cap, the defence of the stock and the number of workshops.
-- **Héritier** — the next person of the dynasty. Chosen at retirement; taken, unprepared, by death.
+- **Résidence** — the person's one ladder: the title opens a level, money pays for it, and the level
+  sets the prestige cap, the defence of the stock and the number of workshops. It dies with its
+  holder.
+- **Héritier** — the next person of the family. Chosen at retirement; taken, unprepared, by death.
 - **Retraite** — the clean handover at fifty, chosen by the player. It keeps the estate and
   prepares the heir; refusing it opens the window in which death may come.
-- **Rancune** — a line in a dynasty's register: who beat it, who denounced it, who robbed it, who
-  testified against it. The heir keeps it, because the enemies survive the person.
+- **Rancune** — a line in a person's register: who beat them, who denounced them, who robbed them,
+  who testified against them. The heir keeps it, because the enemies survive the person.
 
 ## Identity
 
-- **Compte joueur** — the player's key to a dynasty, called a token in the code: an opaque secret,
+- **Compte joueur** — the player's key to a person, called a token in the code: an opaque secret,
   shown once, with no email, no password and no recovery. A reset never invalidates it: it takes
-  the dynasty and keeps the account, and the next visit asks for a trade again. Lost, the dynasty is
+  the person and keeps the account, and the next visit asks for a trade again. Lost, the person is
   lost.

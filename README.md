@@ -27,8 +27,8 @@
 Early, and in two layers.
 
 - **The design** is in [docs/DESIGN.md](./docs/DESIGN.md) and [docs/DECISIONS.md](./docs/DECISIONS.md).
-  It describes the target game: twelve seats, a person who holds an office, a dynasty that holds a
-  career, a stock, a court, titles, and a day-long mandate.
+  It describes the target game: twelve seats, a person who holds an office, a dynasty that climbs,
+  a stock, a court, titles, and a day-long mandate.
 - **The code** implements the clock and the economy: one real hour is one town hour, twenty-four
   hours a year, and a scrutiny at the end of each year with every seat up; the town advances on a
   scheduler, and the two bells settle the prices. Five seats today, six goods in three chains, a
@@ -70,7 +70,7 @@ pnpm --filter @brigue/server dev
 ```
 
 When a format change cannot migrate the old schema, the database is reset instead: `pnpm
---filter @brigue/server reset` drops the town and rebuilds the schema from the migrations,
+--filter @brigue/server reset` drops the town and rebuilds the schema from `db/schema.sql`,
 carrying the book of kings and the accounts across. Run it with the application stopped: it
 drops the schema under any writer. A carried account keeps its token and its player id and
 loses its dynasty; the next visit asks for a trade and gives it one. It shows what it would

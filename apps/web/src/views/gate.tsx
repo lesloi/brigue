@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { Seal } from '../icons.tsx';
 import { Modal } from './modal.tsx';
 
-interface LostDynastyProps {
+interface LostPersonProps {
   busy: boolean;
   error: string | null;
   onResume(token: string): void;
 }
 
-export function LostDynasty({ busy, error, onResume }: LostDynastyProps) {
+export function LostPerson({ busy, error, onResume }: LostPersonProps) {
   const [candidate, setCandidate] = useState('');
 
   return (
@@ -17,7 +17,7 @@ export function LostDynasty({ busy, error, onResume }: LostDynastyProps) {
       <div class="gate-card">
         <Seal size={38} />
         <h1>Cette ville a déjà son joueur</h1>
-        <p>Votre dynastie est liée à un compte joueur. Collez-le pour reprendre la partie.</p>
+        <p>Votre personne est liée à un compte joueur. Collez-le pour reprendre la partie.</p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -43,7 +43,7 @@ export function LostDynasty({ busy, error, onResume }: LostDynastyProps) {
         </form>
         {error !== null ? <p class="gate-error">{error}</p> : null}
         <p class="gate-note">
-          Le compte joueur est la seule clé de cette dynastie : sans lui, elle ne peut pas être retrouvée.
+          Le compte joueur est la seule clé de cette personne : sans lui, elle ne peut pas être retrouvée.
         </p>
       </div>
     </div>
@@ -93,7 +93,7 @@ export function TokenDialog({ token, onClose, onCopied, onCopyError }: TokenDial
       <Seal size={34} />
       <h2 id="token-title">Votre compte joueur</h2>
       <p>
-        Il ne sera plus affiché. Notez-le : c'est la seule façon de retrouver cette dynastie depuis un autre appareil.
+        Il ne sera plus affiché. Notez-le : c'est la seule façon de retrouver cette personne depuis un autre appareil.
       </p>
       <code id="token-value">{token}</code>
       <div class="dialog-actions">

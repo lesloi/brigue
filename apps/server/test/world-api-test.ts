@@ -9,13 +9,14 @@ import { createLogger } from '../src/logger.ts';
 import { playDue } from '../src/town/scheduler.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
 import { issueToken } from '../src/identity/session.ts';
-import { MemoryWorldStore } from '../src/town/worlds.ts';
-import { TEST_TOWN, town } from './helpers.ts';
+import { MemoryWorldStore, hourAt } from '../src/town/worlds.ts';
+import { CARON, FOURNIER, LECLERC, seeded, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
 const HOUR = 60 * 60 * 1000;
-const ID_A = '00000000-0000-4000-8000-00000000000a';
-const ID_B = '00000000-0000-4000-8000-00000000000b';
+// The store assigns action ids in arrival order, one counter per town.
+const ID_A = 1;
+const ID_B = 2;
 
 interface Harness {
   url: string;
@@ -34,23 +35,27 @@ interface Harness {
 interface MessageBody {
   id: number;
   read: boolean;
-  event: Record<string, unknown> & { type: string; dynastyId?: string; units?: number };
+  event: Record<string, unknown> & { type: string; personId?: number | 'unknown'; units?: number };
 }
 
 interface WorldBody {
   world: {
     hour: number;
     year: number;
-    dynasty: { id: string; stock: Record<string, number>; favour: number };
-    town: { dynasties: Array<Record<string, unknown>> };
+    person: {
+      id: number;
+      stock: Record<string, number>;
+      favour: number;
+      workshops: Array<{ id: number; trade: string }>;
+    };
+    town: { people: Array<Record<string, unknown>> };
     nextBellAt: string;
   };
   messages: MessageBody[];
-  chronicle: Array<Record<string, unknown> & { type: string; dynastyId?: string; units?: number }>;
+  chronicle: Array<Record<string, unknown> & { type: string; personId?: number | 'unknown'; units?: number }>;
   unreadMessages: number;
   summary: {
     hours: number;
-    skipped: number;
   };
   stateHash: string;
   dev?: boolean;
@@ -63,7 +68,7 @@ afterEach(async () => {
 });
 
 async function start(
-  options: { world?: World; at?: number; devAdvance?: boolean; dynasties?: string[] } = {},
+  options: { world?: World; at?: number; devAdvance?: boolean; readers?: Record<string, number> } = {},
 ): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
@@ -91,20 +96,28 @@ async function start(
   const world = options.world ?? town(20261031);
   await worlds.createTown(TEST_TOWN.name, world, new Date(clock.now));
 
-  const dynasties = options.dynasties ?? ['leclerc'];
+  const readers = options.readers ?? { leclerc: LECLERC };
   const cookies: Record<string, string> = {};
-  for (const dynastyId of dynasties) {
-    const { token } = await issueToken(store, TEST_TOWN.id, dynastyId, new Date(clock.now));
-    cookies[dynastyId] = `${SESSION_COOKIE}=${token}`;
+  for (const [label, personId] of Object.entries(readers)) {
+    const name = label.charAt(0).toUpperCase() + label.slice(1);
+    const { token, player } = await issueToken(store, name, new Date(clock.now));
+    await store.rebind(player.tokenHash, TEST_TOWN.id, personId, new Date(clock.now));
+    cookies[label] = `${SESSION_COOKIE}=${token}`;
   }
 
   // The scheduler's pass, minus the timer: what the loop would do on its own.
   const play = async (): Promise<void> => {
     try {
       await worlds.withWorld(async (session) => {
-        const due = await playDue(session, session.snapshot, new Date(clock.now));
+        const players = await store.listByTown(TEST_TOWN.id);
+        const accounts = new Map(
+          players.flatMap((player) => (player.personId === null ? [] : [[player.personId, player.playerId] as const])),
+        );
+        const { world, worldStartedAt } = session.snapshot;
+        const target = hourAt(worldStartedAt, new Date(clock.now));
+        const due = await playDue(session, world, target, new Set(), seeded());
         if (due.hours > 0) {
-          await session.save(due.world, due.hourStartedAt, due.events);
+          await session.write(due.world, due.events, accounts);
         }
       }, TEST_TOWN.id);
       await worlds.pruneJournal(
@@ -134,7 +147,7 @@ async function start(
     logs,
     clock,
     cookies,
-    cookie: cookies[dynasties[0] as string] as string,
+    cookie: cookies[Object.keys(readers)[0] as string] as string,
   };
 }
 
@@ -178,22 +191,22 @@ function getPending(harness: Harness, dynastyId = 'leclerc'): Promise<Response> 
   return fetch(`${harness.url}/api/actions`, { headers: { Cookie: harness.cookies[dynastyId] as string } });
 }
 
-function cancelPending(harness: Harness, id: string, dynastyId = 'leclerc'): Promise<Response> {
+function cancelPending(harness: Harness, id: number, dynastyId = 'leclerc'): Promise<Response> {
   return fetch(`${harness.url}/api/actions/${id}`, {
     method: 'DELETE',
     headers: { Cookie: harness.cookies[dynastyId] as string },
   });
 }
 
-function buyWool(id: string, hour: number, units: number, extra: Record<string, unknown> = {}): unknown {
+function buyWool(id: number, hour: number, units: number, extra: Record<string, unknown> = {}): unknown {
   return { id, hour, action: { type: 'market.buy', good: 'wool', units, ...extra } };
 }
 
-function sellWool(id: string, hour: number, units: number): unknown {
+function sellWool(id: number, hour: number, units: number): unknown {
   return { id, hour, action: { type: 'market.sell', good: 'wool', units } };
 }
 
-function sellGrain(id: string, hour: number, units: number): unknown {
+function sellGrain(id: number, hour: number, units: number): unknown {
   return { id, hour, action: { type: 'market.sell', good: 'grain', units } };
 }
 
@@ -233,7 +246,6 @@ describe('GET /api/world', () => {
 
     // Assert
     expect(body.summary.hours).toBe(720);
-    expect(body.summary.skipped).toBe(0);
     expect(body.world.hour).toBe(721);
     // The player was dormant for the whole month, so its workshops idled and it
     // got no message; the badge counts nothing.
@@ -248,8 +260,7 @@ describe('GET /api/world', () => {
   });
 
   it('returns the same page on a read that has nothing to play', async () => {
-    // Arrange: the read is the backstop and only wakes a town more than an
-    // hour behind, so the loop must have missed two.
+    // Arrange: the loop missed two hours, and the visit that follows plays them.
     const harness = await start();
     await harness.lapse(2 * HOUR);
     const first = await worldBody(harness);
@@ -281,24 +292,24 @@ describe('GET /api/world', () => {
     expect(second.summary.hours).toBe(0);
   });
 
-  it('leaves a town one hour behind to the scheduler', async () => {
+  it('plays the hour the loop missed, on the visit', async () => {
     // Arrange: the loop is down for a single hour.
     const harness = await start();
     await harness.lapse(HOUR);
 
-    // Act: a read may leave that hour to the loop.
+    // Act: a visit brings the world up, because the hour is the world's.
     const lazy = await worldBody(harness);
 
     // Assert
-    expect(lazy.summary.hours).toBe(0);
-    expect(lazy.world.hour).toBe(1);
+    expect(lazy.summary.hours).toBe(1);
+    expect(lazy.world.hour).toBe(2);
 
     // Act: two more hours pass without the loop.
     await harness.lapse(2 * HOUR);
     const awake = await worldBody(harness);
 
-    // Assert: the read is the backstop, and plays the whole backlog.
-    expect(awake.summary.hours).toBe(3);
+    // Assert: the visit plays the whole backlog, without a cap.
+    expect(awake.summary.hours).toBe(2);
     expect(awake.world.hour).toBe(4);
   });
 
@@ -358,10 +369,10 @@ describe('GET /api/world', () => {
     const serialised = JSON.stringify(body);
 
     // Assert
-    expect(body.world.dynasty.id).toBe('leclerc');
+    expect(body.world.person.id).toBe(LECLERC);
     expect(serialised).not.toContain('"seed"');
     expect(serialised).not.toContain('"rng"');
-    expect(body.world.town.dynasties.every((dynasty) => !('treasuryCents' in dynasty))).toBe(true);
+    expect(body.world.town.people.every((dynasty) => !('treasuryCents' in dynasty))).toBe(true);
     expect(new Date(body.world.nextBellAt).getTime()).toBe(START + 12 * HOUR);
     // The hash covers the projection, not the seed-bearing world.
     expect(body.stateHash).toBe(hashJson(body.world));
@@ -371,8 +382,8 @@ describe('GET /api/world', () => {
     // Arrange: both dynasties sell grain they do not hold in the same hour, so
     // each gets a refusal of its own.
     const world = town(20261031);
-    world.dynasties.caron.controller = 'human';
-    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    world.people[CARON]!.ia = false;
+    const harness = await start({ world, readers: { leclerc: LECLERC, caron: CARON } });
     await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
     await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
     await harness.advance(HOUR);
@@ -385,9 +396,9 @@ describe('GET /api/world', () => {
     const refusalsOf = (body: WorldBody) => body.messages.filter((message) => message.event.type === 'action.refused');
 
     expect(refusalsOf(leclerc)).toHaveLength(1);
-    expect(refusalsOf(leclerc)[0]?.event).toMatchObject({ dynastyId: 'leclerc' });
+    expect(refusalsOf(leclerc)[0]?.event).toMatchObject({ personId: LECLERC });
     expect(refusalsOf(caron)).toHaveLength(1);
-    expect(refusalsOf(caron)[0]?.event).toMatchObject({ dynastyId: 'caron' });
+    expect(refusalsOf(caron)[0]?.event).toMatchObject({ personId: CARON });
   });
 
   it('keeps the chronicle to the town and the mail to the dynasty', async () => {
@@ -405,25 +416,19 @@ describe('GET /api/world', () => {
     expect(body.messages).toEqual([]);
   });
 
-  it('projects and ticks a town of twenty dynasties', async () => {
+  it('projects and ticks a town of twenty people', async () => {
     // Arrange
     const base = town(20261031);
-    const world: World = { ...base, dynasties: { ...base.dynasties }, people: { ...base.people } };
-    for (let index = Object.keys(world.dynasties).length + 1; index <= 20; index += 1) {
-      const id = `dynasty-${index}`;
-      const personId = `person-${index}`;
-      world.dynasties[id] = {
-        ...base.dynasties.fournier,
+    const world: World = { ...base, people: { ...base.people } };
+    const template = base.people[FOURNIER]!;
+    for (let id = 5; id <= 20; id += 1) {
+      world.people[id] = {
+        ...structuredClone(template),
         id,
-        name: `Maison ${index}`,
-        workshops: [{ id: 'workshop-1', good: 'grain', level: 1 }],
+        ia: true,
+        name: `Nom ${id}`,
+        workshops: [{ id, trade: 'baker', level: 1 }],
         stock: {},
-      };
-      world.people[personId] = {
-        ...base.people['person-fournier'],
-        id: personId,
-        dynastyId: id,
-        name: `Nom ${index}`,
       };
     }
     const harness = await start({ world });
@@ -434,7 +439,7 @@ describe('GET /api/world', () => {
     const next = await worldBody(harness);
 
     // Assert
-    expect(first.world.town.dynasties).toHaveLength(20);
+    expect(first.world.town.people).toHaveLength(20);
     expect(next.world.hour).toBe(2);
   });
 });
@@ -449,7 +454,7 @@ describe('POST /api/messages/:id/read', () => {
 
   async function twoRefusals(harness: Harness): Promise<void> {
     await postAction(harness, sellGrain(ID_A, 1, 1));
-    await postAction(harness, { id: ID_B, hour: 1, action: { type: 'dynasty.buy_title' } });
+    await postAction(harness, { id: ID_B, hour: 1, action: { type: 'market.sell', good: 'wood', units: 1 } });
     await harness.advance(HOUR);
   }
 
@@ -476,8 +481,8 @@ describe('POST /api/messages/:id/read', () => {
   it('does not mark another dynasty’s message', async () => {
     // Arrange: two humans, each with a refusal.
     const world = town(20261031);
-    world.dynasties.caron.controller = 'human';
-    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    world.people[CARON]!.ia = false;
+    const harness = await start({ world, readers: { leclerc: LECLERC, caron: CARON } });
     await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
     await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
     await harness.advance(HOUR);
@@ -538,8 +543,8 @@ describe('POST /api/actions', () => {
 
     // Assert: the buy played before the hour's production, which ate four.
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({ id: ID_A, hour: 1, dynastyId: 'leclerc' });
-    expect(body.world.dynasty.stock.wool).toBe(6);
+    expect(await response.json()).toEqual({ id: ID_A, hour: 1, personId: LECLERC });
+    expect(body.world.person.stock.wool).toBe(6);
     expect(body.messages).toEqual([]);
   });
 
@@ -555,12 +560,44 @@ describe('POST /api/actions', () => {
     // Assert: two of the eight wool are sold, four are woven, two remain, and
     // the sale is the Marché's, not a journal line.
     expect(response.status).toBe(201);
-    expect(body.world.dynasty.stock.wool).toBe(2);
+    expect(body.world.person.stock.wool).toBe(2);
     expect(body.messages).toEqual([]);
   });
 
-  it('refuses a replayed request and applies it once', async () => {
-    // Arrange
+  it('places an act at the hour its works end, and allows one act ahead at a time', async () => {
+    // Arrange: a person whose residence holds a second workshop and can pay.
+    const world = town(20261031);
+    world.people[LECLERC].title = 'chevalier';
+    world.people[LECLERC].residenceLevel = 6;
+    world.people[LECLERC].treasuryCents = 1_000_000;
+    const harness = await start({ world });
+    const build = { id: ID_A, hour: 1, action: { type: 'workshop.build', trade: 'baker' } };
+
+    // Act: one order, a second one, and the queue as the screen reads it.
+    const response = await postAction(harness, build);
+    const again = await postAction(harness, { ...build, id: ID_B });
+    const pending = (await (await getPending(harness)).json()) as {
+      actions: Array<{ hour: number; type: string }>;
+    };
+
+    // Assert: the works end twelve hours later, and the second order is refused.
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ id: ID_A, hour: 1 + RULES.buildHours, personId: LECLERC });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: 'already_scheduled' });
+    expect(pending.actions).toEqual([expect.objectContaining({ hour: 1 + RULES.buildHours, type: 'workshop.build' })]);
+
+    // Act: the hours pass and the works end.
+    await harness.advance((RULES.buildHours + 1) * HOUR);
+    const body = await worldBody(harness);
+
+    // Assert: the workshop stands at the hour the order named, not before.
+    expect(body.world.person.workshops).toHaveLength(2);
+  });
+
+  it('accepts a replayed request as a second action', async () => {
+    // Arrange: nothing marks the request, so the town has no way to know it is
+    // the same order twice.
     const harness = await start();
     const submitted = buyWool(ID_A, 1, 2);
 
@@ -570,12 +607,10 @@ describe('POST /api/actions', () => {
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
-    // Assert
+    // Assert: both buys played: eight wool, four bought, four woven.
     expect(first.status).toBe(201);
-    expect(replay.status).toBe(409);
-    expect(await replay.json()).toEqual({ error: 'duplicate_action' });
-    // The buy played once: eight wool, two bought, four woven.
-    expect(body.world.dynasty.stock.wool).toBe(6);
+    expect(replay.status).toBe(201);
+    expect(body.world.person.stock.wool).toBe(8);
   });
 
   it('refuses a retry once the hour it belonged to has been played', async () => {
@@ -597,7 +632,7 @@ describe('POST /api/actions', () => {
     expect(body.chronicle).toEqual(applied.chronicle);
     expect(body.stateHash).toBe(applied.stateHash);
     expect(body.summary.hours).toBe(0);
-    expect(body.world.dynasty.stock.wool).toBe(6);
+    expect(body.world.person.stock.wool).toBe(6);
   });
 
   it('refuses a hour that has already been played', async () => {
@@ -626,17 +661,18 @@ describe('POST /api/actions', () => {
     expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 1 });
   });
 
-  it('refuses a hour the catch-up cap will not reach', async () => {
-    // Arrange: a world well over a month behind, so catch-up will skip.
+  it('names the world clock, not a catch-up cap, when a hour is too far ahead', async () => {
+    // Arrange: the clock jumps a thousand hours with no cap to stop it; the
+    // data is still at the first hour.
     const harness = await start();
-    await harness.advance(1000 * HOUR);
+    await harness.lapse(1000 * HOUR);
 
-    // Act: a GET would land on hour 745, not hour 1001.
-    const response = await postAction(harness, buyWool(ID_A, 1000, 1));
+    // Act
+    const response = await postAction(harness, buyWool(ID_A, 1003, 1));
 
-    // Assert
+    // Assert: the hour is refused against the clock itself, however far it went.
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 745 });
+    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 1001 });
   });
 
   it('accepts the next hour when the client read just before the hour turned', async () => {
@@ -652,7 +688,7 @@ describe('POST /api/actions', () => {
     // eight wool, three bought, four woven on each of the two hours.
     expect(response.status).toBe(201);
     expect(body.world.hour).toBe(3);
-    expect(body.world.dynasty.stock.wool).toBe(3);
+    expect(body.world.person.stock.wool).toBe(3);
   });
 
   it('never takes the dynasty from the body', async () => {
@@ -660,13 +696,13 @@ describe('POST /api/actions', () => {
     const harness = await start();
 
     // Act
-    const response = await postAction(harness, buyWool(ID_A, 1, 1, { dynastyId: 'caron' }));
+    const response = await postAction(harness, buyWool(ID_A, 1, 1, { personId: CARON }));
     await harness.advance(HOUR);
     const body = await worldBody(harness);
 
     // Assert: the buy is the authenticated dynasty's, and its purse paid.
     expect(response.status).toBe(201);
-    expect(body.world.dynasty.stock.wool).toBe(5);
+    expect(body.world.person.stock.wool).toBe(5);
   });
 
   it('refuses an action on a world whose rules changed', async () => {
@@ -687,8 +723,6 @@ describe('POST /api/actions', () => {
     // Arrange
     const harness = await start();
     const invalid = [
-      { hour: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
-      { id: 'nope', hour: 1, action: { type: 'market.buy', good: 'wool', units: 1 } },
       { id: ID_A, hour: 0, action: { type: 'market.buy', good: 'wool', units: 1 } },
       { id: ID_A, hour: 1, action: { type: 'market.buy', good: 'silk', units: 1 } },
       { id: ID_A, hour: 1, action: { type: 'market.buy', good: 'wool', units: 0 } },
@@ -739,8 +773,8 @@ describe('DELETE /api/messages/:id', () => {
   it('does not delete another dynasty’s message', async () => {
     // Arrange: two humans, each with a refusal.
     const world = town(20261031);
-    world.dynasties.caron.controller = 'human';
-    const harness = await start({ world, dynasties: ['leclerc', 'caron'] });
+    world.people[CARON]!.ia = false;
+    const harness = await start({ world, readers: { leclerc: LECLERC, caron: CARON } });
     await postActionAs(harness, 'leclerc', sellGrain(ID_A, 1, 1));
     await postActionAs(harness, 'caron', sellGrain(ID_B, 1, 1));
     await harness.advance(HOUR);
@@ -799,34 +833,34 @@ describe('the queued actions', () => {
     expect(cancelled.status).toBe(204);
     expect(await (await getPending(harness)).json()).toEqual({ actions: [] });
     // The cancelled buy was not applied: eight wool less the four woven.
-    expect(body.world.dynasty.stock.wool).toBe(4);
+    expect(body.world.person.stock.wool).toBe(4);
   });
 
-  it('keeps the cancelled row as a duplicate', async () => {
-    // Arrange
+  it('accepts a retry after a cancellation as a new action', async () => {
+    // Arrange: the cancelled row is gone, so the same order is a new one.
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
     await cancelPending(harness, ID_A);
 
     // Act
-    const retry = await postAction(harness, buyWool(ID_A, 1, 2));
+    const retry = await postAction(harness, buyWool(ID_B, 1, 2));
 
     // Assert
-    expect(retry.status).toBe(409);
-    expect(await retry.json()).toEqual({ error: 'duplicate_action' });
+    expect(retry.status).toBe(201);
+    expect(await retry.json()).toEqual({ id: ID_B, hour: 1, personId: LECLERC });
   });
 
-  it('is idempotent', async () => {
+  it('finds nothing to cancel twice', async () => {
     // Arrange
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
 
     // Act and assert
     expect((await cancelPending(harness, ID_A)).status).toBe(204);
-    expect((await cancelPending(harness, ID_A)).status).toBe(204);
+    expect((await cancelPending(harness, ID_A)).status).toBe(404);
   });
 
-  it('keeps a cancellation already won even after the hour ticks', async () => {
+  it('leaves the world untouched when a cancelled action is cancelled again', async () => {
     // Arrange: cancel, then let the world catch up over the action's hour.
     const harness = await start();
     await postAction(harness, buyWool(ID_A, 1, 2));
@@ -837,8 +871,8 @@ describe('the queued actions', () => {
     // Act
     const again = await cancelPending(harness, ID_A);
 
-    // Assert: the retry is a no-op, not a stale refusal.
-    expect(again.status).toBe(204);
+    // Assert: the row is gone, and the world did not move.
+    expect(again.status).toBe(404);
     expect((await worldBody(harness)).stateHash).toBe(warmed.stateHash);
   });
 
@@ -853,14 +887,14 @@ describe('the queued actions', () => {
     const response = await cancelPending(harness, ID_A);
 
     // Assert: the buy was applied (eight plus two, less four woven).
-    expect(applied.world.dynasty.stock.wool).toBe(6);
+    expect(applied.world.person.stock.wool).toBe(6);
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'stale_hour', currentHour: 2 });
   });
 
   it("does not cancel another dynasty's action", async () => {
     // Arrange
-    const harness = await start({ dynasties: ['leclerc', 'caron'] });
+    const harness = await start({ readers: { leclerc: LECLERC, caron: CARON } });
     await postActionAs(harness, 'caron', buyWool(ID_A, 1, 2));
 
     // Act
@@ -888,7 +922,7 @@ describe('the queued actions', () => {
 
     // Assert: no favour was spent and no campaign was queued.
     expect(listed.actions).toContainEqual(expect.objectContaining({ type: 'council.campaign', seatId: 'maire' }));
-    expect(body.world.dynasty.favour).toBe(50);
+    expect(body.world.person.favour).toBe(50);
   });
 
   it('lists an action queued for the next hour', async () => {
@@ -898,7 +932,7 @@ describe('the queued actions', () => {
 
     // Act
     const listed = (await (await getPending(harness)).json()) as {
-      actions: Array<{ id: string; hour: number }>;
+      actions: Array<{ id: number; hour: number }>;
     };
 
     // Assert
@@ -911,13 +945,15 @@ describe('the queued actions', () => {
 
     // Act
     const unknown = await cancelPending(harness, ID_B);
-    const malformed = await cancelPending(harness, 'not-a-uuid');
+    const malformed = await fetch(`${harness.url}/api/actions/not-a-number`, {
+      method: 'DELETE',
+      headers: { Cookie: harness.cookie },
+    });
 
     // Assert
     expect(unknown.status).toBe(404);
     expect(await unknown.json()).toEqual({ error: 'unknown_action' });
     expect(malformed.status).toBe(404);
-    expect(await malformed.json()).toEqual({ error: 'unknown_action' });
   });
 
   it('refuses without a session', async () => {
@@ -980,10 +1016,11 @@ describe('POST /api/dev/advance', () => {
     // Assert
     expect(response.status).toBe(200);
     expect(after.world.hour).toBe(before.world.hour + 1);
-    // The simulated hour is saved at the real now: the next natural hour is an
-    // hour away, not already owed.
-    const anchor = await harness.worlds.withWorld(async (session) => session.snapshot.hourStartedAt, TEST_TOWN.id);
-    expect(anchor.getTime()).toBe(harness.clock.now);
+    // The simulated hour is a jump of the world's clock, not of the wall clock:
+    // the world now counts one hour more than the real time since its founding.
+    const clock = await harness.worlds.readClock();
+    expect(clock?.worldStartedAt.getTime()).toBe(START - HOUR);
+    expect(hourAt(clock!.worldStartedAt, new Date(harness.clock.now))).toBe(after.world.hour);
     expect(after.dev).toBe(true);
 
     // Act: an hour later the town plays exactly one more, not a backlog.
@@ -1017,7 +1054,7 @@ describe('POST /api/dev/advance', () => {
     const advanced = (await (await postAdvance(harness)).json()) as WorldBody;
 
     // Assert: ten wool bought on the hour, four woven.
-    expect(advanced.world.dynasty.stock.wool).toBe(14);
+    expect(advanced.world.person.stock.wool).toBe(14);
   });
 
   it('advances twice in a row', async () => {

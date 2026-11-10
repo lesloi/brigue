@@ -1,3 +1,4 @@
+import type { Action } from './events.ts';
 /**
  * The world is the whole game. It is plain data, it is serialisable, and it is
  * never mutated by a tick: the simulation hands back a new one.
@@ -33,25 +34,18 @@ export type SeatId = 'maire' | 'prevot' | 'echevin-north' | 'echevin-south' | 't
 /** Seats in the order they come up for election, and the order screens show them. */
 export const SEATS: readonly SeatId[] = ['maire', 'prevot', 'echevin-north', 'echevin-south', 'tresorier'];
 
-/** AI or HUMAN. The simulation does not care which: only who controls decides. */
-export type Controller = 'ai' | 'human';
-
-/** The attributes a person raises by use. */
-export interface Attributes {
-  artisanat: number;
-  parole: number;
-  intrigue: number;
-}
+/** The id of a person. It is global and numeric, minted by the store. */
+export type PersonId = number;
 
 export interface Workshop {
-  /** Stable inside its dynasty: two workshops of one trade are two buildings. */
-  id: string;
-  /** What it makes. The trade is the output good, so a workshop is bound to one trade. */
-  good: GoodId;
+  /** Stable inside its person: two workshops of one trade are two buildings. */
+  id: number;
+  /** The trade it practises; what it makes is the trade's output good. */
+  trade: Trade;
   level: number;
 }
 
-/** The twelve degrees, in the order a dynasty buys them. */
+/** The twelve degrees, in the order a person buys them. */
 export const TITLES = [
   'roturier',
   'bourgeois',
@@ -84,7 +78,7 @@ export interface TitleStep {
 
 export interface ResidenceStep {
   /**
-   * What the level is called on the screen. A dynasty is not "residence 3": the
+   * What the level is called on the screen. A person is not "residence 3": the
    * ladder names its rooms in the town's tongue, so the player reads a place
    * and not a rank.
    */
@@ -163,16 +157,16 @@ export const RESIDENCE_LADDER: readonly ResidenceStep[] = [
 
 /**
  * What one level of a workshop holds. The warehouse is the sum of what the
- * dynasty's workshops hold, which is what makes a second building worth buying.
+ * person's workshops hold, which is what makes a second building worth buying.
  */
 export const WORKSHOP_CAPACITY_UNITS: readonly number[] = [0, 100, 200, 350, 550, 800, 1100, 1450, 1850];
 
-export function titleOf(dynasty: Dynasty): TitleId {
-  return dynasty.title ?? 'roturier';
+export function titleOf(person: Person): TitleId {
+  return person.title ?? 'roturier';
 }
 
-export function residenceOf(dynasty: Dynasty): number {
-  return dynasty.residenceLevel ?? 1;
+export function residenceOf(person: Person): number {
+  return person.residenceLevel ?? 1;
 }
 
 /** Where a degree stands in the ladder: roturier is zero, prince is eleven. */
@@ -185,14 +179,23 @@ export function nextTitle(title: TitleId): TitleId | undefined {
   return TITLES[titleIndex(title) + 1];
 }
 
+/**
+ * Workshops are an array and the array is part of the state hash, so its order
+ * is canonical: by id, numerically. Anything that adds or removes one keeps it
+ * so.
+ */
+export function sortWorkshops(person: Person): void {
+  person.workshops.sort((left, right) => left.id - right.id);
+}
+
 export function workshopCapacity(level: number): number {
   return WORKSHOP_CAPACITY_UNITS[Math.max(0, Math.min(level, WORKSHOP_CAPACITY_UNITS.length - 1))] ?? 0;
 }
 
-/** The warehouse a dynasty has: every workshop gives what its level gives. */
-export function stockCapacityUnits(dynasty: Dynasty): number {
+/** The warehouse a person has: every workshop gives what its level gives. */
+export function stockCapacityUnits(person: Person): number {
   let capacity = 0;
-  for (const workshop of dynasty.workshops) {
+  for (const workshop of person.workshops) {
     capacity += workshopCapacity(workshop.level);
   }
 
@@ -206,124 +209,113 @@ export function residenceName(level: number): string {
   return step?.name ?? RESIDENCE_LADDER[0]!.name;
 }
 
-/** How many workshops the residence allows. */
-export function workshopCap(dynasty: Dynasty): number {
-  return RESIDENCE_LADDER[residenceOf(dynasty) - 1].workshops;
+/** How many workshops a residence level allows. */
+export function workshopCap(residenceLevel: number): number {
+  return RESIDENCE_LADDER[residenceLevel - 1].workshops;
 }
 
-/** The highest level a workshop may reach at the dynasty's degree. */
-export function workshopLevelCap(dynasty: Dynasty): number {
-  return 2 + Math.ceil(titleIndex(titleOf(dynasty)) / 2);
+/** The highest level a workshop may reach at a degree. */
+export function workshopLevelCap(title: TitleId): number {
+  return 2 + Math.ceil(titleIndex(title) / 2);
 }
 
 /**
  * Prestige as the screen reads it: what the title and the residence gave, plus
  * the service, the service stopping at the residence's cap.
  */
-export function displayedPrestige(dynasty: Dynasty): number {
-  const residence = RESIDENCE_LADDER[residenceOf(dynasty) - 1];
+export function displayedPrestige(servicePrestige: number, title: TitleId, residenceLevel: number): number {
+  const residence = RESIDENCE_LADDER[residenceLevel - 1];
 
-  return (
-    TITLE_LADDER[titleOf(dynasty)].prestige + residence.prestige + Math.min(dynasty.prestige, residence.prestigeCap)
-  );
+  return TITLE_LADDER[title].prestige + residence.prestige + Math.min(servicePrestige, residence.prestigeCap);
 }
 
-/** The trade a workshop practises: its output names its chain. */
-export function tradeOf(good: GoodId): Trade | undefined {
-  return TRADES.find((trade) => TRADE_CHAINS[trade].output === good);
+/** What a trade's workshop makes: its output, which names its chain. */
+export function outputOf(trade: Trade): GoodId {
+  return TRADE_CHAINS[trade].output;
 }
 
-export interface Dynasty {
-  id: string;
+/**
+ * The stored code of a degree, a good or a trade: its place in the list, one
+ * based. These numbers sit in the rows of the database, so a list may gain an
+ * entry, but an existing code is never renumbered.
+ */
+export function titleCode(title: TitleId): number {
+  return titleIndex(title) + 1;
+}
+
+export function titleOfCode(code: number): TitleId | undefined {
+  return TITLES[code - 1];
+}
+
+export function goodCode(good: GoodId): number {
+  return GOODS.indexOf(good) + 1;
+}
+
+export function goodOfCode(code: number): GoodId | undefined {
+  return GOODS[code - 1];
+}
+
+export function tradeCode(trade: Trade): number {
+  return TRADES.indexOf(trade) + 1;
+}
+
+export function tradeOfCode(code: number): Trade | undefined {
+  return TRADES[code - 1];
+}
+
+/**
+ * A person is the unit of the world: the money, the workshops, the stock, the
+ * title, the residence and the office are theirs. `ia` says who plays them; the
+ * simulation never asks, and a human person a server leaves alone is the same
+ * code as one a player drives.
+ */
+export interface Person {
+  id: PersonId;
+  /** True when no account plays this person: the three suppliers, and no other. */
+  ia: boolean;
+  /** The name the town sees, given name and family name together. */
   name: string;
-  controller: Controller;
-  treasuryCents: number;
-  /** Unpaid upkeep. The design says a debt follows the dynasty; this is where it lives. */
-  debtCents: number;
-  favour: number;
-  /**
-   * What the dynasty earned by service only: offices held, juries served, works
-   * funded (#55). The title and the residence are bought and live in the ladder
-   * tables; what this field shows is the share of prestige that is capped by the
-   * residence. Optional because the ladder arrived with ruleset 3.
-   */
-  prestige: number;
   /** The degree bought at the town hall; it opens the residence and the workshops. */
   title?: TitleId;
-  /** One ladder: the title opens a level, money pays for it. */
+  /** One ladder: the degree opens a level, money pays for it. */
   residenceLevel?: number;
+  /** The purse is the person's: the heir inherits it, a death empties it with them. */
+  treasuryCents: number;
+  /** Unpaid upkeep. The design says a debt follows the person; it is theirs. */
+  debtCents: number;
+  /** What the person earned by service: offices held, juries served, works funded. */
+  favour: number;
   /**
-   * The highest council floor the dynasty has reached. A mandate raises it, the
-   * heir keeps it one floor lower (#7), and the gate of #55 reads it.
+   * Prestige earned by service only: offices held, juries served, works funded
+   * (#55). The title and the residence are bought and live in the ladder tables;
+   * what this field shows is the share of prestige capped by the residence.
    */
-  career: number;
-  /**
-   * Written by the server from the players table. The core never asks who
-   * controls the dynasty: a dormant dynasty keeps its money, its seat and its
-   * grudges, but nothing runs and it votes nowhere.
-   */
-  dormant: boolean;
+  prestige: number;
+  alive: boolean;
   workshops: Workshop[];
   stock: Partial<Record<GoodId, number>>;
 }
 
-/**
- * A person belongs to a dynasty and holds at most one office. The attributes are
- * theirs and die with them; the dynasty keeps the career.
- */
-export interface Person {
-  id: string;
-  dynastyId: string;
-  name: string;
-  age: number;
-  attributes: Attributes;
-  alive: boolean;
-}
-
-/** A seat points at a person of its own dynasty, or at nobody. */
+/** A seat points at a person, or at nobody. */
 export interface Seat {
-  personId: string | null;
+  personId: PersonId | null;
 }
 
 export interface Law {
-  id: string;
-  title: string;
-  sponsorDynastyId: string;
-  enactedAt: number;
+  /** The rule the town voted for: a code from the catalogue, never a label. */
+  code: string;
+  /** What the rule was set to: a rate, a level, a yes or a no, by code. */
+  value: number;
 }
 
-/** The durations the calendar gives an engagement, in hours. */
-export type EngagementKind = 'hearing' | 'site';
-
-/**
- * What a site is for. A workshop is built by `trade`, improved by `workshopId`;
- * the dynasty's own level is raised by `residence`; a degree is obtained at the
- * next noon or midnight. The cost is paid when the site is opened, so what is
- * left to pay in hours is all the site carries.
- */
-export type SiteWork =
-  { work: 'build'; trade: Trade } | { work: 'upgrade'; workshopId: string } | { work: 'residence' } | { work: 'title' };
-
-/**
- * Work that takes hours. It carries the instant it falls due rather than a
- * remaining count, so a catch-up can replay whole hours and pay what is owed.
- * A campaign has no duration left: it is a candidacy, and it counts once.
- */
-export type Engagement =
-  | { id: string; kind: 'hearing'; dynastyId: string; dueAt: number }
-  | ({ id: string; kind: 'site'; dynastyId: string; dueAt: number } & SiteWork);
-
 export interface World {
-  /** Stamped so a saved world can be refused rather than silently misread. */
+  /** Stamped so a stored world can be refused rather than silently misread. */
   formatVersion: number;
   /** The ruleset that produced this world. A catch-up across versions is a bug. */
   rulesetVersion: number;
-  seed: number;
-  rng: number;
+  /** The world's origin. It identifies the world; it is no generator state. */
   hour: number;
-  year: number;
-  dynasties: Record<string, Dynasty>;
-  people: Record<string, Person>;
+  people: Record<PersonId, Person>;
   seats: Record<SeatId, Seat>;
   laws: Law[];
   market: Record<GoodId, number>;
@@ -333,68 +325,69 @@ export interface World {
    * stored rather than recomputed: the price you see is the town you were.
    */
   marketFlow: Partial<Record<GoodId, number>>;
-  /**
-   * The last PRICE_HISTORY_BELLS prices per good, in cents, one point per tick.
-   * Optional because a world stored before the field existed must keep ticking:
-   * its history starts at the tick that first sees it.
-   */
-  marketHistory?: Partial<Record<GoodId, number[]>>;
-  /** Votes bought per seat, per dynasty, cleared when that seat is elected. */
-  campaigns: Partial<Record<SeatId, Record<string, number>>>;
-  /**
-   * Candidacies closed at the last noon bell: they count at the coming
-   * scrutiny. What is lodged after that bell waits in `campaigns` for the next.
-   */
-  closedCampaigns: Partial<Record<SeatId, Record<string, number>>>;
-  /**
-   * What the town owes to a future hour: a campaign, a hearing, a building
-   * site. Resolved by the tick when its due hour arrives, even if the town
-   * only reaches that hour later.
-   */
-  engagements: Engagement[];
-  /** Mints engagement ids, so two campaigns in one hour cannot collide. */
-  engagementSeq: number;
-  /**
-   * Mints workshop ids. Optional because a world stored before ruleset 3 has
-   * none, and its workshops are numbered in their dynasty when it is read.
-   */
-  workshopSeq?: number;
+  /** Who stands for each seat; the coming scrutiny consumes the lists. */
+  campaigns: Partial<Record<SeatId, PersonId[]>>;
 }
 
-export const FORMAT_VERSION = 2;
+export const FORMAT_VERSION = 1;
+
+/**
+ * The hours an act takes before it applies, counted from the hour it is ordered:
+ * a trade is the hour's, a build, a degree and an improvement wait. The server
+ * writes the action at the hour it will play; the number is the core's.
+ */
+export function leadHoursOf(world: World, action: Action): number {
+  const person = world.people[action.personId];
+
+  switch (action.type) {
+    case 'workshop.build':
+      return RULES.buildHours;
+    case 'person.buy_title':
+      return RULES.titleHours;
+    case 'workshop.upgrade': {
+      const workshop = person?.workshops.find((candidate) => candidate.id === action.workshopId);
+
+      return improvementHoursFor((workshop?.level ?? 0) + 1);
+    }
+    case 'person.upgrade_residence':
+      return person === undefined ? 0 : improvementHoursFor(residenceOf(person) + 1);
+    default:
+      return 0;
+  }
+}
+
+/** The hours an improvement to `level` takes; the last entry holds for the top. */
+export function improvementHoursFor(level: number): number {
+  return RULES.improvementHours[Math.min(level, RULES.improvementHours.length - 1)] ?? 0;
+}
 
 export const RULES = {
-  version: 4,
+  version: 1,
   /**
-   * The starting kit: a dynasty must buy its input and pay a few hours of upkeep
-   * before its first sale. Every dynasty gets it, the first as much as a later
+   * The starting kit: a person must buy its input and pay a few hours of upkeep
+   * before its first sale. Every person gets it, the first as much as a later
    * arrival.
    */
   startingPurseCents: 45_000,
   startingInputUnits: 8,
-  /** The level of the kit's workshop: the dynasty that arrives starts here. */
+  /** The level of the kit's workshop: the person that arrives starts here. */
   startingWorkshopLevel: 2,
   /** The level a workshop is built at: the first, and it grows from there. */
   builtWorkshopLevel: 1,
   /** The town stops growing here; a newcomer with no place starts another town. */
   dynastyCap: 20,
-  /**
-   * A building site takes twelve hours. A hearing has no fixed delay: it is
-   * held at the next noon sitting after the complaint.
-   */
-  siteHours: 12,
   priceFloorCents: 100,
   priceCeilCents: 5000,
-  priceDriftCents: 30,
   /**
-   * A good's price is pulled by three things every hour: its own random drift,
-   * the town's imbalance on that good, and the gap back to its reference.
+   * A good's price is pulled by two things every hour: the town's imbalance on
+   * that good, and the gap back to its reference. There is no random drift: the
+   * price is the town's trade, not a dice throw.
    *
    * `absorbedUnits` is the town's standing demand at the reference price: the
    * volume it takes every hour whether or not anyone makes the good. Where that
    * demand is nil, a good nobody touches sits on its reference; where it is not,
    * a good nobody makes climbs. The demand is calibrated to the middle of the
-   * town's two states — the three AI dynasties alone, and the same town with one
+   * town's two states — the three AI people alone, and the same town with one
    * player's workshop working the chain — so an unworked chain sits a little
    * above its reference and a worked chain at it or below: the reference is the
    * centre of the band, not a price a short-handed town rests on. `scaleUnits`
@@ -421,36 +414,35 @@ export const RULES = {
    * only for what it produces would make its size free.
    */
   upkeepPerWorkshopLevelCents: 120,
-  /**
-   * A title is obtained at the next noon or midnight, wherever it is bought: a
-   * half-day, counted from the hour of the purchase. The half-day is the
-   * calendar's, not a second clock.
-   */
-  titleHours: 6,
-  /**
-   * The hours an improvement takes, by the level it reaches: the step grows
-   * with the level, so the top of the ladder is a long intent and not a tap.
-   * Index zero is unused; level 2 is one hour.
-   */
-  improvementHours: [0, 0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66],
   /** What building a workshop of the starting level costs. */
   buildCents: 50_000,
-  campaignFavourCost: 5,
-  campaignVoteBonus: 2,
+  /** The hours a workshop takes to be built, counted from the order. */
+  buildHours: 12,
+  /** The hours a degree takes to be delivered, counted from the order. */
+  titleHours: 6,
   /**
-   * What a workshop eats per unit it makes; wool and grain come out of nothing.
-   * A recipe is a rule, not content: changing one changes the economy, so it
-   * lives here and moves the version with everything else.
+   * The hours an improvement takes, by the level it reaches: the step grows with
+   * the level, so the top of the ladder is a long intent and not a tap. Index
+   * zero is unused; level 2 is one hour.
    */
-  recipes: {
-    wool: null,
-    cloth: { input: 'wool', perUnit: 1 },
-    grain: null,
-    bread: { input: 'grain', perUnit: 1 },
-    wood: null,
-    planks: { input: 'wood', perUnit: 1 },
-  } satisfies Record<GoodId, { input: GoodId; perUnit: number } | null>,
+  improvementHours: [0, 0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66],
+  campaignFavourCost: 5,
+  /**
+   * What a unit of a trade's output eats of its input: one, so a workshop turns
+   * its input into its output unit for unit and never grows the loft. Which good
+   * it eats is the chain's (`TRADE_CHAINS`), not this table's. A recipe is a
+   * rule, not content: changing one changes the economy, so it lives here and
+   * moves the version with everything else.
+   */
+  inputPerOutput: {
+    weaver: 1,
+    baker: 1,
+    carpenter: 1,
+  } satisfies Record<Trade, number>,
 } as const;
+
+/** The longest wait an order may have: what a client may have queued at once. */
+export const MAX_LEAD_HOURS = Math.max(RULES.buildHours, RULES.titleHours, ...RULES.improvementHours);
 
 /**
  * Calibration of the name, outside `RULES`: what a rename costs once the name is
@@ -463,156 +455,141 @@ export const NAME_PRICE = {
 } as const;
 
 /**
- * What the three AI dynasties are made of: they are the opening composition, and
- * they carry the same names in every town, so no human dynasty of the server may
- * take one of them (only a human dynasty is ranked by name across towns).
+ * What the three AI people are named: they are the opening composition, and
+ * they carry the same family names in every town, so no human account of the
+ * server may take one of them.
  */
 export const AI_DYNASTY_NAMES: readonly string[] = ['Caron', 'Fournier', 'Charpentier'];
 
 /**
- * Wall-clock policy, not a simulation rule: how far a returning player is caught
- * up, and when a dynasty stops being played. Read by the server; changing it must
- * not refuse an existing world.
+ * Wall-clock policy, not a simulation rule: what a pass keeps in the journal and
+ * when a person stops being played. Read by the server; changing it must not
+ * refuse an existing world.
  */
 export const PACING = {
-  // The scheduler plays one hour per pass. Thirty days are 720 hours, and the
-  // read path catches up at most that far before the wall clock jumps: the
-  // backlog it cannot replay is not simulated, so the town only counts the
-  // hours it lived.
-  maxCatchUpHours: 744,
   // Seven real days: the chronicle keeps what a reader back after a silence
   // could still want, and the cut follows the wall clock. A scheduler stopped
   // longer than this loses the days before the stop. Calibration, not a rule.
   chronicleRetentionHours: 7 * 24,
-  // Thirty real days: a private message waits as long as a dynasty may stay
+  // Thirty real days: a private message waits as long as a person may stay
   // silent and still come back, since the mailbox is read on the visit.
   // Calibration, not a rule.
   messageRetentionHours: 30 * 24,
   // Three days without a visit is enough to say the player has stopped playing;
-  // the dynasty goes dormant, keeps its estate and its seat, and casts no vote.
+  // the person goes dormant, keeps its estate and its seat, and casts no vote.
   // Calibration, not a rule.
   dormancyDays: 3,
-  // After a month without a visit the dynasty is gone with its tokens: no return,
-  // no vacation mode. The boundary is strict, so exactly thirty days still
-  // reads and the next read deletes.
+  // After a month without a visit the person is gone with its account: no
+  // return, no vacation mode. The boundary is strict, so exactly thirty days
+  // still reads and the next read deletes.
   deletionDays: 30,
-  // A deletion request is not immediate: the token stays valid for a week so the
-  // player can come back, and the scheduler erases the identity at the deadline.
-  // Calibration, not a rule.
+  // A deletion request is not immediate: the account stays valid for a week so
+  // the player can come back, and the scheduler erases the identity at the
+  // deadline. Calibration, not a rule.
   deletionGraceDays: 7,
 } as const;
 
 export const START_YEAR = 1401;
 /** Twenty-four hours make a year, so one real day is one game year. */
 export const HOURS_PER_YEAR = 24;
-/**
- * The Marché keeps one price per bell: twelve bells make a game year cycling
- * twice a day, and the window is the last day of town life. It is a display
- * window, not a rule, so it stays out of RULES.
- */
-export const PRICE_HISTORY_BELLS = HOURS_PER_YEAR;
 
-export interface DynastyArrival {
-  dynasty: Dynasty;
-  person: Person;
+/** The year a town hour falls in. The calendar is derived, never stored. */
+export function yearOf(hour: number): number {
+  return START_YEAR + Math.floor((hour - 1) / HOURS_PER_YEAR);
 }
-
-/** The name and the id the first dynasty arrives with, drawn before it joins. */
-export interface DynastyIdentity {
-  id: string;
-  dynastyName: string;
+/** The identity the first person arrives with: the name the account carries. */
+export interface PersonIdentity {
   personName: string;
 }
 
+/** The next free provisional id for a person not yet written to the store. */
+export function nextPersonId(world: World): PersonId {
+  const ids = Object.keys(world.people).map(Number);
+
+  return (ids.length === 0 ? 0 : Math.max(...ids)) + 1;
+}
+
+/** The next free provisional workshop id in the town. */
+function nextWorkshopId(world: World): number {
+  return (
+    Object.values(world.people).reduce(
+      (highest, person) => person.workshops.reduce((inner, workshop) => Math.max(inner, workshop.id), highest),
+      0,
+    ) + 1
+  );
+}
+
 /**
- * The dynasty a new player starts with: the workshop of its trade, a little
- * money, its first input, no seat and no career. The town is built without it;
- * `withFirstDynasty` adds it when the first player joins, and puts it back into a
- * freed place so a deleted first dynasty cannot brick the join path. Its name is an
- * input: the server draws it, and nothing about the first dynasty is fixed.
+ * The person a new player starts with: the workshop of its trade, a little
+ * money, its first input, no seat and no degree. The town is built without it;
+ * `withFirstPerson` adds it when the first player joins, and puts it back into a
+ * freed place so a deleted first person cannot brick the join path. Its name is
+ * an input: the server draws it, and nothing about the first person is fixed.
  */
-export function createFirstDynasty(trade: Trade, identity: DynastyIdentity): DynastyArrival {
+export function createFirstPerson(trade: Trade, identity: PersonIdentity, id: PersonId = 4, workshopId = 1): Person {
   const chain = TRADE_CHAINS[trade];
 
   return {
-    dynasty: {
-      id: identity.id,
-      name: identity.dynastyName,
-      controller: 'human',
-      treasuryCents: RULES.startingPurseCents,
-      debtCents: 0,
-      favour: 50,
-      prestige: 0,
-      title: 'roturier',
-      residenceLevel: 1,
-      career: 0,
-      dormant: false,
-      workshops: [{ id: 'workshop-1', good: chain.output, level: RULES.startingWorkshopLevel }],
-      stock: { [chain.input]: RULES.startingInputUnits },
-    },
-    person: {
-      id: `person-${identity.id}`,
-      dynastyId: identity.id,
-      name: identity.personName,
-      age: 20,
-      attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-      alive: true,
-    },
+    id,
+    ia: false,
+    name: identity.personName,
+    title: 'roturier',
+    residenceLevel: 1,
+    treasuryCents: RULES.startingPurseCents,
+    debtCents: 0,
+    favour: 50,
+    prestige: 0,
+    alive: true,
+    workshops: [{ id: workshopId, trade, level: RULES.startingWorkshopLevel }],
+    stock: { [chain.input]: RULES.startingInputUnits },
   };
 }
 
 /**
- * The first dynasty: the town is built without it, and it is added when the first
- * player joins — or when a deleted first dynasty's place waits for a human. It is
+ * The first person: the town is built without it, and it is added when the first
+ * player joins — or when a deleted first person's place waits for a human. It is
  * never a political role, and adding it twice is a no-op.
  */
-export function withFirstDynasty(world: World, trade: Trade, identity: DynastyIdentity): World {
-  if (humanDynastyOf(world) !== undefined) {
+export function withFirstPerson(world: World, trade: Trade, identity: PersonIdentity): World {
+  if (humanPersonOf(world) !== undefined) {
     return world;
   }
 
   const next = structuredClone(world);
-  const { dynasty, person } = createFirstDynasty(trade, identity);
-  next.dynasties[dynasty.id] = dynasty;
+  const person = createFirstPerson(trade, identity, nextPersonId(next), nextWorkshopId(next));
   next.people[person.id] = person;
 
   return next;
 }
 
-/** Adds a newcomer's dynasty to a town that already has a player. */
-export function withNewcomer(world: World, trade: Trade, identity: DynastyIdentity): World {
+/** Adds a newcomer's person to a town that already has a player. */
+export function withNewcomer(world: World, trade: Trade, identity: PersonIdentity): World {
   const next = structuredClone(world);
-  const { dynasty, person } = createFirstDynasty(trade, identity);
-  next.dynasties[dynasty.id] = dynasty;
+  const person = createFirstPerson(trade, identity, nextPersonId(next), nextWorkshopId(next));
   next.people[person.id] = person;
 
   return next;
 }
 
-/** The first dynasty: the only human dynasty of a solo town. */
-export function humanDynastyOf(world: World): Dynasty | undefined {
-  return Object.values(world.dynasties).find((dynasty) => dynasty.controller === 'human');
+/** The first person a human plays, in id order. */
+export function humanPersonOf(world: World): Person | undefined {
+  return Object.values(world.people)
+    .filter((person) => !person.ia)
+    .sort((left, right) => left.id - right.id)[0];
 }
 
-export type SeatRefusal = 'unknown_dynasty' | 'unknown_person' | 'person_of_another_dynasty' | 'person_dead';
+export type SeatRefusal = 'unknown_person' | 'person_dead';
 
 export type SeatAttempt = { ok: true; seat: Seat } | { ok: false; reason: SeatRefusal };
 
 /**
- * The only way a seat is given: it takes a living person of the dynasty that won
- * it. The check lives here so no caller can seat another dynasty's person.
+ * The only way a seat is given: it takes a living person. The check lives here
+ * so no caller can seat the dead.
  */
-export function takeSeat(world: World, dynastyId: string, personId: string): SeatAttempt {
-  if (world.dynasties[dynastyId] === undefined) {
-    return { ok: false, reason: 'unknown_dynasty' };
-  }
-
+export function takeSeat(world: World, personId: PersonId): SeatAttempt {
   const person = world.people[personId];
   if (person === undefined) {
     return { ok: false, reason: 'unknown_person' };
-  }
-  if (person.dynastyId !== dynastyId) {
-    return { ok: false, reason: 'person_of_another_dynasty' };
   }
   if (!person.alive) {
     return { ok: false, reason: 'person_dead' };
@@ -628,97 +605,65 @@ export function seatHolder(world: World, seatId: SeatId): Person | undefined {
   return personId === null ? undefined : world.people[personId];
 }
 
-/** What a dynasty holds in its warehouse, all goods together: the capped total. */
-export function stockUnits(dynasty: Dynasty): number {
+/** What a person holds in its warehouse, all goods together: the capped total. */
+export function stockUnits(person: Person): number {
   let total = 0;
-  for (const units of Object.values(dynasty.stock)) {
+  for (const units of Object.values(person.stock)) {
     total += units ?? 0;
   }
 
   return total;
 }
 
-export function createWorld(seed: number): World {
+export function createWorld(): World {
   return {
     formatVersion: FORMAT_VERSION,
     rulesetVersion: RULES.version,
-    seed,
-    rng: seed,
     hour: 1,
-    year: START_YEAR,
-    dynasties: {
-      caron: {
-        id: 'caron',
-        name: 'Caron',
-        controller: 'ai',
-        treasuryCents: 240000,
-        debtCents: 0,
-        favour: 60,
-        prestige: 65,
+    people: {
+      1: {
+        id: 1,
+        ia: true,
+        name: 'Robert Caron',
         // A cloth workshop of level 3 needs the patrician's workshop cap; the
         // seed gives Caron the degree that carries it rather than a bad workshop.
         title: 'bourgeois',
         residenceLevel: 2,
-        career: 0,
-        dormant: false,
-        workshops: [{ id: 'workshop-1', good: 'cloth', level: 3 }],
+        treasuryCents: 240000,
+        debtCents: 0,
+        favour: 60,
+        prestige: 65,
+        alive: true,
+        workshops: [{ id: 1, trade: 'weaver', level: 3 }],
         stock: {},
       },
-      fournier: {
-        id: 'fournier',
-        name: 'Fournier',
-        controller: 'ai',
+      2: {
+        id: 2,
+        ia: true,
+        name: 'Jehan Fournier',
+        title: 'roturier',
+        residenceLevel: 1,
         treasuryCents: 160000,
         debtCents: 0,
         favour: 45,
         prestige: 50,
-        title: 'roturier',
-        residenceLevel: 1,
-        career: 0,
-        dormant: false,
-        workshops: [{ id: 'workshop-1', good: 'bread', level: 2 }],
+        alive: true,
+        workshops: [{ id: 2, trade: 'baker', level: 2 }],
         stock: {},
       },
-      charpentier: {
-        id: 'charpentier',
-        name: 'Charpentier',
-        controller: 'ai',
+      3: {
+        id: 3,
+        ia: true,
+        name: 'Perrin Charpentier',
+        title: 'roturier',
+        residenceLevel: 1,
         treasuryCents: 170000,
         debtCents: 0,
         favour: 55,
         prestige: 52,
-        title: 'roturier',
-        residenceLevel: 1,
-        career: 0,
-        dormant: false,
-        workshops: [{ id: 'workshop-1', good: 'planks', level: 2 }],
+        alive: true,
+        workshops: [{ id: 3, trade: 'carpenter', level: 2 }],
         stock: {},
-      },
-    },
-    people: {
-      'person-caron': {
-        id: 'person-caron',
-        dynastyId: 'caron',
-        name: 'Robert Caron',
-        age: 44,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-        alive: true,
-      },
-      'person-fournier': {
-        id: 'person-fournier',
-        dynastyId: 'fournier',
-        name: 'Jehan Fournier',
-        age: 41,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-        alive: true,
-      },
-      'person-charpentier': {
-        id: 'person-charpentier',
-        dynastyId: 'charpentier',
-        name: 'Perrin Charpentier',
-        age: 49,
-        attributes: { artisanat: 10, parole: 10, intrigue: 10 },
-        alive: true,
       },
     },
     seats: {
@@ -738,18 +683,6 @@ export function createWorld(seed: number): World {
       planks: RULES.market.planks.referenceCents,
     },
     marketFlow: {},
-    marketHistory: {
-      wool: [RULES.market.wool.referenceCents],
-      cloth: [RULES.market.cloth.referenceCents],
-      grain: [RULES.market.grain.referenceCents],
-      bread: [RULES.market.bread.referenceCents],
-      wood: [RULES.market.wood.referenceCents],
-      planks: [RULES.market.planks.referenceCents],
-    },
     campaigns: {},
-    closedCampaigns: {},
-    engagements: [],
-    engagementSeq: 0,
-    workshopSeq: 1,
   };
 }

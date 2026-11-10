@@ -7,27 +7,29 @@ export interface IssuedToken {
   player: Player;
 }
 
+/**
+ * Opens an account under the family name the player kept. The person is bound
+ * later, once a place has been found: a failed join must not leave an account
+ * pointing at a person the town no longer holds.
+ */
 export async function issueToken(
   store: PlayerStore,
-  townId: number,
-  dynastyId: string,
+  name: string,
   now: Date = new Date(),
   mint: () => string = mintToken,
 ): Promise<IssuedToken> {
-  // A wrong id here is a server bug, not a player's refusal: throw while the
-  // server is creating the dynasty, not later when the player logs in.
-  if (townId <= 0 || dynastyId.length === 0) {
-    throw new Error('an account needs a town and a dynasty');
+  if (name.length === 0) {
+    throw new Error('an account needs a family name');
   }
 
   const token = mint();
   const player: Omit<Player, 'playerId'> = {
     tokenHash: hashToken(token),
-    townId,
-    dynastyId,
+    name,
+    townId: null,
+    personId: null,
     createdAt: now,
     lastSeenAt: now,
-    revokedAt: null,
     deleteAfter: null,
   };
 
@@ -38,9 +40,9 @@ export async function authenticate(store: PlayerStore, token: string | undefined
   const digest = hashToken(token ?? '');
   const player = token !== undefined && isTokenShaped(token) ? await store.findByTokenHash(digest) : null;
 
-  // A missing, malformed, unknown and revoked token all run the same
-  // comparison; only a live match survives.
+  // A missing, malformed and unknown token all run the same comparison; only a
+  // match survives.
   const matches = sameDigest(digest, player?.tokenHash ?? DUMMY_DIGEST);
 
-  return matches && player !== null && player.revokedAt === null ? player : null;
+  return matches ? player : null;
 }

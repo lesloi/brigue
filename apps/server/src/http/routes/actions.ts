@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
   GOODS,
+  leadHoursOf,
+  MAX_LEAD_HOURS,
   nextTitle,
   SEATS,
   titleOf,
@@ -12,37 +14,35 @@ import {
   type Trade,
 } from '@brigue/core';
 
-import { currentHourOf, DuplicateActionError, sessionWorld, type StoredAction } from '../../town/worlds.ts';
+import { hourAt, sessionWorld, type NewStoredAction, type StoredAction } from '../../town/worlds.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 
 /**
- * The action may target the hour being played, or the next one when an hour
- * boundary fell between the client's read and its POST. Further ahead is a
- * client clock that cannot be reconciled with this town.
+ * The hour a client may name: the one being played, or the next one when an hour
+ * boundary fell between its read and its POST. Further ahead is a clock that
+ * cannot be reconciled with this town. An act with a lead is placed by the
+ * server, not by the client: see `leadHoursOf`.
  */
 const QUEUE_AHEAD_HOURS = 1;
 
-/** An action as the client may send it: the dynasty always comes from the session. */
+/** An action as the client may send it: the person always comes from the session. */
 type ActionIntent =
   | { type: 'market.buy'; good: GoodId; units: number }
   | { type: 'market.sell'; good: GoodId; units: number }
   | { type: 'council.campaign'; seatId: SeatId }
   | { type: 'workshop.build'; trade: Trade }
-  | { type: 'workshop.destroy'; workshopId: string }
-  | { type: 'workshop.upgrade'; workshopId: string }
-  | { type: 'dynasty.buy_title' }
-  | { type: 'dynasty.upgrade_residence' };
+  | { type: 'workshop.destroy'; workshopId: number }
+  | { type: 'workshop.upgrade'; workshopId: number }
+  | { type: 'person.buy_title' }
+  | { type: 'person.upgrade_residence' };
 
-type ActionSubmission =
-  { ok: true; id: string; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
-
-const ACTION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type ActionSubmission = { ok: true; hour: number; intent: ActionIntent } | { ok: false; error: 'invalid_action' };
 
 type ActionOutcome =
   | { kind: 'stale'; currentHour: number }
   | { kind: 'future'; currentHour: number }
-  | { kind: 'duplicate' }
+  | { kind: 'scheduled' }
   | { kind: 'appended'; stored: StoredAction };
 
 export async function listActions(
@@ -66,13 +66,19 @@ export async function listActions(
     return;
   }
 
+  const at = new Date(context.now());
   const actions = await context.deps.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
     const queued: StoredAction[] = [];
+    // An order with a lead is placed from the wall clock's hour, which can run
+    // ahead of a town the pass has not reached yet: the window covers both.
+    const from = Math.max(world.hour, hourAt(session.snapshot.worldStartedAt, at));
 
-    queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
+    // What the person has ordered and not lived yet, the acts with a lead
+    // included: the screen shows them at the hour they will play.
+    queued.push(...(await session.actionsBetween(world.hour, from + MAX_LEAD_HOURS)));
 
-    return queued.filter((action) => action.dynastyId === bound.dynastyId);
+    return queued.filter((action) => action.personId === bound.personId);
   }, bound.townId);
 
   sendJson(response, 200, { actions: actions.map(pendingView) });
@@ -95,7 +101,8 @@ export async function cancelAction(
   if (refuseClosing(context, player, response, at)) {
     return;
   }
-  if (!ACTION_ID_PATTERN.test(id)) {
+  const actionId = Number(id);
+  if (!Number.isInteger(actionId) || actionId <= 0) {
     sendJson(response, 404, { error: 'unknown_action' });
     return;
   }
@@ -106,31 +113,22 @@ export async function cancelAction(
     return;
   }
 
-  const actionId = id.toLowerCase();
   const outcome = await context.deps.worlds.withWorld(async (session) => {
-    const { world, hourStartedAt } = session.snapshot;
+    const { world, worldStartedAt } = session.snapshot;
     sessionWorld(session);
 
     const stored = await session.findAction(actionId);
-    // Another dynasty's action is indistinguishable from an unknown one.
-    if (stored === null || stored.dynastyId !== bound.dynastyId) {
+    // Another person's action is indistinguishable from an unknown one.
+    if (stored === null || stored.personId !== bound.personId) {
       return { kind: 'unknown' as const };
     }
-    // Idempotent: a cancellation already won is 204, even if the hour has
-    // ticked since; the row stays for dedup and replay.
-    if (stored.cancelledAt !== null) {
-      return { kind: 'cancelled' as const };
-    }
     if (stored.playsAt < world.hour) {
-      return { kind: 'stale' as const, currentHour: currentHourOf(world, hourStartedAt, at) };
+      return { kind: 'stale' as const, currentHour: hourAt(worldStartedAt, at) };
     }
 
-    const currentHour = currentHourOf(world, hourStartedAt, at);
-    if (stored.playsAt > currentHour + QUEUE_AHEAD_HOURS) {
-      return { kind: 'future' as const, currentHour };
-    }
-
-    await session.cancel(actionId, at);
+    // An order not yet played is cancellable, however far ahead: the acts with
+    // a lead are exactly the ones a player changes their mind about.
+    await session.cancel(actionId);
 
     return { kind: 'cancelled' as const };
   }, bound.townId);
@@ -141,9 +139,6 @@ export async function cancelAction(
       return;
     case 'stale':
       sendJson(response, 409, { error: 'stale_hour', currentHour: outcome.currentHour });
-      return;
-    case 'future':
-      sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
       return;
     case 'cancelled':
       response.writeHead(204, { 'Cache-Control': 'no-store' });
@@ -185,53 +180,51 @@ export async function appendAction(
     return;
   }
 
-  let outcome: ActionOutcome;
-  try {
-    outcome = await context.deps.worlds.withWorld(async (session) => {
-      sessionWorld(session);
-      const { world, hourStartedAt } = session.snapshot;
+  const outcome: ActionOutcome = await context.deps.worlds.withWorld(async (session) => {
+    sessionWorld(session);
+    const { world, worldStartedAt } = session.snapshot;
 
-      // The action names a hour, not a dynasty: the dynasty is the session's.
-      // A hour that already ticked can never be replayed, and the town clock
-      // is the upper bound for a hour that has not begun yet.
-      const currentHour = currentHourOf(world, hourStartedAt, at);
+    // The action names a hour, not a person: the person is the session's.
+    // A hour that already ticked can never be replayed, and the town clock
+    // is the upper bound for a hour that has not begun yet.
+    const currentHour = hourAt(worldStartedAt, at);
 
-      if (submission.hour < world.hour) {
-        return { kind: 'stale' as const, currentHour };
-      }
-      if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
-        return { kind: 'future' as const, currentHour };
-      }
-      if ((await session.findAction(submission.id)) !== null) {
-        return { kind: 'duplicate' as const };
-      }
-
-      const stored: StoredAction = {
-        id: submission.id,
-        dynastyId: bound.dynastyId,
-        playsAt: submission.hour,
-        action: withDynasty(submission.intent, bound.dynastyId),
-        receivedAt: at,
-        cancelledAt: null,
-        // The degree is named when the order is taken, from the dynasty as it is
-        // then, so no later purchase changes what this line says.
-        ...(submission.intent.type === 'dynasty.buy_title'
-          ? { title: nextTitle(titleOf(world.dynasties[bound.dynastyId]!)) }
-          : {}),
-      };
-      await session.append(stored);
-
-      return { kind: 'appended' as const, stored };
-    }, bound.townId);
-  } catch (error) {
-    // The primary key caught an id another hour already used; the pre-check
-    // above covers the common path, this covers a race from another world.
-    if (error instanceof DuplicateActionError) {
-      sendJson(response, 409, { error: 'duplicate_action' });
-      return;
+    if (submission.hour < world.hour) {
+      return { kind: 'stale' as const, currentHour };
     }
-    throw error;
-  }
+    if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
+      return { kind: 'future' as const, currentHour };
+    }
+    const person = world.people[bound.personId];
+    const intent = withPerson(submission.intent, bound.personId);
+    const lead = leadHoursOf(world, intent);
+
+    // One act with a lead at a time: a person has one pair of hands, and two
+    // orders due later would race for the same workshop or the same degree. The
+    // window starts at the wall clock's hour, which may be ahead of the town's.
+    if (lead > 0) {
+      const ahead = await session.actionsBetween(world.hour, currentHour + MAX_LEAD_HOURS);
+      if (ahead.some((queued) => queued.personId === bound.personId && queued.playsAt > world.hour)) {
+        return { kind: 'scheduled' as const };
+      }
+    }
+
+    const toStore: NewStoredAction = {
+      personId: bound.personId,
+      // The act waits its own hours; a trade is played on the hour it names.
+      playsAt: lead === 0 ? submission.hour : currentHour + lead,
+      action: intent,
+      receivedAt: at,
+      // The degree is named when the order is taken, from the person as they
+      // are then, so no later purchase changes what this line says.
+      ...(submission.intent.type === 'person.buy_title' && person !== undefined
+        ? { title: nextTitle(titleOf(person)) }
+        : {}),
+    };
+    const stored = await session.append(toStore);
+
+    return { kind: 'appended' as const, stored };
+  }, bound.townId);
 
   switch (outcome.kind) {
     case 'stale':
@@ -240,20 +233,20 @@ export async function appendAction(
     case 'future':
       sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
       return;
-    case 'duplicate':
-      sendJson(response, 409, { error: 'duplicate_action' });
+    case 'scheduled':
+      sendJson(response, 409, { error: 'already_scheduled' });
       return;
     case 'appended':
       context.deps.logger.info('action.appended', {
         townId: bound.townId,
-        dynastyId: bound.dynastyId,
+        personId: bound.personId,
         hour: outcome.stored.playsAt,
         action: outcome.stored.action.type,
       });
       sendJson(response, 201, {
         id: outcome.stored.id,
         hour: outcome.stored.playsAt,
-        dynastyId: outcome.stored.dynastyId,
+        personId: outcome.stored.personId,
       });
   }
 }
@@ -270,7 +263,7 @@ function pendingView(stored: StoredAction): Record<string, unknown> {
       : {}),
     ...(action.type === 'council.campaign' ? { seatId: action.seatId } : {}),
     ...(action.type === 'workshop.build' ? { trade: action.trade } : {}),
-    ...(action.type === 'dynasty.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
+    ...(action.type === 'person.buy_title' && stored.title !== undefined ? { title: stored.title } : {}),
     ...(action.type === 'workshop.destroy' || action.type === 'workshop.upgrade'
       ? { workshopId: action.workshopId }
       : {}),
@@ -282,10 +275,7 @@ function parseActionSubmission(body: unknown): ActionSubmission {
     return invalid();
   }
 
-  const { id, hour, action } = body;
-  if (typeof id !== 'string' || !ACTION_ID_PATTERN.test(id)) {
-    return invalid();
-  }
+  const { hour, action } = body;
   if (!Number.isInteger(hour) || (hour as number) < 1) {
     return invalid();
   }
@@ -305,7 +295,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'market.buy', good: good as GoodId, units: units as number },
       };
@@ -322,7 +311,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'market.sell', good: good as GoodId, units: units as number },
       };
@@ -336,7 +324,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'council.campaign', seatId: seatId as SeatId },
       };
@@ -350,7 +337,6 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
         intent: { type: 'workshop.build', trade: trade as Trade },
       };
@@ -359,21 +345,20 @@ function parseActionSubmission(body: unknown): ActionSubmission {
     case 'workshop.destroy':
     case 'workshop.upgrade': {
       const { workshopId } = action;
-      if (typeof workshopId !== 'string' || workshopId.length === 0) {
+      if (!Number.isInteger(workshopId) || (workshopId as number) <= 0) {
         return invalid();
       }
 
       return {
         ok: true,
-        id: id.toLowerCase(),
         hour: hour as number,
-        intent: { type: action.type, workshopId },
+        intent: { type: action.type, workshopId: workshopId as number },
       };
     }
 
-    case 'dynasty.buy_title':
-    case 'dynasty.upgrade_residence':
-      return { ok: true, id: id.toLowerCase(), hour: hour as number, intent: { type: action.type } };
+    case 'person.buy_title':
+    case 'person.upgrade_residence':
+      return { ok: true, hour: hour as number, intent: { type: action.type } };
 
     default:
       return invalid();
@@ -381,11 +366,11 @@ function parseActionSubmission(body: unknown): ActionSubmission {
 }
 
 /**
- * The only place a client-supplied action meets a dynasty: the dynasty is written
- * last, so a `dynastyId` smuggled into the body never survives into the world.
+ * The only place a client-supplied action meets a person: the person is written
+ * last, so a `personId` smuggled into the body never survives into the world.
  */
-function withDynasty(intent: ActionIntent, dynastyId: string): Action {
-  return { ...intent, dynastyId };
+function withPerson(intent: ActionIntent, personId: number): Action {
+  return { ...intent, personId };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

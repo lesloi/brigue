@@ -1,27 +1,30 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { NAME_PRICE, renameDynasty } from '@brigue/core';
+import { isValidName, NAME_PRICE, nameKey, renamePerson, sanitizeName } from '@brigue/core';
 
+import { applyPresence } from '../../town/presence.ts';
 import { NameInUseError, sessionWorld } from '../../town/worlds.ts';
-import type { BoundPlayer } from '../../identity/players.ts';
+import { NameAlreadyBoundError, type BoundPlayer, type Player } from '../../identity/players.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 import { humanNamesElsewhere } from './name-suggestion.ts';
 
 /**
- * The dynasty's name, changed at once rather than queued.
+ * The family name, changed at once rather than queued.
  *
- * A name is identity, not trade: the player who pays for it should not read the
- * old one until the next hour, and a queued rename would reserve a name for an
- * hour in front of every other dynasty. The route runs under the world's own lock
- * — the same one the scheduler takes — and writes the town in that session, so
- * no tick can land between the check and the write.
+ * The name lives on the account; the person carries a display name that follows
+ * it. A name is identity, not trade: the player who pays for it should not read
+ * the old one until the next hour, and a queued rename would reserve a name for
+ * an hour in front of every other account. The account takes the name first,
+ * and its unique index is the only atomic check; the town is written after it,
+ * and a town that refuses gives the old name back, so the account and the
+ * person never stay apart.
  *
  * The name's rules are the core's: two names that differ by case or by accent
- * are one name, and a name another dynasty carries is refused with 409. The
- * database compares bytes, so the read of the dynasties is the check that counts.
+ * are one name, and a name another account carries is refused with 409. The
+ * database compares bytes, so the write to the account is the check that counts.
  */
-export async function renameDynastyRoute(
+export async function renameFamilyRoute(
   context: AppContext,
   request: IncomingMessage,
   response: ServerResponse,
@@ -54,13 +57,42 @@ export async function renameDynastyRoute(
     sendJson(response, 400, { error: 'invalid_name' });
     return;
   }
+  const cleaned = sanitizeName(name);
+  if (!isValidName(cleaned)) {
+    sendJson(response, 400, { error: 'invalid_name' });
+    return;
+  }
 
   try {
-    const outcome = await renameInTown(context, bound, name);
+    // The accounts are the source of truth for the family name, and their unique
+    // index is the only atomic check: the name is taken first, so a name another
+    // account carries is refused before the person is renamed or the town
+    // charged. This read only spares that round trip in the common case.
+    const elsewhere = await humanNamesElsewhere(context, player.name);
+    if (elsewhere.has(nameKey(cleaned))) {
+      sendJson(response, 409, { error: 'name_taken' });
+      return;
+    }
+
+    await context.deps.store.renameName(player.tokenHash, cleaned);
+
+    let outcome: RenameOutcome;
+    try {
+      outcome = await renameInTown(context, bound, player.name, cleaned);
+    } catch (error) {
+      await giveNameBack(context, player, cleaned);
+      throw error;
+    }
+
+    // The town can still refuse — a purse an hour spent, a person gone silent —
+    // and the account must not carry a name the person does not.
+    if (outcome.kind !== 'renamed') {
+      await giveNameBack(context, player, cleaned);
+    }
 
     answer(response, context, bound, outcome.kind, outcome.kind === 'renamed' ? outcome.name : undefined);
   } catch (error) {
-    if (error instanceof NameInUseError) {
+    if (error instanceof NameInUseError || error instanceof NameAlreadyBoundError) {
       sendJson(response, 409, { error: 'name_taken' });
       return;
     }
@@ -68,50 +100,81 @@ export async function renameDynastyRoute(
   }
 }
 
+/**
+ * Puts the old name back after a town refused the rename the account had already
+ * taken. Only the name this request took comes back: a later rename may have
+ * landed in the window, and an older request must not overwrite it. The revert
+ * can still fail — the old name was free, and another account may have taken it
+ * meanwhile — and the display name is then behind the account until the next
+ * rename reads the account again, which is better than a name nobody paid for.
+ *
+ * No transaction spans the account and the town, so a process that dies between
+ * the two writes leaves the same gap open.
+ */
+async function giveNameBack(context: AppContext, player: Player, taken: string): Promise<void> {
+  if (nameKey(player.name) === nameKey(taken)) {
+    return;
+  }
+
+  const current = await context.deps.store.findByTokenHash(player.tokenHash);
+  if (current === null || nameKey(current.name) !== nameKey(taken)) {
+    return;
+  }
+
+  try {
+    await context.deps.store.renameName(player.tokenHash, player.name);
+  } catch (error) {
+    context.deps.logger.warn('player.name_not_given_back', {
+      name: taken,
+      reason: error instanceof Error ? error.name : 'unknown',
+    });
+  }
+}
+
 type RenameOutcome = { kind: 'renamed'; name: string } | { kind: 'taken' | 'dormant' | 'poor' | 'invalid' | 'lost' };
 
-async function renameInTown(context: AppContext, bound: BoundPlayer, name: string): Promise<RenameOutcome> {
+async function renameInTown(
+  context: AppContext,
+  bound: BoundPlayer,
+  before: string,
+  name: string,
+): Promise<RenameOutcome> {
   return context.deps.worlds.withWorld(async (session) => {
-    const { world, hourStartedAt } = session.snapshot;
+    const { world } = session.snapshot;
     sessionWorld(session);
 
-    const dynasty = world.dynasties[bound.dynastyId];
-    if (dynasty === undefined) {
+    const person = world.people[bound.personId];
+    if (person === undefined) {
       return { kind: 'lost' as const };
     }
-    if (dynasty.dormant) {
+    // Silence is a fact about the account, not the world: it is read here the
+    // same way the catch-up reads it. Past the deletion threshold the person is
+    // already gone, and a rename must not slip into the snapshot before the
+    // next read removes it.
+    const players = await context.deps.store.listByTown(bound.townId);
+    const presence = applyPresence(world, players, context.now());
+    if (presence.deletedPersonIds.includes(person.id)) {
+      return { kind: 'lost' as const };
+    }
+    if (presence.dormant.has(person.id)) {
       return { kind: 'dormant' as const };
     }
 
-    const next = structuredClone(world);
-    const renamed = next.dynasties[dynasty.id];
+    const next = presence.world;
+    const renamed = next.people[person.id];
     if (renamed === undefined) {
       return { kind: 'lost' as const };
     }
-
-    // A human dynasty is held to the server-wide rule; the town's own dynasties are
-    // read from the world the route locked, and the keys of the humans
-    // elsewhere were read before the lock: a dynasty founded between the two is
-    // caught by the index, and the save fails whole rather than half-write.
-    const outcome = renameDynasty(next, renamed, {
-      name,
-      priceCents: NAME_PRICE.renameCents,
-      takenElsewhere: await humanNamesElsewhere(context),
-    });
-
-    switch (outcome.ok ? 'renamed' : outcome.reason) {
-      case 'renamed':
-        // A name is identity, not a journal line: the Maison screen carries it.
-        await session.save(next, hourStartedAt, []);
-
-        return { kind: 'renamed' as const, name: renamed.name };
-      case 'name_taken':
-        return { kind: 'taken' as const };
-      case 'insufficient_funds':
-        return { kind: 'poor' as const };
-      default:
-        return { kind: 'invalid' as const };
+    if (renamed.treasuryCents < NAME_PRICE.renameCents) {
+      return { kind: 'poor' as const };
     }
+
+    renamed.treasuryCents -= NAME_PRICE.renameCents;
+    renamed.name = renamePerson(renamed.name, before, name);
+    // A name is identity, not a journal line: the Maison screen carries it.
+    await session.write(next, []);
+
+    return { kind: 'renamed' as const, name };
   }, bound.townId);
 }
 
@@ -125,14 +188,14 @@ function answer(
 ): void {
   switch (kind) {
     case 'renamed':
-      context.deps.logger.info('dynasty.renamed', { townId: bound.townId, dynastyId: bound.dynastyId });
+      context.deps.logger.info('person.renamed', { townId: bound.townId, personId: bound.personId });
       sendJson(response, 200, { name });
       return;
     case 'taken':
       sendJson(response, 409, { error: 'name_taken' });
       return;
     case 'dormant':
-      sendJson(response, 409, { error: 'dormant_dynasty' });
+      sendJson(response, 409, { error: 'dormant_person' });
       return;
     case 'poor':
       sendJson(response, 409, { error: 'insufficient_funds' });
@@ -141,7 +204,7 @@ function answer(
       sendJson(response, 400, { error: 'invalid_name' });
       return;
     case 'lost':
-      sendJson(response, 404, { error: 'unknown_dynasty' });
+      sendJson(response, 404, { error: 'unknown_person' });
   }
 }
 

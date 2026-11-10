@@ -1,4 +1,4 @@
-import type { Event } from '@brigue/core';
+import type { Event, PersonId } from '@brigue/core';
 import { GOODS } from '@brigue/core/world';
 import { describe, expect, it } from 'vitest';
 
@@ -27,32 +27,32 @@ import {
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
 import { catchUpText } from '../src/views/greffe.tsx';
-import { countdownText, lawAgeText } from '../src/views/ville.tsx';
+import { countdownText } from '../src/views/ville.tsx';
 
-const NAMES: Record<string, string> = {
-  leclerc: 'Leclerc',
-  caron: 'Caron',
-  herse: 'de Herse',
+const NAMES: Record<PersonId, string> = {
+  4: 'Leclerc',
+  1: 'Caron',
+  9: 'de Herse',
 };
 
-const nameOf = (dynastyId: string): string => NAMES[dynastyId] ?? 'une dynastie inconnue';
+const nameOf = (personId: PersonId): string => NAMES[personId] ?? 'une personne inconnue';
 
 describe('refusalText', () => {
   it('speaks of dynasties, not of dynasties', () => {
     // Arrange
-    const refusals = ['unknown_dynasty', 'dormant_dynasty'] as const;
+    const refusals = ['unknown_person', 'dormant_person'] as const;
 
     // Act
     const said = refusals.map((reason) => refusalText(reason));
 
     // Assert
-    expect(said).toEqual(['dynastie inconnue', 'dynastie dormante']);
+    expect(said).toEqual(['personne inconnue', 'personne dormante']);
   });
 
   it('names the account when its deletion is due, and the dynasty when it is gone', () => {
     // Arrange
-    const action = ['deletion_pending', 'dynasty_lost', 'no_free_dynasty'] as const;
-    const read = ['dynasty_lost'] as const;
+    const action = ['deletion_pending', 'person_lost', 'no_free_person'] as const;
+    const read = ['person_lost'] as const;
 
     // Act
     const said = action.map((code) => actionErrorText(code));
@@ -76,7 +76,7 @@ describe('eventLine', () => {
       audience: 'town',
 
       at: 0,
-      dynastyId: 'leclerc',
+      personId: 4,
       good: 'wool',
       units: 10,
       priceCents: 380,
@@ -84,7 +84,7 @@ describe('eventLine', () => {
     };
 
     // Act
-    const line = eventLine(event, 'leclerc', nameOf);
+    const line = eventLine(event, 4, nameOf);
 
     // Assert
     expect(line.tone).toBe('loss');
@@ -99,7 +99,7 @@ describe('eventLine', () => {
       audience: 'town',
 
       at: 0,
-      dynastyId: 'caron',
+      personId: 1,
       good: 'wool',
       units: 1,
       priceCents: 380,
@@ -107,7 +107,7 @@ describe('eventLine', () => {
     };
 
     // Act
-    const line = eventLine(event, 'leclerc', nameOf);
+    const line = eventLine(event, 4, nameOf);
 
     // Assert
     expect(line.text).toContain('Caron a acheté 1 laine');
@@ -120,25 +120,25 @@ describe('eventLine', () => {
       audience: 'town',
       at: 0,
       seatId: 'maire',
-      winnerDynastyId: null,
+      winnerPersonId: null,
       votes: {},
     };
     const won: Event = {
       type: 'council.election_result',
-      audience: { dynastyId: 'leclerc' },
+      audience: { personId: 4 },
       at: 0,
-      dynastyId: 'leclerc',
+      personId: 4,
       seatId: 'maire',
       won: true,
-      winnerDynastyId: 'leclerc',
-      votes: { leclerc: 4, caron: 2 },
+      winnerPersonId: 4,
+      votes: { 4: 4, 1: 2 },
     };
-    const lost: Event = { ...won, won: false, winnerDynastyId: 'caron' };
+    const lost: Event = { ...won, won: false, winnerPersonId: 1 };
 
     // Act
-    const vacantLine = eventLine(vacant, 'leclerc', nameOf);
-    const wonLine = eventLine(won, 'leclerc', nameOf);
-    const lostLine = eventLine(lost, 'leclerc', nameOf);
+    const vacantLine = eventLine(vacant, 4, nameOf);
+    const wonLine = eventLine(won, 4, nameOf);
+    const lostLine = eventLine(lost, 4, nameOf);
 
     // Assert
     expect(vacantLine.text).toContain('reste vacante');
@@ -151,16 +151,16 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'action.refused',
-      audience: { dynastyId: 'leclerc' },
+      audience: { personId: 4 },
 
       at: 0,
       action: 'market.buy',
-      dynastyId: 'leclerc',
+      personId: 4,
       reason: 'insufficient_funds',
     };
 
     // Act
-    const line = eventLine(event, 'leclerc', nameOf);
+    const line = eventLine(event, 4, nameOf);
 
     // Assert
     expect(line.tone).toBe('refusal');
@@ -170,25 +170,25 @@ describe('eventLine', () => {
   it('keeps the dynasty grammar for a missed upkeep payment', () => {
     // Arrange
     const own: Event = {
-      type: 'dynasty.penniless',
-      audience: { dynastyId: 'leclerc' },
+      type: 'person.penniless',
+      audience: { personId: 4 },
 
       at: 0,
-      dynastyId: 'leclerc',
+      personId: 4,
       shortfallCents: 240,
     };
     const other: Event = {
-      type: 'dynasty.penniless',
-      audience: { dynastyId: 'caron' },
+      type: 'person.penniless',
+      audience: { personId: 1 },
 
       at: 0,
-      dynastyId: 'caron',
+      personId: 1,
       shortfallCents: 240,
     };
 
     // Act
-    const ownLine = eventLine(own, 'leclerc', nameOf);
-    const otherLine = eventLine(other, 'leclerc', nameOf);
+    const ownLine = eventLine(own, 4, nameOf);
+    const otherLine = eventLine(other, 4, nameOf);
 
     // Assert
     expect(ownLine.text).toBe("Vous n'avez pas pu payer 2,4 écus d'entretien.");
@@ -199,82 +199,41 @@ describe('eventLine', () => {
     // Arrange
     const event: Event = {
       type: 'workshop.produced',
-      audience: { dynastyId: 'leclerc' },
+      audience: { personId: 4 },
 
       at: 0,
-      dynastyId: 'leclerc',
+      personId: 4,
       good: 'cloth',
       units: 4,
     };
 
     // Act
-    const line = eventLine(event, 'leclerc', nameOf);
+    const line = eventLine(event, 4, nameOf);
 
     // Assert
     expect(line.tone).toBe('gain');
     expect(line.text).toBe('Vous avez produit 4 draps.');
   });
 
-  it('reads an overflow as goods left out of a full warehouse', () => {
-    // Arrange
-    const event: Event = {
-      type: 'workshop.overflow',
-      audience: { dynastyId: 'leclerc' },
-
-      at: 0,
-      dynastyId: 'leclerc',
-      good: 'wool',
-      refusedUnits: 3,
-    };
-
-    // Act
-    const line = eventLine(event, 'leclerc', nameOf);
-
-    // Assert
-    expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
-  });
-
   it('says when the scrutiny that counts a candidacy is held', () => {
     // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
     const event: Event = {
       type: 'council.campaigned',
-      audience: { dynastyId: 'leclerc' },
+      audience: { personId: 4 },
       at: 12,
-      dynastyId: 'leclerc',
+      personId: 4,
       seatId: 'maire',
       favourSpent: 3,
       countsAt: 48,
     };
 
     // Act
-    const line = eventLine(event, 'leclerc', nameOf);
+    const line = eventLine(event, 4, nameOf);
 
-    // Assert: the screen does not claim the coming scrutiny when the noon bell
-    // has already closed this year's.
+    // Assert: the line names the scrutiny the event carries.
     expect(line.tone).toBe('council');
     expect(line.text).toContain('candidature à la mairie');
     expect(line.text).toContain("à l'heure 48");
-  });
-
-  it('counts a late engagement in hours', () => {
-    // Arrange: heard three hours after it fell due.
-    const event: Event = {
-      type: 'engagement.resolved',
-      audience: { dynastyId: 'leclerc' },
-      at: 8,
-      engagementId: 'e1',
-      kind: 'hearing',
-      dynastyId: 'leclerc',
-      dueAt: 5,
-      resolvedAt: 8,
-    };
-
-    // Act
-    const line = eventLine(event, 'leclerc', nameOf);
-
-    // Assert
-    expect(line.text).toContain("L'audience de Vous est tenue");
-    expect(line.text).toContain('3 heures de retard');
   });
 });
 
@@ -336,27 +295,17 @@ describe('countdownText', () => {
   });
 });
 
-describe('lawAgeText', () => {
-  it('says a law in hours from the town clock', () => {
-    expect(lawAgeText(12, 12)).toBe('cette heure');
-    expect(lawAgeText(12, 13)).toBe('il y a 1 heure');
-    expect(lawAgeText(9, 12)).toBe('il y a 3 heures');
-  });
-});
-
 describe('catchUpText', () => {
   it('agrees with a single hour', () => {
-    expect(catchUpText({ hours: 1, skipped: 0 })).toBe('1 heure vécue depuis votre dernière visite.');
-    expect(catchUpText({ hours: 1, skipped: 1 })).toContain('1 heure sautée');
+    expect(catchUpText({ hours: 1 })).toBe('1 heure vécue depuis votre dernière visite.');
   });
 
   it('pluralises above one', () => {
-    expect(catchUpText({ hours: 2, skipped: 0 })).toBe('2 heures vécues depuis votre dernière visite.');
-    expect(catchUpText({ hours: 0, skipped: 2 })).toContain('2 heures sautées');
+    expect(catchUpText({ hours: 2 })).toBe('2 heures vécues depuis votre dernière visite.');
   });
 
   it('says nothing when the visit owes nothing', () => {
-    expect(catchUpText({ hours: 0, skipped: 0 })).toBeNull();
+    expect(catchUpText({ hours: 0 })).toBeNull();
   });
 });
 
@@ -391,11 +340,11 @@ describe('tab history', () => {
 
 describe('pending actions', () => {
   const pending: PendingActionView[] = [
-    { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
-    { id: 'b', hour: 3, type: 'market.buy', good: 'grain', units: 10 },
-    { id: 'c', hour: 3, type: 'market.sell', good: 'grain', units: 4 },
-    { id: 'd', hour: 3, type: 'market.buy', good: 'wool', units: 2 },
-    { id: 'e', hour: 3, type: 'council.campaign', seatId: 'maire' },
+    { id: 1, hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+    { id: 2, hour: 3, type: 'market.buy', good: 'grain', units: 10 },
+    { id: 3, hour: 3, type: 'market.sell', good: 'grain', units: 4 },
+    { id: 4, hour: 3, type: 'market.buy', good: 'wool', units: 2 },
+    { id: 5, hour: 3, type: 'council.campaign', seatId: 'maire' },
   ];
 
   it('nets the market actions of one good', () => {
@@ -415,8 +364,8 @@ describe('pending actions', () => {
     // Arrange
     const prices = { wool: 380, cloth: 1240, grain: 260, bread: 520, wood: 300, planks: 980 };
     const queued: PendingActionView[] = [
-      { id: 'a', hour: 3, type: 'market.buy', good: 'grain', units: 5 },
-      { id: 'b', hour: 3, type: 'market.sell', good: 'bread', units: 3 },
+      { id: 1, hour: 3, type: 'market.buy', good: 'grain', units: 5 },
+      { id: 2, hour: 3, type: 'market.sell', good: 'bread', units: 3 },
     ];
 
     // Act and assert: -5 × 260 + 3 × 520, and 5 − 3 units net.
