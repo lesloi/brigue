@@ -2,9 +2,10 @@
 -- the accounts and the book of kings. It is the only schema file, and it is
 -- applied to an empty database.
 --
--- A schema change edits this file; a database crosses with `reset --full`, which
--- rebuilds it from here. There is no upgrade path, because no world of another
--- format is read. `migrate` builds an empty database and nothing else.
+-- A schema change edits this file; a database crosses with `reset`, which
+-- rebuilds it from here and keeps the accounts and the book of kings. There is
+-- no upgrade path, because no world of another format is read. `migrate` builds
+-- an empty database and nothing else.
 
 -- An account, outside the town: the town is replayed, a login is not a game
 -- rule. The name is the human family name; the person the account plays points
@@ -24,6 +25,10 @@ CREATE TABLE players (
 -- A family name is unique across the whole server: it is the name a player is
 -- known by in every town, and the book of kings keeps it.
 CREATE UNIQUE INDEX players_family_name ON players (lower(name));
+
+-- The sweep of the accounts a reset left between towns looks at the deadline,
+-- once per pass: without this it reads every account every minute.
+CREATE INDEX players_due_deletion ON players (delete_after) WHERE delete_after IS NOT NULL;
 
 -- The only record that crosses a reset, and a full reset deletes it too. It
 -- names nobody: the book outlives the accounts, and a crown is the town's
@@ -137,6 +142,10 @@ CREATE TABLE laws (
   PRIMARY KEY (town_id, code)
 );
 
+-- A seat names its holder: deleting the person must find the seat, and the key
+-- starts at the town.
+CREATE INDEX seats_person ON seats (person_id) WHERE person_id IS NOT NULL;
+
 -- A campaign has no duration: it is a candidacy, it counts at the coming
 -- scrutiny, and the scrutiny deletes it. No closed flag, no votes: the vote is
 -- the town's roll, and nothing keeps the result once it is said.
@@ -146,6 +155,10 @@ CREATE TABLE campaigns (
   person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
   PRIMARY KEY (town_id, seat_id, person_id)
 );
+
+-- A candidacy follows its person: deleting the person must find it, and the key
+-- starts at the town and the seat.
+CREATE INDEX campaigns_person ON campaigns (person_id);
 
 CREATE TABLE market (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
@@ -200,6 +213,14 @@ CREATE TABLE messages (
 
 CREATE INDEX messages_player ON messages (player_id, id);
 
+-- The thirty-day prune is the box's clock, not the reader's: one delete over
+-- every mailbox, once per pass.
+CREATE INDEX messages_recorded_at ON messages (recorded_at);
+
+-- A letter outlives its author: erasing the account must find the letters it
+-- wrote to take the name away.
+CREATE INDEX messages_author ON messages (author_player_id) WHERE author_player_id IS NOT NULL;
+
 -- The row's own id is the order the actions arrived in, because two clocks never
 -- agree. A client that sends the same order twice sends two actions.
 CREATE TABLE actions (
@@ -217,6 +238,10 @@ CREATE TABLE actions (
 );
 
 CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, id);
+
+-- An ordered action names its person: a person erased takes its queue with it,
+-- and a save renames the rows of a person the database just named.
+CREATE INDEX actions_person ON actions (person_id);
 
 -- Not folded here, because it belongs to the runner and not to the town:
 -- `schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL

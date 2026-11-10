@@ -135,10 +135,9 @@ export class PgPlayerStore implements PlayerStore {
   }
 
   async deleteAccount(playerId: number): Promise<void> {
-    // The person follows the account through the foreign key, and its workshops,
-    // stock, candidacies, actions and seats follow the person. The mail has no
-    // key of its own, so it goes first.
-    await this.pool.query('DELETE FROM messages WHERE player_id = $1', [playerId]);
+    // The keys do it all: the person follows the account, and its workshops,
+    // stock, candidacies, actions, seats and mailbox follow the person or the
+    // account itself.
     await this.pool.query('DELETE FROM players WHERE player_id = $1', [playerId]);
   }
 
