@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, type PoolClient } from 'pg';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -138,6 +138,95 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Assert
     await expect(attempt).rejects.toBeInstanceOf(UnknownWorldError);
+  });
+
+  it('locks a town without reading a row of it', async () => {
+    // Arrange: a store over a pool that records what it runs.
+    const watched = counted(pool);
+    const narrow = new PgWorldStore(watched.pool);
+    await store.createTown(TEST_TOWN.name, createWorld(), START);
+
+    // Act
+    const hour = await narrow.withTown(async (session) => session.hour, TEST_TOWN.id);
+
+    // Assert: the transaction, the lock with the clock, and nothing else. The
+    // action routes decide on that, so the seven tables must stay unread.
+    expect(hour).toBe(1);
+    expect(watched.statements.length).toBeLessThanOrEqual(5);
+    expect(
+      watched.statements.filter((text) => /FROM (people|workshops|stock|seats|laws|campaigns|market)/.test(text)),
+    ).toEqual([]);
+  });
+
+  it('reads one whole person under the narrow lock, and none of another town', async () => {
+    // Arrange: the person the database named at the join.
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+
+    // Act
+    const person = await store.withTown((session) => session.person(personId), TEST_TOWN.id);
+    const missing = await store.withTown((session) => session.person(999_999), TEST_TOWN.id);
+
+    // Assert: a person with what hangs from it, and no half-filled stranger.
+    expect(person?.id).toBe(personId);
+    expect(person?.name).toBe(humanPerson(world).name);
+    expect(person?.workshops).toHaveLength(1);
+    expect(Object.keys(person?.stock ?? {})).not.toHaveLength(0);
+    expect(missing).toBeNull();
+  });
+
+  it('takes, lists and cancels an order under the narrow lock', async () => {
+    // Arrange
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+
+    // Act: the queue, read the way the route reads it.
+    const taken = await store.withTown(
+      (session) => session.append(storedAction(personId, 1, buy(personId, 2))),
+      TEST_TOWN.id,
+    );
+    const listed = await store.withTown((session) => session.actionsBetween(1, 1), TEST_TOWN.id);
+    await store.withTown((session) => session.cancel(taken.id), TEST_TOWN.id);
+    const cancelled = await store.withTown((session) => session.findAction(taken.id), TEST_TOWN.id);
+
+    // Assert
+    expect(listed).toEqual([taken]);
+    expect(cancelled).toBeNull();
+  });
+
+  it('rolls a narrow callback back when it throws', async () => {
+    // Arrange
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+
+    // Act: an order taken, then a failure before the callback answers.
+    const attempt = store.withTown(async (session) => {
+      await session.append(storedAction(personId, 1, buy(personId, 2)));
+      throw new Error('the route gave up');
+    }, TEST_TOWN.id);
+
+    // Assert: the queue is as it was, as a rolled-back transaction leaves it.
+    await expect(attempt).rejects.toThrow('the route gave up');
+    expect(await store.withTown((session) => session.actionsBetween(1, 1), TEST_TOWN.id)).toEqual([]);
+  });
+
+  it('rewrites the people and workshops a town already has in one statement each', async () => {
+    // Arrange: a town whose people and workshops the database already named.
+    const watched = counted(pool);
+    const narrow = new PgWorldStore(watched.pool);
+    await store.createTown(TEST_TOWN.name, town(5), START);
+    watched.statements.length = 0;
+
+    // Act: a save that changes nothing but must still bring the rows to the world.
+    await narrow.withWorld(async (session) => session.write(session.snapshot.world, []), TEST_TOWN.id);
+
+    // Assert: the serial tables are written whole, never one row per statement.
+    // The other five tables already went out in batches of their own.
+    expect(watched.statements.filter((text) => /UPDATE people/.test(text))).toHaveLength(1);
+    expect(watched.statements.filter((text) => /UPDATE workshops/.test(text))).toHaveLength(1);
   });
 
   it('serialises two writers of one town on its row', async () => {
@@ -749,6 +838,48 @@ function range(from: number, to: number): number[] {
 
 function storedAction(personId: number, hour: number, action: Action): NewStoredAction {
   return { personId, playsAt: hour, action, receivedAt: new Date(START) };
+}
+
+/**
+ * A pool whose clients record every statement they run, so a test can say what
+ * a route costs instead of trusting a comment. It records what a transaction
+ * client runs, not `pool.query`: both seams take a client, which is the path
+ * under test.
+ */
+function counted(pool: Pool): { pool: Pool; statements: string[] } {
+  const statements: string[] = [];
+
+  const recording = (client: PoolClient): PoolClient =>
+    new Proxy(client, {
+      get(target, property) {
+        if (property === 'query') {
+          return (text: string, values?: unknown[]) => {
+            statements.push(text);
+
+            return target.query(text, values);
+          };
+        }
+
+        const value: unknown = Reflect.get(target, property, target);
+
+        return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    });
+
+  return {
+    statements,
+    pool: new Proxy(pool, {
+      get(target, property) {
+        if (property === 'connect') {
+          return async () => recording(await target.connect());
+        }
+
+        const value: unknown = Reflect.get(target, property, target);
+
+        return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+      },
+    }),
+  };
 }
 
 function delay(ms: number): Promise<void> {

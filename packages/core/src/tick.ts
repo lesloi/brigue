@@ -37,7 +37,11 @@ export class WorldVersionError extends Error {
   readonly formatVersion: number;
   readonly rulesetVersion: number;
 
-  constructor(world: World) {
+  /**
+   * The versions, not the world: a town locked without its rows still knows
+   * what format it was written in, and refuses there too.
+   */
+  constructor(world: Pick<World, 'formatVersion' | 'rulesetVersion'>) {
     super(
       `world of format ${world.formatVersion} and ruleset ${world.rulesetVersion} cannot be ` +
         `read by format ${FORMAT_VERSION} and ruleset ${RULES.version}`,

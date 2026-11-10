@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createWorld,
   leadHoursOf,
+  leadReadsPerson,
   displayedPrestige,
   nextTitle,
   RULES,
@@ -13,6 +14,7 @@ import {
   workshopCap,
   workshopLevelCap,
   withFirstPerson,
+  type Action,
   type Event,
   type World,
 } from '../src/index.ts';
@@ -64,16 +66,58 @@ describe('workshops, trades and the ladder', () => {
   it('gives each act its wait: hours for a build, a degree and an improvement, none for a trade', () => {
     // Arrange
     const world = town(SEED);
-    const workshopId = leased(world).workshops[0]!.id;
+    const person = leased(world);
+    const workshopId = person.workshops[0]!.id;
 
     // Assert: the server writes the order at the hour it will play.
-    expect(leadHoursOf(world, { type: 'market.buy', personId: LECLERC, good: 'wool', units: 1 })).toBe(0);
-    expect(leadHoursOf(world, { type: 'workshop.build', personId: LECLERC, trade: 'baker' })).toBe(RULES.buildHours);
-    expect(leadHoursOf(world, { type: 'person.buy_title', personId: LECLERC })).toBe(RULES.titleHours);
-    expect(leadHoursOf(world, { type: 'workshop.upgrade', personId: LECLERC, workshopId })).toBe(
+    expect(leadHoursOf(person, { type: 'market.buy', personId: LECLERC, good: 'wool', units: 1 })).toBe(0);
+    expect(leadHoursOf(person, { type: 'workshop.build', personId: LECLERC, trade: 'baker' })).toBe(RULES.buildHours);
+    expect(leadHoursOf(person, { type: 'person.buy_title', personId: LECLERC })).toBe(RULES.titleHours);
+    expect(leadHoursOf(person, { type: 'workshop.upgrade', personId: LECLERC, workshopId })).toBe(
       RULES.improvementHours[3],
     );
-    expect(leadHoursOf(world, { type: 'person.upgrade_residence', personId: LECLERC })).toBe(RULES.improvementHours[2]);
+    expect(leadHoursOf(person, { type: 'person.upgrade_residence', personId: LECLERC })).toBe(
+      RULES.improvementHours[2],
+    );
+  });
+
+  it('reads a person the town no longer holds as a fresh one, and waits nothing it cannot measure', () => {
+    // Arrange: an order whose person is gone, as a queue read after a deletion
+    // sees it. The build and the degree do not depend on the person.
+
+    // Assert
+    expect(leadHoursOf(undefined, { type: 'workshop.build', personId: LECLERC, trade: 'baker' })).toBe(
+      RULES.buildHours,
+    );
+    expect(leadHoursOf(undefined, { type: 'person.buy_title', personId: LECLERC })).toBe(RULES.titleHours);
+    expect(leadHoursOf(undefined, { type: 'workshop.upgrade', personId: LECLERC, workshopId: 1 })).toBe(
+      RULES.improvementHours[1],
+    );
+    expect(leadHoursOf(undefined, { type: 'person.upgrade_residence', personId: LECLERC })).toBe(0);
+  });
+
+  it('names every act whose wait reads the person, so a queue can load that one', () => {
+    // Arrange: a person with a workshop to improve and a residence to raise.
+    const world = town(SEED);
+    const person = leased(world);
+    const acts: Action[] = [
+      { type: 'market.buy', personId: LECLERC, good: 'wool', units: 1 },
+      { type: 'market.sell', personId: LECLERC, good: 'wool', units: 1 },
+      { type: 'workshop.build', personId: LECLERC, trade: 'baker' },
+      { type: 'workshop.upgrade', personId: LECLERC, workshopId: person.workshops[0]!.id },
+      { type: 'person.buy_title', personId: LECLERC },
+      { type: 'person.upgrade_residence', personId: LECLERC },
+      { type: 'council.campaign', personId: LECLERC, seatId: 'maire' },
+    ];
+
+    // Assert: an act the predicate leaves out cannot tell the person from its
+    // absence, so a queue that loads no person is right to skip it. A wait that
+    // starts reading the person without the predicate fails here.
+    for (const act of acts) {
+      if (!leadReadsPerson(act)) {
+        expect(leadHoursOf(undefined, act)).toBe(leadHoursOf(person, act));
+      }
+    }
   });
 
   it('refuses a build past the residence cap', () => {

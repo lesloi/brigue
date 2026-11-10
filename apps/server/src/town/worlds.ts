@@ -1,4 +1,12 @@
-import { FORMAT_VERSION, RULES, WorldVersionError, type Action, type Event, type World } from '@brigue/core';
+import {
+  FORMAT_VERSION,
+  RULES,
+  WorldVersionError,
+  type Action,
+  type Event,
+  type Person,
+  type World,
+} from '@brigue/core';
 
 /** One real hour is one town hour, and twenty-four of them make a year. */
 export const HOUR_MS = 60 * 60 * 1000;
@@ -80,20 +88,43 @@ export interface MessagePage {
   unread: number;
 }
 
-/** One unit of work on the town, inside the town's row lock. */
-export interface WorldSession {
-  readonly snapshot: WorldSnapshot;
+/**
+ * The town under its lock, without its rows: the hour it has reached, the
+ * format it was written in, its queue and one person. A route that takes or
+ * cancels an order decides on those alone; the simulation loads the world.
+ *
+ * It can write the queue and nothing of the town, so no caller mistakes it for
+ * the town itself.
+ */
+export interface TownSession {
+  readonly town: TownInfo;
+  /** The instant the world was founded: every hour is counted from it. */
+  readonly worldStartedAt: Date;
+  /** The hour the town's rows had reached when the lock was taken. */
+  readonly hour: number;
+  readonly formatVersion: number;
+  readonly rulesetVersion: number;
   /** Actions queued for the hours in `[from, to]`, in the order they were received. */
   actionsBetween(from: number, to: number): Promise<StoredAction[]>;
-  /** The newest private messages of an account, in the order they happened. */
-  recentMessages(limit: number, playerId: number): Promise<MessagePage>;
-  /** The newest public chronicle lines, in the order they happened. */
-  recentChronicle(limit: number): Promise<Event[]>;
   findAction(id: number): Promise<StoredAction | null>;
   /** Appends the action and returns it with the id the store gave it. */
   append(action: NewStoredAction): Promise<StoredAction>;
   /** Erases an unplayed action; it is never handed to the advance. */
   cancel(id: number): Promise<void>;
+  /**
+   * One person of this town with its workshops and its stock, or null for an
+   * id another town holds: a whole person, never a half-filled one.
+   */
+  person(id: number): Promise<Person | null>;
+}
+
+/** One unit of work on the town, inside the town's row lock. */
+export interface WorldSession extends TownSession {
+  readonly snapshot: WorldSnapshot;
+  /** The newest private messages of an account, in the order they happened. */
+  recentMessages(limit: number, playerId: number): Promise<MessagePage>;
+  /** The newest public chronicle lines, in the order they happened. */
+  recentChronicle(limit: number): Promise<Event[]>;
   /** Erases every action of a person, for an identity that goes. */
   cancelPerson(personId: number): Promise<void>;
   /**
@@ -111,16 +142,23 @@ export interface WorldSession {
 }
 
 /**
+ * The town must be the format and ruleset this code plays: queue no order, wake
+ * no person and erase no account before the world is known readable.
+ */
+export function assertPlayable(town: Pick<TownSession, 'formatVersion' | 'rulesetVersion'>): void {
+  if (town.formatVersion !== FORMAT_VERSION || town.rulesetVersion !== RULES.version) {
+    throw new WorldVersionError(town);
+  }
+}
+
+/**
  * The loaded town must be the format and ruleset this code plays: wake no person
  * and erase no account before the world is known readable.
  */
 export function sessionWorld(session: WorldSession): World {
-  const world = session.snapshot.world;
-  if (world.formatVersion !== FORMAT_VERSION || world.rulesetVersion !== RULES.version) {
-    throw new WorldVersionError(world);
-  }
+  assertPlayable(session);
 
-  return world;
+  return session.snapshot.world;
 }
 
 export interface WorldStore {
@@ -155,6 +193,12 @@ export interface WorldStore {
    * The lock is the town's own row, so two towns never wait on each other.
    */
   withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T>;
+  /**
+   * The same lock, without reading a row of the town: what a route needs to
+   * take or cancel an order — the hour, the queue, one person — and nothing to
+   * simulate with. A town that does not exist throws as `withWorld` does.
+   */
+  withTown<T>(run: (session: TownSession) => Promise<T>, townId: number): Promise<T>;
   /**
    * Serializes the joins: two newcomers must not take the same freed place, nor
    * found two towns at once. It spans several towns, so it cannot be the shared
@@ -363,6 +407,18 @@ export class MemoryWorldStore implements WorldStore {
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
+    return this.withLockedTown(townId, (stored) => run(this.sessionOf(townId, stored)));
+  }
+
+  async withTown<T>(run: (session: TownSession) => Promise<T>, townId: number): Promise<T> {
+    return this.withLockedTown(townId, (stored) => run(this.townSessionOf(stored)));
+  }
+
+  /**
+   * Both seams take the same queue: a narrow callback that appends must not
+   * interleave with a pass that is writing the town it reads.
+   */
+  private async withLockedTown<T>(townId: number, run: (stored: MemoryWorld) => Promise<T>): Promise<T> {
     const previous = this.queue;
     const current = previous.then(async () => {
       const stored = this.towns.get(townId);
@@ -383,7 +439,7 @@ export class MemoryWorldStore implements WorldStore {
       }
 
       try {
-        return await run(this.sessionOf(townId, stored));
+        return await run(stored);
       } catch (error) {
         this.towns.set(townId, backup);
         this.clock = clockBackup;
@@ -415,14 +471,51 @@ export class MemoryWorldStore implements WorldStore {
 
   async close(): Promise<void> {}
 
-  private sessionOf(townId: number, stored: MemoryWorld): WorldSession {
+  private townSessionOf(stored: MemoryWorld): TownSession {
     return {
-      snapshot: stored.snapshot,
+      town: stored.snapshot.town,
+      worldStartedAt: stored.snapshot.worldStartedAt,
+      hour: stored.snapshot.world.hour,
+      formatVersion: stored.snapshot.world.formatVersion,
+      rulesetVersion: stored.snapshot.world.rulesetVersion,
+      ...this.queueOf(stored),
+      person: async (id) => {
+        const person = stored.snapshot.world.people[id];
+
+        return person === undefined ? null : structuredClone(person);
+      },
+    };
+  }
+
+  private queueOf(stored: MemoryWorld): Pick<TownSession, 'actionsBetween' | 'findAction' | 'append' | 'cancel'> {
+    return {
       actionsBetween: async (from, to) =>
         stored.actions
           .filter((action) => action.playsAt >= from && action.playsAt <= to)
           .sort((left, right) => left.playsAt - right.playsAt || left.id - right.id)
           .map((action) => structuredClone(action)),
+      findAction: async (id) => {
+        const found = stored.actions.find((action) => action.id === id);
+
+        return found ? structuredClone(found) : null;
+      },
+      append: async (action) => {
+        const storedAction: StoredAction = { ...structuredClone(action), id: stored.nextActionId };
+        stored.nextActionId += 1;
+        stored.actions.push(storedAction);
+
+        return structuredClone(storedAction);
+      },
+      cancel: async (id) => {
+        stored.actions = stored.actions.filter((action) => action.id !== id);
+      },
+    };
+  }
+
+  private sessionOf(townId: number, stored: MemoryWorld): WorldSession {
+    return {
+      ...this.townSessionOf(stored),
+      snapshot: stored.snapshot,
       recentMessages: async (limit, playerId) => {
         const own = stored.messages.filter((entry) => entry.playerId === playerId);
 
@@ -438,21 +531,6 @@ export class MemoryWorldStore implements WorldStore {
         const visible = stored.chronicle.slice(Math.max(0, stored.chronicle.length - limit));
 
         return visible.map((entry) => structuredClone(entry.event));
-      },
-      findAction: async (id) => {
-        const found = stored.actions.find((action) => action.id === id);
-
-        return found ? structuredClone(found) : null;
-      },
-      append: async (action) => {
-        const storedAction: StoredAction = { ...structuredClone(action), id: stored.nextActionId };
-        stored.nextActionId += 1;
-        stored.actions.push(storedAction);
-
-        return structuredClone(storedAction);
-      },
-      cancel: async (id) => {
-        stored.actions = stored.actions.filter((action) => action.id !== id);
       },
       cancelPerson: async (personId) => {
         stored.actions = stored.actions.filter((action) => action.personId !== personId);

@@ -305,6 +305,7 @@ describe('joining the town', () => {
 
         return real.withWorld(run, townId);
       },
+      withTown: (run, townId) => real.withTown(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),

@@ -335,10 +335,12 @@ export const FORMAT_VERSION = 1;
  * The hours an act takes before it applies, counted from the hour it is ordered:
  * a trade is the hour's, a build, a degree and an improvement wait. The server
  * writes the action at the hour it will play; the number is the core's.
+ *
+ * It reads the person and nothing else of the world, so the queue can ask it
+ * without loading the town. A person the world no longer holds is read like a
+ * fresh one: no wait is invented for what cannot be measured.
  */
-export function leadHoursOf(world: World, action: Action): number {
-  const person = world.people[action.personId];
-
+export function leadHoursOf(person: Person | undefined, action: Action): number {
   switch (action.type) {
     case 'workshop.build':
       return RULES.buildHours;
@@ -354,6 +356,20 @@ export function leadHoursOf(world: World, action: Action): number {
     default:
       return 0;
   }
+}
+
+/**
+ * Whether the wait above, or the line an order carries, reads the person. A
+ * queue that asks first loads one person instead of the town; a case added to
+ * `leadHoursOf` that reads the person belongs here too, or that queue hands the
+ * core an undefined one.
+ */
+export function leadReadsPerson(action: Action): boolean {
+  return (
+    action.type === 'workshop.upgrade' ||
+    action.type === 'person.upgrade_residence' ||
+    action.type === 'person.buy_title'
+  );
 }
 
 /** The hours an improvement to `level` takes; the last entry holds for the top. */

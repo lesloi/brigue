@@ -32,6 +32,7 @@ export {
   FORMAT_VERSION,
   GOODS,
   leadHoursOf,
+  leadReadsPerson,
   improvementHoursFor,
   MAX_LEAD_HOURS,
   NAME_PRICE,

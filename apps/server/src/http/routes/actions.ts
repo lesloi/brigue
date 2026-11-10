@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   GOODS,
   leadHoursOf,
+  leadReadsPerson,
   MAX_LEAD_HOURS,
   nextTitle,
   SEATS,
@@ -14,7 +15,7 @@ import {
   type Trade,
 } from '@brigue/core';
 
-import { hourAt, sessionWorld, type NewStoredAction, type StoredAction } from '../../town/worlds.ts';
+import { assertPlayable, hourAt, type NewStoredAction, type StoredAction } from '../../town/worlds.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 
@@ -67,16 +68,15 @@ export async function listActions(
   }
 
   const at = new Date(context.now());
-  const actions = await context.deps.worlds.withWorld(async (session) => {
-    const world = sessionWorld(session);
-    const queued: StoredAction[] = [];
+  const actions = await context.deps.worlds.withTown(async (session) => {
+    assertPlayable(session);
     // An order with a lead is placed from the wall clock's hour, which can run
     // ahead of a town the pass has not reached yet: the window covers both.
-    const from = Math.max(world.hour, hourAt(session.snapshot.worldStartedAt, at));
+    const from = Math.max(session.hour, hourAt(session.worldStartedAt, at));
 
     // What the person has ordered and not lived yet, the acts with a lead
     // included: the screen shows them at the hour they will play.
-    queued.push(...(await session.actionsBetween(world.hour, from + MAX_LEAD_HOURS)));
+    const queued = await session.actionsBetween(session.hour, from + MAX_LEAD_HOURS);
 
     return queued.filter((action) => action.personId === bound.personId);
   }, bound.townId);
@@ -113,17 +113,16 @@ export async function cancelAction(
     return;
   }
 
-  const outcome = await context.deps.worlds.withWorld(async (session) => {
-    const { world, worldStartedAt } = session.snapshot;
-    sessionWorld(session);
+  const outcome = await context.deps.worlds.withTown(async (session) => {
+    assertPlayable(session);
 
     const stored = await session.findAction(actionId);
     // Another person's action is indistinguishable from an unknown one.
     if (stored === null || stored.personId !== bound.personId) {
       return { kind: 'unknown' as const };
     }
-    if (stored.playsAt < world.hour) {
-      return { kind: 'stale' as const, currentHour: hourAt(worldStartedAt, at) };
+    if (stored.playsAt < session.hour) {
+      return { kind: 'stale' as const, currentHour: hourAt(session.worldStartedAt, at) };
     }
 
     // An order not yet played is cancellable, however far ahead: the acts with
@@ -180,31 +179,32 @@ export async function appendAction(
     return;
   }
 
-  const outcome: ActionOutcome = await context.deps.worlds.withWorld(async (session) => {
-    sessionWorld(session);
-    const { world, worldStartedAt } = session.snapshot;
+  const outcome: ActionOutcome = await context.deps.worlds.withTown(async (session) => {
+    assertPlayable(session);
 
     // The action names a hour, not a person: the person is the session's.
     // A hour that already ticked can never be replayed, and the town clock
     // is the upper bound for a hour that has not begun yet.
-    const currentHour = hourAt(worldStartedAt, at);
+    const currentHour = hourAt(session.worldStartedAt, at);
 
-    if (submission.hour < world.hour) {
+    if (submission.hour < session.hour) {
       return { kind: 'stale' as const, currentHour };
     }
     if (submission.hour > currentHour + QUEUE_AHEAD_HOURS) {
       return { kind: 'future' as const, currentHour };
     }
-    const person = world.people[bound.personId];
     const intent = withPerson(submission.intent, bound.personId);
-    const lead = leadHoursOf(world, intent);
+    // The queue loads one person, not the town: the core says which orders read
+    // it, so a new one cannot be forgotten here.
+    const person = leadReadsPerson(intent) ? ((await session.person(bound.personId)) ?? undefined) : undefined;
+    const lead = leadHoursOf(person, intent);
 
     // One act with a lead at a time: a person has one pair of hands, and two
     // orders due later would race for the same workshop or the same degree. The
     // window starts at the wall clock's hour, which may be ahead of the town's.
     if (lead > 0) {
-      const ahead = await session.actionsBetween(world.hour, currentHour + MAX_LEAD_HOURS);
-      if (ahead.some((queued) => queued.personId === bound.personId && queued.playsAt > world.hour)) {
+      const ahead = await session.actionsBetween(session.hour, currentHour + MAX_LEAD_HOURS);
+      if (ahead.some((queued) => queued.personId === bound.personId && queued.playsAt > session.hour)) {
         return { kind: 'scheduled' as const };
       }
     }
@@ -217,9 +217,7 @@ export async function appendAction(
       receivedAt: at,
       // The degree is named when the order is taken, from the person as they
       // are then, so no later purchase changes what this line says.
-      ...(submission.intent.type === 'person.buy_title' && person !== undefined
-        ? { title: nextTitle(titleOf(person)) }
-        : {}),
+      ...(intent.type === 'person.buy_title' && person !== undefined ? { title: nextTitle(titleOf(person)) } : {}),
     };
     const stored = await session.append(toStore);
 
