@@ -487,10 +487,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   A word with a closed list is stored as the code of its place in that list, one based: `title` is
   the rank in `TITLES` (1 is the roturier), `trade` the place in `TRADES`, `good` the place in
   `GOODS`. A list may gain an entry; a code already written is never renumbered, because it sits in
-  rows a replay reads back. An event's type is the place in `EVENT_TYPES`, so the journal holds a
-  number the core knows; a seat's name stays a word, since it is a key a query matches. A person
-  is an AI exactly when `people.player_id` is null: the account is written with the person, never
-  after it, so no person waits for one.
+  rows a replay reads back. An event's type stays the word the core emits; a seat's name stays a
+  word too, since it is a key a query matches. A person is an AI exactly when `people.player_id` is
+  null: the account is written with the person, never after it, so no person waits for one.
   An action is stored as its type and its payload apart, so a query reads what was asked without
   parsing the row, and at the instant its hour begins, so a pass reads what is due with one
   comparison and the store maps the instant back to the town's hour. A journal line carries the
