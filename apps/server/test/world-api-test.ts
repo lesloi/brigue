@@ -42,7 +42,12 @@ interface WorldBody {
   world: {
     hour: number;
     year: number;
-    person: { id: number; stock: Record<string, number>; favour: number };
+    person: {
+      id: number;
+      stock: Record<string, number>;
+      favour: number;
+      workshops: Array<{ id: number; trade: string }>;
+    };
     town: { people: Array<Record<string, unknown>> };
     nextBellAt: string;
   };
@@ -449,7 +454,7 @@ describe('POST /api/messages/:id/read', () => {
 
   async function twoRefusals(harness: Harness): Promise<void> {
     await postAction(harness, sellGrain(ID_A, 1, 1));
-    await postAction(harness, { id: ID_B, hour: 1, action: { type: 'person.buy_title' } });
+    await postAction(harness, { id: ID_B, hour: 1, action: { type: 'market.sell', good: 'wood', units: 1 } });
     await harness.advance(HOUR);
   }
 
@@ -557,6 +562,37 @@ describe('POST /api/actions', () => {
     expect(response.status).toBe(201);
     expect(body.world.person.stock.wool).toBe(2);
     expect(body.messages).toEqual([]);
+  });
+
+  it('places an act at the hour its works end, and allows one act ahead at a time', async () => {
+    // Arrange: a person whose residence holds a second workshop and can pay.
+    const world = town(20261031);
+    world.people[LECLERC].title = 'chevalier';
+    world.people[LECLERC].residenceLevel = 6;
+    world.people[LECLERC].treasuryCents = 1_000_000;
+    const harness = await start({ world });
+    const build = { id: ID_A, hour: 1, action: { type: 'workshop.build', trade: 'baker' } };
+
+    // Act: one order, a second one, and the queue as the screen reads it.
+    const response = await postAction(harness, build);
+    const again = await postAction(harness, { ...build, id: ID_B });
+    const pending = (await (await getPending(harness)).json()) as {
+      actions: Array<{ hour: number; type: string }>;
+    };
+
+    // Assert: the works end twelve hours later, and the second order is refused.
+    expect(response.status).toBe(201);
+    expect(await response.json()).toEqual({ id: ID_A, hour: 1 + RULES.buildHours, personId: LECLERC });
+    expect(again.status).toBe(409);
+    expect(await again.json()).toEqual({ error: 'already_scheduled' });
+    expect(pending.actions).toEqual([expect.objectContaining({ hour: 1 + RULES.buildHours, type: 'workshop.build' })]);
+
+    // Act: the hours pass and the works end.
+    await harness.advance((RULES.buildHours + 1) * HOUR);
+    const body = await worldBody(harness);
+
+    // Assert: the workshop stands at the hour the order named, not before.
+    expect(body.world.person.workshops).toHaveLength(2);
   });
 
   it('accepts a replayed request as a second action', async () => {

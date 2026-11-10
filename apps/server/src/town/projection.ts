@@ -1,6 +1,7 @@
 import {
   displayedPrestige,
   GOODS,
+  improvementHoursFor,
   HOURS_PER_YEAR,
   NAME_PRICE,
   nextTitle,
@@ -40,6 +41,8 @@ export interface WorkshopView {
   capacityUnits: number;
   /** Whether the person's degree allows one more level. */
   canUpgrade: boolean;
+  /** The hours that level takes, or null at the degree's cap. */
+  upgradeHours: number | null;
 }
 
 /**
@@ -59,7 +62,7 @@ export interface LadderView {
   stockDefence: number;
   workshopLevelCap: number;
   nextTitle: { title: TitleId; priceCents: number } | null;
-  nextResidence: { level: number; name: string; priceCents: number; opened: boolean } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
 export interface OwnPersonView {
@@ -81,7 +84,7 @@ export interface OwnPersonView {
   /** What the stock holds in total, and the warehouse's cap: the client sums nothing. */
   stockUnits: number;
   stockCapacityUnits: number;
-  build: { priceCents: number; level: number; room: number; cap: number };
+  build: { priceCents: number; hours: number; level: number; room: number; cap: number };
   rename: { priceCents: number };
 }
 
@@ -253,6 +256,7 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
               name: RESIDENCE_LADDER[level]!.name,
               priceCents: RESIDENCE_LADDER[level].priceCents,
               opened: level < TITLE_LADDER[title].residenceLevel,
+              hours: improvementHoursFor(level + 1),
             },
     },
     workshops: person.workshops.map((workshop) => {
@@ -269,6 +273,7 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
         upkeepCentsPerHour: workshop.level * RULES.upkeepPerWorkshopLevelCents,
         capacityUnits: workshopCapacity(workshop.level),
         canUpgrade: workshop.level < workshopLevelCap(title),
+        upgradeHours: workshop.level < workshopLevelCap(title) ? improvementHoursFor(workshop.level + 1) : null,
       };
     }),
     stock: structuredClone(person.stock),
@@ -276,6 +281,7 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
     stockCapacityUnits: stockCapacityUnits(person),
     build: {
       priceCents: RULES.buildCents,
+      hours: RULES.buildHours,
       level: RULES.builtWorkshopLevel,
       room: Math.max(0, workshopCap(level) - person.workshops.length),
       cap: workshopCap(level),

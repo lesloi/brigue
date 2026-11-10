@@ -136,6 +136,7 @@ describe('the projection calendar', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
+        upgradeHours: null,
       },
     ]);
   });
@@ -160,6 +161,7 @@ describe('the projection calendar', () => {
       upkeepCentsPerHour: 360,
       capacityUnits: 350,
       canUpgrade: false,
+      upgradeHours: null,
     });
   });
 
@@ -200,11 +202,12 @@ describe('the projection calendar', () => {
       stockDefence: 10,
       workshopLevelCap: 3,
       nextTitle: { title: 'notable', priceCents: 120_000 },
-      nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true },
+      nextResidence: { level: 2, name: 'Masure', priceCents: 80_000, opened: true, hours: 1 },
     });
     expect(projection.person.prestige).toBe(80 + 0 + 200);
     expect(projection.person.build).toEqual({
       priceCents: RULES.buildCents,
+      hours: RULES.buildHours,
       level: RULES.builtWorkshopLevel,
       room: 0,
       cap: 1,

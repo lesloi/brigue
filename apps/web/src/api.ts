@@ -54,6 +54,7 @@ export interface ProjectedWorkshop {
   upkeepCentsPerHour: number;
   capacityUnits: number;
   canUpgrade: boolean;
+  upgradeHours: number | null;
 }
 
 /** The ladder, every figure already computed by the server. */
@@ -68,7 +69,7 @@ export interface ProjectedLadder {
   stockDefence: number;
   workshopLevelCap: number;
   nextTitle: { title: TitleId; priceCents: number } | null;
-  nextResidence: { level: number; name: string; priceCents: number; opened: boolean } | null;
+  nextResidence: { level: number; name: string; priceCents: number; opened: boolean; hours: number } | null;
 }
 
 export interface WorldProjection {
@@ -93,7 +94,7 @@ export interface WorldProjection {
     stock: Partial<Record<GoodId, number>>;
     stockUnits: number;
     stockCapacityUnits: number;
-    build: { priceCents: number; level: number; room: number; cap: number };
+    build: { priceCents: number; hours: number; level: number; room: number; cap: number };
     rename: { priceCents: number };
   };
   town: {

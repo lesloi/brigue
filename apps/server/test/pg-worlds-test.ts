@@ -473,9 +473,10 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       await session.write(session.snapshot.world, hours(1, 120));
     });
     const cut = new Date('2000-01-08T00:00:00.000Z');
-    await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1 AND at < 50`, [
+    await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1 AND at < $3`, [
       TEST_TOWN.id,
       new Date('2000-01-01T00:00:00.000Z'),
+      hourStartedOf(START, 50),
     ]);
 
     // Act
@@ -647,7 +648,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Act and assert: prose carries a body and may name its author, a notice
     // carries its type and its payload. The table holds both shapes and refuses
     // neither: the writer is what keeps them apart.
-    await expect(insert(', body, author_player_id', ['Bonjour', playerId + 1])).resolves.toBeDefined();
+    await expect(insert(', body, author_player_id', ['Bonjour', playerId])).resolves.toBeDefined();
     await expect(insert(', type, payload', ['title_open', '{}'])).resolves.toBeDefined();
   });
 

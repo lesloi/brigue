@@ -434,6 +434,7 @@ describe('joining the town', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
+        upgradeHours: null,
       },
     ]);
     expect(world.world.person.stock.grain).toBe(8);
@@ -468,6 +469,7 @@ describe('joining the town', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
+        upgradeHours: null,
       },
     ]);
   });

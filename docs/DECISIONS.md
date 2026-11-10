@@ -142,8 +142,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   Three separate ladders would be three things to read on a phone; one says what the person can
   hold, which is what chapter II must teach. The title and the level are two purchases, the degree
   first: one purchase would make the title and the residence the same object and leave "standing"
-  with nothing of its own. Both apply on the hour they are bought: nothing waits, and no works are
-  opened. Revisit if a level stops meaning anything.
+  with nothing of its own. Each waits its own hours before it applies, as an action placed ahead.
+  Revisit if a level stops meaning anything.
 
 - **The warehouse is what the workshops hold.** Every workshop gives capacity by its level — 100,
   200, 350 and on — and the person's warehouse is their sum. A second building is a second store,
@@ -252,11 +252,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   stay additive: a new field with a default. A change the additive rule cannot carry starts a new
   `formatVersion`; a world of another format is refused, never guessed. A world with a registered
   migration is converted; one without is not deleted in silence: the reset names what it will
-  destroy and refuses until an operator confirms it. The format in the code is the third: it
-  moves the world's variables into one shared `settings` table, drops the per-town `state` row
-  and the generator cursor, and derives the year from the hour. It follows the second, which
-  merged the `dynasties` table into `people`, with no migration, because the towns are test towns
-  and the reset below is how a database crosses. Two names keep Maison and a later pass must not "fix"
+  destroy and refuses until an operator confirms it. The schema was reworked in one go — the
+  person as the unit, one clock for the world, codes for the closed lists, no works table — and
+  the format and the ruleset start again at one, because no database outside the tests carries a
+  world: the deployment drops the schema instead of numbering a history nobody reads. A database
+  crosses with that reset, run before the rollout is approved; `migrate` is not the path, since
+  `schema.sql` is already recorded under its name and the gate would report nothing pending on a
+  database that needs the rebuild.
+  Two names keep Maison and a later pass must not "fix"
   them: the tab that opens the person's screen, and the residence level of that name, which is a
   building. A database crosses with that reset, run before the
   rollout is approved; `migrate` is not the path, since `schema.sql` is already recorded under its
@@ -366,13 +369,14 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   The raw goods join the flow like the others: the wool, grain and wood the workshops buy push
   their prices up, and selling them pushes them down.
 
-- **There are no works and no action points.** An act applies on the hour it is ordered: a
-  workshop is built, a level is raised, a degree is bought, all at once. Nothing waits in a queue
-  of construction, so nothing can be half-built when the town stops, and no row carries a due hour
-  any more. What still takes time is the calendar itself — a scrutiny, a mandate, a candidacy that
-  counts at the next vote — and it needs no site table. A budget of actions per hour would be
-  action points with another clock; the calendar is the scarcity, and it does not punish sleep.
-  Revisit if acting at once makes a decision feel free.
+- **An act with a lead is an action placed ahead, not a site.** A build waits twelve hours, a
+  degree six, an improvement one to sixty-six by the level it reaches; the market and a candidacy
+  are the hour's. The server writes the order at the hour it will play, so the queue _is_ the
+  works: the pass applies it when the town reaches that hour, and there is no second table, no
+  half-built workshop and no due hour to reconcile. One act ahead at a time per person — one pair
+  of hands — and an order not yet played is cancellable, which a site never was. A budget of
+  actions per hour would be action points with another clock; the calendar is the scarcity, and it
+  does not punish sleep. Revisit if one act ahead feels too narrow.
 
 - **Laws are domains, plus exceptional votes.** Each office fixes its own laws alone: the mayor
   the sales and guild taxes and the watch's budget, the provost the definition of crimes, the
@@ -494,7 +498,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   after it, so no person waits for one.
   An action is stored as its type and its payload apart, so a query reads what was asked without
   parsing the row, and at the instant its hour begins, so a pass reads what is due with one
-  comparison and the store maps the instant back to the town's hour. The simulation still reads and writes a town whole, but the storage keeps it in
+  comparison and the store maps the instant back to the town's hour. A journal line carries the
+  same instant and the code of its audience; the mailbox is the account's, by a key that takes the
+  letters with it, and a letter keeps its place when its author is gone. The simulation still reads and writes a town whole, but the storage keeps it in
   rows, so a screen can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back
   and writes it into the in-memory world before the rows that reference it, so a person's key, a

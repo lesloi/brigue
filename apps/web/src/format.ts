@@ -214,6 +214,8 @@ export function actionErrorText(code: string | null): string {
       return 'Cette heure est déjà passée. Le monde va être relu.';
     case 'future_hour':
       return "Cette heure n'a pas encore commencé.";
+    case 'already_scheduled':
+      return 'Un ouvrage est déjà en cours : il doit finir avant le suivant.';
     case 'unknown_action':
       return "Cette action n'existe plus.";
     case 'invalid_action':

@@ -2,6 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
   GOODS,
+  leadHoursOf,
+  MAX_LEAD_HOURS,
   nextTitle,
   SEATS,
   titleOf,
@@ -17,9 +19,10 @@ import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../
 import { readBody, sendJson } from '../respond.ts';
 
 /**
- * The action may target the hour being played, or the next one when an hour
- * boundary fell between the client's read and its POST. Further ahead is a
- * client clock that cannot be reconciled with this town.
+ * The hour a client may name: the one being played, or the next one when an hour
+ * boundary fell between its read and its POST. Further ahead is a clock that
+ * cannot be reconciled with this town. An act with a lead is placed by the
+ * server, not by the client: see `leadHoursOf`.
  */
 const QUEUE_AHEAD_HOURS = 1;
 
@@ -39,6 +42,7 @@ type ActionSubmission = { ok: true; hour: number; intent: ActionIntent } | { ok:
 type ActionOutcome =
   | { kind: 'stale'; currentHour: number }
   | { kind: 'future'; currentHour: number }
+  | { kind: 'scheduled' }
   | { kind: 'appended'; stored: StoredAction };
 
 export async function listActions(
@@ -62,11 +66,17 @@ export async function listActions(
     return;
   }
 
+  const at = new Date(context.now());
   const actions = await context.deps.worlds.withWorld(async (session) => {
     const world = sessionWorld(session);
     const queued: StoredAction[] = [];
+    // An order with a lead is placed from the wall clock's hour, which can run
+    // ahead of a town the pass has not reached yet: the window covers both.
+    const from = Math.max(world.hour, hourAt(session.snapshot.worldStartedAt, at));
 
-    queued.push(...(await session.actionsBetween(world.hour, world.hour + QUEUE_AHEAD_HOURS)));
+    // What the person has ordered and not lived yet, the acts with a lead
+    // included: the screen shows them at the hour they will play.
+    queued.push(...(await session.actionsBetween(world.hour, from + MAX_LEAD_HOURS)));
 
     return queued.filter((action) => action.personId === bound.personId);
   }, bound.townId);
@@ -116,11 +126,8 @@ export async function cancelAction(
       return { kind: 'stale' as const, currentHour: hourAt(worldStartedAt, at) };
     }
 
-    const currentHour = hourAt(worldStartedAt, at);
-    if (stored.playsAt > currentHour + QUEUE_AHEAD_HOURS) {
-      return { kind: 'future' as const, currentHour };
-    }
-
+    // An order not yet played is cancellable, however far ahead: the acts with
+    // a lead are exactly the ones a player changes their mind about.
     await session.cancel(actionId);
 
     return { kind: 'cancelled' as const };
@@ -132,9 +139,6 @@ export async function cancelAction(
       return;
     case 'stale':
       sendJson(response, 409, { error: 'stale_hour', currentHour: outcome.currentHour });
-      return;
-    case 'future':
-      sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
       return;
     case 'cancelled':
       response.writeHead(204, { 'Cache-Control': 'no-store' });
@@ -192,10 +196,24 @@ export async function appendAction(
       return { kind: 'future' as const, currentHour };
     }
     const person = world.people[bound.personId];
+    const intent = withPerson(submission.intent, bound.personId);
+    const lead = leadHoursOf(world, intent);
+
+    // One act with a lead at a time: a person has one pair of hands, and two
+    // orders due later would race for the same workshop or the same degree. The
+    // window starts at the wall clock's hour, which may be ahead of the town's.
+    if (lead > 0) {
+      const ahead = await session.actionsBetween(world.hour, currentHour + MAX_LEAD_HOURS);
+      if (ahead.some((queued) => queued.personId === bound.personId && queued.playsAt > world.hour)) {
+        return { kind: 'scheduled' as const };
+      }
+    }
+
     const toStore: NewStoredAction = {
       personId: bound.personId,
-      playsAt: submission.hour,
-      action: withPerson(submission.intent, bound.personId),
+      // The act waits its own hours; a trade is played on the hour it names.
+      playsAt: lead === 0 ? submission.hour : currentHour + lead,
+      action: intent,
       receivedAt: at,
       // The degree is named when the order is taken, from the person as they
       // are then, so no later purchase changes what this line says.
@@ -214,6 +232,9 @@ export async function appendAction(
       return;
     case 'future':
       sendJson(response, 409, { error: 'future_hour', currentHour: outcome.currentHour });
+      return;
+    case 'scheduled':
+      sendJson(response, 409, { error: 'already_scheduled' });
       return;
     case 'appended':
       context.deps.logger.info('action.appended', {

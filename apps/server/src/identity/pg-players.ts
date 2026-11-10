@@ -144,18 +144,8 @@ export class PgPlayerStore implements PlayerStore {
 
   async eraseAccount(tokenHash: string): Promise<void> {
     // A join that failed may have written the person before it knew the place
-    // would not land: the row goes with the account, so no person is left
-    // holding an account the server no longer has. The mail goes too.
-    const { rows } = await this.pool.query<{ player_id: string }>(
-      `DELETE FROM players WHERE token_hash = $1 RETURNING player_id`,
-      [tokenHash],
-    );
-    const playerId = rows[0]?.player_id;
-
-    if (playerId !== undefined) {
-      await this.pool.query('DELETE FROM people WHERE player_id = $1', [playerId]);
-      await this.pool.query('DELETE FROM messages WHERE player_id = $1', [playerId]);
-    }
+    // would not land: the account's key takes the person and the mail with it.
+    await this.pool.query('DELETE FROM players WHERE token_hash = $1', [tokenHash]);
   }
 
   async deleteUnboundDue(at: Date): Promise<number> {

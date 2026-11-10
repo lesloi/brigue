@@ -1,3 +1,4 @@
+import type { Action } from './events.ts';
 /**
  * The world is the whole game. It is plain data, it is serialisable, and it is
  * never mutated by a tick: the simulation hands back a new one.
@@ -328,10 +329,40 @@ export interface World {
   campaigns: Partial<Record<SeatId, PersonId[]>>;
 }
 
-export const FORMAT_VERSION = 5;
+export const FORMAT_VERSION = 1;
+
+/**
+ * The hours an act takes before it applies, counted from the hour it is ordered:
+ * a trade is the hour's, a build, a degree and an improvement wait. The server
+ * writes the action at the hour it will play; the number is the core's.
+ */
+export function leadHoursOf(world: World, action: Action): number {
+  const person = world.people[action.personId];
+
+  switch (action.type) {
+    case 'workshop.build':
+      return RULES.buildHours;
+    case 'person.buy_title':
+      return RULES.titleHours;
+    case 'workshop.upgrade': {
+      const workshop = person?.workshops.find((candidate) => candidate.id === action.workshopId);
+
+      return improvementHoursFor((workshop?.level ?? 0) + 1);
+    }
+    case 'person.upgrade_residence':
+      return person === undefined ? 0 : improvementHoursFor(residenceOf(person) + 1);
+    default:
+      return 0;
+  }
+}
+
+/** The hours an improvement to `level` takes; the last entry holds for the top. */
+export function improvementHoursFor(level: number): number {
+  return RULES.improvementHours[Math.min(level, RULES.improvementHours.length - 1)] ?? 0;
+}
 
 export const RULES = {
-  version: 6,
+  version: 1,
   /**
    * The starting kit: a person must buy its input and pay a few hours of upkeep
    * before its first sale. Every person gets it, the first as much as a later
@@ -385,6 +416,16 @@ export const RULES = {
   upkeepPerWorkshopLevelCents: 120,
   /** What building a workshop of the starting level costs. */
   buildCents: 50_000,
+  /** The hours a workshop takes to be built, counted from the order. */
+  buildHours: 12,
+  /** The hours a degree takes to be delivered, counted from the order. */
+  titleHours: 6,
+  /**
+   * The hours an improvement takes, by the level it reaches: the step grows with
+   * the level, so the top of the ladder is a long intent and not a tap. Index
+   * zero is unused; level 2 is one hour.
+   */
+  improvementHours: [0, 0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66],
   campaignFavourCost: 5,
   campaignVoteBonus: 2,
   /**
@@ -400,6 +441,9 @@ export const RULES = {
     carpenter: 1,
   } satisfies Record<Trade, number>,
 } as const;
+
+/** The longest wait an order may have: what a client may have queued at once. */
+export const MAX_LEAD_HOURS = Math.max(RULES.buildHours, RULES.titleHours, ...RULES.improvementHours);
 
 /**
  * Calibration of the name, outside `RULES`: what a rename costs once the name is

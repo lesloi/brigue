@@ -244,7 +244,7 @@ export function Maison({
               onClick={() => setChoosing(true)}
             >
               <span class="btn-label">
-                Bâtir un atelier <Price cents={person.build.priceCents} />
+                Bâtir un atelier <Price cents={person.build.priceCents} /> · {formatCount(person.build.hours)} h
               </span>
             </button>
           ) : null}
@@ -297,7 +297,7 @@ function titleHint(queued: boolean): string {
 
 /**
  * What holds the next residence level: a door the title has not opened yet, or
- * nothing, since the level is bought at once.
+ * the hours the works take.
  */
 function residenceHint(ladder: WorldResponse['world']['person']['ladder'], nameOf: (title: TitleId) => string): string {
   const next = ladder.nextResidence;
@@ -309,7 +309,7 @@ function residenceHint(ladder: WorldResponse['world']['person']['ladder'], nameO
     return `Prérequis : titre de ${nameOf(ladder.nextTitle?.title ?? ladder.title)}`;
   }
 
-  return 'Les travaux sont faits à l’heure même.';
+  return `${formatCount(next.hours)} h de travaux.`;
 }
 
 /** A price with the coin that says it is one, shared by every button that costs. */
@@ -357,7 +357,7 @@ function WorkshopLine({
           title={workshop.canUpgrade ? undefined : 'Le titre ne permet pas ce niveau'}
           onClick={() => onUpgrade(workshop.id)}
         >
-          Agrandir
+          {workshop.upgradeHours === null ? 'Agrandir' : `Agrandir (${formatCount(workshop.upgradeHours)} h)`}
         </button>
         <button
           class="btn outline"

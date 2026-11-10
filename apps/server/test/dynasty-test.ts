@@ -83,20 +83,34 @@ function rename(harness: Harness, name: unknown): Promise<Response> {
 }
 
 describe('the ladder on the action queue', () => {
-  it('accepts a build, an upgrade and the two purchases as actions', async () => {
-    // Arrange
+  it('accepts a build, an upgrade and the two purchases, one act ahead at a time', async () => {
+    // Arrange: one with a lead at a time, so each order is cancelled before the
+    // next: what is checked here is that the route takes all four.
     const harness = await start();
+    const statuses: number[] = [];
 
     // Act
-    const build = await post(harness, { type: 'workshop.build', trade: 'baker' }, 1, 0);
-    const upgrade = await post(harness, { type: 'workshop.upgrade', workshopId: 4 }, 1, 1);
-    const title = await post(harness, { type: 'person.buy_title' }, 1, 2);
-    const residence = await post(harness, { type: 'person.upgrade_residence' }, 1, 3);
+    for (const [index, intent] of [
+      { type: 'workshop.build', trade: 'baker' },
+      { type: 'workshop.upgrade', workshopId: 4 },
+      { type: 'person.buy_title' },
+      { type: 'person.upgrade_residence' },
+    ].entries()) {
+      const response = await post(harness, intent, 1, index);
+      statuses.push(response.status);
+      const body = (await response.json()) as { id: number; hour: number; personId: number };
+
+      if (index === 0) {
+        expect(body).toMatchObject({ hour: 1 + 12, personId: LECLERC });
+      }
+      await fetch(`${harness.url}/api/actions/${body.id}`, {
+        method: 'DELETE',
+        headers: { Cookie: harness.cookie },
+      });
+    }
 
     // Assert
-    expect([build.status, upgrade.status, title.status, residence.status]).toEqual([201, 201, 201, 201]);
-    const body = (await build.json()) as { id: string; hour: number; personId: number };
-    expect(body).toMatchObject({ hour: 1, personId: LECLERC });
+    expect(statuses).toEqual([201, 201, 201, 201]);
   });
 
   it('refuses a build of a trade nobody practises', async () => {

@@ -14,6 +14,30 @@ import type { GoodId, PersonId, SeatId, TitleId, Trade } from './world.ts';
  */
 export type Audience = 'town' | 'court' | { personId: PersonId };
 
+/**
+ * The audiences a chronicle row can carry. A line meant for one person is not a
+ * chronicle row at all: it is that person's mail, and the mailbox names its
+ * reader. The codes are one-based places in this list, and a code is never
+ * renumbered.
+ */
+export const AUDIENCE_KINDS = ['town', 'court'] as const;
+
+export type AudienceKind = (typeof AUDIENCE_KINDS)[number];
+
+export function audienceCode(kind: AudienceKind): number {
+  const code = AUDIENCE_KINDS.indexOf(kind) + 1;
+
+  if (code === 0) {
+    throw new Error(`the audience "${kind}" is not in AUDIENCE_KINDS`);
+  }
+
+  return code;
+}
+
+export function audienceOfCode(code: number): AudienceKind | undefined {
+  return AUDIENCE_KINDS[code - 1];
+}
+
 export type Action =
   | { type: 'market.buy'; personId: PersonId; good: GoodId; units: number }
   | { type: 'market.sell'; personId: PersonId; good: GoodId; units: number }

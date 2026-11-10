@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createWorld,
+  leadHoursOf,
   displayedPrestige,
   nextTitle,
   RULES,
@@ -58,6 +59,21 @@ describe('workshops, trades and the ladder', () => {
     expect(leased(after).workshops[1]?.trade).toBe('baker');
     expect(leased(after).workshops[1]?.level).toBe(RULES.builtWorkshopLevel);
     expect(treasury - after.people[LECLERC].treasuryCents).toBeGreaterThanOrEqual(RULES.buildCents);
+  });
+
+  it('gives each act its wait: hours for a build, a degree and an improvement, none for a trade', () => {
+    // Arrange
+    const world = town(SEED);
+    const workshopId = leased(world).workshops[0]!.id;
+
+    // Assert: the server writes the order at the hour it will play.
+    expect(leadHoursOf(world, { type: 'market.buy', personId: LECLERC, good: 'wool', units: 1 })).toBe(0);
+    expect(leadHoursOf(world, { type: 'workshop.build', personId: LECLERC, trade: 'baker' })).toBe(RULES.buildHours);
+    expect(leadHoursOf(world, { type: 'person.buy_title', personId: LECLERC })).toBe(RULES.titleHours);
+    expect(leadHoursOf(world, { type: 'workshop.upgrade', personId: LECLERC, workshopId })).toBe(
+      RULES.improvementHours[3],
+    );
+    expect(leadHoursOf(world, { type: 'person.upgrade_residence', personId: LECLERC })).toBe(RULES.improvementHours[2]);
   });
 
   it('refuses a build past the residence cap', () => {

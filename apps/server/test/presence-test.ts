@@ -309,6 +309,7 @@ describe('the thirty-day deletion', () => {
         upkeepCentsPerHour: 240,
         capacityUnits: 200,
         canUpgrade: false,
+        upgradeHours: null,
       },
     ]);
     expect(body.world.person.stock.grain).toBe(8);

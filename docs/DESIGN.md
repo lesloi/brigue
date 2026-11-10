@@ -175,12 +175,12 @@ until the mechanic that raises them exists.
 A workshop is bound to one trade — weaver, baker, carpenter — and a person may hold several,
 even two of the same trade. There is no conversion: to change what the person makes, it builds
 another workshop and destroys the old one, and it can never destroy its last. A workshop is
-built at the first level, and each further level is bought at once. A person pays an upkeep for
+built at the first level, and each further level waits its hours. A person pays an upkeep for
 every workshop that runs, one level's share an hour.
 
 The **residence** is one ladder: the title opens a level, money pays for it, and the level sets
 the prestige cap, the defence of the stock and the number of workshops. The two purchases are
-separate: the title is bought first, then the level it opened, and both apply at once.
+separate: the title is bought first, then the level it opened, and each waits its own hours.
 
 **Favour** is the currency of elections. It is earned by service — a mandate held, a
 jury served, a vote cast with the winner — and by visible acts: a gift to the treasury, a funded
@@ -226,10 +226,12 @@ advances a year per day. The world has one clock, shared by every town: all town
 hour and the same date. A mandate lasts a day. A character's thirty playable years last thirty
 real days.
 
-Acts apply at once: a workshop is built, a degree bought and a residence raised on the hour they
-are ordered, with no works and no action points. What takes time is the calendar — a candidacy
-counts at the next scrutiny, a mandate lasts a day, a season turns on the crown — and the clock is
-the only scarcity.
+An act with a lead is an action placed ahead: a workshop wait twelve hours, a degree six, an
+improvement longer as it grows, and the pass applies the order when the town reaches its hour. One
+act ahead at a time per person, and an order not yet played can be cancelled. A trade and a
+candidacy are the hour's. What else takes time is the calendar — a candidacy counts at the next
+scrutiny, a mandate lasts a day, a season turns on the crown — and the clock is the only
+scarcity.
 
 ## Screens
 

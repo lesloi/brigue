@@ -164,8 +164,12 @@ CREATE TABLE market (
 CREATE TABLE events (
   id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  at integer NOT NULL,
-  audience text NOT NULL,
+  -- The instant the hour it happened on begins, in real time: the store maps it
+  -- back to the town's hour, and the client reads the hour.
+  at timestamptz NOT NULL,
+  -- The place of the audience in `AUDIENCE_KINDS`: the chronicle is the town's,
+  -- and a line meant for one person is that person's mail.
+  audience smallint NOT NULL,
   type text NOT NULL,
   payload jsonb NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT now()
@@ -177,18 +181,21 @@ CREATE INDEX events_town_recorded_at ON events (town_id, recorded_at);
 
 -- One mailbox per account. A human person points at its account through
 -- `people.player_id`; an AI person has none, so its private lines are written
--- for nobody. No foreign key: an erased account's mail is pruned by retention.
+-- for nobody. The mailbox and its author are accounts: erasing one takes the
+-- letters it holds, and leaves the letters it wrote without a name.
 CREATE TABLE messages (
   id bigserial PRIMARY KEY,
-  player_id bigint NOT NULL,
+  -- The mailbox is the account's, and the mail goes when the account does.
+  player_id bigint NOT NULL REFERENCES players (player_id) ON DELETE CASCADE,
   -- A notice carries its kind and the fields of its sentence; prose carries
   -- neither and puts its text in `body`. The kind is the same word as an event's.
   type text,
   payload jsonb,
   body text,
   -- Null when the town wrote it, never set on a notice. Filled from the
-  -- session, never from the request body.
-  author_player_id bigint,
+  -- session, never from the request body. The author may be erased while its
+  -- letter stays: the letter loses a name, not its place.
+  author_player_id bigint REFERENCES players (player_id) ON DELETE SET NULL,
   -- The whole unread state, so no cursor lives on the account.
   read boolean NOT NULL DEFAULT false,
   recorded_at timestamptz NOT NULL DEFAULT now()

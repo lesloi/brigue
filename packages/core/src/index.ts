@@ -1,6 +1,7 @@
 export { canonicalJson } from './canonical.ts';
 export { isVisibleTo, visibleTo } from './events.ts';
-export type { Action, Audience, Event, EventDraft, RefusalReason } from './events.ts';
+export type { Action, Audience, AudienceKind, Event, EventDraft, RefusalReason } from './events.ts';
+export { AUDIENCE_KINDS, audienceCode, audienceOfCode } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
 export {
   DYNASTY_NAMES,
@@ -31,6 +32,9 @@ export {
   displayedPrestige,
   FORMAT_VERSION,
   GOODS,
+  leadHoursOf,
+  improvementHoursFor,
+  MAX_LEAD_HOURS,
   NAME_PRICE,
   nextTitle,
   PACING,

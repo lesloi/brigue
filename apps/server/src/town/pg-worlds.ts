@@ -1,6 +1,8 @@
 import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import {
+  audienceCode,
+  audienceOfCode,
   goodCode,
   goodOfCode,
   residenceOf,
@@ -10,7 +12,7 @@ import {
   tradeCode,
   tradeOfCode,
 } from '@brigue/core';
-import type { Action, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
+import type { Action, AudienceKind, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
   HOUR_MS,
   JOURNAL_PAGE,
@@ -304,7 +306,10 @@ class PgWorldSession implements WorldSession {
       [limit, this.townId],
     );
 
-    return rows.slice().reverse().map(rowToChronicleEvent);
+    return rows
+      .slice()
+      .reverse()
+      .map((row) => rowToChronicleEvent(row, this.snapshot.worldStartedAt));
   }
 
   async findAction(id: number): Promise<StoredAction | null> {
@@ -387,6 +392,7 @@ class PgWorldSession implements WorldSession {
     await appendChronicle(
       this.client,
       this.townId,
+      this.snapshot.worldStartedAt,
       events.filter((event) => event.audience === 'town'),
     );
     await appendMessages(
@@ -889,7 +895,12 @@ async function deleteSerialMissing(
   ]);
 }
 
-async function appendChronicle(client: PoolClient, townId: number, events: Event[]): Promise<void> {
+async function appendChronicle(
+  client: PoolClient,
+  townId: number,
+  worldStartedAt: Date,
+  events: Event[],
+): Promise<void> {
   if (events.length === 0) {
     return;
   }
@@ -901,7 +912,13 @@ async function appendChronicle(client: PoolClient, townId: number, events: Event
     events.map((event) => {
       const { audience, at, type, ...body } = event;
 
-      return { town_id: townId, at, audience, type, payload: json(body) };
+      return {
+        town_id: townId,
+        at: hourStartedOf(worldStartedAt, at),
+        audience: audienceCode(audience as 'town'),
+        type,
+        payload: json(body),
+      };
     }),
   );
 }
@@ -1054,8 +1071,8 @@ async function rollback(client: PoolClient): Promise<void> {
 
 interface ChronicleRow {
   id: string | number;
-  at: number;
-  audience: string;
+  at: Date | string;
+  audience: number;
   type: string;
   payload: Record<string, unknown>;
 }
@@ -1068,8 +1085,23 @@ interface MessageRow {
   read: boolean;
 }
 
-function rowToChronicleEvent(row: ChronicleRow): Event {
-  return { ...row.payload, type: row.type, audience: 'town', at: row.at } as Event;
+function rowToChronicleEvent(row: ChronicleRow, worldStartedAt: Date): Event {
+  return {
+    ...row.payload,
+    type: row.type,
+    audience: requiredAudience(row.audience),
+    at: hourAt(worldStartedAt, asDate(row.at)),
+  } as Event;
+}
+
+/** A stored audience back into its word; a code the list does not know is a broken row. */
+function requiredAudience(code: number): AudienceKind {
+  const kind = audienceOfCode(code);
+  if (kind === undefined) {
+    throw new Error(`events: no audience carries the code ${code}`);
+  }
+
+  return kind;
 }
 
 function rowToMessage(row: MessageRow): Event {

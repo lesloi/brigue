@@ -23,7 +23,7 @@ import {
   type TradeIntent,
   type WorldResponse,
 } from './api.ts';
-import { actionErrorText, goodQuantity, readErrorText } from './format.ts';
+import { actionErrorText, formatCount, goodQuantity, readErrorText } from './format.ts';
 import { navigationFor, stateOf, tabFromHash, type Tab } from './tabs.ts';
 import { ClosingPerson, DeleteAccountDialog } from './views/account.tsx';
 import { Courrier } from './views/courrier.tsx';
@@ -366,9 +366,13 @@ export function App() {
 
     setPersonBusy(busy);
     try {
-      await sendAction(view.data.world.hour, intent);
+      const stored = await sendAction(view.data.world.hour, intent);
       await readPending().then(setPending, () => setPending([]));
-      showToast(`${said}. Il apparaîtra à la prochaine lecture.`);
+      showToast(
+        stored.hour > view.data.world.hour
+          ? `${said}. Les travaux finiront à l'heure ${formatCount(stored.hour)}.`
+          : `${said}. Il apparaîtra à la prochaine lecture.`,
+      );
     } catch (error) {
       if (error instanceof ApiError && error.code === 'stale_hour') {
         showToast(actionErrorText(error.code), true);
