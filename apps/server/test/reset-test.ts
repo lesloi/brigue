@@ -55,8 +55,8 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     await pool.query(
       `INSERT INTO settings (key, value)
-       VALUES ('format_version', '3'), ('ruleset_version', '4'), ('seed', '7'), ('hour', '1'),
-              ('hour_started_at', now())`,
+       VALUES ('format_version', '3'), ('ruleset_version', '5'), ('world_started_at', now()::text),
+              ('scheduler_last_run_at', now()::text)`,
     );
 
     return { tokenHash, townId, playerId };

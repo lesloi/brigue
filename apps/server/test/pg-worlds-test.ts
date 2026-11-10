@@ -89,7 +89,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         { id: 10, good: 'cloth', level: 1 },
       ];
       sortWorkshops(ai);
-      await session.save(loaded, START, []);
+      await session.save(loaded, []);
     });
 
     // Act
@@ -135,42 +135,47 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await expect(attempt).rejects.toBeInstanceOf(UnknownWorldError);
   });
 
-  it('serialises two writers on the row lock', async () => {
-    // Arrange
-    const startHour = 5;
-    await store.createTown(TEST_TOWN.name, { ...createWorld(), hour: startHour }, START);
+  it('runs one pass at a time, across connections', async () => {
+    // Arrange: two passes, as two server instances would run them. The lock is
+    // a session-level advisory one, so it has to hold across connections.
+    await store.createTown(TEST_TOWN.name, createWorld(), START);
     const order: string[] = [];
     let markFirstRunning = (): void => {};
     const firstEntered = new Promise<void>((resolve) => {
       markFirstRunning = resolve;
     });
 
-    const first = withWorld(async (session) => {
+    // Act: the second pass starts only once the first one holds the lock.
+    const first = store.withPassLock(async () => {
       order.push('first:start');
       markFirstRunning();
-      // Holds the lock long enough for a second writer to barge in if the lock
-      // were missing. This delay is load-bearing: without it a broken lock
-      // would go unnoticed most of the time.
+      // Load-bearing: without the delay, a missing lock would go unnoticed.
       await delay(150);
-      await session.save(oneHourLater(session.snapshot.world), START, []);
       order.push('first:end');
     });
-
-    // Act: the second writer starts only once the first one holds the lock.
     await firstEntered;
-    const second = withWorld(async (session) => {
+    const second = store.withPassLock(async () => {
       order.push('second:start');
-      await session.save(oneHourLater(session.snapshot.world), START, []);
       order.push('second:end');
     });
     await Promise.all([first, second]);
 
-    // Assert
+    // Assert: the second pass waited for the first.
     expect(order).toEqual(['first:start', 'first:end', 'second:start', 'second:end']);
-    const world = await withWorld(async (session) => session.snapshot.world);
-    // Two saves of +1 applied on top of each other: the second saw the first's
-    // commit. A missing lock would leave both at startHour + 1.
-    expect(world.hour).toBe(startHour + 2);
+  });
+
+  it('moves the world watermark forward only', async () => {
+    // Arrange
+    await store.createTown(TEST_TOWN.name, createWorld(), START);
+    const hour = 60 * 60 * 1000;
+    const later = new Date(START.getTime() + 3 * hour);
+
+    // Act
+    await store.markWorldPlayed(later);
+    await store.markWorldPlayed(new Date(START.getTime() + hour));
+
+    // Assert: an older write cannot put the world back.
+    expect((await store.readClock())?.lastRunAt).toEqual(later);
   });
 
   it('gives each action its own id, in the order it arrived', async () => {
@@ -249,11 +254,9 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       workshopId: 4,
       trade: 'baker',
     };
-    const hourStartedAt = new Date(START.getTime() + 42_000);
-
     // Act
     await withWorld(async (session) => {
-      await session.save(world, hourStartedAt, [chronicle, mail]);
+      await session.save(world, [chronicle, mail]);
     });
     const read = await withWorld(async (session) => ({
       snapshot: session.snapshot,
@@ -264,7 +267,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Assert: the town sees the election, the weaver sees the workshop, and no
     // page carries the other's line.
     expect(read.snapshot.world).toEqual(world);
-    expect(read.snapshot.hourStartedAt).toEqual(hourStartedAt);
+    // The hour is the world's, counted from its founding instant.
+    expect(read.snapshot.worldStartedAt).toEqual(START);
     expect(read.chronicle).toEqual([chronicle]);
     // A message keeps no town hour: it comes back with `at` at zero.
     expect(read.mail.messages).toEqual([{ id: 1, read: false, event: { ...mail, at: 0, audience: { personId: 0 } } }]);
@@ -287,7 +291,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Act
     await withWorld(async (session) => {
-      await session.save(world, START, mail);
+      await session.save(world, mail);
     });
     const page = await withWorld(async (session) => session.recentMessages(2, playerId));
 
@@ -307,7 +311,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const playerId = await bindAccount(TEST_TOWN.id, human.id, CLEARED_TOKEN);
     await withWorld(async (session) => {
       await session.append(storedAction(human.id, 5, buy(human.id, 2)));
-      await session.save(world, START, [
+      await session.save(world, [
         {
           type: 'council.election_held',
           audience: 'town',
@@ -347,7 +351,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     ]);
     const kings = await pool.query('SELECT count(*)::int AS count FROM kings');
 
-    expect(settings.rows[0]?.count).toBe(5);
+    expect(settings.rows[0]?.count).toBe(4);
     expect(people.rows[0]?.count).toBe(0);
     expect(events.rows[0]?.count).toBe(0);
     // The mail belongs to the account, so it outlives the town it was written in.
@@ -430,7 +434,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: 120 entries, the first 49 written a day before the cut.
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save(session.snapshot.world, START, hours(1, 120));
+      await session.save(session.snapshot.world, hours(1, 120));
     });
     const cut = new Date('2000-01-08T00:00:00.000Z');
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1 AND at < 50`, [
@@ -452,7 +456,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save(session.snapshot.world, START, hours(1, 120));
+      await session.save(session.snapshot.world, hours(1, 120));
     });
     const cut = new Date('2026-11-07T00:00:00.000Z');
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [TEST_TOWN.id, cut]);
@@ -469,7 +473,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: ten entries, all written before the cut.
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save(session.snapshot.world, START, hours(1, 10));
+      await session.save(session.snapshot.world, hours(1, 10));
     });
     const cut = new Date('2000-01-08T00:00:00.000Z');
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [
@@ -494,7 +498,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await withWorld(async (session) => {
       await session.save(
         world,
-        START,
         Array.from({ length: 120 }, (_, index): Event => ({
           type: 'person.debt_repaid',
           audience: { personId: human.id },
@@ -527,7 +530,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await withWorld(async (session) => {
       await session.save(
         world,
-        START,
         Array.from({ length: 3 }, (_, index): Event => ({
           type: 'person.debt_repaid',
           audience: { personId: human.id },
@@ -566,7 +568,6 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await withWorld(async (session) => {
       await session.save(
         world,
-        START,
         [1, 2].map((at): Event => ({
           type: 'person.debt_repaid',
           audience: { personId: human.id },
@@ -625,7 +626,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Act: a catch-up that refuses the world version, after writing both tables.
     const attempt = withWorld(async (session) => {
       actionId = (await session.append(action)).id;
-      await session.save(oneHourLater(session.snapshot.world), START, []);
+      await session.save(oneHourLater(session.snapshot.world), []);
       throw new WorldVersionError({ ...world, rulesetVersion: RULES.version + 1 });
     });
 

@@ -3,9 +3,11 @@ import type { ClientConfig, Pool, PoolClient } from 'pg';
 import { residenceOf, titleOf } from '@brigue/core';
 import type { Action, Engagement, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
+  HOUR_MS,
   JOURNAL_PAGE,
   NameInUseError,
   UnknownWorldError,
+  hourAt,
   type Clock,
   type StoredAction,
   type MessagePage,
@@ -25,17 +27,19 @@ interface SettingsRow {
 interface Settings {
   formatVersion: number;
   rulesetVersion: number;
-  hour: number;
-  hourStartedAt: Date;
+  worldStartedAt: Date;
+  lastRunAt: Date;
 }
 
-const SETTINGS_KEYS = ['format_version', 'ruleset_version', 'hour', 'hour_started_at', 'world_started_at'] as const;
+const SETTINGS_KEYS = ['format_version', 'ruleset_version', 'world_started_at', 'scheduler_last_run_at'] as const;
 
 /**
  * The key of the join lock: one number for every server, so two instances
  * serialize their joins together. The value itself is arbitrary.
  */
 const JOIN_LOCK_KEY = 0x62726967; // 'brig'
+/** The key of the pass lock: distinct from the join's, so a pass never waits on a join. */
+const PASS_LOCK_KEY = 0x62726968; // 'brih'
 
 /**
  * The towns are the database: one row per thing, keyed by town, and the world's
@@ -58,7 +62,7 @@ export class PgWorldStore implements WorldStore {
     this.lockConfig = lockConfig;
   }
 
-  async createTown(name: string, world: World, hourStartedAt: Date): Promise<TownInfo> {
+  async createTown(name: string, world: World, at: Date): Promise<TownInfo> {
     const client = await this.pool.connect();
 
     try {
@@ -66,8 +70,8 @@ export class PgWorldStore implements WorldStore {
       const { rows } = await client.query<{ id: string }>(`INSERT INTO towns (name) VALUES ($1) RETURNING id`, [name]);
       const id = Number(rows[0]?.id);
       // The first town founds the world and writes its settings; a later town
-      // reads them and joins at the world's current hour and seed.
-      await ensureSettings(client, world, hourStartedAt);
+      // reads them and joins at the world's current data hour.
+      await ensureSettings(client, world, at);
       const settings = await readSettings(client);
       applySettings(world, settings);
       // The world is reattributed in place: the join needs the ids the database
@@ -87,7 +91,7 @@ export class PgWorldStore implements WorldStore {
 
   async readClock(): Promise<Clock | null> {
     const { rows } = await this.pool.query<SettingsRow>(
-      `SELECT key, value FROM settings WHERE key IN ('hour', 'hour_started_at') ORDER BY key`,
+      `SELECT key, value FROM settings WHERE key IN ('world_started_at', 'scheduler_last_run_at') ORDER BY key`,
     );
 
     if (rows.length === 0) {
@@ -95,14 +99,36 @@ export class PgWorldStore implements WorldStore {
     }
 
     const values = new Map(rows.map((row) => [row.key, row.value]));
-    const hour = Number(values.get('hour'));
-    const hourStartedAt = new Date(values.get('hour_started_at') ?? '');
+    const worldStartedAt = new Date(values.get('world_started_at') ?? '');
+    const lastRunAt = new Date(values.get('scheduler_last_run_at') ?? '');
 
-    if (!Number.isInteger(hour) || Number.isNaN(hourStartedAt.getTime())) {
+    if (Number.isNaN(worldStartedAt.getTime()) || Number.isNaN(lastRunAt.getTime())) {
       throw new Error('the world settings carry no readable clock');
     }
 
-    return { hour, hourStartedAt };
+    return { worldStartedAt, lastRunAt };
+  }
+
+  async moveWorldClockBack(hours: number): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      const settings = await readSettings(client);
+      const back = hours * HOUR_MS;
+      await client.query(`UPDATE settings SET value = $1 WHERE key = 'world_started_at'`, [
+        new Date(settings.worldStartedAt.getTime() - back).toISOString(),
+      ]);
+      await client.query(`UPDATE settings SET value = $1 WHERE key = 'scheduler_last_run_at'`, [
+        new Date(settings.lastRunAt.getTime() - back).toISOString(),
+      ]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await rollback(client);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async listTowns(): Promise<TownInfo[]> {
@@ -173,6 +199,44 @@ export class PgWorldStore implements WorldStore {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  async markWorldPlayed(firstUnplayedAt: Date): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+      const settings = await readSettings(client);
+      if (firstUnplayedAt.getTime() > settings.lastRunAt.getTime()) {
+        await client.query(`UPDATE settings SET value = $1 WHERE key = 'scheduler_last_run_at'`, [
+          firstUnplayedAt.toISOString(),
+        ]);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await rollback(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async withPassLock<T>(run: () => Promise<T>): Promise<T> {
+    // A session-level lock on a connection of its own, like the join: a client
+    // taken from the pool would be pinned while it waits, and the pass it waits
+    // for needs the pool for the towns it plays. Closing the connection releases
+    // the lock, held or not, even if the process dies inside the pass.
+    const { Client } = await import('pg');
+    const client = new Client(this.lockConfig);
+
+    try {
+      await client.connect();
+      await client.query('SELECT pg_advisory_lock($1)', [PASS_LOCK_KEY]);
+
+      return await run();
+    } finally {
+      await client.end().catch(() => undefined);
     }
   }
 
@@ -306,19 +370,8 @@ class PgWorldSession implements WorldSession {
     await this.client.query(`DELETE FROM towns WHERE id = $1`, [this.townId]);
   }
 
-  async save(world: World, hourStartedAt: Date, events: Event[]): Promise<void> {
+  async save(world: World, events: Event[]): Promise<void> {
     const ids = await syncWorld(this.client, this.townId, world);
-    // A save moves the shared clock and anchor, and only forward: a town saved
-    // at an older hour must not drag the world back. The hour row is locked for
-    // the whole transaction, so reading it here is the world's serial order.
-    const current = await this.client.query<SettingsRow>(`SELECT key, value FROM settings WHERE key = 'hour'`);
-    const savedHour = Number(current.rows[0]?.value ?? 0);
-    if (savedHour <= world.hour) {
-      await this.client.query(`UPDATE settings SET value = $1 WHERE key = 'hour'`, [String(world.hour)]);
-      await this.client.query(`UPDATE settings SET value = $1 WHERE key = 'hour_started_at'`, [
-        hourStartedAt.toISOString(),
-      ]);
-    }
 
     // A queued action keeps the person id it was taken with; when the database
     // has just named a person, the queue follows the new id.
@@ -352,12 +405,14 @@ export async function createPgWorldStore(connectionString: string): Promise<PgWo
 }
 
 /**
- * The settings of the world, read with the hour row locked: that row is the
- * writer's lock, so a save serialises the whole world. A world without settings
- * has not been founded, and a town cannot belong to it.
+ * The settings of the world, read with the scheduler's row locked: that row is
+ * what a write of this town locks, so two writes of the same town serialise. A
+ * whole pass is serialised by a lock of its own, taken before it reads anything
+ * (see `withPassLock`). A world without settings has not been founded, and a
+ * town cannot belong to it.
  */
 async function readSettings(client: PoolClient): Promise<Settings> {
-  await client.query(`SELECT value FROM settings WHERE key = 'hour' FOR UPDATE`);
+  await client.query(`SELECT value FROM settings WHERE key = 'scheduler_last_run_at' FOR UPDATE`);
   const { rows } = await client.query<SettingsRow>(`SELECT key, value FROM settings`);
   const values = new Map(rows.map((row) => [row.key, row.value]));
   const missing = SETTINGS_KEYS.filter((key) => !values.has(key));
@@ -368,33 +423,33 @@ async function readSettings(client: PoolClient): Promise<Settings> {
 
   const formatVersion = Number(values.get('format_version'));
   const rulesetVersion = Number(values.get('ruleset_version'));
-  const hour = Number(values.get('hour'));
-  const hourStartedAt = new Date(values.get('hour_started_at') ?? '');
+  const worldStartedAt = new Date(values.get('world_started_at') ?? '');
+  const lastRunAt = new Date(values.get('scheduler_last_run_at') ?? '');
 
   if (
     !Number.isInteger(formatVersion) ||
     !Number.isInteger(rulesetVersion) ||
-    !Number.isInteger(hour) ||
-    Number.isNaN(hourStartedAt.getTime())
+    Number.isNaN(worldStartedAt.getTime()) ||
+    Number.isNaN(lastRunAt.getTime())
   ) {
     throw new Error('the world settings are not readable');
   }
 
-  return { formatVersion, rulesetVersion, hour, hourStartedAt };
+  return { formatVersion, rulesetVersion, worldStartedAt, lastRunAt };
 }
 
 /**
  * The first town founds the world: it writes the settings the world did not
  * have. A later town finds them and leaves them alone, so a second town cannot
- * reset the clock or the seed.
+ * reset the clock.
  */
-async function ensureSettings(client: PoolClient, world: World, hourStartedAt: Date): Promise<void> {
+async function ensureSettings(client: PoolClient, world: World, at: Date): Promise<void> {
   await client.query(
     `INSERT INTO settings (key, value)
-     VALUES ('format_version', $1), ('ruleset_version', $2), ('hour', $3), ('hour_started_at', $4),
-            ('world_started_at', $4)
+     VALUES ('format_version', $1), ('ruleset_version', $2), ('world_started_at', $3),
+            ('scheduler_last_run_at', $3)
      ON CONFLICT (key) DO NOTHING`,
-    [String(world.formatVersion), String(world.rulesetVersion), String(world.hour), hourStartedAt.toISOString()],
+    [String(world.formatVersion), String(world.rulesetVersion), at.toISOString()],
   );
 }
 
@@ -402,7 +457,7 @@ async function ensureSettings(client: PoolClient, world: World, hourStartedAt: D
 function applySettings(world: World, settings: Settings): void {
   world.formatVersion = settings.formatVersion;
   world.rulesetVersion = settings.rulesetVersion;
-  world.hour = settings.hour;
+  world.hour = hourAt(settings.worldStartedAt, settings.lastRunAt);
 }
 
 async function readWorld(client: PoolClient, townId: number): Promise<WorldSnapshot> {
@@ -444,7 +499,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   const world: World = {
     formatVersion: settings.formatVersion,
     rulesetVersion: settings.rulesetVersion,
-    hour: settings.hour,
+    hour: hourAt(settings.worldStartedAt, settings.lastRunAt),
     people: {},
     seats: {} as Record<SeatId, Seat>,
     laws: [],
@@ -550,7 +605,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   return {
     town: { id: Number(townRow.id), name: townRow.name },
     world,
-    hourStartedAt: settings.hourStartedAt,
+    worldStartedAt: settings.worldStartedAt,
   };
 }
 

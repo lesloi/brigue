@@ -3,8 +3,16 @@ import { humanPersonOf, type Event, type World } from '@brigue/core';
 import type { PlayerStore } from '../identity/players.ts';
 import type { Logger } from '../logger.ts';
 import { applyPresence, type Presence } from './presence.ts';
-import { accountsOf, playDue, type Due } from './scheduler.ts';
-import { HOUR_MS, JOURNAL_PAGE, type MessageView, type TownInfo, type WorldStore, sessionWorld } from './worlds.ts';
+import { accountsOf, playWorld } from './scheduler.ts';
+import {
+  JOURNAL_PAGE,
+  UnknownWorldError,
+  hourAt,
+  sessionWorld,
+  type MessageView,
+  type TownInfo,
+  type WorldStore,
+} from './worlds.ts';
 
 export interface TownAccess {
   /** Accounts, for presence and deletion. */
@@ -19,7 +27,12 @@ export type TownOutcome =
   | {
       kind: 'caught';
       town: TownInfo;
-      result: Due;
+      /** The town as it stands after the pass that preceded the read. */
+      world: World;
+      /** The instant the world was founded: the screen places its calendar from it. */
+      worldStartedAt: Date;
+      /** Whole hours the town lived in that pass. */
+      hours: number;
       /** The newest page of the account's mail, in the order it happened. */
       messages: MessageView[];
       /** The newest page of the town's public chronicle, in time order. */
@@ -30,8 +43,10 @@ export type TownOutcome =
   | { kind: 'gone' };
 
 /**
- * A read wakes the town when the scheduler has left it more than an hour
- * behind, and returns the newest page of its mail and of the town's chronicle.
+ * A visit reads the town, after bringing the whole world up to its hour: the
+ * clock is the world's, so a reader cannot advance its own town alone. The pass
+ * runs only when the world owes an hour — that is, when the scheduler missed
+ * one — and returns the hours the towns lived.
  */
 export function catchUpTown(
   access: TownAccess,
@@ -40,57 +55,13 @@ export function catchUpTown(
   playerId: number,
   at: Date,
 ): Promise<TownOutcome> {
-  return access.worlds.withWorld(async (session) => {
-    const world = sessionWorld(session);
-    const { presence, accounts } = await synchronisePresence(access, townId, world, at);
-
-    // The last human person went with the silence: the town goes too, and the
-    // next join starts a new one. The accounts and the sealed seasons stay.
-    if (humanPersonOf(presence.world) === undefined) {
-      await session.clear();
-      return { kind: 'gone' as const };
-    }
-
-    if (presence.deletedPersonIds.includes(personId)) {
-      // Another human person is gone, but the town remains: the deletion is a
-      // real change and must be kept even though nothing is caught up for
-      // this reader.
-      await session.save(presence.world, session.snapshot.hourStartedAt, [], accounts);
-      return { kind: 'gone' as const };
-    }
-
-    // The reader is the backstop, not the clock: it only wakes a town the
-    // scheduler has left more than an hour behind.
-    const due = await playDue(
-      session,
-      { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
-      at,
-      2,
-      presence.dormant,
-      access.random ?? Math.random,
-    );
-
-    if (due.hours > 0) {
-      await session.save(due.world, due.hourStartedAt, due.events, accounts);
-    }
-
-    const mail = await session.recentMessages(JOURNAL_PAGE, playerId);
-    const chronicle = await session.recentChronicle(JOURNAL_PAGE);
-
-    return {
-      kind: 'caught' as const,
-      town: session.snapshot.town,
-      result: due,
-      messages: mail.messages,
-      chronicle,
-      unread: mail.unread,
-    };
-  }, townId);
+  return readTown(access, townId, personId, playerId, at, () => playWorldIfDue(access, at));
 }
 
 /**
- * Local development only: plays one hour now and re-anchors the next natural
- * hour on a fresh clock read, after the hour was played.
+ * Local development only: moves the world's clock one hour further than the
+ * wall clock, then passes as a visit would. Every town gains that hour, because
+ * there is one clock.
  */
 export function advanceTown(
   access: TownAccess,
@@ -98,54 +69,90 @@ export function advanceTown(
   personId: number,
   playerId: number,
   at: Date,
-  now: () => number,
 ): Promise<TownOutcome> {
-  return access.worlds.withWorld(async (session) => {
-    const world = sessionWorld(session);
-    const { presence, accounts } = await synchronisePresence(access, townId, world, at);
+  return readTown(access, townId, personId, playerId, at, async () => {
+    await access.worlds.moveWorldClockBack(1);
 
-    if (humanPersonOf(presence.world) === undefined) {
-      await session.clear();
-      return { kind: 'gone' as const };
+    return playWorld(worldPass(access), at);
+  });
+}
+
+/** The worlds a pass plays, once the clock says an hour is owed. */
+function worldPass(access: TownAccess) {
+  return { store: access.worlds, players: access.players, logger: access.logger, random: access.random };
+}
+
+async function playWorldIfDue(access: TownAccess, at: Date): Promise<number> {
+  const clock = await access.worlds.readClock();
+
+  if (clock === null) {
+    return 0;
+  }
+
+  if (hourAt(clock.worldStartedAt, at) <= hourAt(clock.worldStartedAt, clock.lastRunAt)) {
+    return 0;
+  }
+
+  // The guard above only keeps a visit from sweeping a world that owes nothing;
+  // the pass itself says how many hours it played, whichever pass ran first.
+  return playWorld(worldPass(access), at);
+}
+
+async function readTown(
+  access: TownAccess,
+  townId: number,
+  personId: number,
+  playerId: number,
+  at: Date,
+  play: () => Promise<number>,
+): Promise<TownOutcome> {
+  const hours = await play();
+
+  try {
+    return await access.worlds.withWorld(async (session) => {
+      const world = sessionWorld(session);
+      const { presence, accounts } = await synchronisePresence(access, townId, world, at);
+
+      // The last human person went with the silence: the town goes too, and the
+      // next join starts a new one. The accounts and the sealed seasons stay.
+      if (humanPersonOf(presence.world) === undefined) {
+        await session.clear();
+        return { kind: 'gone' as const };
+      }
+
+      if (presence.world.people[personId] === undefined) {
+        // The person is gone, but the town remains: keep the deletion and tell
+        // the reader their session no longer exists.
+        if (presence.deletedPersonIds.includes(personId)) {
+          await session.save(presence.world, [], accounts);
+        }
+
+        return { kind: 'gone' as const };
+      }
+
+      const mail = await session.recentMessages(JOURNAL_PAGE, playerId);
+      const chronicle = await session.recentChronicle(JOURNAL_PAGE);
+
+      return {
+        kind: 'caught' as const,
+        town: session.snapshot.town,
+        world: presence.world,
+        worldStartedAt: session.snapshot.worldStartedAt,
+        hours,
+        messages: mail.messages,
+        chronicle,
+        unread: mail.unread,
+      };
+    }, townId);
+  } catch (error) {
+    // The pass deleted the town between the list and the read: it has no human
+    // left, and the next join starts a new one.
+    if (error instanceof UnknownWorldError) {
+      return { kind: 'gone' };
     }
 
-    if (presence.deletedPersonIds.includes(personId)) {
-      await session.save(presence.world, session.snapshot.hourStartedAt, [], accounts);
-      return { kind: 'gone' as const };
-    }
-
-    // One hour further than the town's own clock, whatever the wall clock
-    // says: the click is the hour.
-    const forced = new Date(session.snapshot.hourStartedAt.getTime() + HOUR_MS);
-    // The absence was simulated dormant; the visit itself wakes the reader for
-    // the hour that follows, and for that hour only.
-    const awake = new Set(presence.dormant);
-    awake.delete(personId);
-    const due = await playDue(
-      session,
-      { world: presence.world, hourStartedAt: session.snapshot.hourStartedAt },
-      forced,
-      1,
-      awake,
-      access.random ?? Math.random,
-    );
-    // The hour was simulated, not lived. Put the next natural hour an hour
-    // from the real now, instead of stacking a backlog.
-    const savedAt = new Date(now());
-    await session.save(due.world, savedAt, due.events, accounts);
-
-    const mail = await session.recentMessages(JOURNAL_PAGE, playerId);
-    const chronicle = await session.recentChronicle(JOURNAL_PAGE);
-
-    return {
-      kind: 'caught' as const,
-      town: session.snapshot.town,
-      result: { ...due, hourStartedAt: savedAt },
-      messages: mail.messages,
-      chronicle,
-      unread: mail.unread,
-    };
-  }, townId);
+    throw error;
+  }
 }
 
 async function synchronisePresence(

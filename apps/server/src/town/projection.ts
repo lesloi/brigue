@@ -27,7 +27,7 @@ import {
   type World,
 } from '@brigue/core';
 
-import type { TownInfo } from './worlds.ts';
+import { hourStartedOf, type TownInfo } from './worlds.ts';
 
 /** A workshop as the screen reads it: its chain and hourly figures come from the rules. */
 export interface WorkshopView {
@@ -156,7 +156,7 @@ export function projectWorld(
   town: TownInfo,
   world: World,
   personId: number,
-  hourStartedAt: Date,
+  worldStartedAt: Date,
   familyName: string | null = null,
 ): WorldProjection {
   const person = world.people[personId];
@@ -165,6 +165,10 @@ export function projectWorld(
     // something to paper over with a made-up person.
     throw new Error(`world has no person ${personId}`);
   }
+
+  // The hour belongs to the world, and the world is counted from its birth: the
+  // real instant of an hour is the origin plus the hours before it.
+  const hourStartedAt = hourStartedOf(worldStartedAt, world.hour);
 
   return {
     hour: world.hour,

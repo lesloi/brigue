@@ -416,7 +416,7 @@ async function takePlaceIn(
       // this player kept takes over, unpaid, as at creation.
       const next = structuredClone(world);
       next.people[free.id]!.name = candidate.personName;
-      await session.save(next, session.snapshot.hourStartedAt, []);
+      await session.save(next, []);
       return free.id;
     }
     if (Object.keys(world.people).length >= RULES.dynastyCap) {
@@ -425,7 +425,7 @@ async function takePlaceIn(
 
     const before = new Set(Object.keys(world.people).map(Number));
     const next = withNewcomer(world, trade, { personName: candidate.personName });
-    await session.save(next, session.snapshot.hourStartedAt, []);
+    await session.save(next, []);
 
     // The save names the new person; the id the world carries after it is the
     // one the account binds to.

@@ -83,9 +83,6 @@ export function catchUpText(summary: WorldResponse['summary']): string | null {
   if (summary.hours >= 1) {
     parts.push(`${hours(summary.hours)} vécue${summary.hours > 1 ? 's' : ''} depuis votre dernière visite.`);
   }
-  if (summary.skipped > 0) {
-    parts.push(`${hours(summary.skipped)} sautée${summary.skipped > 1 ? 's' : ''} faute de place dans le rattrapage.`);
-  }
 
   return parts.length === 0 ? null : parts.join(' ');
 }

@@ -278,7 +278,7 @@ describe('the rename route', () => {
     await harness.store.rebind(player.tokenHash, TEST_TOWN.id, LECLERC, new Date(START));
     const world = await worldOf(harness, TEST_TOWN.id);
     world.people[LECLERC]!.treasuryCents = 100_000;
-    await harness.worlds.withWorld((session) => session.save(world, session.snapshot.hourStartedAt, []), TEST_TOWN.id);
+    await harness.worlds.withWorld((session) => session.save(world, []), TEST_TOWN.id);
 
     return { harness, token };
   }

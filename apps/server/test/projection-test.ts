@@ -18,6 +18,11 @@ const SEED = 20261105;
 const START = new Date('2026-11-05T12:00:00.000Z');
 const HOUR = 60 * 60 * 1000;
 
+/** The founding instant that puts the world's current hour where `START` was. */
+function foundedAt(world: World): Date {
+  return new Date(START.getTime() - (world.hour - 1) * HOUR);
+}
+
 function play(world: World, hours: number): World {
   let current = world;
 
@@ -34,7 +39,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.hour).toBe(world.hour);
@@ -70,7 +75,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), 4);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert: twenty hours in progress plus the scrutiny hour itself.
     expect(projection.calendar.hourOfYear).toBe(5);
@@ -85,7 +90,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR - 1);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert: the scrutiny happens when this hour ends, like the next tick.
     expect(projection.calendar.hourOfYear).toBe(HOURS_PER_YEAR);
@@ -116,7 +121,7 @@ describe('the projection calendar', () => {
     const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.person.workshops).toEqual([
@@ -141,7 +146,7 @@ describe('the projection calendar', () => {
     world.people[LECLERC].workshops = [{ id: 4, good: 'wool', level: 2 }];
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.person.workshops[0]).toEqual({
@@ -164,7 +169,7 @@ describe('the projection calendar', () => {
     world.people[LECLERC].workshops = [{ id: 4, good: 'cloth', level: 3 }];
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.person.workshops[0]).toEqual({
@@ -186,7 +191,7 @@ describe('the projection calendar', () => {
     const world = town(SEED);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert: the client sums nothing and derives no capacity.
     expect(Object.keys(projection.town.market).sort()).toEqual([...GOODS].sort());
@@ -203,7 +208,7 @@ describe('the projection calendar', () => {
     world.engagements = [{ id: 1, kind: 'site', personId: LECLERC, dueAt: world.hour + 6, work: 'title' }];
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.person.title).toBe('bourgeois');
@@ -241,7 +246,7 @@ describe('the projection calendar', () => {
     const world = town(SEED, 'baker');
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     for (const good of GOODS) {
@@ -256,7 +261,7 @@ describe('the projection calendar', () => {
     delete world.marketHistory;
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.town.marketHistory).toEqual({});
@@ -268,7 +273,7 @@ describe('the projection calendar', () => {
     const world = play(town(SEED), HOURS_PER_YEAR);
 
     // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, START);
+    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
 
     // Assert
     expect(projection.calendar.hourOfYear).toBe(1);

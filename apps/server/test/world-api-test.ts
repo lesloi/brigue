@@ -9,7 +9,7 @@ import { createLogger } from '../src/logger.ts';
 import { playDue } from '../src/town/scheduler.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
 import { issueToken } from '../src/identity/session.ts';
-import { MemoryWorldStore } from '../src/town/worlds.ts';
+import { MemoryWorldStore, hourAt, hourStartedOf } from '../src/town/worlds.ts';
 import { CARON, FOURNIER, LECLERC, seeded, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
@@ -51,7 +51,6 @@ interface WorldBody {
   unreadMessages: number;
   summary: {
     hours: number;
-    skipped: number;
   };
   stateHash: string;
   dev?: boolean;
@@ -109,9 +108,12 @@ async function start(
         const accounts = new Map(
           players.flatMap((player) => (player.personId === null ? [] : [[player.personId, player.playerId] as const])),
         );
-        const due = await playDue(session, session.snapshot, new Date(clock.now), 1, new Set(), seeded());
+        const { world, worldStartedAt } = session.snapshot;
+        const target = hourAt(worldStartedAt, new Date(clock.now));
+        const due = await playDue(session, world, target, new Set(), seeded());
         if (due.hours > 0) {
-          await session.save(due.world, due.hourStartedAt, due.events, accounts);
+          await session.save(due.world, due.events, accounts);
+          await worlds.markWorldPlayed(hourStartedOf(session.snapshot.worldStartedAt, target));
         }
       }, TEST_TOWN.id);
       await worlds.pruneJournal(
@@ -240,7 +242,6 @@ describe('GET /api/world', () => {
 
     // Assert
     expect(body.summary.hours).toBe(720);
-    expect(body.summary.skipped).toBe(0);
     expect(body.world.hour).toBe(721);
     // The player was dormant for the whole month, so its workshops idled and it
     // got no message; the badge counts nothing.
@@ -255,8 +256,7 @@ describe('GET /api/world', () => {
   });
 
   it('returns the same page on a read that has nothing to play', async () => {
-    // Arrange: the read is the backstop and only wakes a town more than an
-    // hour behind, so the loop must have missed two.
+    // Arrange: the loop missed two hours, and the visit that follows plays them.
     const harness = await start();
     await harness.lapse(2 * HOUR);
     const first = await worldBody(harness);
@@ -288,24 +288,24 @@ describe('GET /api/world', () => {
     expect(second.summary.hours).toBe(0);
   });
 
-  it('leaves a town one hour behind to the scheduler', async () => {
+  it('plays the hour the loop missed, on the visit', async () => {
     // Arrange: the loop is down for a single hour.
     const harness = await start();
     await harness.lapse(HOUR);
 
-    // Act: a read may leave that hour to the loop.
+    // Act: a visit brings the world up, because the hour is the world's.
     const lazy = await worldBody(harness);
 
     // Assert
-    expect(lazy.summary.hours).toBe(0);
-    expect(lazy.world.hour).toBe(1);
+    expect(lazy.summary.hours).toBe(1);
+    expect(lazy.world.hour).toBe(2);
 
     // Act: two more hours pass without the loop.
     await harness.lapse(2 * HOUR);
     const awake = await worldBody(harness);
 
-    // Assert: the read is the backstop, and plays the whole backlog.
-    expect(awake.summary.hours).toBe(3);
+    // Assert: the visit plays the whole backlog, without a cap.
+    expect(awake.summary.hours).toBe(2);
     expect(awake.world.hour).toBe(4);
   });
 
@@ -626,17 +626,18 @@ describe('POST /api/actions', () => {
     expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 1 });
   });
 
-  it('refuses a hour the catch-up cap will not reach', async () => {
-    // Arrange: a world well over a month behind, so catch-up will skip.
+  it('names the world clock, not a catch-up cap, when a hour is too far ahead', async () => {
+    // Arrange: the clock jumps a thousand hours with no cap to stop it; the
+    // data is still at the first hour.
     const harness = await start();
-    await harness.advance(1000 * HOUR);
+    await harness.lapse(1000 * HOUR);
 
-    // Act: a GET would land on hour 745, not hour 1001.
-    const response = await postAction(harness, buyWool(ID_A, 1000, 1));
+    // Act
+    const response = await postAction(harness, buyWool(ID_A, 1003, 1));
 
-    // Assert
+    // Assert: the hour is refused against the clock itself, however far it went.
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 745 });
+    expect(await response.json()).toEqual({ error: 'future_hour', currentHour: 1001 });
   });
 
   it('accepts the next hour when the client read just before the hour turned', async () => {
@@ -980,10 +981,11 @@ describe('POST /api/dev/advance', () => {
     // Assert
     expect(response.status).toBe(200);
     expect(after.world.hour).toBe(before.world.hour + 1);
-    // The simulated hour is saved at the real now: the next natural hour is an
-    // hour away, not already owed.
-    const anchor = await harness.worlds.withWorld(async (session) => session.snapshot.hourStartedAt, TEST_TOWN.id);
-    expect(anchor.getTime()).toBe(harness.clock.now);
+    // The simulated hour is a jump of the world's clock, not of the wall clock:
+    // the world now counts one hour more than the real time since its founding.
+    const clock = await harness.worlds.readClock();
+    expect(clock?.worldStartedAt.getTime()).toBe(START - HOUR);
+    expect(hourAt(clock!.worldStartedAt, new Date(harness.clock.now))).toBe(after.world.hour);
     expect(after.dev).toBe(true);
 
     // Act: an hour later the town plays exactly one more, not a backlog.

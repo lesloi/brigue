@@ -123,7 +123,6 @@ export interface WorldProjection {
 
 export interface CatchUpSummary {
   hours: number;
-  skipped: number;
 }
 
 /** One stored message: its row id, its unread state, and the line. */

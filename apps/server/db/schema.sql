@@ -40,8 +40,9 @@ CREATE TABLE kings (
 );
 
 -- Every town table carries its `town_id` and the rows of a town are the town;
--- the world's clock and identity live in `settings`, whose `hour` row is what
--- the writer locks. One world, one clock, several towns.
+-- the world's clock lives in `settings`. One world, one clock, several towns: a
+-- pass plays them all, serialised by a lock of its own, and each town's write
+-- locks the `scheduler_last_run_at` row.
 
 -- A name may come back after a reset; an id never does, so a dead town's
 -- accounts cannot point at a new one.
@@ -52,9 +53,15 @@ CREATE TABLE towns (
 );
 
 -- The world's settings: one key/value row each, outside any town. The first
--- town writes them; a later town reads them, so every town shares one hour, one
--- seed and one format. The values are text; the store parses the numbers and
--- the instant. The `hour` row is the writer's lock.
+-- town writes them; a later town reads them, so every town shares one clock and
+-- one format. The values are text; the store parses the numbers and the
+-- instants.
+--
+-- `world_started_at` is when the world was founded, and every hour is counted
+-- from it: the hour is the wall clock, never a stored counter. `scheduler_last_run_at`
+-- is the start of the first hour the rows do not hold yet — the data is behind
+-- the clock by however many hours separate the two — and it is the row a write
+-- of a town locks.
 CREATE TABLE settings (
   key text PRIMARY KEY,
   value text NOT NULL

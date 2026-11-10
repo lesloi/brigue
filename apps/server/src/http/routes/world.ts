@@ -41,24 +41,16 @@ export async function readWorld(
     return;
   }
 
-  const caught = outcome.result;
   await context.deps.store.touch(bound.tokenHash, at);
 
-  if (caught.skipped > 0) {
-    context.deps.logger.warn('world.catch_up_capped', {
-      townId: bound.townId,
-      skipped: caught.skipped,
-    });
-  }
   context.deps.logger.info('world.read', {
     townId: bound.townId,
     personId: bound.personId,
-    hour: caught.world.hour,
-    hoursPlayed: caught.hours,
-    skipped: caught.skipped,
+    hour: outcome.world.hour,
+    hoursPlayed: outcome.hours,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.personId, caught.hourStartedAt, bound.name);
+  const projection = projectWorld(outcome.town, outcome.world, bound.personId, outcome.worldStartedAt, bound.name);
 
   sendJson(response, 200, {
     world: projection,
@@ -66,8 +58,7 @@ export async function readWorld(
     chronicle: outcome.chronicle,
     unreadMessages: outcome.unread,
     summary: {
-      hours: caught.hours,
-      skipped: caught.skipped,
+      hours: outcome.hours,
     },
     // The projected state, not the world: hashing the world would reveal the
     // seed and with it every future the town has not lived yet.
@@ -108,7 +99,7 @@ export async function advanceHour(
     return;
   }
 
-  const outcome = await advanceTown(townAccess(context), bound.townId, bound.personId, bound.playerId, at, context.now);
+  const outcome = await advanceTown(townAccess(context), bound.townId, bound.personId, bound.playerId, at);
 
   if (outcome.kind === 'gone') {
     context.deps.logger.warn('world.session_expired', { townId: bound.townId, personId: bound.personId });
@@ -116,16 +107,15 @@ export async function advanceHour(
     return;
   }
 
-  const caught = outcome.result;
   await context.deps.store.touch(bound.tokenHash, at);
 
   context.deps.logger.info('world.advanced', {
     townId: bound.townId,
     personId: bound.personId,
-    hour: caught.world.hour,
+    hour: outcome.world.hour,
   });
 
-  const projection = projectWorld(outcome.town, caught.world, bound.personId, caught.hourStartedAt, bound.name);
+  const projection = projectWorld(outcome.town, outcome.world, bound.personId, outcome.worldStartedAt, bound.name);
 
   sendJson(response, 200, {
     world: projection,
@@ -133,8 +123,7 @@ export async function advanceHour(
     chronicle: outcome.chronicle,
     unreadMessages: outcome.unread,
     summary: {
-      hours: caught.hours,
-      skipped: caught.skipped,
+      hours: outcome.hours,
     },
     stateHash: hashJson(projection),
     deletionGraceDays: PACING.deletionGraceDays,

@@ -50,7 +50,7 @@ describe('the journal of a town with two readers', () => {
   it('puts the town’s line in the chronicle and a person’s in its mailbox', async () => {
     // Arrange: one election and one private debt line.
     const { session } = await stored();
-    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [chronicleAt(1), mailAt(2)], ACCOUNTS);
+    await session.save(session.snapshot.world, [chronicleAt(1), mailAt(2)], ACCOUNTS);
 
     // Act
     const chronicle = await session.recentChronicle(JOURNAL_PAGE);
@@ -66,11 +66,7 @@ describe('the journal of a town with two readers', () => {
   it('hands every reader the same chronicle page', async () => {
     // Arrange: three lines.
     const { session } = await stored();
-    await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [
-      chronicleAt(1),
-      chronicleAt(2),
-      chronicleAt(3),
-    ]);
+    await session.save(session.snapshot.world, [chronicleAt(1), chronicleAt(2), chronicleAt(3)]);
 
     // Act: one reader reads, then the other, then the first again.
     const first = await session.recentChronicle(JOURNAL_PAGE);
@@ -90,7 +86,6 @@ describe('the journal of a town with two readers', () => {
     await store.withWorld(async (session) => {
       await session.save(
         session.snapshot.world,
-        session.snapshot.hourStartedAt,
         Array.from({ length: JOURNAL_PAGE + 5 }, (_, index) => mailAt(index + 1)),
         ACCOUNTS,
       );

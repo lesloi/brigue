@@ -119,11 +119,11 @@ describe('the town store', () => {
     const store = new MemoryWorldStore(() => now);
     const created = await store.createTown('A', town(1), now);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 60));
+      await session.save(session.snapshot.world, hours(1, 60));
     }, created.id);
     now = new Date('2026-01-09T00:00:00.000Z');
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(61, 120));
+      await session.save(session.snapshot.world, hours(61, 120));
     }, created.id);
 
     // Act: the cut is seven days after the first batch, before the second.
@@ -140,7 +140,7 @@ describe('the town store', () => {
     const store = new MemoryWorldStore(() => written);
     const created = await store.createTown('A', town(1), written);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, hours(1, 10));
+      await session.save(session.snapshot.world, hours(1, 10));
     }, created.id);
 
     // Act: the cut is the write instant itself.
@@ -157,11 +157,11 @@ describe('the town store', () => {
     const store = new MemoryWorldStore(() => now);
     const created = await store.createTown('A', town(1), now);
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 10), ACCOUNTS);
+      await session.save(session.snapshot.world, mailHours(1, 10), ACCOUNTS);
     }, created.id);
     now = new Date('2026-01-09T00:00:00.000Z');
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(11, 20), ACCOUNTS);
+      await session.save(session.snapshot.world, mailHours(11, 20), ACCOUNTS);
     }, created.id);
 
     // Act: the chronicle cut falls between the batches, the mail cut before both.
@@ -184,7 +184,7 @@ describe('the town store', () => {
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5), ACCOUNTS);
+      await session.save(session.snapshot.world, mailHours(1, 5), ACCOUNTS);
     }, created.id);
     const before = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     const target = before.messages[2];
@@ -214,7 +214,7 @@ describe('the town store', () => {
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5), ACCOUNTS);
+      await session.save(session.snapshot.world, mailHours(1, 5), ACCOUNTS);
     }, created.id);
 
     // Act
@@ -230,7 +230,7 @@ describe('the town store', () => {
     const store = new MemoryWorldStore();
     const created = await store.createTown('A', town(1), new Date());
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, mailHours(1, 5), ACCOUNTS);
+      await session.save(session.snapshot.world, mailHours(1, 5), ACCOUNTS);
     }, created.id);
     const page = await store.withWorld(async (session) => session.recentMessages(100, PLAYER), created.id);
     const target = page.messages[2];
@@ -261,7 +261,7 @@ describe('the town store', () => {
       reason: 'unknown_action',
     };
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, session.snapshot.hourStartedAt, [refused]);
+      await session.save(session.snapshot.world, [refused]);
     }, created.id);
 
     // Act
@@ -280,7 +280,6 @@ describe('the town store', () => {
     await store.withWorld(async (session) => {
       await session.save(
         session.snapshot.world,
-        session.snapshot.hourStartedAt,
         [repaidAt(1), { ...repaidAt(2), audience: { personId: CARON }, personId: CARON }],
         ACCOUNTS,
       );

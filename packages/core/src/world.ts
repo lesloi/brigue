@@ -449,16 +449,11 @@ export const NAME_PRICE = {
 export const AI_DYNASTY_NAMES: readonly string[] = ['Caron', 'Fournier', 'Charpentier'];
 
 /**
- * Wall-clock policy, not a simulation rule: how far a returning player is caught
- * up, and when a person stops being played. Read by the server; changing it must
- * not refuse an existing world.
+ * Wall-clock policy, not a simulation rule: what a pass keeps in the journal and
+ * when a person stops being played. Read by the server; changing it must not
+ * refuse an existing world.
  */
 export const PACING = {
-  // The scheduler plays one hour per pass. Thirty days are 720 hours, and the
-  // read path catches up at most that far before the wall clock jumps: the
-  // backlog it cannot replay is not simulated, so the town only counts the
-  // hours it lived.
-  maxCatchUpHours: 744,
   // Seven real days: the chronicle keeps what a reader back after a silence
   // could still want, and the cut follows the wall clock. A scheduler stopped
   // longer than this loses the days before the stop. Calibration, not a rule.

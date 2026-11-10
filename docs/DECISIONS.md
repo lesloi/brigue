@@ -192,20 +192,26 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   advance the world once an hour and write the result, sweeping everything that fell due since the
   last pass in chronological order: the town lives while nobody looks, and a read is a plain read.
   The hour is the clock, so what takes less than one is rounded up, and the screen says the hour
-  something ends, never the minute. Catching up on read gave the first player back the whole bill
-  — a burst of weeks under the row lock, a cap that skipped the rest, and a town with no history
-  while no one was reading it. The price is a component to watch: a stopped scheduler leaves every screen
-  healthy and the world frozen, so the age of the world is what an operator alerts on. Catch-up
-  stays as the backstop for a missed run: a read advances the town only when it is more than an
-  hour behind — that is, when the scheduler is down — so it writes nothing the rest of the time.
+  something ends, never the minute. The hour is not stored: `world_started_at` is, and the hour is
+  the whole hours elapsed since it, so the data can only be behind the clock, never ahead of it.
+  A visit runs the same pass over every town — the clock is the world's, and a reader cannot
+  advance its own town alone — so an hour is played in the pass, whoever calls it.
+  A server stopped a week plays that week at the next pass: no cap, because those hours were lived
+  in real time and skipping them would leave the town lying about its own history.
+  The price is a component to watch: a stopped scheduler leaves every screen
+  healthy and the world frozen, so the age of the world is what an operator alerts on.
   The rate, how many real hours a year lasts, lives in `PACING`, read by the server, never in the
-  world. Revisit if the scheduler proves more fragile than the read path it replaced.
+  world. Revisit if a pass ever proves too long to run in one go.
 
-- **One writer per world.** The scheduler and the backstop both write the same town, so two
-  passes could each advance it and lose one of them. The world's `hour` row in `settings` is
-  locked for the duration (`SELECT … FOR UPDATE`) whichever way the write comes, and that lock is
-  what keeps the two writers apart — and what serialises a save across every town, since there is
-  one clock for the world. An action's id is the row's own sequence, and that id is the order in
+- **One writer per world.** The scheduler and a visit both write the same town, so two
+  passes could each advance it and lose one of them. A pass holds a world-level lock for its whole
+  duration — one row of `settings` locked in every town's transaction would not span the towns —
+  and only then reads the clock, so the second pass finds the hours already played. Inside a pass,
+  each town's transaction holds the `scheduler_last_run_at` row (`SELECT … FOR UPDATE`), which is
+  what keeps a reader's write and a pass's write of the same town apart. The watermark itself
+  moves once, at the end of a pass that played an hour, and never backwards: a town's save says
+  nothing about the other towns, and a reader must never label rows with an hour they have not
+  lived. An action's id is the row's own sequence, and that id is the order in
   which actions were received, because insertion order is the only contract there is. The client
   sends
   no id: a request replayed after a lost response is a second action, and the town accepts it.
@@ -285,13 +291,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The core is pure, deterministic and clock-free.** The caller passes both the instant
   (`until`) and the random stream (`random`): the core never reads the wall clock or a global
-  random source itself. One seed in, one world out: the town is built from the seed, and the
-  first person is added when its player joins with the trade that player chose. Two towns from
-  the same seed can therefore start in different chains, and a seed alone does not rebuild a
-  playable town. A stored world carries the trade in its workshops. The seed is the world's
-  identity, not a generator cursor: the world has no `rng`, and randomness comes from the caller.
-  A test replays two hundred advances with the same stream and asserts the same state hash, and
-  another fails if `Math.random` or `Date.now` is written inside `packages/core`. Everything else
+  random source itself. The world is built whole, with no seed, because nothing draws at
+  creation; the first person is added when its player joins with the trade that player chose, so
+  a stored world carries the trade in its workshops. There is no `rng` cursor either: every draw
+  comes from the stream the caller passes. A test replays two hundred advances with the same
+  stream and asserts the same state hash, and another fails if `Math.random` or `Date.now` is
+  written inside `packages/core`. Everything else
   depends on this: it is how a bug is reproduced, how a balance change is measured, and why the
   server can catch a world up at all.
 
@@ -472,13 +477,15 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 - **The towns are the database: tables, not a document.** One database holds several towns, and
   every town table carries its `town_id` — people, seats, workshops, stock, laws, engagements,
   campaigns and the market are a town itself. What belongs to no person and to no town lives in
-  the world's `settings`, one text key/value row per variable: `hour`, `hour_started_at`,
-  `format_version`, `ruleset_version` and `seed`. There is one world, one clock and several
-  towns: every town shares that hour and its year, and the `hour` row is what the writer locks.
-  The store parses the numbers and the instant from the text. The first town writes the settings
-  from the world it is given; a later town reads them, so founding a town cannot reset the clock
-  or the seed. `towns` keeps only `id`, `name` and `created_at`; `year` is derived from `hour`,
-  and there is no per-town state row and no generator cursor.
+  the world's `settings`, one text key/value row per variable: `world_started_at`,
+  `scheduler_last_run_at`, `format_version` and `ruleset_version`. There is one world, one clock
+  and several towns: `world_started_at` says what hour it is and `scheduler_last_run_at` says how
+  far the rows have been played, so the gap between them is what the next pass owes, and the
+  `scheduler_last_run_at` row is what the writer locks. The store parses the numbers and the
+  instants from the text. The first town writes the settings; a later town reads them, so founding
+  a town cannot reset the clock. `towns` keeps only `id`, `name` and `created_at`; `year` is
+  derived from `hour` and `hour` from `world_started_at`, and there is no per-town state row and
+  no generator cursor.
   The simulation still reads and writes a town whole, but the storage keeps it in rows, so a screen
   can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back
@@ -495,8 +502,8 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   towns in one database prove too rigid for tests.
 
 - **The state hash the API returns is the projection, not the world.** The world hash covers the
-  seed and the whole town; published, it would hand a client the world's identity and its state.
-  Two reads with no time passing still agree, because they return the same projection.
+  whole town; published, it would hand a client the world's state, hour by hour, before its people
+  live it. Two reads with no time passing still agree, because they return the same projection.
 
 ## Interface
 

@@ -98,7 +98,7 @@ async function renameInTown(
   name: string,
 ): Promise<RenameOutcome> {
   return context.deps.worlds.withWorld(async (session) => {
-    const { world, hourStartedAt } = session.snapshot;
+    const { world } = session.snapshot;
     sessionWorld(session);
 
     const person = world.people[bound.personId];
@@ -130,7 +130,7 @@ async function renameInTown(
     renamed.treasuryCents -= NAME_PRICE.renameCents;
     renamed.name = renamePerson(renamed.name, before, name);
     // A name is identity, not a journal line: the Maison screen carries it.
-    await session.save(next, hourStartedAt, []);
+    await session.save(next, []);
 
     return { kind: 'renamed' as const, name };
   }, bound.townId);

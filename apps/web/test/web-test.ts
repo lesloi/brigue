@@ -346,17 +346,15 @@ describe('lawAgeText', () => {
 
 describe('catchUpText', () => {
   it('agrees with a single hour', () => {
-    expect(catchUpText({ hours: 1, skipped: 0 })).toBe('1 heure vécue depuis votre dernière visite.');
-    expect(catchUpText({ hours: 1, skipped: 1 })).toContain('1 heure sautée');
+    expect(catchUpText({ hours: 1 })).toBe('1 heure vécue depuis votre dernière visite.');
   });
 
   it('pluralises above one', () => {
-    expect(catchUpText({ hours: 2, skipped: 0 })).toBe('2 heures vécues depuis votre dernière visite.');
-    expect(catchUpText({ hours: 0, skipped: 2 })).toContain('2 heures sautées');
+    expect(catchUpText({ hours: 2 })).toBe('2 heures vécues depuis votre dernière visite.');
   });
 
   it('says nothing when the visit owes nothing', () => {
-    expect(catchUpText({ hours: 0, skipped: 0 })).toBeNull();
+    expect(catchUpText({ hours: 0 })).toBeNull();
   });
 });
 

@@ -12,7 +12,7 @@ import {
   type Trade,
 } from '@brigue/core';
 
-import { currentHourOf, sessionWorld, type NewStoredAction, type StoredAction } from '../../town/worlds.ts';
+import { hourAt, sessionWorld, type NewStoredAction, type StoredAction } from '../../town/worlds.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 
@@ -104,7 +104,7 @@ export async function cancelAction(
   }
 
   const outcome = await context.deps.worlds.withWorld(async (session) => {
-    const { world, hourStartedAt } = session.snapshot;
+    const { world, worldStartedAt } = session.snapshot;
     sessionWorld(session);
 
     const stored = await session.findAction(actionId);
@@ -113,10 +113,10 @@ export async function cancelAction(
       return { kind: 'unknown' as const };
     }
     if (stored.playsAt < world.hour) {
-      return { kind: 'stale' as const, currentHour: currentHourOf(world, hourStartedAt, at) };
+      return { kind: 'stale' as const, currentHour: hourAt(worldStartedAt, at) };
     }
 
-    const currentHour = currentHourOf(world, hourStartedAt, at);
+    const currentHour = hourAt(worldStartedAt, at);
     if (stored.playsAt > currentHour + QUEUE_AHEAD_HOURS) {
       return { kind: 'future' as const, currentHour };
     }
@@ -178,12 +178,12 @@ export async function appendAction(
 
   const outcome: ActionOutcome = await context.deps.worlds.withWorld(async (session) => {
     sessionWorld(session);
-    const { world, hourStartedAt } = session.snapshot;
+    const { world, worldStartedAt } = session.snapshot;
 
     // The action names a hour, not a person: the person is the session's.
     // A hour that already ticked can never be replayed, and the town clock
     // is the upper bound for a hour that has not begun yet.
-    const currentHour = currentHourOf(world, hourStartedAt, at);
+    const currentHour = hourAt(worldStartedAt, at);
 
     if (submission.hour < world.hour) {
       return { kind: 'stale' as const, currentHour };
