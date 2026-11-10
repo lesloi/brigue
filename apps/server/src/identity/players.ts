@@ -60,8 +60,12 @@ export interface PlayerStore {
   markDeletion(tokenHash: string, at: Date): Promise<void>;
   /** Cancels a scheduled erasure: the player came back. */
   cancelDeletion(tokenHash: string): Promise<void>;
-  /** Deletes the account (and its mail) whose person is gone. */
-  deletePerson(personId: number): Promise<void>;
+  /**
+   * Deletes the account and its mail; the person it holds goes with it, by the
+   * schema's cascade. Never called under a town's row lock: the cascade writes
+   * the person's row, which the lock covers.
+   */
+  deleteAccount(playerId: number): Promise<void>;
   /** Erases an account no person ever took: a join that failed after issuing it. */
   eraseAccount(tokenHash: string): Promise<void>;
   /**
@@ -152,9 +156,9 @@ export class MemoryPlayerStore implements PlayerStore {
     }
   }
 
-  async deletePerson(personId: number): Promise<void> {
+  async deleteAccount(playerId: number): Promise<void> {
     for (const [tokenHash, player] of this.players) {
-      if (player.personId === personId) {
+      if (player.playerId === playerId) {
         this.players.delete(tokenHash);
       }
     }

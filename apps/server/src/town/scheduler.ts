@@ -117,9 +117,15 @@ export async function playWorld(pass: WorldPass, at: Date): Promise<void> {
         const players = await pass.players.listByTown(town.id);
         const presence = applyPresence(world, players, at.getTime());
         const accounts = accountsOf(players);
+        // The accounts to erase once the town is written: deleting one cascades
+        // the person's row, which the lock held here covers.
+        const erasable = new Map<number, number>();
 
         for (const personId of presence.deletedPersonIds) {
-          await pass.players.deletePerson(personId);
+          const account = accountOfPerson(players, personId);
+          if (account !== undefined) {
+            erasable.set(personId, account);
+          }
           pass.logger.warn('world.person_deleted', { townId: town.id, personId });
         }
 
@@ -134,15 +140,16 @@ export async function playWorld(pass: WorldPass, at: Date): Promise<void> {
         for (const personId of persons) {
           removePerson(presence.world, personId);
           await session.cancelPerson(personId);
-          // The person row still exists here: erase the account before the
-          // save removes the row it is found through.
-          await pass.players.deletePerson(personId);
+          const account = accountOfPerson(players, personId);
+          if (account !== undefined) {
+            erasable.set(personId, account);
+          }
         }
 
         if (humanPersonOf(presence.world) === undefined) {
           await session.clear();
           pass.logger.info('town.deleted', { townId: town.id });
-          return { expired, hour: null };
+          return { expired, hour: null, erasable: [...erasable.values()] };
         }
 
         // The town plays from its own watermark: a visit to another town, or a
@@ -156,8 +163,13 @@ export async function playWorld(pass: WorldPass, at: Date): Promise<void> {
           pass.logger.info('town.advanced', { townId: town.id, hours: due.hours });
         }
 
-        return { expired, hour: due.world.hour };
+        return { expired, hour: due.world.hour, erasable: [...erasable.values()] };
       }, town.id);
+
+      // Outside the town's lock: the account takes its person with it.
+      for (const playerId of outcome.erasable) {
+        await pass.players.deleteAccount(playerId);
+      }
 
       for (const personId of new Set(outcome.expired.map((player) => player.personId))) {
         pass.logger.info('player.deleted', { townId: town.id, personId });
@@ -249,6 +261,11 @@ async function eraseUnboundAccounts(players: PlayerStore, at: Date, logger: Logg
       detail: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+/** The account a person answers to, if it has one. */
+function accountOfPerson(players: readonly Player[], personId: number): number | undefined {
+  return players.find((player) => player.personId === personId)?.playerId;
 }
 
 /** The account that reads each person's mail, for the store's message writer. */

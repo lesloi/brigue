@@ -626,8 +626,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // carries its type and its payload. The table holds both shapes and refuses
     // neither: the writer is what keeps them apart.
     await expect(insert(', body, author_player_id', ['Bonjour', playerId + 1])).resolves.toBeDefined();
-    // The type is a code from the core's list, not a word.
-    await expect(insert(', type, payload', [1, '{}'])).resolves.toBeDefined();
+    await expect(insert(', type, payload', ['title_open', '{}'])).resolves.toBeDefined();
   });
 
   it('rolls the world and the actions back when the callback throws', async () => {

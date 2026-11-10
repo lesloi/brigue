@@ -100,50 +100,6 @@ type EventBody =
       votes: Record<PersonId, number>;
     };
 
-/**
- * Every event type, in a fixed order. The code of a type is its one-based place
- * in this list, and it is what the journal rows carry: the list may grow, but a
- * place already written is never renumbered.
- */
-export const EVENT_TYPES = [
-  'action.refused',
-  'market.bought',
-  'market.price_changed',
-  'market.sold',
-  'workshop.produced',
-  'workshop.idle',
-  'workshop.built',
-  'workshop.destroyed',
-  'workshop.upgraded',
-  'person.title_bought',
-  'person.residence_bought',
-  'person.upkeep_paid',
-  'person.penniless',
-  'person.debt_repaid',
-  'council.campaigned',
-  'council.scrutiny_held',
-  'council.election_held',
-  'council.election_result',
-] as const;
-
-export type EventType = (typeof EVENT_TYPES)[number];
-
-export function eventTypeCode(type: EventType): number {
-  const code = EVENT_TYPES.indexOf(type) + 1;
-
-  // A type the list does not know cannot be written: a zero row would be
-  // unreadable, and the journal reads only codes the list holds.
-  if (code === 0) {
-    throw new Error(`the event type "${type}" is not in EVENT_TYPES`);
-  }
-
-  return code;
-}
-
-export function eventTypeOfCode(code: number): EventType | undefined {
-  return EVENT_TYPES[code - 1];
-}
-
 /** An event as a step builds it: the hour is stamped by `advance`. */
 export type EventDraft = EventBody & { audience: Audience };
 

@@ -67,8 +67,11 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
 
     await seedPerson(9001, stored.playerId);
     expect((await store.findByTokenHash(tokenHash))?.personId).toBe(9001);
-    await store.deletePerson(9001);
+    await store.deleteAccount(stored.playerId);
     expect(await store.findByTokenHash(tokenHash)).toBeNull();
+    // The person goes with the account: the key is the whole of the deletion.
+    const people = await pool.query('SELECT count(*)::int AS count FROM people WHERE id = 9001');
+    expect(people.rows[0]?.count).toBe(0);
   });
 
   it('binds an account a reset left without a person, and only once', async () => {

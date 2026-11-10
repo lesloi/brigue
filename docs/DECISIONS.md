@@ -170,7 +170,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
 
 - **The token is bound to a person, and that binding lives outside the world.** A `players` table
   holds the token hash, the family name, a revocation date and the last visit; the person points
-  back at the account through `people.player_id`. The binding
+  back at the account through `people.player_id`, a foreign key that cascades, so erasing an
+  account is one `DELETE` and the person, its workshops, its stock, its candidacies, its actions
+  and its seat go with it. The binding
   is not part of the world because the world is versioned, replayed and hashed; a login is not a
   game rule, and a format change must never be able to lock a player out. The last visit lives
   there for the same reason: the thirty-day deletion is an edge rule, not a simulation rule, and

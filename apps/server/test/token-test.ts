@@ -75,7 +75,7 @@ describe('the binding', () => {
     const { token, player } = await issueToken(store, 'Leclerc');
     await store.rebind(player.tokenHash, 1, 901, new Date());
 
-    await store.deletePerson(901);
+    await store.deleteAccount(player.playerId);
 
     expect(await authenticate(store, token)).toBeNull();
   });
@@ -87,7 +87,7 @@ describe('the binding', () => {
     const second = await issueToken(store, 'Caron');
 
     await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).rejects.toThrow();
-    await store.deletePerson(901);
+    await store.deleteAccount(first.player.playerId);
 
     await expect(store.rebind(second.player.tokenHash, 1, 901, new Date())).resolves.toBeDefined();
   });

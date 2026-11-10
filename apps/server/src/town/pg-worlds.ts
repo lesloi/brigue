@@ -1,8 +1,6 @@
 import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import {
-  eventTypeCode,
-  eventTypeOfCode,
   goodCode,
   goodOfCode,
   residenceOf,
@@ -12,7 +10,7 @@ import {
   tradeCode,
   tradeOfCode,
 } from '@brigue/core';
-import type { Action, Event, EventType, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
+import type { Action, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
   HOUR_MS,
   JOURNAL_PAGE,
@@ -887,7 +885,7 @@ async function appendChronicle(client: PoolClient, townId: number, events: Event
     events.map((event) => {
       const { audience, at, type, ...body } = event;
 
-      return { town_id: townId, at, audience, type: eventTypeCode(type), payload: json(body) };
+      return { town_id: townId, at, audience, type, payload: json(body) };
     }),
   );
 }
@@ -911,7 +909,7 @@ async function appendMessages(
       return [];
     }
 
-    return [{ player_id: playerId, type: eventTypeCode(event.type), payload: json(messageBody(event)) }];
+    return [{ player_id: playerId, type: event.type, payload: json(messageBody(event)) }];
   });
 
   await insertRows(client, 'messages', ['player_id', 'type', 'payload'], rows);
@@ -1042,26 +1040,26 @@ interface ChronicleRow {
   id: string | number;
   at: number;
   audience: string;
-  type: number;
+  type: string;
   payload: Record<string, unknown>;
 }
 
 interface MessageRow {
   id: string | number;
   player_id: string;
-  type: number;
+  type: string;
   payload: Record<string, unknown>;
   read: boolean;
 }
 
 function rowToChronicleEvent(row: ChronicleRow): Event {
-  return { ...row.payload, type: requiredEventType(row.type), audience: 'town', at: row.at } as Event;
+  return { ...row.payload, type: row.type, audience: 'town', at: row.at } as Event;
 }
 
 function rowToMessage(row: MessageRow): Event {
   // A message has no town hour: the page orders by id, the prune by the write
   // instant, and no line reads `at`.
-  return { ...row.payload, type: requiredEventType(row.type), audience: { personId: 0 }, at: 0 } as Event;
+  return { ...row.payload, type: row.type, audience: { personId: 0 }, at: 0 } as Event;
 }
 
 interface ActionRow {
@@ -1097,16 +1095,6 @@ function isTownNameViolation(error: unknown): boolean {
   const constraint = (error as { constraint?: unknown }).constraint;
 
   return constraint === 'towns_name_key';
-}
-
-/** A stored event type back into its word; an unknown code is a row the code does not know. */
-function requiredEventType(code: number): EventType {
-  const type = eventTypeOfCode(code);
-  if (type === undefined) {
-    throw new Error(`the journal carries the event type ${code}, which the code does not know`);
-  }
-
-  return type;
 }
 
 /** A stored code back into the world's word: a code the list does not know is a bug, not a guess. */

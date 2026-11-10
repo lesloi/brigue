@@ -222,7 +222,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
   it('refuses accounts of an old shape, which cannot keep their identity', async () => {
     // Arrange: the accounts before the stable player id, with one row. Carrying
     // it would either lose the king's link or invent an id.
-    await pool.query('DROP TABLE players');
+    await pool.query('DROP TABLE players CASCADE');
     await pool.query(
       `CREATE TABLE players (
          token_hash text PRIMARY KEY,

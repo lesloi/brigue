@@ -134,18 +134,10 @@ export class PgPlayerStore implements PlayerStore {
     await this.pool.query('UPDATE players SET delete_after = NULL WHERE token_hash = $1', [tokenHash]);
   }
 
-  async deletePerson(personId: number): Promise<void> {
-    // The account is found through the person while the row still exists; the
-    // mail follows the account.
-    const { rows } = await this.pool.query<{ player_id: string | null }>(`SELECT player_id FROM people WHERE id = $1`, [
-      personId,
-    ]);
-    const playerId = rows[0]?.player_id;
-
-    if (playerId === null || playerId === undefined) {
-      return;
-    }
-
+  async deleteAccount(playerId: number): Promise<void> {
+    // The person follows the account through the foreign key, and its workshops,
+    // stock, candidacies, actions and seats follow the person. The mail has no
+    // key of its own, so it goes first.
     await this.pool.query('DELETE FROM messages WHERE player_id = $1', [playerId]);
     await this.pool.query('DELETE FROM players WHERE player_id = $1', [playerId]);
   }

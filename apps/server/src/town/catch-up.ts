@@ -80,23 +80,26 @@ async function readTown(
   playerId: number,
   at: Date,
 ): Promise<TownOutcome> {
+  let erasable: number[];
+
   try {
-    return await access.worlds.withWorld(async (session) => {
+    const outcome = await access.worlds.withWorld(async (session) => {
       const world = sessionWorld(session);
-      const { presence, accounts } = await synchronisePresence(access, townId, world, at);
+      const presence = await synchronisePresence(access, townId, world, at);
+      erasable = presence.erasable;
 
       // The last human person went with the silence: the town goes too, and the
       // next join starts a new one. The accounts and the sealed seasons stay.
-      if (humanPersonOf(presence.world) === undefined) {
+      if (humanPersonOf(presence.presence.world) === undefined) {
         await session.clear();
         return { kind: 'gone' as const };
       }
 
-      if (presence.world.people[personId] === undefined) {
+      if (presence.presence.world.people[personId] === undefined) {
         // The person is gone, but the town remains: keep the deletion and tell
         // the reader their session no longer exists.
-        if (presence.deletedPersonIds.includes(personId)) {
-          await session.save(presence.world, [], accounts);
+        if (presence.presence.deletedPersonIds.includes(personId)) {
+          await session.save(presence.presence.world, [], presence.accounts);
         }
 
         return { kind: 'gone' as const };
@@ -105,10 +108,16 @@ async function readTown(
       // The town is played inside the same lock as the read: two writers of one
       // town never play the same hour twice.
       const target = hourAt(session.snapshot.worldStartedAt, at);
-      const due = await playDue(session, presence.world, target, presence.dormant, access.random ?? Math.random);
+      const due = await playDue(
+        session,
+        presence.presence.world,
+        target,
+        presence.presence.dormant,
+        access.random ?? Math.random,
+      );
 
-      if (due.hours > 0 || presence.deletedPersonIds.length > 0) {
-        await session.save(due.world, due.events, accounts);
+      if (due.hours > 0 || presence.presence.deletedPersonIds.length > 0) {
+        await session.save(due.world, due.events, presence.accounts);
       }
 
       const mail = await session.recentMessages(JOURNAL_PAGE, playerId);
@@ -125,6 +134,13 @@ async function readTown(
         unread: mail.unread,
       };
     }, townId);
+
+    // Outside the town's lock: the account takes its person with it.
+    for (const account of erasable!) {
+      await access.players.deleteAccount(account);
+    }
+
+    return outcome;
   } catch (error) {
     // The town was deleted between the token and the lock: it has no human
     // left, and the next join starts a new one.
@@ -141,14 +157,18 @@ async function synchronisePresence(
   townId: number,
   world: World,
   at: Date,
-): Promise<{ presence: Presence; accounts: Map<number, number> }> {
+): Promise<{ presence: Presence; accounts: Map<number, number>; erasable: number[] }> {
   const players = await access.players.listByTown(townId);
   const presence = applyPresence(world, players, at.getTime());
+  const erasable: number[] = [];
 
   for (const personId of presence.deletedPersonIds) {
-    await access.players.deletePerson(personId);
+    const player = players.find((candidate) => candidate.personId === personId);
+    if (player !== undefined) {
+      erasable.push(player.playerId);
+    }
     access.logger.warn('world.person_deleted', { townId, personId });
   }
 
-  return { presence, accounts: accountsOf(players) };
+  return { presence, accounts: accountsOf(players), erasable };
 }

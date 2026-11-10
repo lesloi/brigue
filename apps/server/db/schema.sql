@@ -80,7 +80,9 @@ CREATE TABLE settings (
 CREATE TABLE people (
   id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  player_id bigint,
+  -- The account holds the person: deleting the account deletes it, and the
+  -- schema's own cascades take its workshops, stock, seats and mail.
+  player_id bigint REFERENCES players (player_id) ON DELETE CASCADE,
   person_name text NOT NULL,
   title smallint NOT NULL DEFAULT 1,
   residence_level integer NOT NULL DEFAULT 1,
@@ -164,9 +166,7 @@ CREATE TABLE events (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   at integer NOT NULL,
   audience text NOT NULL,
-  -- The place of the type in the core's `EVENT_TYPES`: a number a code list
-  -- pins, so a rename never rewrites a line already written.
-  type smallint NOT NULL,
+  type text NOT NULL,
   payload jsonb NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
@@ -182,8 +182,8 @@ CREATE TABLE messages (
   id bigserial PRIMARY KEY,
   player_id bigint NOT NULL,
   -- A notice carries its kind and the fields of its sentence; prose carries
-  -- neither and puts its text in `body`. The kind is the same code as an event's.
-  type smallint,
+  -- neither and puts its text in `body`. The kind is the same word as an event's.
+  type text,
   payload jsonb,
   body text,
   -- Null when the town wrote it, never set on a notice. Filled from the

@@ -137,8 +137,8 @@ describe('the token endpoint', () => {
 
   it('answers a token whose account is gone exactly like an unknown one: 401 and nothing else', async () => {
     const harness = await start();
-    const { token } = await boundAccount(harness);
-    await harness.store.deletePerson(LECLERC);
+    const { token, player } = await boundAccount(harness);
+    await harness.store.deleteAccount(player.playerId);
 
     const unknown = await login(harness, `bgk_${'x'.repeat(43)}`);
     const revoked = await login(harness, token);
@@ -742,11 +742,11 @@ describe('a token a reset left without a person', () => {
 describe('the logs', () => {
   it('never contain a token, whether it was accepted, unknown or erased', async () => {
     const harness = await start();
-    const { token } = await boundAccount(harness);
+    const { token, player } = await boundAccount(harness);
 
     await login(harness, token);
     await login(harness, `bgk_${'x'.repeat(43)}`);
-    await harness.store.deletePerson(LECLERC);
+    await harness.store.deleteAccount(player.playerId);
     await login(harness, token);
 
     const lines = harness.logs.join('\n');

@@ -1,7 +1,6 @@
 export { canonicalJson } from './canonical.ts';
 export { isVisibleTo, visibleTo } from './events.ts';
-export type { Action, Audience, Event, EventDraft, EventType, RefusalReason } from './events.ts';
-export { EVENT_TYPES, eventTypeCode, eventTypeOfCode } from './events.ts';
+export type { Action, Audience, Event, EventDraft, RefusalReason } from './events.ts';
 export { hashJson, stateHash } from './hash.ts';
 export {
   DYNASTY_NAMES,
