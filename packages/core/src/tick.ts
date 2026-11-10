@@ -2,6 +2,7 @@ import type { Action, Event, EventDraft, RefusalReason } from './events.ts';
 import {
   FORMAT_VERSION,
   GOODS,
+  outputOf,
   HOURS_PER_YEAR,
   nextTitle,
   PRICE_HISTORY_BELLS,
@@ -187,8 +188,7 @@ function step(
     next.campaigns = {};
   }
 
-  // The scrutiny closes the year: every seat is up, once a day, and everyone
-  // present ages a year.
+  // The scrutiny closes the year: every seat is up, once a day.
   if (next.hour % HOURS_PER_YEAR === 0) {
     holdScrutiny(next, town, dormant, random);
   }
@@ -431,7 +431,7 @@ function applyAction(
         audience: { personId: person.id },
         personId: person.id,
         workshopId: workshop.id,
-        good: workshop.good,
+        good: outputOf(workshop.trade),
       });
       return;
     }
@@ -634,20 +634,15 @@ function aiPeopleBuy(world: World, flow: Record<GoodId, number>, dormant: Readon
     // A workshop under improvement buys nothing: it will not eat until its
     // site is closed, and an AI that stocked for it would overflow the loft.
     for (const workshop of openWorkshops(world, person)) {
-      const recipe = RULES.recipes[workshop.good];
-
-      if (recipe === null) {
-        continue;
-      }
-
+      const chain = TRADE_CHAINS[workshop.trade];
       const wanted = workshop.level * RULES.outputPerLevel;
-      const shortfall = wanted * recipe.perUnit - (person.stock[recipe.input] ?? 0);
+      const shortfall = wanted * RULES.inputPerOutput[workshop.trade] - (person.stock[chain.input] ?? 0);
 
       if (shortfall <= 0) {
         continue;
       }
 
-      const priceCents = world.market[recipe.input];
+      const priceCents = world.market[chain.input];
       const affordable = Math.floor(person.treasuryCents / priceCents);
       const room = stockCapacityUnits(person) - stockUnits(person);
       const units = Math.min(shortfall, affordable, room);
@@ -657,8 +652,8 @@ function aiPeopleBuy(world: World, flow: Record<GoodId, number>, dormant: Readon
       }
 
       person.treasuryCents -= units * priceCents;
-      person.stock[recipe.input] = (person.stock[recipe.input] ?? 0) + units;
-      flow[recipe.input] -= units;
+      person.stock[chain.input] = (person.stock[chain.input] ?? 0) + units;
+      flow[chain.input] -= units;
     }
   }
 }
@@ -714,46 +709,27 @@ function runWorkshops(world: World, events: EventDraft[], dormant: ReadonlySet<P
     // the upkeep it does not pay is the cost of the hours it takes.
     for (const workshop of openWorkshops(world, person)) {
       const wanted = workshop.level * RULES.outputPerLevel;
-      const recipe = RULES.recipes[workshop.good];
-      const available = recipe ? (person.stock[recipe.input] ?? 0) : Number.POSITIVE_INFINITY;
-      const makeable = recipe ? Math.min(wanted, Math.floor(available / recipe.perUnit)) : wanted;
+      const chain = TRADE_CHAINS[workshop.trade];
+      const perUnit = RULES.inputPerOutput[workshop.trade];
+      const available = person.stock[chain.input] ?? 0;
+      const made = Math.min(wanted, Math.floor(available / perUnit));
 
-      if (makeable === 0) {
+      if (made === 0) {
         continue;
       }
 
-      // A recipe moves units from one good to another; a raw workshop creates
-      // them out of nothing. Both must stop at the warehouse's cap, and the
-      // units that do not fit are refused with an event, never dropped.
-      const netPerUnit = 1 - (recipe?.perUnit ?? 0);
-      const room = stockCapacityUnits(person) - stockUnits(person);
-      const units = netPerUnit <= 0 ? makeable : Math.min(makeable, Math.floor(Math.max(0, room) / netPerUnit));
-
-      if (units < makeable) {
-        events.push({
-          type: 'workshop.overflow',
-          audience: { personId: person.id },
-          personId: person.id,
-          good: workshop.good,
-          refusedUnits: makeable - units,
-        });
-      }
-      if (units === 0) {
-        continue;
-      }
-
-      if (recipe) {
-        const left = available - units * recipe.perUnit;
-        if (left === 0) {
-          delete person.stock[recipe.input];
-        } else {
-          person.stock[recipe.input] = left;
-        }
+      // A unit of output costs at least a unit of input, so production never
+      // makes the loft fuller: the warehouse cap stops a purchase, not a loom.
+      const left = available - made * perUnit;
+      if (left === 0) {
+        delete person.stock[chain.input];
+      } else {
+        person.stock[chain.input] = left;
       }
 
       // Production credits the warehouse, never the purse: the sale is a
       // separate action, at the hour's price.
-      person.stock[workshop.good] = (person.stock[workshop.good] ?? 0) + units;
+      person.stock[chain.output] = (person.stock[chain.output] ?? 0) + made;
     }
   }
 }
@@ -898,7 +874,7 @@ function completeSite(world: World, site: Extract<Engagement, { kind: 'site' }>,
       }
       const workshop = {
         id: highestWorkshopSeq(world) + 1,
-        good: TRADE_CHAINS[site.trade].output,
+        trade: site.trade,
         level: RULES.builtWorkshopLevel,
       };
       person.workshops.push(workshop);
@@ -968,14 +944,6 @@ function highestWorkshopSeq(world: World): number {
 }
 
 function holdScrutiny(world: World, events: EventDraft[], dormant: ReadonlySet<PersonId>, random: () => number): void {
-  // Age belongs to the calendar: every living person takes a year at the
-  // scrutiny, whatever they did with it. The death roll is #7.
-  for (const person of Object.values(world.people)) {
-    if (person.alive) {
-      person.age += 1;
-    }
-  }
-
   const elections: EventDraft[] = [];
   // One person, one office: a person already elected during this scrutiny is
   // not a candidate for another seat on the same day. A town too small to fill

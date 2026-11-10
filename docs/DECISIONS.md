@@ -475,8 +475,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   restart every pod and turn one problem into two.
 
 - **The towns are the database: tables, not a document.** One database holds several towns, and
-  every town table carries its `town_id` — people, seats, workshops, stock, laws, engagements,
-  campaigns and the market are a town itself. What belongs to no person and to no town lives in
+  every town table carries its `town_id`, except the two that hang from a person — `workshops` and
+  `stock` name `person_id` and a town owns them through its people. People, seats, laws,
+  engagements, campaigns and the market are a town itself. What belongs to no person and to no town lives in
   the world's `settings`, one text key/value row per variable: `world_started_at`,
   `format_version` and `ruleset_version`. There is one world, one clock and several towns:
   `world_started_at` says what hour it is, for everyone, and the store parses the numbers and the
@@ -486,6 +487,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   town cannot reset the clock. `towns` keeps `id`, `name`, `created_at` and that watermark; `year`
   is derived from `hour` and `hour` from `world_started_at`, and there is no per-town state row and
   no generator cursor.
+  A word with a closed list is stored as the code of its place in that list, one based: `title` is
+  the rank in `TITLES` (1 is the roturier), `trade` the place in `TRADES`, `good` the place in
+  `GOODS`. A list may gain an entry; a code already written is never renumbered, because it sits in
+  rows a replay reads back. A seat's name and an event's type stay words: they are keys a query
+  matches, not attributes a rule reads.
   The simulation still reads and writes a town whole, but the storage keeps it in rows, so a screen
   can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back

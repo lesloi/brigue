@@ -27,7 +27,7 @@ import {
 } from '../src/format.ts';
 import { navigationFor, stateOf, tabFromHash } from '../src/tabs.ts';
 import { catchUpText } from '../src/views/greffe.tsx';
-import { countdownText, lawAgeText } from '../src/views/ville.tsx';
+import { countdownText } from '../src/views/ville.tsx';
 
 const NAMES: Record<PersonId, string> = {
   4: 'Leclerc',
@@ -215,25 +215,6 @@ describe('eventLine', () => {
     expect(line.text).toBe('Vous avez produit 4 draps.');
   });
 
-  it('reads an overflow as goods left out of a full warehouse', () => {
-    // Arrange
-    const event: Event = {
-      type: 'workshop.overflow',
-      audience: { personId: 4 },
-
-      at: 0,
-      personId: 4,
-      good: 'wool',
-      refusedUnits: 3,
-    };
-
-    // Act
-    const line = eventLine(event, 4, nameOf);
-
-    // Assert
-    expect(line.text).toBe('Vous : entrepôt plein, 3 laines en trop.');
-  });
-
   it('says when the scrutiny that counts a candidacy is held', () => {
     // Arrange: a candidacy carries the scrutiny it counts at, not a duration.
     const event: Event = {
@@ -333,14 +314,6 @@ describe('countdownText', () => {
 
   it('does not go negative', () => {
     expect(countdownText(new Date(start - 1_000).toISOString(), start)).toBe('cloche imminente');
-  });
-});
-
-describe('lawAgeText', () => {
-  it('says a law in hours from the town clock', () => {
-    expect(lawAgeText(12, 12)).toBe('cette heure');
-    expect(lawAgeText(12, 13)).toBe('il y a 1 heure');
-    expect(lawAgeText(9, 12)).toBe('il y a 3 heures');
   });
 });
 

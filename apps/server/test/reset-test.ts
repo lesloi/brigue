@@ -45,8 +45,8 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     const playerId = Number(playerRows[0]?.player_id);
     await pool.query(
-      `INSERT INTO people (town_id, player_id, ia, person_name, age, treasury_cents, debt_cents, favour, prestige, alive)
-       VALUES ($1, $2, false, 'Colin Leclerc', 20, 45000, 0, 50, 0, true)`,
+      `INSERT INTO people (town_id, player_id, ia, person_name, treasury_cents, debt_cents, favour, prestige, alive)
+       VALUES ($1, $2, false, 'Colin Leclerc', 45000, 0, 50, 0, true)`,
       [townId, playerId],
     );
     await pool.query(
@@ -56,7 +56,7 @@ describe.runIf(resetUrl !== '')('resetDatabase', () => {
     );
     await pool.query(
       `INSERT INTO settings (key, value)
-       VALUES ('format_version', '3'), ('ruleset_version', '5'), ('world_started_at', now()::text)`,
+       VALUES ('format_version', '4'), ('ruleset_version', '6'), ('world_started_at', now()::text)`,
     );
 
     return { tokenHash, townId, playerId };

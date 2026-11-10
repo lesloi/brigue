@@ -134,7 +134,7 @@ describe('the simulation core', () => {
       ...base.people[FOURNIER],
       id: 5,
       name: 'Jean Quint',
-      workshops: [{ id: 5, good: 'grain', level: 1 }],
+      workshops: [{ id: 5, trade: 'baker', level: 1 }],
       stock: {},
     };
 
@@ -164,18 +164,6 @@ describe('the simulation core', () => {
     expect(yearOf(almost.hour)).toBe(1401);
     expect(after.hour).toBe(HOURS_PER_YEAR + 1);
     expect(yearOf(after.hour)).toBe(1402);
-  });
-
-  it('advances a living person one year per twenty-four ticks', () => {
-    // Arrange: the first person enters at twenty.
-    const before = play(town(SEED), HOURS_PER_YEAR - 1).world;
-
-    // Act
-    const after = tick(before).world;
-
-    // Assert
-    expect(before.people[LECLERC].age).toBe(20);
-    expect(after.people[LECLERC].age).toBe(21);
   });
 
   it('seats a living person and refuses an unknown or dead one', () => {
@@ -318,7 +306,7 @@ describe('the simulation core', () => {
     const world = town(SEED);
     world.people[LECLERC].treasuryCents = 0;
     world.people[LECLERC].stock = {};
-    world.people[LECLERC].workshops = [{ id: 1, good: 'wool', level: 3 }];
+    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 3 }];
     const upkeep = 3 * RULES.upkeepPerWorkshopLevelCents;
 
     const { world: after, events } = tick(world);
@@ -362,9 +350,9 @@ describe('the simulation core', () => {
     // Arrange: the human holds the mayoralty, then goes dormant.
     const world = town(SEED);
     world.seats.maire = { personId: LECLERC };
-    // A workshop with no input, so any sale at all would be the dormant person
-    // running when it must not.
-    world.people[LECLERC].workshops = [{ id: 1, good: 'wool', level: 2 }];
+    // A workshop with no input in stock, so any sale at all would be the
+    // dormant person running when it must not.
+    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
     world.people[LECLERC].stock = {};
     const treasuryCents = world.people[LECLERC].treasuryCents;
 
@@ -394,7 +382,7 @@ describe('the simulation core', () => {
     const world = town(SEED);
     world.people[CARON].treasuryCents = 0;
     world.people[CARON].stock = {};
-    world.people[CARON].workshops = [{ id: 1, good: 'cloth', level: 2 }];
+    world.people[CARON].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
 
     // Act
     const { events } = tick(world);
@@ -422,7 +410,7 @@ describe('the simulation core', () => {
         ...base.people[FOURNIER],
         id: index,
         name: `Nom ${index}`,
-        workshops: [{ id: index, good: 'grain', level: 1 }],
+        workshops: [{ id: index, trade: 'baker', level: 1 }],
         stock: {},
       };
     }

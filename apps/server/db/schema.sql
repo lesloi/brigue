@@ -39,10 +39,11 @@ CREATE TABLE kings (
   elapsed_hours integer NOT NULL
 );
 
--- Every town table carries its `town_id` and the rows of a town are the town;
--- the world's clock lives in `settings`. One world, one clock, several towns:
--- every town counts its hours from the same origin, but each holds its own
--- watermark and owes its own hours, so a town that fell behind keeps them.
+-- A town table carries its `town_id`, except the two that hang from a person —
+-- `workshops` and `stock`, which a town owns through its people. The world's
+-- clock lives in `settings`. One world, one clock, several towns: every town
+-- counts its hours from the same origin, but each holds its own watermark and
+-- owes its own hours, so a town that fell behind keeps them.
 
 -- A name may come back after a reset; an id never does, so a dead town's
 -- accounts cannot point at a new one.
@@ -74,14 +75,17 @@ CREATE TABLE settings (
 -- prestige, the degree, the residence and the workshops are theirs. A human
 -- person points at the account that controls it; an AI person points at nobody
 -- and carries `ia = true`. The family name is not here: it is the account's.
+--
+-- The codes a row carries are one-based places in a list the core writes
+-- (`TITLES`, `GOODS`, `TRADES`), so `title = 1` is the roturier and `title = 12`
+-- the prince. A list may gain an entry; an existing code is never renumbered.
 CREATE TABLE people (
   id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   player_id bigint,
   ia boolean NOT NULL,
   person_name text NOT NULL,
-  age integer NOT NULL,
-  title text NOT NULL DEFAULT 'roturier',
+  title smallint NOT NULL DEFAULT 1,
   residence_level integer NOT NULL DEFAULT 1,
   treasury_cents integer NOT NULL,
   debt_cents integer NOT NULL,
@@ -96,22 +100,25 @@ CREATE INDEX people_town ON people (town_id);
 
 -- The world holds workshops in a person, and the array is ordered by id. Two
 -- workshops of one trade are two buildings that "destroy" must tell apart.
+--
+-- A workshop practices a trade (`TRADES`, 1 = weaver), and its output is the
+-- trade's chain. It has no `town_id`: the person it hangs from is the town.
 CREATE TABLE workshops (
   id bigserial PRIMARY KEY,
-  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
-  good text NOT NULL,
+  trade smallint NOT NULL,
   level integer NOT NULL
 );
 
-CREATE INDEX workshops_person ON workshops (town_id, person_id);
+CREATE INDEX workshops_person ON workshops (person_id);
 
+-- A warehouse hangs from a person too. `good` is a place in `GOODS`
+-- (1 = wool, and so on); a raw good and a worked one are the same list.
 CREATE TABLE stock (
-  town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  person_id bigint REFERENCES people (id) ON DELETE CASCADE,
-  good text NOT NULL,
+  person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
+  good smallint NOT NULL,
   units integer NOT NULL,
-  PRIMARY KEY (town_id, person_id, good)
+  PRIMARY KEY (person_id, good)
 );
 
 CREATE TABLE seats (
@@ -121,16 +128,15 @@ CREATE TABLE seats (
   PRIMARY KEY (town_id, seat_id)
 );
 
+-- A law is what the town voted: a code from a catalogue, and the value it was
+-- set to. One row per rule in force, so enacting it again is setting it again.
+-- Nothing writes this table yet; the catalogue is the town's, not the store's.
 CREATE TABLE laws (
-  id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  position integer NOT NULL,
-  title text NOT NULL,
-  sponsor_person_id bigint REFERENCES people (id) ON DELETE CASCADE,
-  enacted_at integer NOT NULL
+  code text NOT NULL,
+  value integer NOT NULL,
+  PRIMARY KEY (town_id, code)
 );
-
-CREATE INDEX laws_town ON laws (town_id, position);
 
 -- A site says what it is for — a title at the next bell, a workshop built or
 -- improved — and its cost is paid when it opens, so the row needs nothing else.
@@ -142,7 +148,7 @@ CREATE TABLE engagements (
   due_at integer NOT NULL,
   position integer NOT NULL,
   work text,
-  trade text,
+  trade smallint,
   workshop_id bigint REFERENCES workshops (id) ON DELETE SET NULL
 );
 
@@ -161,7 +167,7 @@ CREATE TABLE campaigns (
 
 CREATE TABLE market (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  good text NOT NULL,
+  good smallint NOT NULL,
   price_cents integer NOT NULL,
   flow_units integer NOT NULL DEFAULT 0,
   PRIMARY KEY (town_id, good)
@@ -169,7 +175,7 @@ CREATE TABLE market (
 
 CREATE TABLE market_history (
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
-  good text NOT NULL,
+  good smallint NOT NULL,
   position integer NOT NULL,
   price_cents integer NOT NULL,
   PRIMARY KEY (town_id, good, position)

@@ -77,7 +77,7 @@ describe('workshops, trades and the ladder', () => {
       expect.objectContaining({ type: 'workshop.built', audience: { personId: LECLERC }, trade: 'baker' }),
     );
     expect(leased(after).workshops).toHaveLength(2);
-    expect(leased(after).workshops[1]?.good).toBe('bread');
+    expect(leased(after).workshops[1]?.trade).toBe('baker');
     expect(leased(after).workshops[1]?.level).toBe(RULES.builtWorkshopLevel);
     // The purse moved by the build and by the upkeep of every hour since: the
     // site is the new workshop's, which does not exist yet, so it stops nothing,
@@ -114,7 +114,7 @@ describe('workshops, trades and the ladder', () => {
   it('destroys a workshop with no refund, and keeps the stock it cannot hold', () => {
     // Arrange: two workshops and a warehouse above what one level 2 holds.
     const world = town(SEED);
-    const [first, second] = [leased(world).workshops[0]!, { id: 2, good: 'bread' as const, level: 2 }];
+    const [first, second] = [leased(world).workshops[0]!, { id: 2, trade: 'baker' as const, level: 2 }];
     leased(world).workshops = [first, second];
     leased(world).stock = { wool: 300 };
     const treasury = world.people[LECLERC].treasuryCents;
@@ -204,7 +204,7 @@ describe('workshops, trades and the ladder', () => {
   it('pays no upkeep for a workshop under improvement', () => {
     // Arrange: a dynasty with a purse and no stock to sell.
     const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, good: 'wool', level: 2 }];
+    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
     world.people[LECLERC].title = 'bourgeois';
     world.people[LECLERC].stock = { wool: 50 };
     const workshopId = 1;

@@ -12,9 +12,12 @@ French in the data and in the interface, and the English here is only how we tal
 - **Fondateur** — the first person of the town. Not a political role: no seat, no vote, no special
   trade; it only differs in its starting kit.
 - **Fournisseur** — an AI person that produces a raw good: wool, grain or wood. Permanent, and
-  never replaced by a human.
-- **Personnage** — the unit of the world. Holds the attributes, the money, the title, the
-  residence, the workshops and the stock, ages, dies, and is replaced by an heir.
+  never replaced by a human. Not in the world yet: raw goods enter a town by purchase only, and no
+  workshop makes one — a workshop practises a trade, and a trade turns a raw good into a finished
+  one.
+- **Personnage** — the unit of the world. Holds the money, the title, the residence, the
+  workshops and the stock, dies, and is replaced by an heir. Its age will come back with the death
+  roll, as a birth hour in the world's clock (#92).
 - **Ville** — the town, Saint-Aubin. Twenty people at most, and the lowest tier of government.
 - **Comté** — the county: several towns, one council, one comte. Above the town.
 - **Royaume** — the kingdom: several counties, one council, one king. The highest tier.
@@ -68,7 +71,8 @@ French in the data and in the interface, and the English here is only how we tal
 - **Mesure** — an exceptional decision the council votes: a work, a loan, an amnesty, a
   requisition, the gates.
 - **Greffe** — the clerk's office: acts, complaints, evidence, the record of what was decided.
-- **Loi** — a law in force, always with the person who carried it.
+- **Loi** — a law in force: a code from the town's catalogue and the value it holds. Nothing
+  enacts one yet.
 - **Séance** — a sitting of the council, where the exceptional measures are voted.
 - **Jury** — five people drawn at random, excluding the parties, voting in secret.
 - **Juge** — the office that did not investigate the case; he does not vote, he fixes the sentence

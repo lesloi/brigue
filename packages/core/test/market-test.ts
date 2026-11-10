@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { GOODS, HOURS_PER_YEAR, nextPriceCents, RULES, stockCapacityUnits, stockUnits } from '../src/index.ts';
+import {
+  GOODS,
+  HOURS_PER_YEAR,
+  nextPriceCents,
+  outputOf,
+  RULES,
+  stockCapacityUnits,
+  stockUnits,
+  TRADES,
+} from '../src/index.ts';
 import type { Action, Event, Person, World } from '../src/index.ts';
 import { CARON, LECLERC, playHalfDay, playUntil, tick, town } from './helpers.ts';
 
@@ -203,7 +212,7 @@ describe('the market of a hour', () => {
 describe('the prices of a month', () => {
   const halfDay = HOURS_PER_YEAR / 2;
   const monthHours = 30 * HOURS_PER_YEAR;
-  const finishedGoods = GOODS.filter((good) => RULES.recipes[good] !== null);
+  const finishedGoods = TRADES.map(outputOf);
 
   it('turns the finished prices around their reference in a one-player town', () => {
     // Arrange: the issue's town, a baker who never trades, played for thirty
@@ -286,7 +295,7 @@ describe('the warehouse', () => {
   it('credits production to the stock, not to the purse', () => {
     // Arrange: the upkeep of the loom is the only thing that may move money.
     const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, good: 'cloth', level: 2 }];
+    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
     world.people[LECLERC].stock = { wool: 8 };
     const treasuryCents = world.people[LECLERC].treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
 
@@ -353,7 +362,7 @@ describe('the warehouse', () => {
     // Arrange: a full warehouse and a purse that could pay. The loom runs on
     // nothing, so its upkeep is the only charge between here and the refusal.
     const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, good: 'wool', level: 2 }];
+    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
     world.people[LECLERC].stock = { wool: stockCapacityUnits(world.people[LECLERC]) };
     world.people[LECLERC].treasuryCents = 1_000_000;
     const upkeep = 2 * RULES.upkeepPerWorkshopLevelCents;
@@ -377,33 +386,10 @@ describe('the warehouse', () => {
     expect(after.people[LECLERC].treasuryCents).toBe(1_000_000 - upkeep);
   });
 
-  it('refuses production that does not fit in the warehouse', () => {
-    // Arrange: a raw workshop with one unit of room left.
-    const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, good: 'wool', level: 2 }];
-    world.people[LECLERC].stock = { cloth: stockCapacityUnits(world.people[LECLERC]) - 1 };
-
-    // Act
-    const { world: after, events } = playWeek(world, [], new Set([CARON]));
-
-    // Assert: four wool were wanted, one fit, and the three refused are named.
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'workshop.overflow',
-        audience: { personId: LECLERC },
-        personId: LECLERC,
-        good: 'wool',
-        refusedUnits: 3,
-      }),
-    );
-    expect(stockUnits(after.people[LECLERC])).toBe(stockCapacityUnits(after.people[LECLERC]));
-    expect(after.people[LECLERC].stock.wool).toBe(1);
-  });
-
   it('lets a full dynasty make room by selling, then produce again', () => {
     // Arrange: a warehouse full of cloth and a loom that cannot start.
     const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, good: 'cloth', level: 2 }];
+    world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
     world.people[LECLERC].stock = { cloth: stockCapacityUnits(world.people[LECLERC]) };
     world.people[LECLERC].treasuryCents = 1_000_000;
 
@@ -426,7 +412,7 @@ describe('the warehouse', () => {
       // can still hand to the tick. The upkeep is the only charge, so the action
       // is the only thing that could otherwise move money.
       const world = town(SEED);
-      world.people[LECLERC].workshops = [{ id: 1, good: 'cloth', level: 2 }];
+      world.people[LECLERC].workshops = [{ id: 1, trade: 'weaver', level: 2 }];
       const treasuryCents = world.people[LECLERC].treasuryCents - 2 * RULES.upkeepPerWorkshopLevelCents;
       const malformed = { type, personId: LECLERC, good: 'gold', units: 1 } as unknown as Action;
 

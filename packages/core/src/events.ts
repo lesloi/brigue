@@ -73,7 +73,6 @@ type EventBody =
       revenueCents: number;
     }
   | { type: 'workshop.produced'; personId: PersonId; good: GoodId; units: number }
-  | { type: 'workshop.overflow'; personId: PersonId; good: GoodId; refusedUnits: number }
   | { type: 'workshop.idle'; personId: PersonId; good: GoodId; input: GoodId; missingUnits: number }
   | { type: 'workshop.built'; personId: PersonId; workshopId: number; trade: Trade }
   | { type: 'workshop.destroyed'; personId: PersonId; workshopId: number; good: GoodId }

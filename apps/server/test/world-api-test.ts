@@ -422,7 +422,7 @@ describe('GET /api/world', () => {
         id,
         ia: true,
         name: `Nom ${id}`,
-        workshops: [{ id, good: 'grain', level: 1 }],
+        workshops: [{ id, trade: 'baker', level: 1 }],
         stock: {},
       };
     }

@@ -39,8 +39,8 @@ export type PersonId = number;
 export interface Workshop {
   /** Stable inside its person: two workshops of one trade are two buildings. */
   id: number;
-  /** What it makes. The trade is the output good, so a workshop is bound to one trade. */
-  good: GoodId;
+  /** The trade it practises; what it makes is the trade's output good. */
+  trade: Trade;
   level: number;
 }
 
@@ -228,9 +228,38 @@ export function displayedPrestige(servicePrestige: number, title: TitleId, resid
   return TITLE_LADDER[title].prestige + residence.prestige + Math.min(servicePrestige, residence.prestigeCap);
 }
 
-/** The trade a workshop practises: its output names its chain. */
-export function tradeOf(good: GoodId): Trade | undefined {
-  return TRADES.find((trade) => TRADE_CHAINS[trade].output === good);
+/** What a trade's workshop makes: its output, which names its chain. */
+export function outputOf(trade: Trade): GoodId {
+  return TRADE_CHAINS[trade].output;
+}
+
+/**
+ * The stored code of a degree, a good or a trade: its place in the list, one
+ * based. These numbers sit in the rows of the database, so a list may gain an
+ * entry, but an existing code is never renumbered.
+ */
+export function titleCode(title: TitleId): number {
+  return titleIndex(title) + 1;
+}
+
+export function titleOfCode(code: number): TitleId | undefined {
+  return TITLES[code - 1];
+}
+
+export function goodCode(good: GoodId): number {
+  return GOODS.indexOf(good) + 1;
+}
+
+export function goodOfCode(code: number): GoodId | undefined {
+  return GOODS[code - 1];
+}
+
+export function tradeCode(trade: Trade): number {
+  return TRADES.indexOf(trade) + 1;
+}
+
+export function tradeOfCode(code: number): Trade | undefined {
+  return TRADES[code - 1];
 }
 
 /**
@@ -245,7 +274,6 @@ export interface Person {
   ia: boolean;
   /** The name the town sees, given name and family name together. */
   name: string;
-  age: number;
   /** The degree bought at the town hall; it opens the residence and the workshops. */
   title?: TitleId;
   /** One ladder: the degree opens a level, money pays for it. */
@@ -273,10 +301,10 @@ export interface Seat {
 }
 
 export interface Law {
-  id: number;
-  title: string;
-  sponsorPersonId: PersonId;
-  enactedAt: number;
+  /** The rule the town voted for: a code from the catalogue, never a label. */
+  code: string;
+  /** What the rule was set to: a rate, a level, a yes or a no, by code. */
+  value: number;
 }
 
 /** The durations the calendar gives an engagement, in hours. */
@@ -340,7 +368,7 @@ export interface World {
   /** Mints provisional workshop ids until the store assigns the real ones. */
 }
 
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 export const RULES = {
   version: 5,
@@ -417,18 +445,17 @@ export const RULES = {
   campaignFavourCost: 5,
   campaignVoteBonus: 2,
   /**
-   * What a workshop eats per unit it makes; wool and grain come out of nothing.
-   * A recipe is a rule, not content: changing one changes the economy, so it
-   * lives here and moves the version with everything else.
+   * What a unit of a trade's output eats of its input: one, so a workshop turns
+   * its input into its output unit for unit and never grows the loft. Which good
+   * it eats is the chain's (`TRADE_CHAINS`), not this table's. A recipe is a
+   * rule, not content: changing one changes the economy, so it lives here and
+   * moves the version with everything else.
    */
-  recipes: {
-    wool: null,
-    cloth: { input: 'wool', perUnit: 1 },
-    grain: null,
-    bread: { input: 'grain', perUnit: 1 },
-    wood: null,
-    planks: { input: 'wood', perUnit: 1 },
-  } satisfies Record<GoodId, { input: GoodId; perUnit: number } | null>,
+  inputPerOutput: {
+    weaver: 1,
+    baker: 1,
+    carpenter: 1,
+  } satisfies Record<Trade, number>,
 } as const;
 
 /**
@@ -527,7 +554,6 @@ export function createFirstPerson(trade: Trade, identity: PersonIdentity, id: Pe
     id,
     ia: false,
     name: identity.personName,
-    age: 20,
     title: 'roturier',
     residenceLevel: 1,
     treasuryCents: RULES.startingPurseCents,
@@ -535,7 +561,7 @@ export function createFirstPerson(trade: Trade, identity: PersonIdentity, id: Pe
     favour: 50,
     prestige: 0,
     alive: true,
-    workshops: [{ id: workshopId, good: chain.output, level: RULES.startingWorkshopLevel }],
+    workshops: [{ id: workshopId, trade, level: RULES.startingWorkshopLevel }],
     stock: { [chain.input]: RULES.startingInputUnits },
   };
 }
@@ -620,7 +646,6 @@ export function createWorld(): World {
         id: 1,
         ia: true,
         name: 'Robert Caron',
-        age: 44,
         // A cloth workshop of level 3 needs the patrician's workshop cap; the
         // seed gives Caron the degree that carries it rather than a bad workshop.
         title: 'bourgeois',
@@ -630,14 +655,13 @@ export function createWorld(): World {
         favour: 60,
         prestige: 65,
         alive: true,
-        workshops: [{ id: 1, good: 'cloth', level: 3 }],
+        workshops: [{ id: 1, trade: 'weaver', level: 3 }],
         stock: {},
       },
       2: {
         id: 2,
         ia: true,
         name: 'Jehan Fournier',
-        age: 41,
         title: 'roturier',
         residenceLevel: 1,
         treasuryCents: 160000,
@@ -645,14 +669,13 @@ export function createWorld(): World {
         favour: 45,
         prestige: 50,
         alive: true,
-        workshops: [{ id: 2, good: 'bread', level: 2 }],
+        workshops: [{ id: 2, trade: 'baker', level: 2 }],
         stock: {},
       },
       3: {
         id: 3,
         ia: true,
         name: 'Perrin Charpentier',
-        age: 49,
         title: 'roturier',
         residenceLevel: 1,
         treasuryCents: 170000,
@@ -660,7 +683,7 @@ export function createWorld(): World {
         favour: 55,
         prestige: 52,
         alive: true,
-        workshops: [{ id: 3, good: 'planks', level: 2 }],
+        workshops: [{ id: 3, trade: 'carpenter', level: 2 }],
         stock: {},
       },
     },

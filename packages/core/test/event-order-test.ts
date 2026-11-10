@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { advance, stockCapacityUnits, type Action, type World } from '../src/index.ts';
+import { advance, type Action, type World } from '../src/index.ts';
 import { LECLERC, seeded, town } from './helpers.ts';
 
 const SEED = 20261109;
@@ -22,21 +22,20 @@ describe('the order of an hour', () => {
     ).events;
 
   it('keeps a refusal before the message the town writes afterwards', () => {
-    // Arrange: the warehouse is one unit short of full, and the looms ask for
-    // four wool; the action sells grain the dynasty does not hold.
+    // Arrange: a sale the dynasty cannot make, and an empty purse with a
+    // workshop to run, so the town's own upkeep line falls due in the same hour.
     const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 1, good: 'wool', level: 2 }];
-    world.people[LECLERC].stock = { cloth: stockCapacityUnits(world.people[LECLERC]) - 1 };
+    world.people[LECLERC].treasuryCents = 0;
 
     // Act
     const events = play(world, [{ type: 'market.sell', personId: LECLERC, good: 'grain', units: 1 }]);
 
-    // Assert: the refusal opens the hour, and the overflow of the town's own
-    // step comes after it.
+    // Assert: the refusal opens the hour, and the upkeep the town pays after the
+    // actions comes after it.
     const refused = events.findIndex((event) => event.type === 'action.refused');
-    const overflow = events.findIndex((event) => event.type === 'workshop.overflow');
+    const penniless = events.findIndex((event) => event.type === 'person.penniless');
     expect(refused).toBe(0);
-    expect(overflow).toBeGreaterThan(refused);
+    expect(penniless).toBeGreaterThan(refused);
   });
 
   it('keeps the order of two actions of one hour', () => {

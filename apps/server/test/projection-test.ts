@@ -127,6 +127,7 @@ describe('the projection calendar', () => {
     expect(projection.person.workshops).toEqual([
       {
         id: 4,
+        trade: 'baker',
         good: 'bread',
         level: 2,
         input: 'grain',
@@ -140,33 +141,10 @@ describe('the projection calendar', () => {
     ]);
   });
 
-  it('carries zero input for a raw workshop', () => {
-    // Arrange
-    const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 4, good: 'wool', level: 2 }];
-
-    // Act
-    const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
-
-    // Assert
-    expect(projection.person.workshops[0]).toEqual({
-      id: 4,
-      good: 'wool',
-      level: 2,
-      input: null,
-      outputUnitsPerHour: 4,
-      inputUnitsPerHour: 0,
-      upkeepCentsPerHour: 240,
-      capacityUnits: 200,
-      canUpgrade: false,
-      upgradeHours: 3,
-    });
-  });
-
   it('scales the hourly figures with the level', () => {
     // Arrange
     const world = town(SEED);
-    world.people[LECLERC].workshops = [{ id: 4, good: 'cloth', level: 3 }];
+    world.people[LECLERC].workshops = [{ id: 4, trade: 'weaver', level: 3 }];
 
     // Act
     const projection = projectWorld(TEST_TOWN, world, LECLERC, foundedAt(world));
@@ -174,6 +152,7 @@ describe('the projection calendar', () => {
     // Assert
     expect(projection.person.workshops[0]).toEqual({
       id: 4,
+      trade: 'weaver',
       good: 'cloth',
       level: 3,
       input: 'wool',

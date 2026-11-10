@@ -7,6 +7,7 @@ import {
   residenceOf,
   RESIDENCE_LADDER,
   RULES,
+  TRADE_CHAINS,
   stockCapacityUnits,
   stockUnits,
   TITLE_LADDER,
@@ -273,14 +274,16 @@ function ownPerson(world: World, person: Person, familyName: string | null): Own
             },
     },
     workshops: person.workshops.map((workshop) => {
-      const recipe = RULES.recipes[workshop.good];
+      const chain = TRADE_CHAINS[workshop.trade];
       const outputUnitsPerHour = workshop.level * RULES.outputPerLevel;
 
       return {
         ...structuredClone(workshop),
-        input: recipe?.input ?? null,
+        // The client names the workshop by what it makes, not by its trade.
+        good: chain.output,
+        input: chain.input,
         outputUnitsPerHour,
-        inputUnitsPerHour: recipe === null ? 0 : outputUnitsPerHour * recipe.perUnit,
+        inputUnitsPerHour: outputUnitsPerHour * RULES.inputPerOutput[workshop.trade],
         upkeepCentsPerHour: workshop.level * RULES.upkeepPerWorkshopLevelCents,
         capacityUnits: workshopCapacity(workshop.level),
         canUpgrade: workshop.level < workshopLevelCap(title),

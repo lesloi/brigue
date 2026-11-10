@@ -79,7 +79,7 @@ function fullTown(seed = 7): World {
       id,
       ia: true,
       name: `IA ${id}`,
-      workshops: [{ id, good: 'grain', level: 1 }],
+      workshops: [{ id, trade: 'baker', level: 1 }],
       stock: {},
     };
   }

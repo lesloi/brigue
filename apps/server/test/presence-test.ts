@@ -109,7 +109,7 @@ describe('dormancy', () => {
         ...base.people[FOURNIER],
         id: index,
         name: `Nom ${index}`,
-        workshops: [{ id: index, good: 'grain', level: 1 }],
+        workshops: [{ id: index, trade: 'baker', level: 1 }],
         stock: {},
       };
     }
@@ -305,6 +305,7 @@ describe('the thirty-day deletion', () => {
     expect(body.world.person.workshops).toEqual([
       {
         id: 4,
+        trade: 'baker',
         good: 'bread',
         level: 2,
         input: 'grain',

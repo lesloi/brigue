@@ -33,7 +33,6 @@ export function Ville({
 }: VilleProps) {
   const { world } = data;
   const person = world.person;
-  const nameOf = personName(world);
 
   return (
     <main class="screen">
@@ -150,12 +149,9 @@ export function Ville({
             ) : (
               world.town.laws.map((law) => (
                 <div class="law">
-                  <b>{law.title}</b>
+                  <b>{law.code}</b>
                   <span class="pill">vigueur</span>
-                  <p>
-                    portée par <span>{nameOf(law.sponsorPersonId)}</span> &middot;{' '}
-                    {lawAgeText(law.enactedAt, world.hour)}
-                  </p>
+                  <p>réglée à {formatCount(law.value)}</p>
                 </div>
               ))
             )}
@@ -186,17 +182,6 @@ export function countdownText(nextBellAt: string, now: number): string {
   }
 
   return `cloche dans ${durationText(remaining)}`;
-}
-
-/** How long ago the town enacted a law, said in hours from its own clock. */
-export function lawAgeText(enactedAt: number, currentHour: number): string {
-  const age = currentHour - enactedAt;
-
-  if (age <= 0) {
-    return 'cette heure';
-  }
-
-  return `il y a ${formatCount(age)} heure${age > 1 ? 's' : ''}`;
 }
 
 function durationText(remaining: number): string {

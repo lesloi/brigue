@@ -101,7 +101,7 @@ function fillTown(world: World): World {
       id,
       ia: true,
       name: `IA ${id}`,
-      workshops: [{ id, good: 'grain', level: 1 }],
+      workshops: [{ id, trade: 'baker', level: 1 }],
       stock: {},
     };
   }
@@ -425,6 +425,7 @@ describe('joining the town', () => {
     expect(world.world.person.workshops).toEqual([
       {
         id: 4,
+        trade: 'baker',
         good: 'bread',
         level: 2,
         input: 'grain',
@@ -459,6 +460,7 @@ describe('joining the town', () => {
     expect(world.world.person.workshops).toEqual([
       {
         id: 4,
+        trade: 'baker',
         good: 'bread',
         level: 2,
         input: 'grain',
@@ -651,7 +653,7 @@ describe('a token a reset left without a person', () => {
     expect(body.townId).toBe(towns[0]?.id);
     const world = await harness.worlds.withWorld(async (session) => session.snapshot.world, body.townId);
     expect(world.people[body.personId]?.ia).toBe(false);
-    expect(world.people[body.personId]?.workshops[0]?.good).toBe('bread');
+    expect(world.people[body.personId]?.workshops[0]?.trade).toBe('baker');
 
     // The identity is the same, and the token still opens it.
     const found = await harness.store.findByTokenHash(player.tokenHash);

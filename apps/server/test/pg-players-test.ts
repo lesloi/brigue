@@ -42,8 +42,8 @@ describe.runIf(databaseUrl !== '')('PgPlayerStore', () => {
     );
     const townId = Number(towns[0]?.id);
     await pool.query(
-      `INSERT INTO people (id, town_id, player_id, ia, person_name, age, treasury_cents, debt_cents, favour, prestige, alive)
-       VALUES ($1, $2, $3, false, 'Colin Leclerc', 20, 45000, 0, 50, 0, true)`,
+      `INSERT INTO people (id, town_id, player_id, ia, person_name, treasury_cents, debt_cents, favour, prestige, alive)
+       VALUES ($1, $2, $3, false, 'Colin Leclerc', 45000, 0, 50, 0, true)`,
       [personId, townId, playerId],
     );
 

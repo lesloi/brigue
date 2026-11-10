@@ -20,7 +20,7 @@ describe('the first person', () => {
   it('starts a weaver with its chain and input', () => {
     const first = createFirstPerson('weaver', IDENTITY);
 
-    expect(first.workshops).toEqual([{ id: 1, good: 'cloth', level: 2 }]);
+    expect(first.workshops).toEqual([{ id: 1, trade: 'weaver', level: 2 }]);
     expect(first.stock).toEqual({ wool: RULES.startingInputUnits });
     expect(first.name).toBe(IDENTITY.personName);
     expect(first.ia).toBe(false);
@@ -31,10 +31,11 @@ describe('the first person', () => {
       const chain = TRADE_CHAINS[trade];
       const first = createFirstPerson(trade, IDENTITY);
 
-      expect(first.workshops).toEqual([{ id: 1, good: chain.output, level: 2 }]);
+      expect(first.workshops).toEqual([{ id: 1, trade, level: 2 }]);
       expect(first.stock).toEqual({ [chain.input]: RULES.startingInputUnits });
-      // The trade is a name for a real recipe, not a second table to drift.
-      expect(RULES.recipes[chain.output]).toEqual({ input: chain.input, perUnit: 1 });
+      // A workshop always has a trade, and a trade a recipe: nothing can be
+      // built that eats nothing and grows the loft.
+      expect(RULES.inputPerOutput[trade]).toBe(1);
     }
   });
 
@@ -54,7 +55,7 @@ describe('the first person', () => {
 
     // Assert
     expect(world.people[LECLERC]?.name).toBe(IDENTITY.personName);
-    expect(world.people[LECLERC]?.workshops).toEqual([{ id: 4, good: 'bread', level: 2 }]);
+    expect(world.people[LECLERC]?.workshops).toEqual([{ id: 4, trade: 'baker', level: 2 }]);
     expect(world.people[LECLERC]?.stock).toEqual({ grain: RULES.startingInputUnits });
     expect(world.people[LECLERC]?.ia).toBe(false);
     expect(humanPersonOf(world)?.id).toBe(LECLERC);
@@ -69,7 +70,7 @@ describe('the first person', () => {
 
     // Assert: a human person is already there, and the second identity is ignored.
     expect(twice).toBe(once);
-    expect(twice.people[LECLERC]?.workshops).toEqual([{ id: 4, good: 'cloth', level: 2 }]);
+    expect(twice.people[LECLERC]?.workshops).toEqual([{ id: 4, trade: 'weaver', level: 2 }]);
     expect(Object.keys(twice.people)).toHaveLength(4);
   });
 

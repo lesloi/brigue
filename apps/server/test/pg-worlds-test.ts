@@ -86,8 +86,8 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       const loaded = session.snapshot.world;
       const ai = Object.values(loaded.people).find((person) => person.ia)!;
       ai.workshops = [
-        { id: 9, good: 'cloth', level: 1 },
-        { id: 10, good: 'cloth', level: 1 },
+        { id: 9, trade: 'weaver', level: 1 },
+        { id: 10, trade: 'weaver', level: 1 },
       ];
       sortWorkshops(ai);
       await session.save(loaded, []);
@@ -104,14 +104,14 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
   });
 
   it('writes and clears every town table', async () => {
-    // Arrange: every table the schema scopes to a town.
+    // Arrange: every table a town owns, directly or through its people.
     const { rows } = await pool.query<{ table_name: string }>(
-      `SELECT table_name
+      `SELECT DISTINCT table_name
        FROM information_schema.columns
-       WHERE table_schema = 'public' AND column_name = 'town_id'`,
+       WHERE table_schema = 'public' AND column_name IN ('town_id', 'person_id')`,
     );
     // The town row, the append-only queue and journal are outside the snapshot
-    // the writer replaces; the world's settings carry no town_id at all.
+    // the writer replaces; the world's settings carry neither column.
     const outside = new Set(['towns', 'events', 'actions']);
 
     // Act

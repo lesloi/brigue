@@ -58,12 +58,6 @@ export function eventLine(event: Event, ownPersonId: PersonId, nameOf: (personId
         text: `${subject(event.personId)} ${verb(event.personId, 'avez produit', 'a produit')} ${goodQuantity(event.units, event.good)}.`,
       };
 
-    case 'workshop.overflow':
-      return {
-        tone: 'warning',
-        text: `${subject(event.personId)} : entrepôt plein, ${goodQuantity(event.refusedUnits, event.good)} en trop.`,
-      };
-
     case 'workshop.idle':
       return {
         tone: 'warning',
