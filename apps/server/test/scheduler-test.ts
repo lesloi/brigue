@@ -370,6 +370,8 @@ describe('startScheduler', () => {
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) =>
         townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withWorld(run, townId),
+      withTown: (run, townId) =>
+        townId === bad.id ? Promise.reject(new Error('the row is locked')) : real.withTown(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
@@ -531,6 +533,7 @@ describe('startScheduler', () => {
       readClock: () => real.readClock(),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => real.withWorld(run, townId),
+      withTown: (run, townId) => real.withTown(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
@@ -573,6 +576,7 @@ describe('startScheduler', () => {
       readClock: () => real.readClock(),
       moveWorldClockBack: (hours) => real.moveWorldClockBack(hours),
       withWorld: (run, townId) => real.withWorld(run, townId),
+      withTown: (run, townId) => real.withTown(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),
@@ -616,6 +620,7 @@ describe('startScheduler', () => {
 
         return attempts === 1 ? Promise.reject(new Error('the database is down')) : real.withWorld(run, townId);
       },
+      withTown: (run, townId) => real.withTown(run, townId),
       withJoinLock: (run) => real.withJoinLock(run),
       markMessageRead: (id, playerId) => real.markMessageRead(id, playerId),
       deleteMessage: (id, playerId) => real.deleteMessage(id, playerId),

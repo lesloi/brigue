@@ -9,7 +9,7 @@ import { createLogger } from '../src/logger.ts';
 import { playDue } from '../src/town/scheduler.ts';
 import { MemoryPlayerStore } from '../src/identity/players.ts';
 import { issueToken } from '../src/identity/session.ts';
-import { MemoryWorldStore, hourAt } from '../src/town/worlds.ts';
+import { MemoryWorldStore, hourAt, type WorldStore } from '../src/town/worlds.ts';
 import { CARON, FOURNIER, LECLERC, seeded, TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z').getTime();
@@ -68,7 +68,14 @@ afterEach(async () => {
 });
 
 async function start(
-  options: { world?: World; at?: number; devAdvance?: boolean; readers?: Record<string, number> } = {},
+  options: {
+    world?: World;
+    at?: number;
+    devAdvance?: boolean;
+    readers?: Record<string, number>;
+    /** Serves the app a store that refuses to load a town, to prove a route never does. */
+    withoutWorldLoad?: boolean;
+  } = {},
 ): Promise<Harness> {
   const clock = { now: options.at ?? START };
   const store = new MemoryPlayerStore();
@@ -77,7 +84,7 @@ async function start(
   const logger = createLogger((line) => logs.push(line));
   const server = createApp({
     store,
-    worlds,
+    worlds: options.withoutWorldLoad === true ? withoutWorldLoad(worlds) : worlds,
     logger,
     ready: async () => {},
     now: () => clock.now,
@@ -148,6 +155,28 @@ async function start(
     clock,
     cookies,
     cookie: cookies[Object.keys(readers)[0] as string] as string,
+  };
+}
+
+/**
+ * The store an action route may see: a town can be locked and its queue read,
+ * but loading the world fails loudly. A route that goes back to `withWorld`
+ * turns this test red instead of quietly costing eight statements.
+ */
+function withoutWorldLoad(worlds: WorldStore): WorldStore {
+  return {
+    createTown: (name, world, at, bindings) => worlds.createTown(name, world, at, bindings),
+    listTowns: () => worlds.listTowns(),
+    readClock: () => worlds.readClock(),
+    moveWorldClockBack: (hours) => worlds.moveWorldClockBack(hours),
+    withWorld: () => Promise.reject(new Error('the town was loaded')),
+    withTown: (run, townId) => worlds.withTown(run, townId),
+    withJoinLock: (run) => worlds.withJoinLock(run),
+    pruneJournal: (townId, chronicleBefore, messagesBefore) =>
+      worlds.pruneJournal(townId, chronicleBefore, messagesBefore),
+    markMessageRead: (id, playerId) => worlds.markMessageRead(id, playerId),
+    deleteMessage: (id, playerId) => worlds.deleteMessage(id, playerId),
+    close: () => worlds.close(),
   };
 }
 
@@ -813,6 +842,23 @@ describe('DELETE /api/messages/:id', () => {
 });
 
 describe('the queued actions', () => {
+  it('takes, lists and cancels an order without loading the town', async () => {
+    // Arrange: a store whose world read fails, as nothing on this screen needs it.
+    const harness = await start({ withoutWorldLoad: true });
+
+    // Act
+    const response = await postAction(harness, buyWool(ID_A, 1, 2));
+    const listed = await getPending(harness);
+    const cancelled = await cancelPending(harness, ID_A);
+
+    // Assert
+    expect(response.status).toBe(201);
+    expect(await listed.json()).toEqual({
+      actions: [{ id: ID_A, hour: 1, type: 'market.buy', good: 'wool', units: 2 }],
+    });
+    expect(cancelled.status).toBe(204);
+  });
+
   it('lists and cancels an action before its hour ticks', async () => {
     // Arrange
     const harness = await start();

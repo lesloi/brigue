@@ -310,3 +310,98 @@ describe('the town store', () => {
     expect(caron.unread).toBe(0);
   });
 });
+
+describe('the town under its lock, without its rows', () => {
+  it('gives the hour and one whole person, and refuses a town it does not hold', async () => {
+    // Arrange
+    const store = new MemoryWorldStore();
+    const created = await store.createTown('A', town(1), new Date());
+
+    // Act
+    const narrow = await store.withTown(
+      async (session) => ({
+        town: session.town,
+        hour: session.hour,
+        person: await session.person(LECLERC),
+        missing: await session.person(999_999),
+      }),
+      created.id,
+    );
+
+    // Assert: a whole person, and a stranger is null rather than a half one.
+    expect(narrow.town).toEqual(created);
+    expect(narrow.hour).toBe(1);
+    expect(narrow.person?.id).toBe(LECLERC);
+    expect(narrow.person?.workshops).toHaveLength(1);
+    expect(narrow.missing).toBeNull();
+    await expect(store.withTown(async () => null, 999_999)).rejects.toBeInstanceOf(UnknownWorldError);
+  });
+
+  it('queues an order under the narrow lock, and the full read finds it', async () => {
+    // Arrange
+    const store = new MemoryWorldStore();
+    const created = await store.createTown('A', town(1), new Date());
+    const order = {
+      personId: LECLERC,
+      playsAt: 1,
+      action: { type: 'market.buy' as const, personId: LECLERC, good: 'wool' as const, units: 1 },
+      receivedAt: new Date(),
+    };
+
+    // Act
+    const taken = await store.withTown((session) => session.append(order), created.id);
+    const listed = await store.withWorld((session) => session.actionsBetween(1, 1), created.id);
+
+    // Assert: one queue, whichever seam writes it.
+    expect(listed).toEqual([taken]);
+  });
+
+  it('rolls a narrow callback back when it throws', async () => {
+    // Arrange
+    const store = new MemoryWorldStore();
+    const created = await store.createTown('A', town(1), new Date());
+    const order = {
+      personId: LECLERC,
+      playsAt: 1,
+      action: { type: 'market.buy' as const, personId: LECLERC, good: 'wool' as const, units: 1 },
+      receivedAt: new Date(),
+    };
+
+    // Act: an order taken, then a failure before the callback answers.
+    const attempt = store.withTown(async (session) => {
+      await session.append(order);
+      throw new Error('the route gave up');
+    }, created.id);
+
+    // Assert
+    await expect(attempt).rejects.toThrow('the route gave up');
+    expect(await store.withWorld((session) => session.actionsBetween(1, 1), created.id)).toEqual([]);
+  });
+
+  it('waits for a pass on the same town before its narrow callback runs', async () => {
+    // Arrange: a pass holding the queue, and an order arriving while it runs.
+    const store = new MemoryWorldStore();
+    const created = await store.createTown('A', town(1), new Date());
+    const order: string[] = [];
+    let open = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+
+    const pass = store.withWorld(async () => {
+      order.push('pass:start');
+      await gate;
+      order.push('pass:end');
+    }, created.id);
+    const narrow = store.withTown(async () => {
+      order.push('narrow');
+    }, created.id);
+
+    // Act
+    open();
+    await Promise.all([pass, narrow]);
+
+    // Assert: one town, one queue, whichever seam asks for it.
+    expect(order).toEqual(['pass:start', 'pass:end', 'narrow']);
+  });
+});

@@ -22,6 +22,7 @@ import {
   type StoredAction,
   type MessagePage,
   type TownInfo,
+  type TownSession,
   type NewStoredAction,
   type WorldSession,
   type WorldSnapshot,
@@ -206,12 +207,29 @@ export class PgWorldStore implements WorldStore {
   }
 
   async withWorld<T>(run: (session: WorldSession) => Promise<T>, townId: number): Promise<T> {
+    return this.lockedTown(townId, async (client, locked) => {
+      const snapshot = await readWorld(client, locked);
+
+      return run(new PgWorldSession(client, townId, locked, snapshot));
+    });
+  }
+
+  async withTown<T>(run: (session: TownSession) => Promise<T>, townId: number): Promise<T> {
+    return this.lockedTown(townId, (client, locked) => run(new PgTownSession(client, townId, locked)));
+  }
+
+  /**
+   * One transaction per callback, with the town's row held throughout: both
+   * seams take it, so an order read narrowly and a pass over the same town queue
+   * up exactly as two passes would.
+   */
+  private async lockedTown<T>(townId: number, run: (client: PoolClient, locked: LockedTown) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
 
     try {
       await client.query('BEGIN');
-      const snapshot = await readWorld(client, townId);
-      const result = await run(new PgWorldSession(client, townId, snapshot));
+      const locked = await lockTown(client, townId);
+      const result = await run(client, locked);
       await client.query('COMMIT');
 
       return result;
@@ -244,15 +262,28 @@ export class PgWorldStore implements WorldStore {
   async close(): Promise<void> {}
 }
 
-class PgWorldSession implements WorldSession {
-  readonly snapshot: WorldSnapshot;
-  private readonly client: PoolClient;
-  private readonly townId: number;
+/**
+ * The town under its lock: its clock, its queue and one person at a time. It
+ * reads no town table but the actions, so a route that takes an order pays for
+ * the order, not for the town.
+ */
+class PgTownSession implements TownSession {
+  readonly town: TownInfo;
+  readonly worldStartedAt: Date;
+  readonly hour: number;
+  readonly formatVersion: number;
+  readonly rulesetVersion: number;
+  protected readonly client: PoolClient;
+  protected readonly townId: number;
 
-  constructor(client: PoolClient, townId: number, snapshot: WorldSnapshot) {
+  constructor(client: PoolClient, townId: number, locked: LockedTown) {
     this.client = client;
     this.townId = townId;
-    this.snapshot = snapshot;
+    this.town = locked.town;
+    this.worldStartedAt = locked.settings.worldStartedAt;
+    this.hour = hourAt(locked.settings.worldStartedAt, locked.lastPlayedAt);
+    this.formatVersion = locked.settings.formatVersion;
+    this.rulesetVersion = locked.settings.rulesetVersion;
   }
 
   async actionsBetween(from: number, to: number): Promise<StoredAction[]> {
@@ -263,14 +294,82 @@ class PgWorldSession implements WorldSession {
        FROM actions
        WHERE town_id = $3 AND plays_at >= $1 AND plays_at < $2
        ORDER BY plays_at, id`,
+      [hourStartedOf(this.worldStartedAt, from), hourStartedOf(this.worldStartedAt, to + 1), this.townId],
+    );
+
+    return rows.map((row) => rowToStoredAction(row, this.worldStartedAt));
+  }
+
+  async findAction(id: number): Promise<StoredAction | null> {
+    // Scoped to the town: another town may carry the same id, and its action
+    // must be as unknown here as an id that was never issued.
+    const { rows } = await this.client.query<ActionRow>(
+      `SELECT id, person_id, plays_at, type, payload, received_at
+       FROM actions
+       WHERE id = $1 AND town_id = $2`,
+      [id, this.townId],
+    );
+    const row = rows[0];
+
+    return row ? rowToStoredAction(row, this.worldStartedAt) : null;
+  }
+
+  async append(action: NewStoredAction): Promise<StoredAction> {
+    // The type is a column of its own: a row names what was asked without the
+    // payload being parsed first.
+    const { type, ...payload } = action.action;
+    const { rows } = await this.client.query<ActionRow>(
+      `INSERT INTO actions (town_id, person_id, plays_at, type, payload, received_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, person_id, plays_at, type, payload, received_at`,
       [
-        hourStartedOf(this.snapshot.worldStartedAt, from),
-        hourStartedOf(this.snapshot.worldStartedAt, to + 1),
         this.townId,
+        action.personId,
+        hourStartedOf(this.worldStartedAt, action.playsAt),
+        type,
+        json(payload),
+        action.receivedAt,
       ],
     );
 
-    return rows.map((row) => rowToStoredAction(row, this.snapshot.worldStartedAt));
+    return {
+      ...rowToStoredAction(rows[0]!, this.worldStartedAt),
+      ...(action.title === undefined ? {} : { title: action.title }),
+    };
+  }
+
+  async cancel(id: number): Promise<void> {
+    await this.client.query('DELETE FROM actions WHERE id = $1 AND town_id = $2', [id, this.townId]);
+  }
+
+  async person(id: number): Promise<Person | null> {
+    // One statement: the person, its workshops and its stock. A person read
+    // without its stock would be a lie waiting for the first caller that sells.
+    const { rows } = await this.client.query<PersonWithRows>(
+      `SELECT p.id, p.player_id, p.person_name, p.title, p.residence_level, p.treasury_cents,
+              p.debt_cents, p.favour, p.prestige, p.alive,
+              (SELECT coalesce(json_agg(json_build_object('id', w.id, 'trade', w.trade, 'level', w.level)
+                                        ORDER BY w.id), '[]')
+               FROM workshops w WHERE w.person_id = p.id) AS workshops,
+              (SELECT coalesce(json_agg(json_build_object('good', s.good, 'units', s.units)), '[]')
+               FROM stock s WHERE s.person_id = p.id) AS stock
+       FROM people p
+       WHERE p.id = $1 AND p.town_id = $2`,
+      [id, this.townId],
+    );
+    const row = rows[0];
+
+    return row ? personWithRows(row) : null;
+  }
+}
+
+/** The loaded town: the session above, plus the rows a simulation reads. */
+class PgWorldSession extends PgTownSession implements WorldSession {
+  readonly snapshot: WorldSnapshot;
+
+  constructor(client: PoolClient, townId: number, locked: LockedTown, snapshot: WorldSnapshot) {
+    super(client, townId, locked);
+    this.snapshot = snapshot;
   }
 
   async recentMessages(limit: number, playerId: number): Promise<MessagePage> {
@@ -314,48 +413,6 @@ class PgWorldSession implements WorldSession {
       .slice()
       .reverse()
       .map((row) => rowToChronicleEvent(row, this.snapshot.worldStartedAt));
-  }
-
-  async findAction(id: number): Promise<StoredAction | null> {
-    // Scoped to the town: another town may carry the same id, and its action
-    // must be as unknown here as an id that was never issued.
-    const { rows } = await this.client.query<ActionRow>(
-      `SELECT id, person_id, plays_at, type, payload, received_at
-       FROM actions
-       WHERE id = $1 AND town_id = $2`,
-      [id, this.townId],
-    );
-    const row = rows[0];
-
-    return row ? rowToStoredAction(row, this.snapshot.worldStartedAt) : null;
-  }
-
-  async append(action: NewStoredAction): Promise<StoredAction> {
-    // The type is a column of its own: a row names what was asked without the
-    // payload being parsed first.
-    const { type, ...payload } = action.action;
-    const { rows } = await this.client.query<ActionRow>(
-      `INSERT INTO actions (town_id, person_id, plays_at, type, payload, received_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, person_id, plays_at, type, payload, received_at`,
-      [
-        this.townId,
-        action.personId,
-        hourStartedOf(this.snapshot.worldStartedAt, action.playsAt),
-        type,
-        json(payload),
-        action.receivedAt,
-      ],
-    );
-
-    return {
-      ...rowToStoredAction(rows[0]!, this.snapshot.worldStartedAt),
-      ...(action.title === undefined ? {} : { title: action.title }),
-    };
-  }
-
-  async cancel(id: number): Promise<void> {
-    await this.client.query('DELETE FROM actions WHERE id = $1 AND town_id = $2', [id, this.townId]);
   }
 
   async cancelPerson(personId: number): Promise<void> {
@@ -414,13 +471,68 @@ export async function createPgWorldStore(connectionString: string): Promise<PgWo
 }
 
 /**
+ * The town whose row this transaction holds. The lock is the town's own row:
+ * two writers of one town serialise there, and two towns never wait on each
+ * other. The settings ride along in the same statement — three rows that never
+ * move until a reset.
+ */
+interface LockedTown {
+  town: TownInfo;
+  /** The start of the first hour the town's rows do not hold yet. */
+  lastPlayedAt: Date;
+  settings: Settings;
+}
+
+interface LockedTownRow {
+  id: string;
+  name: string;
+  last_played_at: Date | string;
+  format_version: string | null;
+  ruleset_version: string | null;
+  world_started_at: string | null;
+}
+
+async function lockTown(client: PoolClient, townId: number): Promise<LockedTown> {
+  const { rows } = await client.query<LockedTownRow>(
+    `SELECT t.id, t.name, t.last_played_at,
+            (SELECT value FROM settings WHERE key = 'format_version') AS format_version,
+            (SELECT value FROM settings WHERE key = 'ruleset_version') AS ruleset_version,
+            (SELECT value FROM settings WHERE key = 'world_started_at') AS world_started_at
+     FROM towns t
+     WHERE t.id = $1
+     FOR UPDATE`,
+    [townId],
+  );
+  const row = rows[0];
+
+  if (row === undefined) {
+    throw new UnknownWorldError();
+  }
+
+  return {
+    town: { id: Number(row.id), name: row.name },
+    lastPlayedAt: asDate(row.last_played_at),
+    settings: parseSettings([
+      { key: 'format_version', value: row.format_version },
+      { key: 'ruleset_version', value: row.ruleset_version },
+      { key: 'world_started_at', value: row.world_started_at },
+    ]),
+  };
+}
+
+/**
  * The settings of the world: written once, by the founding town, and read by
  * every town after. A world without settings has not been founded, and a town
  * cannot belong to it.
  */
 async function readSettings(client: PoolClient): Promise<Settings> {
   const { rows } = await client.query<SettingsRow>(`SELECT key, value FROM settings`);
-  const values = new Map(rows.map((row) => [row.key, row.value]));
+
+  return parseSettings(rows);
+}
+
+function parseSettings(rows: ReadonlyArray<{ key: string; value: string | null }>): Settings {
+  const values = new Map(rows.flatMap((row) => (row.value === null ? [] : [[row.key, row.value] as const])));
   const missing = SETTINGS_KEYS.filter((key) => !values.has(key));
 
   if (missing.length > 0) {
@@ -459,20 +571,11 @@ function applySettings(world: World, settings: Settings, lastPlayedAt: Date): vo
   world.hour = hourAt(settings.worldStartedAt, lastPlayedAt);
 }
 
-async function readWorld(client: PoolClient, townId: number): Promise<WorldSnapshot> {
-  // The town's own row is the lock: two writers of the same town serialise
-  // here, and two towns never wait on each other.
-  const town = await client.query<{ id: string; name: string; last_played_at: Date | string }>(
-    `SELECT id, name, last_played_at FROM towns WHERE id = $1 FOR UPDATE`,
-    [townId],
-  );
-  const townRow = town.rows[0];
-  if (!townRow) {
-    throw new UnknownWorldError();
-  }
-
-  const settings = await readSettings(client);
-  const lastPlayedAt = asDate(townRow.last_played_at);
+async function readWorld(client: PoolClient, locked: LockedTown): Promise<WorldSnapshot> {
+  // The town's row is already locked by the caller: this reads the rows the lock
+  // covers, so a save and a read of one town never interleave.
+  const townId = locked.town.id;
+  const settings = locked.settings;
 
   const [people, workshops, stock, seats, laws, campaigns, market] = await Promise.all([
     client.query(
@@ -495,7 +598,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   const world: World = {
     formatVersion: settings.formatVersion,
     rulesetVersion: settings.rulesetVersion,
-    hour: hourAt(settings.worldStartedAt, lastPlayedAt),
+    hour: hourAt(settings.worldStartedAt, locked.lastPlayedAt),
     people: {},
     seats: {} as Record<SeatId, Seat>,
     laws: [],
@@ -505,21 +608,7 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   };
 
   for (const person of people.rows) {
-    const id = Number(person.id);
-    world.people[id] = {
-      id,
-      ia: person.player_id === null,
-      name: person.person_name,
-      title: requiredTitle(person.title),
-      residenceLevel: person.residence_level,
-      treasuryCents: person.treasury_cents,
-      debtCents: person.debt_cents,
-      favour: person.favour,
-      prestige: person.prestige,
-      alive: person.alive,
-      workshops: [],
-      stock: {},
-    };
+    world.people[Number(person.id)] = personOf(person);
   }
 
   for (const workshop of workshops.rows) {
@@ -569,10 +658,53 @@ async function readWorld(client: PoolClient, townId: number): Promise<WorldSnaps
   }
 
   return {
-    town: { id: Number(townRow.id), name: townRow.name },
+    town: locked.town,
     world,
     worldStartedAt: settings.worldStartedAt,
   };
+}
+
+/**
+ * The scalar part of a person, as a row carries it. A caller that also has the
+ * workshops and the stock fills them in; a person read whole starts here too,
+ * so the two read paths cannot drift on a field.
+ */
+function personOf(row: PersonRow): Person {
+  return {
+    id: Number(row.id),
+    // A person with no account is an AI: that null is the whole of the fact.
+    ia: row.player_id === null,
+    name: row.person_name,
+    title: requiredTitle(row.title),
+    residenceLevel: row.residence_level,
+    treasuryCents: row.treasury_cents,
+    debtCents: row.debt_cents,
+    favour: row.favour,
+    prestige: row.prestige,
+    alive: row.alive,
+    workshops: [],
+    stock: {},
+  };
+}
+
+/** One person with what hangs from it, aggregated by the same statement. */
+function personWithRows(row: PersonWithRows): Person {
+  const person = personOf(row);
+
+  for (const workshop of row.workshops) {
+    person.workshops.push({
+      id: Number(workshop.id),
+      trade: requiredTrade(workshop.trade),
+      level: workshop.level,
+    });
+  }
+  sortPersonWorkshops(person);
+
+  for (const unit of row.stock) {
+    person.stock[requiredGood(unit.good, 'stock')] = unit.units;
+  }
+
+  return person;
 }
 
 /**
@@ -851,21 +983,22 @@ async function syncSerialRows(
 ): Promise<Map<number, number>> {
   const mapping = new Map<number, number>();
   const kept: number[] = [];
+  const updates = rows.filter((row) => existing.has(row.id));
+  const inserts = rows.filter((row) => !existing.has(row.id));
 
-  for (const row of rows) {
+  // The rows the town already holds go back in one statement: a save that
+  // rewrites twenty people is one round trip, not twenty.
+  if (updates.length > 0) {
+    await updateRows(client, table, updates);
+    kept.push(...updates.map((row) => row.id));
+  }
+
+  // A row the database has not named yet is inserted without its id: the
+  // sequence must assign it, or a later insert collides with a row written
+  // past it. Those are the opening and a new workshop, so the loop is short.
+  for (const row of inserts) {
     const { id, ...values } = row;
     const columns = Object.keys(values);
-
-    if (existing.has(id)) {
-      const assignments = columns.map((column, index) => `${column} = $${index + 1}`);
-      await client.query(`UPDATE ${table} SET ${assignments.join(', ')} WHERE id = $${columns.length + 1}`, [
-        ...columns.map((column) => values[column]),
-        id,
-      ]);
-      kept.push(id);
-      continue;
-    }
-
     const marks = columns.map((_, index) => `$${index + 1}`);
     const { rows: inserted } = await client.query<{ id: string }>(
       `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${marks.join(', ')}) RETURNING id`,
@@ -879,6 +1012,29 @@ async function syncSerialRows(
   await deleteSerialMissing(client, table, townId, kept);
 
   return mapping;
+}
+
+/**
+ * Rewrites the rows that already exist, by their id, in one statement. The
+ * table's own row type gives the JSON its types: every column keeps the type it
+ * is stored with, and a null is the null of that column.
+ */
+async function updateRows(
+  client: PoolClient,
+  table: string,
+  rows: ReadonlyArray<{ id: number } & Record<string, unknown>>,
+): Promise<void> {
+  const columns = Object.keys(rows[0]!).filter((column) => column !== 'id');
+  const assignments = columns.map((column) => `${column} = v.${column}`).join(', ');
+  const json = JSON.stringify(rows);
+
+  await client.query(
+    `UPDATE ${table} AS t
+     SET ${assignments}
+     FROM json_populate_recordset(NULL::${table}, $1::json) AS v
+     WHERE t.id = v.id`,
+    [json],
+  );
 }
 
 async function deleteSerialMissing(
@@ -1074,6 +1230,25 @@ interface ChronicleRow {
   at: Date | string;
   type: string;
   payload: Record<string, unknown>;
+}
+
+interface PersonRow {
+  id: string;
+  player_id: string | null;
+  person_name: string;
+  title: number;
+  residence_level: number;
+  treasury_cents: number;
+  debt_cents: number;
+  favour: number;
+  prestige: number;
+  alive: boolean;
+}
+
+interface PersonWithRows extends PersonRow {
+  /** The codes as the rows carry them: the words are the lists' to give. */
+  workshops: Array<{ id: string | number; trade: number; level: number }>;
+  stock: Array<{ good: number; units: number }>;
 }
 
 interface MessageRow {
