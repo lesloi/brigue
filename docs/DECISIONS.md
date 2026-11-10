@@ -254,16 +254,11 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   migration is converted; one without is not deleted in silence: the reset names what it will
   destroy and refuses until an operator confirms it. The schema was reworked in one go — the
   person as the unit, one clock for the world, codes for the closed lists, no works table — and
-  the format and the ruleset start again at one, because no database outside the tests carries a
-  world: the deployment drops the schema instead of numbering a history nobody reads. A database
-  crosses with that reset, run before the rollout is approved; `migrate` is not the path, since
-  `schema.sql` is already recorded under its name and the gate would report nothing pending on a
-  database that needs the rebuild.
-  Two names keep Maison and a later pass must not "fix"
-  them: the tab that opens the person's screen, and the residence level of that name, which is a
-  building. A database crosses with that reset, run before the
-  rollout is approved; `migrate` is not the path, since `schema.sql` is already recorded under its
-  name and the gate would report nothing pending on a database that needs the rebuild.
+  the deployment crosses it by rebuilding, not by migrating. That reset runs before the rollout is
+  approved; `migrate` is not the path, since `schema.sql` is already recorded under its name and
+  the gate would report nothing pending on a database that needs the rebuild.
+  Two names keep Maison and a later pass must not "fix" them: the tab that opens the person's
+  screen, and the residence level of that name, which is a building.
   Nothing in a test town is worth carrying, and a version
   number that records a history nobody can read is a cost, not a safeguard. Once a town has
   players whose history matters, a breaking change ships a migration by default.
