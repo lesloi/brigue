@@ -240,8 +240,9 @@ CREATE TABLE actions (
   received_at timestamptz NOT NULL DEFAULT now()
 );
 
--- A pass reads the hours it owes in order: the trailing id is that order.
-CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at, id);
+-- A pass reads the hours it owes by range, not by page: the range already
+-- narrows to a handful, and the order of an hour is sorted there.
+CREATE INDEX actions_town_plays_at ON actions (town_id, plays_at);
 
 -- An ordered action names its person: a person erased takes its queue with it,
 -- and a save renames the rows of a person the database just named.
