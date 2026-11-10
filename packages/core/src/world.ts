@@ -308,7 +308,7 @@ export interface Law {
 }
 
 export interface World {
-  /** Stamped so a saved world can be refused rather than silently misread. */
+  /** Stamped so a stored world can be refused rather than silently misread. */
   formatVersion: number;
   /** The ruleset that produced this world. A catch-up across versions is a bug. */
   rulesetVersion: number;

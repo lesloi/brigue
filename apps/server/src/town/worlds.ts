@@ -99,9 +99,9 @@ export interface WorldSession {
   /**
    * Writes the whole town and appends the events of the span. `accounts` maps a
    * person to the account that reads its mail; a person absent from it is an AI
-   * and has no mailbox. The clock is not the town's: a save moves no hour.
+   * and has no mailbox. The clock is not the town's: a write moves no hour.
    */
-  save(world: World, events: Event[], accounts?: ReadonlyMap<number, number>): Promise<void>;
+  write(world: World, events: Event[], accounts?: ReadonlyMap<number, number>): Promise<void>;
   /**
    * Deletes the town — its people, actions and journal — and leaves the
    * accounts, the sealed seasons and the world's settings. The next join founds
@@ -453,7 +453,7 @@ export class MemoryWorldStore implements WorldStore {
       cancelPerson: async (personId) => {
         stored.actions = stored.actions.filter((action) => action.personId !== personId);
       },
-      save: async (world, events, accounts = new Map()) => {
+      write: async (world, events, accounts = new Map()) => {
         stored.snapshot = {
           town: stored.snapshot.town,
           world: structuredClone(world),

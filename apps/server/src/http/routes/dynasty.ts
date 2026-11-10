@@ -130,7 +130,7 @@ async function renameInTown(
     renamed.treasuryCents -= NAME_PRICE.renameCents;
     renamed.name = renamePerson(renamed.name, before, name);
     // A name is identity, not a journal line: the Maison screen carries it.
-    await session.save(next, []);
+    await session.write(next, []);
 
     return { kind: 'renamed' as const, name };
   }, bound.townId);

@@ -99,7 +99,7 @@ async function readTown(
         // The person is gone, but the town remains: keep the deletion and tell
         // the reader their session no longer exists.
         if (presence.presence.deletedPersonIds.includes(personId)) {
-          await session.save(presence.presence.world, [], presence.accounts);
+          await session.write(presence.presence.world, [], presence.accounts);
         }
 
         return { kind: 'gone' as const };
@@ -117,7 +117,7 @@ async function readTown(
       );
 
       if (due.hours > 0 || presence.presence.deletedPersonIds.length > 0) {
-        await session.save(due.world, due.events, presence.accounts);
+        await session.write(due.world, due.events, presence.accounts);
       }
 
       const mail = await session.recentMessages(JOURNAL_PAGE, playerId);

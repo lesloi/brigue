@@ -50,7 +50,7 @@ describe('the journal of a town with two readers', () => {
   it('puts the town’s line in the chronicle and a person’s in its mailbox', async () => {
     // Arrange: one election and one private debt line.
     const { session } = await stored();
-    await session.save(session.snapshot.world, [chronicleAt(1), mailAt(2)], ACCOUNTS);
+    await session.write(session.snapshot.world, [chronicleAt(1), mailAt(2)], ACCOUNTS);
 
     // Act
     const chronicle = await session.recentChronicle(JOURNAL_PAGE);
@@ -66,7 +66,7 @@ describe('the journal of a town with two readers', () => {
   it('hands every reader the same chronicle page', async () => {
     // Arrange: three lines.
     const { session } = await stored();
-    await session.save(session.snapshot.world, [chronicleAt(1), chronicleAt(2), chronicleAt(3)]);
+    await session.write(session.snapshot.world, [chronicleAt(1), chronicleAt(2), chronicleAt(3)]);
 
     // Act: one reader reads, then the other, then the first again.
     const first = await session.recentChronicle(JOURNAL_PAGE);
@@ -84,7 +84,7 @@ describe('the journal of a town with two readers', () => {
     const store = new MemoryWorldStore();
     const info = await store.createTown('Amiens', town(7), new Date());
     await store.withWorld(async (session) => {
-      await session.save(
+      await session.write(
         session.snapshot.world,
         Array.from({ length: JOURNAL_PAGE + 5 }, (_, index) => mailAt(index + 1)),
         ACCOUNTS,

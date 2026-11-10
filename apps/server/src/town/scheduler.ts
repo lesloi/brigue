@@ -157,7 +157,7 @@ export async function playWorld(pass: WorldPass, at: Date): Promise<void> {
         const due = await playDue(session, presence.world, target, presence.dormant, random);
 
         if (due.hours > 0 || presence.deletedPersonIds.length > 0 || persons.size > 0) {
-          await session.save(due.world, due.events, accounts);
+          await session.write(due.world, due.events, accounts);
         }
         if (due.hours > 0) {
           pass.logger.info('town.advanced', { townId: town.id, hours: due.hours });

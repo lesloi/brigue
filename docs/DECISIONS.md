@@ -212,7 +212,7 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   whole duration — `SELECT … FOR UPDATE` on `towns` — so two writers of one town serialise and a
   town's watermark is read after the other writer committed; two towns never wait on each other,
   and there is no world-wide writer to contend with. The watermark moves forward only, from the
-  hour the saved world has reached: a reader must never label rows with an hour they have not
+  hour the written world has reached: a reader must never label rows with an hour they have not
   lived. An action's id is the row's own sequence, and that id is the order in
   which actions were received, because insertion order is the only contract there is. The client
   sends
@@ -493,11 +493,12 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   is an AI exactly when `people.player_id` is null: the account is written with the person, never
   after it, so no person waits for one.
   An action is stored as its type and its payload apart, so a query reads what was asked without
-  parsing the row. The simulation still reads and writes a town whole, but the storage keeps it in
+  parsing the row, and at the instant its hour begins, so a pass reads what is due with one
+  comparison and the store maps the instant back to the town's hour. The simulation still reads and writes a town whole, but the storage keeps it in
   rows, so a screen can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back
   and writes it into the in-memory world before the rows that reference it, so a person's key, a
-  seat, a candidacy, an action and a workshop all agree after a save. A format change is a
+  seat, a candidacy, an action and a workshop all agree after a write. A format change is a
   migration across those tables; a reset is a wipe of them. Deleting a town cascades its tables;
   the accounts, their mail and the book of kings outlive it. What a sealed season keeps is the
   book: the seal writes the family name, the instant and the time it took; the

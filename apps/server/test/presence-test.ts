@@ -131,7 +131,7 @@ describe('dormancy', () => {
   });
 
   it('revokes a player row whose person the world no longer holds', () => {
-    // Arrange: a token outlived a person whose deletion was saved but whose
+    // Arrange: a token outlived a person whose deletion was written but whose
     // revocation failed.
     const world = town(20261105);
     delete world.people[CARON];

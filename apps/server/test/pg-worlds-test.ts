@@ -13,7 +13,13 @@ import {
 
 import { applySchema } from '../src/db/migrations.ts';
 import { PgWorldStore, TOWN_TABLES } from '../src/town/pg-worlds.ts';
-import { NameInUseError, UnknownWorldError, type NewStoredAction, type WorldSession } from '../src/town/worlds.ts';
+import {
+  NameInUseError,
+  UnknownWorldError,
+  hourStartedOf,
+  type NewStoredAction,
+  type WorldSession,
+} from '../src/town/worlds.ts';
 import { TEST_TOWN, town } from './helpers.ts';
 
 const START = new Date('2026-10-31T12:00:00.000Z');
@@ -87,7 +93,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
         { id: 10, trade: 'weaver', level: 1 },
       ];
       sortWorkshops(ai);
-      await session.save(loaded, []);
+      await session.write(loaded, []);
     });
 
     // Act
@@ -148,7 +154,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
       markFirstRunning();
       // Load-bearing: without the delay, a broken lock would go unnoticed.
       await delay(150);
-      await session.save({ ...session.snapshot.world, hour: 5 }, []);
+      await session.write({ ...session.snapshot.world, hour: 5 }, []);
       order.push('first:end');
     });
     await firstEntered;
@@ -172,7 +178,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Act: only the first one is played, five hours ahead.
     await store.withWorld(async (session) => {
-      await session.save({ ...session.snapshot.world, hour: 6 }, []);
+      await session.write({ ...session.snapshot.world, hour: 6 }, []);
     }, first.id);
 
     // Assert: the second still owes the hours the first played.
@@ -184,12 +190,12 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save({ ...session.snapshot.world, hour: 5 }, []);
+      await session.write({ ...session.snapshot.world, hour: 5 }, []);
     });
 
-    // Act: a save of an older world must not put the town back.
+    // Act: a write of an older world must not put the town back.
     await withWorld(async (session) => {
-      await session.save({ ...session.snapshot.world, hour: 2 }, []);
+      await session.write({ ...session.snapshot.world, hour: 2 }, []);
     });
 
     // Assert
@@ -226,6 +232,22 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Assert
     expect(queued.map((action) => action.id)).toEqual([first.id, second.id]);
     expect(queued.map((action) => action.action)).toEqual([first.action, second.action]);
+  });
+
+  it('stores an action at the instant its hour begins', async () => {
+    // Arrange: an order for the third hour of the world.
+    const world = town(5);
+    await store.createTown(TEST_TOWN.name, world, START);
+    const personId = humanPerson(world).id;
+
+    // Act
+    const action = await withWorld(async (session) => session.append(storedAction(personId, 3, buy(personId, 1))));
+    const row = await pool.query<{ plays_at: Date }>('SELECT plays_at FROM actions WHERE id = $1', [action.id]);
+
+    // Assert: the row holds the instant, so a pass reads what is due in one
+    // comparison, and the store gives the hour back.
+    expect(row.rows[0]?.plays_at).toEqual(hourStartedOf(START, 3));
+    expect(action.playsAt).toBe(3);
   });
 
   it('erases a cancelled action', async () => {
@@ -274,7 +296,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     };
     // Act
     await withWorld(async (session) => {
-      await session.save(world, [chronicle, mail]);
+      await session.write(world, [chronicle, mail]);
     });
     const read = await withWorld(async (session) => ({
       snapshot: session.snapshot,
@@ -309,7 +331,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
 
     // Act
     await withWorld(async (session) => {
-      await session.save(world, mail);
+      await session.write(world, mail);
     });
     const page = await withWorld(async (session) => session.recentMessages(2, playerId));
 
@@ -329,7 +351,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     await bindAccount(TEST_TOWN.id, human.id, CLEARED_TOKEN);
     await withWorld(async (session) => {
       await session.append(storedAction(human.id, 5, buy(human.id, 2)));
-      await session.save(world, [
+      await session.write(world, [
         {
           type: 'council.election_held',
           audience: 'town',
@@ -448,7 +470,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: 120 entries, the first 49 written a day before the cut.
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save(session.snapshot.world, hours(1, 120));
+      await session.write(session.snapshot.world, hours(1, 120));
     });
     const cut = new Date('2000-01-08T00:00:00.000Z');
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1 AND at < 50`, [
@@ -470,7 +492,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save(session.snapshot.world, hours(1, 120));
+      await session.write(session.snapshot.world, hours(1, 120));
     });
     const cut = new Date('2026-11-07T00:00:00.000Z');
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [TEST_TOWN.id, cut]);
@@ -487,7 +509,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Arrange: ten entries, all written before the cut.
     await store.createTown(TEST_TOWN.name, createWorld(), START);
     await withWorld(async (session) => {
-      await session.save(session.snapshot.world, hours(1, 10));
+      await session.write(session.snapshot.world, hours(1, 10));
     });
     const cut = new Date('2000-01-08T00:00:00.000Z');
     await pool.query(`UPDATE events SET recorded_at = $2 WHERE town_id = $1`, [
@@ -510,7 +532,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const human = humanPerson(world);
     const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     await withWorld(async (session) => {
-      await session.save(
+      await session.write(
         world,
         Array.from({ length: 120 }, (_, index): Event => ({
           type: 'person.debt_repaid',
@@ -542,7 +564,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const human = humanPerson(world);
     const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     await withWorld(async (session) => {
-      await session.save(
+      await session.write(
         world,
         Array.from({ length: 3 }, (_, index): Event => ({
           type: 'person.debt_repaid',
@@ -580,7 +602,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     const human = humanPerson(world);
     const playerId = await bindAccount(TEST_TOWN.id, human.id, 'a'.repeat(64));
     await withWorld(async (session) => {
-      await session.save(
+      await session.write(
         world,
         [1, 2].map((at): Event => ({
           type: 'person.debt_repaid',
@@ -642,7 +664,7 @@ describe.runIf(databaseUrl !== '')('PgWorldStore', () => {
     // Act: a catch-up that refuses the world version, after writing both tables.
     const attempt = withWorld(async (session) => {
       actionId = (await session.append(action)).id;
-      await session.save(oneHourLater(session.snapshot.world), []);
+      await session.write(oneHourLater(session.snapshot.world), []);
       throw new WorldVersionError({ ...world, rulesetVersion: RULES.version + 1 });
     });
 

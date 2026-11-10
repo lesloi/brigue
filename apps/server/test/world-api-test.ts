@@ -112,7 +112,7 @@ async function start(
         const target = hourAt(worldStartedAt, new Date(clock.now));
         const due = await playDue(session, world, target, new Set(), seeded());
         if (due.hours > 0) {
-          await session.save(due.world, due.events, accounts);
+          await session.write(due.world, due.events, accounts);
         }
       }, TEST_TOWN.id);
       await worlds.pruneJournal(

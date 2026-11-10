@@ -49,7 +49,7 @@ async function pass(store: MemoryWorldStore, now: Date) {
     const due = await playDue(session, world, target, new Set(), seeded());
 
     if (due.hours > 0) {
-      await session.save(due.world, due.events);
+      await session.write(due.world, due.events);
     }
 
     return due;
@@ -147,7 +147,7 @@ describe('playDue', () => {
 
   it('does not touch the world it is given', async () => {
     // Arrange: the memory store hands out its live snapshot, so an in-place
-    // step would corrupt the stored town even without a save.
+    // step would corrupt the stored town even without a write.
     const store = await town();
 
     // Act
@@ -277,18 +277,18 @@ describe('startScheduler', () => {
 
   it('prunes the journal past the real-time window on a pass that plays nothing', async () => {
     // Arrange: a town whose data already met a clock eight days ahead, holding
-    // entries written before the window. Nothing is due, so the pass has no save
+    // entries written before the window. Nothing is due, so the pass has no write
     // to hang a prune on.
     vi.useFakeTimers();
     const clock = { now: START.getTime() };
     const store = new MemoryWorldStore(() => new Date(clock.now));
     await store.createTown(TEST_TOWN.name, playableTown(20261105), START);
     await store.withWorld(async (session) => {
-      await session.save({ ...session.snapshot.world, hour: 193 }, hours(1, 31));
+      await session.write({ ...session.snapshot.world, hour: 193 }, hours(1, 31));
     }, TEST_TOWN.id);
     clock.now += 8 * 24 * HOUR;
     await store.withWorld(async (session) => {
-      await session.save(session.snapshot.world, hours(32, 120));
+      await session.write(session.snapshot.world, hours(32, 120));
     }, TEST_TOWN.id);
     const scheduler = startScheduler({
       store,

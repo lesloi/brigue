@@ -429,7 +429,7 @@ async function takePlaceIn(
 
     // The newcomer is written with its account in the same save: a person
     // without one would be an AI the moment the row lands.
-    await session.save(next, [], new Map([[fresh.id, playerId]]));
+    await session.write(next, [], new Map([[fresh.id, playerId]]));
 
     return fresh.id;
   }, town.id);

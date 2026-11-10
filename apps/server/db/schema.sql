@@ -202,7 +202,9 @@ CREATE TABLE actions (
   id bigserial PRIMARY KEY,
   town_id bigint NOT NULL REFERENCES towns (id) ON DELETE CASCADE,
   person_id bigint NOT NULL REFERENCES people (id) ON DELETE CASCADE,
-  plays_at integer NOT NULL,
+  -- The instant its hour begins, in real time: the pass selects what is due with
+  -- one comparison, and the store maps the instant back to the town's hour.
+  plays_at timestamptz NOT NULL,
   -- The action is a type and its fields apart: a query can read what was asked
   -- without parsing the payload, and an unknown type is a row, not a crash.
   type text NOT NULL,

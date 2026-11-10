@@ -250,15 +250,21 @@ class PgWorldSession implements WorldSession {
   }
 
   async actionsBetween(from: number, to: number): Promise<StoredAction[]> {
-    const { rows } = await this.client.query(
+    // The row holds the instant its hour begins, so the range is one comparison:
+    // the hours `[from, to]` are the instants that begin them.
+    const { rows } = await this.client.query<ActionRow>(
       `SELECT id, person_id, plays_at, type, payload, received_at
        FROM actions
-       WHERE town_id = $3 AND plays_at BETWEEN $1 AND $2
+       WHERE town_id = $3 AND plays_at >= $1 AND plays_at < $2
        ORDER BY plays_at, id`,
-      [from, to, this.townId],
+      [
+        hourStartedOf(this.snapshot.worldStartedAt, from),
+        hourStartedOf(this.snapshot.worldStartedAt, to + 1),
+        this.townId,
+      ],
     );
 
-    return rows.map(rowToStoredAction);
+    return rows.map((row) => rowToStoredAction(row, this.snapshot.worldStartedAt));
   }
 
   async recentMessages(limit: number, playerId: number): Promise<MessagePage> {
@@ -304,7 +310,7 @@ class PgWorldSession implements WorldSession {
   async findAction(id: number): Promise<StoredAction | null> {
     // Scoped to the town: another town may carry the same id, and its action
     // must be as unknown here as an id that was never issued.
-    const { rows } = await this.client.query(
+    const { rows } = await this.client.query<ActionRow>(
       `SELECT id, person_id, plays_at, type, payload, received_at
        FROM actions
        WHERE id = $1 AND town_id = $2`,
@@ -312,7 +318,7 @@ class PgWorldSession implements WorldSession {
     );
     const row = rows[0];
 
-    return row ? rowToStoredAction(row) : null;
+    return row ? rowToStoredAction(row, this.snapshot.worldStartedAt) : null;
   }
 
   async append(action: NewStoredAction): Promise<StoredAction> {
@@ -323,10 +329,20 @@ class PgWorldSession implements WorldSession {
       `INSERT INTO actions (town_id, person_id, plays_at, type, payload, received_at)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, person_id, plays_at, type, payload, received_at`,
-      [this.townId, action.personId, action.playsAt, type, json(payload), action.receivedAt],
+      [
+        this.townId,
+        action.personId,
+        hourStartedOf(this.snapshot.worldStartedAt, action.playsAt),
+        type,
+        json(payload),
+        action.receivedAt,
+      ],
     );
 
-    return { ...rowToStoredAction(rows[0]!), ...(action.title === undefined ? {} : { title: action.title }) };
+    return {
+      ...rowToStoredAction(rows[0]!, this.snapshot.worldStartedAt),
+      ...(action.title === undefined ? {} : { title: action.title }),
+    };
   }
 
   async cancel(id: number): Promise<void> {
@@ -344,7 +360,7 @@ class PgWorldSession implements WorldSession {
     await this.client.query(`DELETE FROM towns WHERE id = $1`, [this.townId]);
   }
 
-  async save(world: World, events: Event[], accounts: ReadonlyMap<number, number> = new Map()): Promise<void> {
+  async write(world: World, events: Event[], accounts: ReadonlyMap<number, number> = new Map()): Promise<void> {
     // The same map that addresses the mail names who holds each person: a person
     // written here is written with its account, never in the hope of one.
     const ids = await syncWorld(this.client, this.townId, world, accounts);
@@ -765,7 +781,7 @@ async function readExistingIds(
   };
 }
 
-/** Who holds each person of the town, read from the rows a save is about to rewrite. */
+/** Who holds each person of the town, read from the rows a write is about to rewrite. */
 async function readPlayerByPerson(client: PoolClient, townId: number): Promise<Map<number, number>> {
   const { rows } = await client.query<{ id: string; player_id: string }>(
     `SELECT id, player_id FROM people WHERE town_id = $1 AND player_id IS NOT NULL`,
@@ -1065,17 +1081,17 @@ function rowToMessage(row: MessageRow): Event {
 interface ActionRow {
   id: string;
   person_id: string;
-  plays_at: number;
+  plays_at: Date | string;
   type: string;
   payload: Record<string, unknown>;
   received_at: Date | string;
 }
 
-function rowToStoredAction(row: ActionRow): StoredAction {
+function rowToStoredAction(row: ActionRow, worldStartedAt: Date): StoredAction {
   return {
     id: Number(row.id),
     personId: Number(row.person_id),
-    playsAt: row.plays_at,
+    playsAt: hourAt(worldStartedAt, asDate(row.plays_at)),
     // The row already carries the type apart: the world reads one object.
     action: { ...row.payload, type: row.type } as Action,
     receivedAt: asDate(row.received_at),
