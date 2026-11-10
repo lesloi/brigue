@@ -226,7 +226,7 @@ advances a year per day. The world has one clock, shared by every town: all town
 hour and the same date. A mandate lasts a day. A character's thirty playable years last thirty
 real days.
 
-An act with a lead is an action placed ahead: a workshop wait twelve hours, a degree six, an
+An act with a lead is an action placed ahead: a workshop waits twelve hours, a degree six, an
 improvement longer as it grows, and the pass applies the order when the town reaches its hour. One
 act ahead at a time per person, and an order not yet played can be cancelled. A trade and a
 candidacy are the hour's. What else takes time is the calendar — a candidacy counts at the next
