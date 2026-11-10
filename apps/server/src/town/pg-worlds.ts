@@ -1,8 +1,6 @@
 import type { ClientConfig, Pool, PoolClient } from 'pg';
 
 import {
-  audienceCode,
-  audienceOfCode,
   goodCode,
   goodOfCode,
   residenceOf,
@@ -12,7 +10,7 @@ import {
   tradeCode,
   tradeOfCode,
 } from '@brigue/core';
-import type { Action, AudienceKind, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
+import type { Action, Event, GoodId, Person, Seat, SeatId, TitleId, Trade, World } from '@brigue/core';
 import {
   HOUR_MS,
   JOURNAL_PAGE,
@@ -298,7 +296,7 @@ class PgWorldSession implements WorldSession {
 
   async recentChronicle(limit: number): Promise<Event[]> {
     const { rows } = await this.client.query<ChronicleRow>(
-      `SELECT id, at, audience, type, payload
+      `SELECT id, at, type, payload
        FROM events
        WHERE town_id = $2
        ORDER BY id DESC
@@ -908,18 +906,14 @@ async function appendChronicle(
   await insertRows(
     client,
     'events',
-    ['town_id', 'at', 'audience', 'type', 'payload'],
-    events.map((event) => {
-      const { audience, at, type, ...body } = event;
-
-      return {
-        town_id: townId,
-        at: hourStartedOf(worldStartedAt, at),
-        audience: audienceCode(audience as 'town'),
-        type,
-        payload: json(body),
-      };
-    }),
+    ['town_id', 'at', 'type', 'payload'],
+    // The chronicle is the town's: the audience decided the route, not the row.
+    events.map((event) => ({
+      town_id: townId,
+      at: hourStartedOf(worldStartedAt, event.at),
+      type: event.type,
+      payload: json(eventBody(event)),
+    })),
   );
 }
 
@@ -942,14 +936,14 @@ async function appendMessages(
       return [];
     }
 
-    return [{ player_id: playerId, type: event.type, payload: json(messageBody(event)) }];
+    return [{ player_id: playerId, type: event.type, payload: json(eventBody(event)) }];
   });
 
   await insertRows(client, 'messages', ['player_id', 'type', 'payload'], rows);
 }
 
-/** The payload of a message: the event minus what the row already carries. */
-function messageBody(event: Event): Record<string, unknown> {
+/** The payload of a stored line: the event minus what the row already carries. */
+function eventBody(event: Event): Record<string, unknown> {
   const body = { ...event } as Record<string, unknown>;
   delete body.audience;
   delete body.at;
@@ -1072,7 +1066,6 @@ async function rollback(client: PoolClient): Promise<void> {
 interface ChronicleRow {
   id: string | number;
   at: Date | string;
-  audience: number;
   type: string;
   payload: Record<string, unknown>;
 }
@@ -1089,19 +1082,9 @@ function rowToChronicleEvent(row: ChronicleRow, worldStartedAt: Date): Event {
   return {
     ...row.payload,
     type: row.type,
-    audience: requiredAudience(row.audience),
+    audience: 'town',
     at: hourAt(worldStartedAt, asDate(row.at)),
   } as Event;
-}
-
-/** A stored audience back into its word; a code the list does not know is a broken row. */
-function requiredAudience(code: number): AudienceKind {
-  const kind = audienceOfCode(code);
-  if (kind === undefined) {
-    throw new Error(`events: no audience carries the code ${code}`);
-  }
-
-  return kind;
 }
 
 function rowToMessage(row: MessageRow): Event {

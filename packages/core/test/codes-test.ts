@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  AUDIENCE_KINDS,
-  audienceCode,
-  audienceOfCode,
   GOODS,
   TITLES,
   TRADES,
@@ -53,17 +50,10 @@ describe('the codes a row carries', () => {
     expect([3, 1].map(tradeOfCode)).toEqual(['carpenter', 'weaver']);
   });
 
-  it('pins the two audiences a chronicle row may carry', () => {
-    expect(AUDIENCE_KINDS).toEqual(['town', 'court']);
-    expect(AUDIENCE_KINDS.map(audienceCode)).toEqual([1, 2]);
-    expect([2, 1].map(audienceOfCode)).toEqual(['court', 'town']);
-  });
-
   it('leaves a code the list does not know undefined, so the store can refuse the row', () => {
     expect(titleOfCode(0)).toBeUndefined();
     expect(titleOfCode(13)).toBeUndefined();
     expect(goodOfCode(7)).toBeUndefined();
     expect(tradeOfCode(4)).toBeUndefined();
-    expect(audienceOfCode(3)).toBeUndefined();
   });
 });

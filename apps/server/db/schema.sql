@@ -167,9 +167,6 @@ CREATE TABLE events (
   -- The instant the hour it happened on begins, in real time: the store maps it
   -- back to the town's hour, and the client reads the hour.
   at timestamptz NOT NULL,
-  -- The place of the audience in `AUDIENCE_KINDS`: the chronicle is the town's,
-  -- and a line meant for one person is that person's mail.
-  audience smallint NOT NULL,
   type text NOT NULL,
   payload jsonb NOT NULL,
   recorded_at timestamptz NOT NULL DEFAULT now()

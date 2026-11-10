@@ -494,8 +494,9 @@ propose another with your arguments, then rewrite its entry. Git keeps the histo
   An action is stored as its type and its payload apart, so a query reads what was asked without
   parsing the row, and at the instant its hour begins, so a pass reads what is due with one
   comparison and the store maps the instant back to the town's hour. A journal line carries the
-  same instant and the code of its audience; the mailbox is the account's, by a key that takes the
-  letters with it, and a letter keeps its place when its author is gone. The simulation still reads and writes a town whole, but the storage keeps it in
+  same instant and no audience: the chronicle is the town's, a line for one person is that
+  person's mail, and the mailbox is the account's, by a key that takes the letters with it — a
+  letter keeps its place when its author is gone. The simulation still reads and writes a town whole, but the storage keeps it in
   rows, so a screen can read the market alone and the book of kings is a query. Every autoincremented id is a global
   `bigserial` assigned by the database: the store inserts a row without its id, reads the id back
   and writes it into the in-memory world before the rows that reference it, so a person's key, a
