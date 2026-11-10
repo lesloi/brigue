@@ -427,7 +427,6 @@ export const RULES = {
    */
   improvementHours: [0, 0, 1, 3, 6, 10, 15, 21, 28, 36, 45, 55, 66],
   campaignFavourCost: 5,
-  campaignVoteBonus: 2,
   /**
    * What a unit of a trade's output eats of its input: one, so a workshop turns
    * its input into its output unit for unit and never grows the loft. Which good
@@ -498,13 +497,6 @@ export const HOURS_PER_YEAR = 24;
 export function yearOf(hour: number): number {
   return START_YEAR + Math.floor((hour - 1) / HOURS_PER_YEAR);
 }
-/**
- * The Marché keeps one price per bell: twelve bells make a game year cycling
- * twice a day, and the window is the last day of town life. It is a display
- * window, not a rule, so it stays out of RULES.
- */
-export const PRICE_HISTORY_BELLS = HOURS_PER_YEAR;
-
 /** The identity the first person arrives with: the name the account carries. */
 export interface PersonIdentity {
   personName: string;
