@@ -432,7 +432,12 @@ describe('the core', () => {
           .replace(/\/\*[\s\S]*?\*\//g, '')
           .replace(/\/\/.*$/gm, '');
         return (
-          source.includes('Math.random') || source.includes('Date.now') || /from\s+['"][^'"]*\/apps\//.test(source)
+          source.includes('Math.random') ||
+          /\bDate\s*\.\s*(now|parse)\b/.test(source) ||
+          /\bnew\s+Date\b/.test(source) ||
+          /\bDate\s*\(/.test(source) ||
+          /\bperformance\s*\.\s*now\b/.test(source) ||
+          /from\s+['"][^'"]*\/apps\//.test(source)
         );
       });
 
