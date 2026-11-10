@@ -4,7 +4,7 @@ import { isValidName, NAME_PRICE, nameKey, renamePerson, sanitizeName } from '@b
 
 import { applyPresence } from '../../town/presence.ts';
 import { NameInUseError, sessionWorld } from '../../town/worlds.ts';
-import type { BoundPlayer } from '../../identity/players.ts';
+import { NameAlreadyBoundError, type BoundPlayer, type Player } from '../../identity/players.ts';
 import { boundPlayerOf, identifiedBy, refuseClosing, type AppContext } from '../context.ts';
 import { readBody, sendJson } from '../respond.ts';
 import { humanNamesElsewhere } from './name-suggestion.ts';
@@ -15,13 +15,14 @@ import { humanNamesElsewhere } from './name-suggestion.ts';
  * The name lives on the account; the person carries a display name that follows
  * it. A name is identity, not trade: the player who pays for it should not read
  * the old one until the next hour, and a queued rename would reserve a name for
- * an hour in front of every other account. The route runs under the world's own
- * lock — the same one the scheduler takes — and writes the town in that session,
- * so no tick can land between the check and the write.
+ * an hour in front of every other account. The account takes the name first,
+ * and its unique index is the only atomic check; the town is written after it,
+ * and a town that refuses gives the old name back, so the account and the
+ * person never stay apart.
  *
  * The name's rules are the core's: two names that differ by case or by accent
  * are one name, and a name another account carries is refused with 409. The
- * database compares bytes, so the read of the accounts is the check that counts.
+ * database compares bytes, so the write to the account is the check that counts.
  */
 export async function renameFamilyRoute(
   context: AppContext,
@@ -63,29 +64,70 @@ export async function renameFamilyRoute(
   }
 
   try {
-    // Check against the accounts before touching the world: the person's
-    // display name and the purse are written only for a name the server keeps.
+    // The accounts are the source of truth for the family name, and their unique
+    // index is the only atomic check: the name is taken first, so a name another
+    // account carries is refused before the person is renamed or the town
+    // charged. This read only spares that round trip in the common case.
     const elsewhere = await humanNamesElsewhere(context, player.name);
     if (elsewhere.has(nameKey(cleaned))) {
       sendJson(response, 409, { error: 'name_taken' });
       return;
     }
 
-    const outcome = await renameInTown(context, bound, player.name, cleaned);
+    await context.deps.store.renameName(player.tokenHash, cleaned);
 
-    if (outcome.kind === 'renamed') {
-      // The account is the source of truth for the family name; the person's
-      // display name follows it in the world.
-      await context.deps.store.renameName(player.tokenHash, cleaned);
+    let outcome: RenameOutcome;
+    try {
+      outcome = await renameInTown(context, bound, player.name, cleaned);
+    } catch (error) {
+      await giveNameBack(context, player, cleaned);
+      throw error;
+    }
+
+    // The town can still refuse — a purse an hour spent, a person gone silent —
+    // and the account must not carry a name the person does not.
+    if (outcome.kind !== 'renamed') {
+      await giveNameBack(context, player, cleaned);
     }
 
     answer(response, context, bound, outcome.kind, outcome.kind === 'renamed' ? outcome.name : undefined);
   } catch (error) {
-    if (error instanceof NameInUseError) {
+    if (error instanceof NameInUseError || error instanceof NameAlreadyBoundError) {
       sendJson(response, 409, { error: 'name_taken' });
       return;
     }
     throw error;
+  }
+}
+
+/**
+ * Puts the old name back after a town refused the rename the account had already
+ * taken. Only the name this request took comes back: a later rename may have
+ * landed in the window, and an older request must not overwrite it. The revert
+ * can still fail — the old name was free, and another account may have taken it
+ * meanwhile — and the display name is then behind the account until the next
+ * rename reads the account again, which is better than a name nobody paid for.
+ *
+ * No transaction spans the account and the town, so a process that dies between
+ * the two writes leaves the same gap open.
+ */
+async function giveNameBack(context: AppContext, player: Player, taken: string): Promise<void> {
+  if (nameKey(player.name) === nameKey(taken)) {
+    return;
+  }
+
+  const current = await context.deps.store.findByTokenHash(player.tokenHash);
+  if (current === null || nameKey(current.name) !== nameKey(taken)) {
+    return;
+  }
+
+  try {
+    await context.deps.store.renameName(player.tokenHash, player.name);
+  } catch (error) {
+    context.deps.logger.warn('player.name_not_given_back', {
+      name: taken,
+      reason: error instanceof Error ? error.name : 'unknown',
+    });
   }
 }
 

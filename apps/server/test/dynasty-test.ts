@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { NAME_PRICE, type Action, type World } from '@brigue/core';
+import { NAME_PRICE, nameKey, type Action, type World } from '@brigue/core';
 
 import { createApp } from '../src/http/app.ts';
 import { SESSION_COOKIE } from '../src/http/cookies.ts';
@@ -34,8 +34,7 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((close) => close()));
 });
 
-async function start(world: World = town(7)): Promise<Harness> {
-  const store = new MemoryPlayerStore();
+async function start(world: World = town(7), store: MemoryPlayerStore = new MemoryPlayerStore()): Promise<Harness> {
   const worlds = new MemoryWorldStore();
   const server = createApp({
     store,
@@ -64,6 +63,36 @@ async function start(world: World = town(7)): Promise<Harness> {
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
     },
   };
+}
+
+/**
+ * An account whose name list hides what its index knows: the pre-check sees
+ * nothing, the store refuses, the way two joins racing on one name do.
+ */
+class BlindNames extends MemoryPlayerStore {
+  override async listNames(): Promise<string[]> {
+    return [];
+  }
+}
+
+/** An account that keeps every family name it was given, in order. */
+class RecordingNames extends MemoryPlayerStore {
+  readonly renames: string[] = [];
+
+  override async renameName(tokenHash: string, name: string): Promise<void> {
+    this.renames.push(name);
+    await super.renameName(tokenHash, name);
+  }
+}
+
+/**
+ * An account where a later request lands while an earlier one is still asking:
+ * taking the name hands it straight to the second request's name.
+ */
+class ConcurrentRename extends MemoryPlayerStore {
+  override async renameName(tokenHash: string, name: string): Promise<void> {
+    await super.renameName(tokenHash, nameKey(name) === nameKey('Moreau') ? 'Dubois' : name);
+  }
 }
 
 function post(harness: Harness, intent: unknown, hour = 1, index = 0): Promise<Response> {
@@ -188,6 +217,59 @@ describe('the family name', () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: 'name_taken' });
     expect((await harness.read()).people[LECLERC]?.name).toBe('Colin Leclerc');
+  });
+
+  it('refuses a name another account takes at the index, and charges nothing', async () => {
+    // Arrange: the pre-check sees nothing, and the account refuses the name the
+    // way two joins racing on it do — after the read, before the world.
+    const world = town(7);
+    world.people[LECLERC]!.treasuryCents = 100_000;
+    const store = new BlindNames();
+    await issueToken(store, 'Moreau');
+    const harness = await start(world, store);
+
+    // Act
+    const response = await rename(harness, 'Moreau');
+
+    // Assert: the refusal is the account's, and the town never paid for it.
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'name_taken' });
+    const after = await harness.read();
+    expect(after.people[LECLERC]?.name).toBe('Colin Leclerc');
+    expect(after.people[LECLERC]?.treasuryCents).toBe(100_000);
+  });
+
+  it('gives the name back when the town refuses what the account accepted', async () => {
+    // Arrange: a purse that cannot pay, and a store that keeps the order.
+    const world = town(7);
+    world.people[LECLERC]!.treasuryCents = 10;
+    const store = new RecordingNames();
+    const harness = await start(world, store);
+
+    // Act
+    const response = await rename(harness, 'Moreau');
+
+    // Assert: the account took the name, the town refused, the old name came
+    // back — the display name and the account never disagree.
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'insufficient_funds' });
+    expect(store.renames).toEqual(['Moreau', 'Leclerc']);
+    expect((await harness.store.listByTown(TEST_TOWN.id))[0]?.name).toBe('Leclerc');
+    expect((await harness.read()).people[LECLERC]?.treasuryCents).toBe(10);
+  });
+
+  it('does not give the name back over a later rename that already landed', async () => {
+    // Arrange: the town refuses, and another request takes the name meanwhile.
+    const world = town(7);
+    world.people[LECLERC]!.treasuryCents = 10;
+    const harness = await start(world, new ConcurrentRename());
+
+    // Act
+    const response = await rename(harness, 'Moreau');
+
+    // Assert: the older request leaves the newer name alone.
+    expect(response.status).toBe(409);
+    expect((await harness.store.listByTown(TEST_TOWN.id))[0]?.name).toBe('Dubois');
   });
 
   it('refuses a name that is not one, and a person that cannot pay', async () => {
